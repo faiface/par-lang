@@ -20,9 +20,11 @@ use crate::{
 pub struct Playground {
     code: String,
     compiled: Option<Compiled>,
+    ic_compiled: Option<crate::icombs::Net>,
     interact: Option<Interact>,
     editor_font_size: f32,
     show_compiled: bool,
+    show_ic: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -59,9 +61,11 @@ impl Playground {
         Box::new(Self {
             code: DEFAULT_CODE.to_string(),
             compiled: None,
+            ic_compiled: None,
             interact: None,
             editor_font_size: 16.0,
             show_compiled: false,
+            show_ic: false,
         })
     }
 }
@@ -177,7 +181,6 @@ impl Playground {
                             egui::RichText::new("Show compiled"),
                         );
                     }
-
                     egui::menu::menu_custom_button(
                         ui,
                         egui::Button::new(
@@ -215,7 +218,62 @@ impl Playground {
                     );
                 }
             });
+            ui.horizontal_top(|ui| {
+                if let Some(Compiled {
+                    globals: Ok(globals),
+                    ..
+                }) = &self.compiled
+                {
+                    egui::menu::menu_custom_button(
+                        ui,
+                        egui::Button::new(egui::RichText::new("To IC").strong())
+                            .fill(red().lerp_to_gamma(egui::Color32::DARK_GRAY, 0.9)),
+                        |ui| {
+                            for (internal_name, expression) in globals.as_ref() {
+                                if let Internal::Original(name) = internal_name {
+                                    if ui.button(&name.string).clicked() {
+                                        let net = crate::icombs::compile_expression(
+                                            expression,
+                                            globals.clone(),
+                                        );
+                                        self.ic_compiled = Some(net);
+                                    }
+                                }
+                            }
+                        },
+                    );
+                    ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
 
+                    if let Some(net) = self.ic_compiled.as_mut() {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("reduce IC")
+                                        .strong()
+                                        .color(egui::Color32::BLACK),
+                                )
+                                .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.1)),
+                            )
+                            .clicked()
+                        {
+                            net.reduce_one();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("normalize IC")
+                                        .strong()
+                                        .color(egui::Color32::BLACK),
+                                )
+                                .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
+                            )
+                            .clicked()
+                        {
+                            net.normal()
+                        }
+                    }
+                }
+            });
             ui.separator();
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
@@ -244,6 +302,16 @@ impl Playground {
                                 .with_theme(theme)
                                 .with_numlines(true)
                                 .show(ui, pretty);
+                        } else if let Some(ic) = &mut self.ic_compiled {
+                            if self.show_ic {
+                                CodeEditor::default()
+                                    .id_source("ic_compiled")
+                                    .with_rows(32)
+                                    .with_fontsize(self.editor_font_size)
+                                    .with_theme(theme)
+                                    .with_numlines(true)
+                                    .show(ui, &mut ic.show());
+                            }
                         }
                     }
 
@@ -566,4 +634,4 @@ fn blue() -> egui::Color32 {
     egui::Color32::from_hex("#118ab2").unwrap()
 }
 
-static DEFAULT_CODE: &str = include_str!("sample.par");
+static DEFAULT_CODE: &str = include_str!("sample_ic.par");

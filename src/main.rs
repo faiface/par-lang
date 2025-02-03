@@ -1,6 +1,7 @@
 use eframe::egui;
 use playground::Playground;
 
+mod icombs;
 mod interact;
 mod language;
 mod parse;

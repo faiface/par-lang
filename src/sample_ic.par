@@ -1,0 +1,22 @@
+
+define id_signals = [value] value {
+    left? => .left!
+    right? => .right!
+}
+define flip_signals = [value] value {
+    left? => .right!
+    right? => .left!
+}
+define soldier_marching = [value] value.left.right.left.right
+define bool_true = [value] value.left
+define bool_false = [value] value.right
+
+define make_pair = [a] [b] (a) b
+define flip_pair = [pair] do { pair[a] } in (pair) a
+
+define main = chan user {
+    let pair = make_pair(bool_true)(bool_false)
+    let pair = flip_pair(pair)
+    user(pair)
+    user!
+}
