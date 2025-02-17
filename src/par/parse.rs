@@ -71,6 +71,16 @@ pub struct Program<Name, Expr> {
     pub definitions: IndexMap<Name, Expr>,
 }
 
+impl<Name, Expr> Default for Program<Name, Expr> {
+    fn default() -> Self {
+        Self {
+            type_defs: Default::default(),
+            declarations: Default::default(),
+            definitions: Default::default(),
+        }
+    }
+}
+
 pub fn parse_program(source: &str) -> Result<Program<Name, Expression<Loc, Name>>, ParseError> {
     let mut pairs = match Par::parse(Rule::program, source) {
         Ok(mut pairs) => pairs.next().unwrap().into_inner(),

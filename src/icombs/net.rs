@@ -1,0 +1,291 @@
+//! This module contains a simple implementation for Interaction Combinators.
+//! It is not performant; it's mainly here to act as a storage and interchange format
+
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
+
+use indexmap::IndexMap;
+
+type VarId = usize;
+
+pub fn number_to_string(mut number: usize) -> String {
+    let mut result = String::new();
+    number += 1;
+    while number > 0 {
+        let remainder = (number - 1) % 26;
+        let character = (b'a' + remainder as u8) as char;
+        result.insert(0, character);
+        number = (number - 1) / 26;
+    }
+    result
+}
+#[derive(Debug, Clone)]
+pub enum Tree {
+    Con(Box<Tree>, Box<Tree>),
+    Dup(Box<Tree>, Box<Tree>),
+    Era,
+    Var(usize),
+    Package(usize),
+}
+impl Tree {
+    pub fn c(a: Tree, b: Tree) -> Tree {
+        Tree::Con(Box::new(a), Box::new(b))
+    }
+    pub fn d(a: Tree, b: Tree) -> Tree {
+        Tree::Dup(Box::new(a), Box::new(b))
+    }
+    pub fn e() -> Tree {
+        Tree::Era
+    }
+    pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
+        use Tree::*;
+        match self {
+            Var(x) => *x = m(*x),
+            Con(a, b) => {
+                a.map_vars(m);
+                b.map_vars(m);
+            }
+            Dup(a, b) => {
+                a.map_vars(m);
+                b.map_vars(m);
+            }
+            Era => {}
+            Package(..) => {}
+        }
+    }
+    fn map_vars_tree(&mut self, m: &mut impl FnMut(VarId) -> Tree) {
+        use Tree::*;
+        match self {
+            t @ Var(..) => {
+                let Var(id) = &t else { unreachable!() };
+                *t = m(id.clone())
+            }
+            Con(a, b) => {
+                a.map_vars_tree(m);
+                b.map_vars_tree(m);
+            }
+            Dup(a, b) => {
+                a.map_vars_tree(m);
+                b.map_vars_tree(m);
+            }
+            Era => {}
+            Package(..) => {}
+        }
+    }
+    pub fn show(&self) -> String {
+        self.show_with_context(&mut BTreeMap::default())
+    }
+    pub fn show_with_context(&self, ctx: &mut BTreeMap<usize, String>) -> String {
+        use Tree::*;
+        match self {
+            Var(id) => {
+                if let Some(name) = ctx.get(id) {
+                    name.clone()
+                } else {
+                    let mut free_var = None;
+                    for i in 0.. {
+                        if ctx.get(&i).is_none() {
+                            free_var = Some(i);
+                            break;
+                        }
+                    }
+                    let free_var = free_var.unwrap();
+                    ctx.insert(*id, number_to_string(free_var));
+                    number_to_string(free_var)
+                }
+            }
+            Con(a, b) => format!(
+                "({} {})",
+                a.show_with_context(ctx),
+                b.show_with_context(ctx)
+            ),
+            Dup(a, b) => format!(
+                "[{} {}]",
+                a.show_with_context(ctx),
+                b.show_with_context(ctx)
+            ),
+            Era => format!("*"),
+            Package(id) => format!("@{}", id),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Net {
+    pub ports: VecDeque<Tree>,
+    pub redexes: VecDeque<(Tree, Tree)>,
+    pub vars: BTreeMap<usize, Option<Tree>>,
+    pub packages: Arc<IndexMap<usize, Tree>>,
+}
+impl Net {
+    fn interact(&mut self, a: Tree, b: Tree) {
+        use Tree::*;
+        match (a, b) {
+            (Var(..), _) | (_, Var(..)) => unreachable!(),
+            (Era, Era) => (),
+            (Con(a0, a1), Era) | (Dup(a0, a1), Era) | (Era, Con(a0, a1)) | (Era, Dup(a0, a1)) => {
+                self.link(*a0, Era);
+                self.link(*a1, Era);
+            }
+            (Con(a0, a1), Con(b0, b1)) | (Dup(a0, a1), Dup(b0, b1)) => {
+                self.link(*a0, *b0);
+                self.link(*a1, *b1);
+            }
+            (Con(a0, a1), Dup(b0, b1)) | (Dup(b0, b1), Con(a0, a1)) => {
+                let (a00, b00) = self.create_wire();
+                let (a01, b01) = self.create_wire();
+                let (a10, b10) = self.create_wire();
+                let (a11, b11) = self.create_wire();
+                self.link(*a0, Tree::Dup(Box::new(a00), Box::new(a01)));
+                self.link(*a1, Tree::Dup(Box::new(a10), Box::new(a11)));
+                self.link(*b0, Tree::Con(Box::new(b00), Box::new(b10)));
+                self.link(*b1, Tree::Con(Box::new(b01), Box::new(b11)));
+            }
+            (Package(_), Era) | (Era, Package(_)) => {}
+            (Package(id), Dup(a, b)) | (Dup(a, b), Package(id)) => {
+                self.link(*a, Package(id));
+                self.link(*b, Package(id));
+            }
+            (Package(id), a) | (a, Package(id)) => {
+                let b = self.dereference_package(id);
+                self.interact(a, b);
+            }
+        }
+    }
+    pub fn freshen_variables(&mut self, tree: &mut Tree) {
+        let mut package_to_net: BTreeMap<usize, usize> = BTreeMap::new();
+        tree.map_vars(&mut |var_id| {
+            if let Some(id) = package_to_net.get(&var_id) {
+                id.clone()
+            } else {
+                let id = self.allocate_var_id();
+                self.vars.insert(id, None);
+                package_to_net.insert(var_id, id);
+                id
+            }
+        });
+    }
+    pub fn dereference_package(&mut self, package: usize) -> Tree {
+        let mut tree = self
+            .packages
+            .get(&package)
+            .unwrap_or_else(|| panic!("Unknown package with ID {}", package))
+            .clone();
+        // Now, we have to freshen all variables in the tree
+        self.freshen_variables(&mut tree);
+        tree
+    }
+    pub fn reduce_one(&mut self) -> bool {
+        if let Some((a, b)) = self.redexes.pop_front() {
+            self.interact(a, b);
+            true
+        } else {
+            false
+        }
+    }
+    pub fn substitute_tree(&mut self, tree: &mut Tree) {
+        match tree {
+            Tree::Con(a, b) | Tree::Dup(a, b) => {
+                self.substitute_tree(a);
+                self.substitute_tree(b);
+            }
+            Tree::Era => {}
+            t @ Tree::Var(_) => {
+                let Tree::Var(id) = t else { unreachable!() };
+                if let Some(Some(mut a)) = self.vars.remove(id) {
+                    self.substitute_tree(&mut a);
+                    *t = a;
+                } else {
+                    self.vars.insert(*id, None);
+                }
+            }
+            Tree::Package(_) => {}
+        }
+    }
+    pub fn normal(&mut self) {
+        while self.reduce_one() {}
+        // dereference all variables
+        let mut ports = core::mem::take(&mut self.ports);
+        ports.iter_mut().for_each(|x| self.substitute_tree(x));
+        self.ports = ports;
+    }
+    pub fn link(&mut self, a: Tree, b: Tree) {
+        if let Tree::Var(id) = a {
+            match self.vars.remove(&id).unwrap() {
+                Some(a) => {
+                    self.link(a, b);
+                }
+                None => {
+                    self.vars.insert(id, Some(b));
+                }
+            }
+        } else if let Tree::Var(id) = b {
+            self.link(Tree::Var(id), a)
+        } else {
+            self.redexes.push_back((a, b))
+        }
+    }
+    pub fn allocate_var_id(&mut self) -> VarId {
+        for i in 0.. {
+            if self.vars.get(&i).is_none() {
+                return i;
+            }
+        }
+        unreachable!();
+    }
+    pub fn create_wire(&mut self) -> (Tree, Tree) {
+        let id = self.allocate_var_id();
+        self.vars.insert(id, None);
+        (Tree::Var(id), Tree::Var(id))
+    }
+    pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
+        self.ports.iter_mut().for_each(|x| x.map_vars(m));
+        self.redexes.iter_mut().for_each(|(a, b)| {
+            a.map_vars(m);
+            b.map_vars(m)
+        });
+        let vars = core::mem::take(&mut self.vars);
+        self.vars = vars
+            .into_iter()
+            .map(|(mut k, mut v)| {
+                k = m(k);
+                v.as_mut().map(|x| x.map_vars(m));
+                (k, v)
+            })
+            .collect();
+    }
+    pub fn map_vars_tree(&mut self, m: &mut impl FnMut(VarId) -> Tree) {
+        self.ports.iter_mut().for_each(|x| x.map_vars_tree(m));
+        self.redexes.iter_mut().for_each(|(a, b)| {
+            a.map_vars_tree(m);
+            b.map_vars_tree(m)
+        });
+    }
+    pub fn show_tree(&self, t: &Tree) -> String {
+        use Tree::*;
+        match t {
+            Var(id) => {
+                if let Some(Some(b)) = self.vars.get(id) {
+                    self.show_tree(b)
+                } else {
+                    number_to_string(*id)
+                }
+            }
+            Con(a, b) => format!("({} {})", self.show_tree(a), self.show_tree(b)),
+            Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
+            Era => format!("*"),
+            Package(id) => format!("@{}", id),
+        }
+    }
+    pub fn show(&self) -> String {
+        use core::fmt::Write;
+        let mut s = String::new();
+        for i in &self.ports {
+            write!(&mut s, "{}\n", self.show_tree(i)).unwrap();
+        }
+        for (a, b) in &self.redexes {
+            write!(&mut s, "{} ~ {}\n", self.show_tree(a), self.show_tree(b)).unwrap();
+        }
+        s
+    }
+}
