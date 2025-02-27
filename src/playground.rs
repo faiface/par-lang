@@ -352,7 +352,8 @@ impl Playground {
 
                             ui.label(egui::RichText::new(error).color(red()).code());
                         }
-                    } else if let Some(int) = &self.interact {
+                    }
+                    if let Some(int) = &self.interact {
                         self.show_interact(ui, int.clone());
                     }
                 });
