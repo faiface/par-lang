@@ -1,0 +1,10 @@
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" | "," }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+tree = { con_tree | dup_tree | era_tree | var_tree }
+con_tree = { "(" ~ tree ~ tree ~ ")" }
+dup_tree = { "[" ~ tree ~ tree ~ "]" }
+era_tree = { "*" }
+name = @{ (ASCII_ALPHA ~ ("_" | ASCII_ALPHANUMERIC)*) }
+var_tree = { name }
+redex = { tree ~ "~" ~ redex }
+program     = { SOI ~ tree* ~ redex* ~ EOI }

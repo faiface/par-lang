@@ -1,0 +1,47 @@
+type Bool  = either { .true!, .false! }
+dec true: Bool
+def true = .true!
+dec false: Bool
+def false = .false!
+
+dec not: [Bool] Bool
+def not = [x] x {
+	true? => .false!
+	false? => .true!
+}
+
+
+type Tree = recursive either {
+  .empty!
+  .item(self)(self)!
+}
+
+dec empty: Tree
+def empty = .empty!
+
+dec tree: Tree
+def tree =
+    let b: Tree = .item(empty)(empty)! in
+    .item(empty)(b)!
+
+
+dec xor: [Bool][Bool] Bool
+def xor = [a][b] a{
+	true? => not(b)
+	false? => b
+}
+
+dec xor_tree: [Tree] Bool
+
+def xor_tree = [tree: Tree] tree begin {
+	empty? => .true!
+	item[lst1][lst2]? => xor(lst1 loop)(lst2 loop)
+}
+
+dec main: Bool
+def main = xor_tree(tree)
+
+def id = {
+    true => !
+    false => !
+}

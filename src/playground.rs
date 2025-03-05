@@ -9,6 +9,11 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use indexmap::IndexMap;
 
 use crate::{
+    icombs::{
+        compile_file,
+        readback::{ReadbackResult, SharedState},
+        IcCompiled,
+    },
     interact::{Event, Handle, Request},
     par::{
         language::{CompileError, Internal},
@@ -17,6 +22,7 @@ use crate::{
         runtime::{self, Context, Operation},
         types::{self, Type, TypeError},
     },
+    readback::{prepare_type_for_readback, ReadbackState, ReadbackStateInner},
     spawn::TokioSpawn,
 };
 
@@ -27,6 +33,8 @@ pub struct Playground {
     interact: Option<Interact>,
     editor_font_size: f32,
     show_compiled: bool,
+    show_ic: bool,
+    readback_state: Option<crate::readback::ReadbackState<Internal<Name>>>,
 }
 
 #[derive(Clone)]
@@ -111,6 +119,9 @@ impl Compiled {
         for (name, expression) in &program.definitions {
             match program.declarations.get(name) {
                 Some(Some(declaration)) => {
+                    new_program
+                        .declarations
+                        .insert(name.clone(), Some(declaration.clone()));
                     match context.check_expression(None, expression, declaration) {
                         Ok(e) => {
                             new_program.definitions.insert(name.clone(), e);
@@ -152,14 +163,24 @@ impl Compiled {
 }
 
 #[derive(Clone)]
-pub(crate) struct Checked {}
+pub(crate) struct Checked {
+    pub(crate) program:
+        Program<Internal<Name>, Arc<Expression<Loc, Internal<Name>, Type<Loc, Internal<Name>>>>>,
+    pub(crate) ic_compiled: Option<crate::icombs::IcCompiled>,
+}
 
 impl Checked {
     pub(crate) fn from_program(
-        // not used for anything, so there's no reason to store it ATM.
-        _: Program<Internal<Name>, Arc<Expression<Loc, Internal<Name>, Type<Loc, Internal<Name>>>>>,
+        program: Program<
+            Internal<Name>,
+            Arc<Expression<Loc, Internal<Name>, Type<Loc, Internal<Name>>>>,
+        >,
     ) -> Self {
-        Checked {}
+        // attempt to compile to interaction combinators
+        Checked {
+            ic_compiled: Some(compile_file(&program)),
+            program,
+        }
     }
 }
 
@@ -196,6 +217,8 @@ impl Playground {
             interact: None,
             editor_font_size: 16.0,
             show_compiled: false,
+            show_ic: false,
+            readback_state: Default::default(),
         })
     }
 }
@@ -247,43 +270,78 @@ impl Playground {
             fix_light_theme(ColorTheme::GITHUB_LIGHT)
         }
     }
+
+    fn readback(
+        readback_state: &mut Option<ReadbackState<Internal<Name>>>,
+        ui: &mut egui::Ui,
+        program: &Program<
+            Internal<Name>,
+            Arc<Expression<Loc, Internal<Name>, Type<Loc, Internal<Name>>>>,
+        >,
+        compiled: &IcCompiled,
+    ) {
+        for (internal_name, expression) in &program.definitions {
+            if let Internal::Original(name) = internal_name {
+                if ui.button(&name.string).clicked() {
+                    let q = &program.declarations;
+                    let ty = program
+                        .declarations
+                        .get(&Internal::Original(name.clone()))
+                        .unwrap()
+                        .as_ref()
+                        .unwrap();
+                    let mut net = compiled.create_net();
+                    let mut tree = compiled.get_with_name(&internal_name).unwrap();
+                    net.freshen_variables(&mut tree);
+                    let shared = SharedState::default();
+                    let ty = prepare_type_for_readback(program, ty.clone());
+                    let tree = tree.with_type(ty.clone());
+                    *readback_state = Some(ReadbackState {
+                        result: ReadbackResult::Halted(tree),
+                        inner: ReadbackStateInner {
+                            net: Some(net),
+                            shared,
+                            needs_further_readback: false,
+                            path: vec![],
+                        },
+                    })
+                }
+            }
+        }
+    }
     fn run(
         interact: &mut Option<Interact>,
         ui: &mut egui::Ui,
         program: &Program<Internal<Name>, Arc<Expression<Loc, Internal<Name>, ()>>>,
         compiled_code: Arc<str>,
     ) {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (internal_name, expression) in &program.definitions {
-                if let Internal::Original(name) = internal_name {
-                    if ui.button(&name.string).clicked() {
-                        if let Some(int) = interact.take() {
-                            int.handle.lock().expect("lock failed").cancel();
-                        }
-                        *interact = Some(Interact {
-                            code: Arc::clone(&compiled_code),
-                            handle: Handle::start_expression(
-                                Arc::new({
-                                    let ctx = ui.ctx().clone();
-                                    move || ctx.request_repaint()
-                                }),
-                                Context::new(
-                                    Arc::new(TokioSpawn),
-                                    Arc::new(program.definitions.clone()),
-                                ),
-                                expression,
-                            ),
-                        });
-                        ui.close_menu();
+        for (internal_name, expression) in &program.definitions {
+            if let Internal::Original(name) = internal_name {
+                if ui.button(&name.string).clicked() {
+                    if let Some(int) = interact.take() {
+                        int.handle.lock().expect("lock failed").cancel();
                     }
+                    *interact = Some(Interact {
+                        code: Arc::clone(&compiled_code),
+                        handle: Handle::start_expression(
+                            Arc::new({
+                                let ctx = ui.ctx().clone();
+                                move || ctx.request_repaint()
+                            }),
+                            Context::new(
+                                Arc::new(TokioSpawn),
+                                Arc::new(program.definitions.clone()),
+                            ),
+                            expression,
+                        ),
+                    });
+                    ui.close_menu();
                 }
             }
-        });
+        }
     }
     fn recompile(&mut self) {
-        self.compiled = stacker::grow(32 * 1024 * 1024, || {
-            Some(Compiled::from_string(self.code.as_str()))
-        });
+        self.compiled = Some(Compiled::from_string(self.code.as_str()));
         self.compiled_code = Arc::from(self.code.as_str());
     }
 
@@ -296,30 +354,50 @@ impl Playground {
                     self.recompile();
                 }
 
-                if let Some(Ok(Compiled { program, .. })) = &mut self.compiled {
+                if let Some(Ok(Compiled {
+                    program, checked, ..
+                })) = &mut self.compiled
+                {
                     ui.checkbox(
                         &mut self.show_compiled,
                         egui::RichText::new("Show compiled"),
                     );
+                    ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
 
-                    if !self.show_compiled {
-                        egui::menu::menu_custom_button(
-                            ui,
-                            egui::Button::new(
-                                egui::RichText::new("Run")
-                                    .strong()
-                                    .color(egui::Color32::BLACK),
-                            )
-                            .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
-                            |ui| {
-                                Self::run(
-                                    &mut self.interact,
-                                    ui,
-                                    program,
-                                    self.compiled_code.clone(),
-                                );
-                            },
-                        );
+                    egui::menu::menu_custom_button(
+                        ui,
+                        egui::Button::new(
+                            egui::RichText::new("Run")
+                                .strong()
+                                .color(egui::Color32::BLACK),
+                        )
+                        .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
+                        |ui| {
+                            Self::run(&mut self.interact, ui, program, self.compiled_code.clone());
+                        },
+                    );
+
+                    if let Ok(checked) = checked {
+                        if let Some(ic_compiled) = checked.ic_compiled.as_ref() {
+                            let a = checked.program.declarations.len();
+                            egui::menu::menu_custom_button(
+                                ui,
+                                egui::Button::new(
+                                    egui::RichText::new("Readback")
+                                        .strong()
+                                        .color(egui::Color32::BLACK),
+                                )
+                                .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
+                                |ui| {
+                                    Self::readback(
+                                        &mut self.readback_state,
+                                        ui,
+                                        &checked.program,
+                                        ic_compiled,
+                                    );
+                                },
+                            );
+                        }
                     }
                 }
             });
@@ -348,21 +426,32 @@ impl Playground {
                                 .with_theme(theme)
                                 .with_numlines(true)
                                 .show(ui, pretty);
-                        } else if let Ok(_) = checked {
-                            // :)
-                            ui.label(
-                                egui::RichText::new("Type checking successful").color(green()),
-                            );
+                        }
+                        if let Ok(checked) = checked {
+                            if let Some(ic_compiled) = checked.ic_compiled.as_ref() {
+                                if self.show_ic {
+                                    CodeEditor::default()
+                                        .id_source("ic_compiled")
+                                        .with_rows(32)
+                                        .with_fontsize(self.editor_font_size)
+                                        .with_theme(theme)
+                                        .with_numlines(true)
+                                        .show(ui, &mut format!("{}", ic_compiled));
+                                }
+
+                                if let Some(rb) = &mut self.readback_state {
+                                    rb.show_readback(ui, &checked.program)
+                                }
+                            }
                         } else if let Err(err) = checked {
                             let error = Error::Type(err.clone()).display(&self.compiled_code);
 
                             ui.label(egui::RichText::new(error).color(red()).code());
                         }
                     }
-                    if !self.show_compiled {
-                        if let Some(int) = &self.interact {
-                            self.show_interact(ui, int.clone());
-                        }
+
+                    if let Some(int) = &self.interact {
+                        self.show_interact(ui, int.clone());
                     }
                 });
             });
@@ -660,8 +749,6 @@ fn par_syntax() -> Syntax {
         comment_multiline: [r#"/*"#, r#"*/"#],
         hyperlinks: BTreeSet::from([]),
         keywords: BTreeSet::from([
-            "dec",
-            "def",
             "type",
             "declare",
             "define",
@@ -707,4 +794,4 @@ fn blue() -> egui::Color32 {
     egui::Color32::from_hex("#118ab2").unwrap()
 }
 
-static DEFAULT_CODE: &str = include_str!("../examples/sample_types.par");
+static DEFAULT_CODE: &str = include_str!("sample_ic.par");

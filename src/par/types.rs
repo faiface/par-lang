@@ -834,8 +834,8 @@ pub struct Context<Loc, Name> {
 
 impl<Loc, Name> Context<Loc, Name>
 where
-    Loc: Clone + Eq + Hash,
-    Name: Clone + Eq + Hash,
+    Loc: std::fmt::Debug + Clone + Eq + Hash,
+    Name: Clone + Eq + Hash + std::fmt::Debug,
 {
     pub fn new(
         globals_type_defs: Arc<IndexMap<Name, (Vec<Name>, Type<Loc, Name>)>>,
@@ -992,6 +992,8 @@ where
         >,
     ) -> Result<(Command<Loc, Name, Type<Loc, Name>>, Option<Type<Loc, Name>>), TypeError<Loc, Name>>
     {
+        println!("{:?}", (inference_subject, object, typ, command));
+
         if let Type::Name(_, name, args) = typ {
             return self.check_command(
                 inference_subject,

@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 
 use indexmap::IndexMap;
 use pest::{
@@ -784,5 +787,16 @@ fn parse_loop_label(pairs: &mut Pairs<Rule>) -> Result<Option<Name>, ParseError>
     match pairs.next().unwrap().into_inner().next() {
         Some(pair) => Ok(Some(parse_name(&mut Pairs::single(pair))?.1)),
         None => Ok(None),
+    }
+}
+
+impl<Name: indexmap::Equivalent<Name> + Hash + Clone + Eq + Debug, Expr> Program<Name, Expr> {
+    pub fn dereference_type_def(&self, name: &Name, args: &[Type<Loc, Name>]) -> Type<Loc, Name> {
+        let def = self.type_defs.get(name).unwrap();
+        let mut typ = def.1.clone();
+        for (src, tgt) in def.0.iter().zip(args) {
+            typ = typ.substitute(&src, tgt).unwrap();
+        }
+        typ
     }
 }
