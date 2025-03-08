@@ -109,7 +109,7 @@ def negate = [b] b {
 
 Running *this* in the playground shows the negation of what you click. Pretty cool!
 
-todo: recursive and corecursive types
+todo: universal, existential, recursive, and corecursive types
 
 ### Concurrency
 
