@@ -1,0 +1,15 @@
+[book]
+title = "Par Documentation"
+authors = ["s15n"]
+description = "Documentation for the Par programming language"
+src = "src"
+language = "en"
+multilingual = false
+
+[output.html]
+theme = "par-theme"
+git-repository-url = "https://github.com/par-lang/documentation"
+mathjax-support = true
+
+[output.html.code.hidelines]
+par = "?"
