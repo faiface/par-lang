@@ -579,8 +579,9 @@ impl Error {
         match self {
             Self::Parse(error) => {
                 format!(
-                    "{}\nSyntax error.",
-                    Self::display_loc(code, &error.location)
+                    "{}\nSyntax error: {}",
+                    Self::display_loc(code, &error.location),
+                    error.msg
                 )
             }
 
