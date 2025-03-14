@@ -13,3 +13,7 @@ futures = "0.3.31"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
 stacker = "0.1.19"
 rfd = "0.15.2"
+winnow = { version = "0.7.4", features = [
+    #"unstable-doc", # build docs locally
+    #"debug" # debug output/state of parser
+] }

@@ -15,6 +15,7 @@ use super::{
     },
     types::Type,
 };
+use core::str::FromStr;
 
 #[derive(Parser)]
 #[grammar = "par/syntax.pest"]
@@ -41,10 +42,21 @@ impl Display for Loc {
     }
 }
 
-impl Loc {
-    pub fn from(pair: &Pair<Rule>) -> Loc {
+impl<'a> From<&'a Pair<'a, Rule>> for Loc {
+    fn from(pair: &Pair<Rule>) -> Self {
         let (line, column) = pair.line_col();
         Loc::Code { line, column }
+    }
+}
+impl From<core::ops::Range<usize>> for Loc {
+    fn from(range: core::ops::Range<usize>) -> Self {
+        // TODO obviously wrong.
+        // The better way to handle spans is to lex with span info and then parse the output token
+        // This is just here to get the parser working to see what it looks like.
+        Loc::Code {
+            line: range.start,
+            column: range.end,
+        }
     }
 }
 
@@ -56,6 +68,13 @@ pub struct Name {
 impl From<String> for Name {
     fn from(string: String) -> Self {
         Self { string }
+    }
+}
+impl FromStr for Name {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Name::from(s.to_owned()))
     }
 }
 
