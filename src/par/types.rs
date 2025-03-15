@@ -63,8 +63,17 @@ pub enum Type<Loc, Name> {
 
 #[derive(Clone, Debug)]
 pub struct TypeDefs<Loc, Name> {
-    globals: Arc<IndexMap<Name, (Vec<Name>, Type<Loc, Name>)>>,
-    vars: IndexSet<Name>,
+    pub globals: Arc<IndexMap<Name, (Vec<Name>, Type<Loc, Name>)>>,
+    pub vars: IndexSet<Name>,
+}
+
+impl<Loc: Clone, Name: Clone + Eq + Hash> Default for TypeDefs<Loc, Name> {
+    fn default() -> Self {
+        Self {
+            globals: Default::default(),
+            vars: Default::default(),
+        }
+    }
 }
 
 impl<Loc: Clone, Name: Clone + Eq + Hash> TypeDefs<Loc, Name> {
@@ -800,8 +809,8 @@ pub struct Context<Loc, Name> {
 
 impl<Loc, Name> Context<Loc, Name>
 where
-    Loc: Clone + Eq + Hash,
-    Name: Clone + Eq + Hash,
+    Loc: std::fmt::Debug + Clone + Eq + Hash,
+    Name: Clone + Eq + Hash + std::fmt::Debug,
 {
     pub fn new(
         globals_type_defs: Arc<IndexMap<Name, (Vec<Name>, Type<Loc, Name>)>>,
