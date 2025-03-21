@@ -1,0 +1,454 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Patterns - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/patterns.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="patterns"><a class="header" href="#patterns">Patterns</a></h1>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>Pattern</em> :<br />
+      <em>PatternNoAlt</em> <!--\
+> &nbsp;&nbsp; | [_AltPattern_](#alternatives)--></p>
+<p><em>PatternNoAlt</em> :<br />
+      <a href="#binding-patterns"><em>BindingPattern</em></a> <br />
+   | <a href="#the-unit-pattern"><em>Unit</em></a> <br />
+   | <a href="#pair-patterns"><em>PairPattern</em></a> <!--\
+> &nbsp;&nbsp; | [_VariantPattern_](#variant-patterns) \
+> &nbsp;&nbsp; | [_BlankPattern_](#the-blank-pattern) \
+> &nbsp;&nbsp; | [_GroupedPattern_](#grouped-patterns) --><br />
+   | <a href="#existential-patterns"><em>ExistentialPattern</em></a></p>
+<p><em>PatternList</em> :<br />
+      <em>PatternNoAlt</em> (<code>,</code> <em>PatternNoAlt</em>)<sup>*</sup> <code>,</code><sup>?</sup></p>
+</blockquote>
+<p>There are two properties of a pattern: What names it <em>binds</em> and whether it’s <em>refutable</em>.</p>
+<div id="irrefutable-note" class="warning" style="--warning-border: var(--note-border)">
+<p>Currently, all patterns are irrefutable. Because of plans to extend the patterns system (see the <a href="#future">Future</a> section) this word (irrefutable) is used throughout this part of the reference. It can be safely ignored for now.</p>
+</div>
+<p>Patterns can appear in several places:</p>
+<ul>
+<li>
+<p>in a <code>let</code> binding:</p>
+<pre><code class="language-par">// as an expression
+let p = x in y
+
+// or in process syntax
+let p = x
+rest...
+</code></pre>
+<p>All bindings of <code>p</code> must be used in <code>y</code> or <code>rest...</code> respectively.
+Here, <code>p</code> must be irrefutable.</p>
+</li>
+<li>
+<p>between <code>[</code> and <code>]</code></p>
+<pre><code class="language-par">// in a function expression
+[p] body
+
+// destructing a pair (process syntax)
+tail[p]
+rest...
+</code></pre>
+<p>All bindings of <code>p</code> must be used in <code>body</code> or <code>rest...</code> respectively.
+Here, <code>p</code> must also be irrefutable.</p>
+</li>
+</ul>
+<!-- - in pattern matching, i.e. either destruction
+  ```par
+  x {
+    p1 => y1,
+    p2 => y2,
+    ...
+  }
+  ```
+  Here, the patterns `p1`, `p2`, ... don't have to be irrefutable. All bindings of a pattern `p` must be used in the corresponding branch `y` though.
+
+  The matching must be *exhaustive*, i.e. every possible value of `x` must be matched in some branch. If multiple branches would match `x`, the first one is used.-->
+<ul>
+<li>in pattern matching, i.e. either destruction/choice construction
+<pre><code class="language-par">// either destruction
+x {
+  .label (p) rest_payload =&gt; y
+  ...
+}
+// in process syntax, the rest_payload isn't present
+// (instead, x becomes it)
+
+// choice construction
+{
+  .label (p) =&gt; y
+  ...
+}
+</code></pre>
+All bindings of <code>p</code> must be used in <code>y</code>.
+Here, <code>p</code> must also be irrefutable.</li>
+</ul>
+<h2 id="binding-patterns"><a class="header" href="#binding-patterns">Binding Patterns</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>BindingPattern</em> : <a href="./lexical.html#names">ID</a> <a href="./types.html"><em>Annotation</em></a><sup>?</sup> <!--(`@` _PatternNoAlt_)<sup>?</sup>--></p>
+</blockquote>
+<!--The optional `@` and what comes after is called a *subpattern*.
+
+If no subpattern is present, the pattern always matches and binds to its name:-->
+<p>The pattern <code>name</code> or <code>name: T</code> is always irrefutable and binds <code>name</code> to <code>x</code> when matching <code>x</code>.</p>
+<p>The pattern <code>name</code> can be used on a value which type is known. Otherwise, <code>name: T</code> must be used, which can only be used on a value of type <code>T</code>.</p>
+<p>Binding patterns are the most used patterns.</p>
+<pre><code class="language-par">// break up an expression
+do {
+  let v1 = e1
+  let v2 = e2
+} in // expression using v1 and v2
+</code></pre>
+<p>If the type of the value matched is already known, a type annotation would have to match it.
+Such an annotation can be useful for declaring functions, though:</p>
+<pre><code class="language-par">// no extra type annotation/declaration needed
+def negate = [b: Bool] let result: Bool = b {
+  .true! =&gt; .false!
+  .false! =&gt; .true!
+} in result
+</code></pre>
+<!--If a subpattern is present, however, `name @ subp` matches exactly when `subp` matches. Generally, it is refutable. When matching `x`, it binds `name` to `x`. All bindings of `subp` are consumed by `name`, i.e. they can't be used anymore. For that reason, the [blank pattern](#the-blank-pattern) `_` may be used inside `subp`.
+```par
+// example
+```-->
+<h2 id="the-unit-pattern"><a class="header" href="#the-unit-pattern">The Unit Pattern</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>Unit</em> : <code>!</code></p>
+</blockquote>
+<p><em><sup>
+<a href="types.html#the-unit-type">Type</a>
+| <a href="./expressions/construction.html#the-unit-expression">Constructing Expression</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>The unit pattern <code>!</code> is always irrefutable and binds nothing.
+It can only be used on values of type <code>!</code>.</p>
+<pre><code class="language-par">// if there is a value of a type T,
+// there is a function [!] T
+def returns_true: [!] Bool = [!] .true!
+
+// ! can be used to destroy a unit
+def drop_two_bools: [Bool, Bool] ! = 
+  [b1, b2] let ! = drop(b1) in drop(b2)
+
+// though process syntax is generally used for this
+def drop_two_bools: [Bool, Bool] ! = [b1, b2] do {
+  drop(b1)?
+  drop(b2)?
+} in !
+
+dec drop_bool : [Bool] ! 
+<span class="boring">def drop_bool = [b] {
+</span><span class="boring">  .true! =&gt; !
+</span><span class="boring">  .false! =&gt; !
+</span><span class="boring">}
+</span></code></pre>
+<h2 id="pair-patterns"><a class="header" href="#pair-patterns">Pair Patterns</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>PairPattern</em> : <code>(</code> <em>PatternList</em> <code>)</code> <em>Pattern</em></p>
+</blockquote>
+<p><em><sup>
+<a href="types.html#pair-types">Type</a>
+| <a href="./expressions/construction.html#pair-expressions">Constructing Expression</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<ul>
+<li>A pair pattern <code>(p) q</code> is irrefutable if and only if both <code>p</code> and <code>q</code> are irrefutable</li>
+<li>When <code>p</code> can be used on type <code>A</code> and <code>q</code> on type <code>B</code>, <code>(p) q</code> can be used on type <code>(A) B</code></li>
+<li><code>(p) q</code> matches <code>(a) b</code> if and only if <code>p</code> matches <code>a</code> and <code>q</code> matches <code>b</code></li>
+<li>When matching <code>(a) b</code>, the bindings are those of <code>p</code> matching <code>a</code>, together with those of <code>q</code> matching <code>b</code></li>
+</ul>
+<p>Having multiple patterns between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<pre><code class="language-par">// the pattern
+(p, q) r
+// is equivalent to
+(p) (q) r
+</code></pre>
+<p>A pair pattern is used to destruct a value of a <a href="types.html#pair-types">pair type</a>:</p>
+<pre><code class="language-par">dec uncurry : [type A, B, C] [[A, B] C] [(A, B)!] C
+def uncurry = [type A, B, C] [f] [(a, b)!] f(a, b)
+</code></pre>
+<!--## Variant Patterns
+
+> **<sup>Syntax</sup>**\
+> _VariantPattern_ : [_Label_](types.md) _PatternNoAlt_
+
+*<sup>
+[Type](types.md#either-types)
+| [Constructing Expression](./expressions/construction.md#either-selections)
+</sup>*
+
+- A variant pattern `.la p` can only be used on type `either { .la A, ... }` and `p` must be able to be used on type `A`
+- The pattern cannot be used if the type of the value being matched on is unknown
+- When it can match, it is irrefutable if and only if the `either` has exactly one variant
+- `.la p` matches `x` if and only if `x` is of the variant `.la` and `p` matches the payload of `x`
+- Its bindings are those of `p`
+
+Variant patterns are almost exclusively used in destructing values of either types (in [expressions](./expressions/application.md#either-destructions) or [statements](./statements/commands.md#todo)):
+```par
+dec get_second : [type T] [List<T>] (Option<T>) List<T>
+def get_second = [type T] [list] list {
+  .item(fst).item(snd) rest => (.some snd) .item(fst) rest,
+  other => (.none!) other
+}
+```
+
+## Grouped Patterns
+
+> **<sup>Syntax</sup>**\
+> _GroupedPattern_ : `{` _Pattern_ `}`
+
+A grouped pattern is equivalent to its body.
+-->
+<h2 id="existential-patterns"><a class="header" href="#existential-patterns">Existential Patterns</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>ExistentialPattern</em> : <code>(</code> <code>type</code> <a href="./lexical.html#names">ID</a> <code>)</code> <em>Pattern</em></p>
+</blockquote>
+<p><em><sup>
+<a href="types.html#existential-types">Type</a>
+| <a href="./expressions/construction.html#existential-constructions">Constructing Expression</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<ul>
+<li>An existential pattern <code>(type X) p</code> can only be used on an existential type <code>(type T) A</code> and <code>p</code> must be able to be used on type <code>A</code></li>
+<li>When it can match, it is irrefutable if and only if <code>p</code> is irrefutable</li>
+<li><code>(type X) p</code> matches <code>(type T) a</code> if and only if <code>p</code> matches <code>a</code></li>
+<li>When matching <code>(type T) a</code>, the bindings are those of <code>p</code> matching <code>a</code>, and <code>X</code> is bound to <code>T</code></li>
+</ul>
+<p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<pre><code class="language-par">// the pattern
+(type X, Y) p
+// is equivalent to
+(type X) (type Y) p
+</code></pre>
+<p>An existential pattern is used to destruct a value of an <a href="types.html#existential-types">existential type</a></p>
+<pre><code class="language-par">type Any = (type T) T
+
+def any_test: Any = do {
+  let x: Any = (type Bool) .true!
+  let (type X) x_val = x
+  // X = Bool
+  // x_val = .true!
+  let y: X = x_val
+} (type X) y
+</code></pre>
+<!--## Alternatives
+
+> **<sup>Syntax</sup>**\
+> _Alternatives_ : `|`<sup>?</sup> _PatternNoAlt_ (`|` _PatternNoAlt_)<sup>+</sup>
+
+- The alternatives `a | b | ...` can be used on type `T` if `a`, `b`, ... can all be used on type `T`
+- Together, they're an irrefutable pattern if and only if (todo)
+-->
+<h2 id="future"><a class="header" href="#future">Future</a></h2>
+<p>More extensive pattern matching, along with more types of patterns is planned in the future. See <a href="future.html">here</a> for more.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="expressions/application.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="statements.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="expressions/application.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="statements.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

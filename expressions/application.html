@@ -1,0 +1,441 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Applications - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/expressions/application.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="application-expressions"><a class="header" href="#application-expressions">Application Expressions</a></h1>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>Application</em> :<br />
+      <em>Applicable</em> <br />
+   | <a href="#match-expressions"><em>MatchExpression</em></a> <br />
+   | <a href="#recursive-destructions"><em>LoopApplication</em></a></p>
+<p><em>Applicable</em> :<br />
+      <a href="../expressions.html#primary-expressions"><em>PrimaryExpression</em></a> <br />
+   | <a href="#function-calls"><em>FunctionCall</em></a> <br />
+   | <a href="#choice-selections"><em>ChoiceSelection</em></a> <br />
+   | <a href="#recursive-destructions"><em>RecursiveDestruction</em></a> <br />
+   | <a href="#universal-specializations"><em>UniversalSpecialization</em></a></p>
+</blockquote>
+<p>While <a href="construction.html">constructions</a> construct values, applications destruct them. Some types do not have an application expression for destruction – they use <a href="../patterns.html">patterns</a> instead.</p>
+<p>An application is always of the form: <em>Applicable</em> <em>Suffix</em>.
+Every application corresponds to a <a href="../statements/commands.html">command</a>, which looks the same. In contrast to commmand receivers however, applicables don’t become the result of this expression.</p>
+<p>All applications can be linked via:</p>
+<pre><code class="language-par">dual &lt;&gt; app suffix
+// is equivalent to
+let a = app
+a suffix
+dual &lt;&gt; a
+</code></pre>
+<p>Note that if app is a local variable, the <code>let</code> is not needed.</p>
+<h2 id="function-calls"><a class="header" href="#function-calls">Function Calls</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>FunctionCall</em> : <em>Applicable</em> <code>(</code> <a href="../expressions.html"><em>ExpressionList</em></a> <code>)</code></p>
+</blockquote>
+<p><em><sup>
+<a href="../types.html#function-types">Destructs Type</a>
+| <a href="construction.html#function-expressions">Destructs Expression</a>
+| <a href="../statements/commands.html#send-commands">Statement</a>
+</sup></em></p>
+<p>Having multiple expressions between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<pre><code class="language-par">f(a, b)
+// is equivalent to
+f(a)(b)
+</code></pre>
+<p>If <code>f</code> is of type <code>[A] B</code> and <code>a</code> is of type <code>A</code>, the function call <code>f(a)</code> is of type <code>B</code>.</p>
+<pre><code class="language-par">def function: [A] B
+
+let a: A = ...
+let b: B = function(a)
+</code></pre>
+<p>A function call is equivalent to a <a href="../statements/commands.html#send-commands">send command</a>:</p>
+<pre><code class="language-par">// in process syntax
+let b = f(a)
+// is equivalent to
+let b = f
+b(a)
+</code></pre>
+<h2 id="choice-selections"><a class="header" href="#choice-selections">Choice Selections</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>ChoiceSelection</em> : <em>Applicable</em> <a href="../types.html"><em>Label</em></a></p>
+</blockquote>
+<p><em><sup>
+<a href="../types.html#choice-types">Destructs Type</a>
+| <a href="construction.html#choice-constructions">Destructs Expression</a>
+| <a href="../statements/commands.html#signal-commands">Statement</a>
+</sup></em></p>
+<p>If <code>x</code> is of type <code>{ ..., .label =&gt; T, ... }</code>, the choice selection <code>x.label</code> is of type <code>T</code>.</p>
+<pre><code class="language-par">type BoolChoice = {
+  .true =&gt; Bool,
+  .false =&gt; Bool,
+}
+
+let bc: BoolChoice = ...
+let choose_true = bc.true
+</code></pre>
+<p><a href="../types.html#iterative-types">Iterative types</a> have no special destruction syntax, instead they are finitely destructed as their underlying type. Most often they’re seen as iterative choice types:</p>
+<pre><code class="language-par">type Stream&lt;T&gt; = iterative {
+  .close =&gt; !,
+  .next =&gt; (T) self
+}
+
+let nats: Stream&lt;Nat&gt; = ...
+
+// finitely destruct nats
+do {
+  let (first) rest = nats.next
+  let (second) rest = nats.next
+  let ! = rest.close
+} in (first, second)!
+</code></pre>
+<p>A choice selection is equivalent to a <a href="../statements/commands.html#signal-commands">signal command</a>:</p>
+<pre><code class="language-par">// in process syntax
+let y = x.label
+// is equivalent to
+let y = x
+y.label
+</code></pre>
+<h2 id="match-expressions"><a class="header" href="#match-expressions">Match Expressions</a></h2>
+<!--
+> **<sup>Syntax</sup>**\
+> _MatchExpression_ : _Applicable_ `{` (_Pattern_ `=>` _Expression_ `,`<sup>?</sup>)<sup>\*</sup> `}`
+-->
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>MatchExpression</em> : <em>Applicable</em> <code>{</code> (<a href="../types.html"><em>Label</em></a> (<code>(</code> <a href="construction.html#choice-constructions"><em>ReceivePatterns</em></a> <code>)</code>)<sup>*</sup> (<a href="../lexical.html#names">ID</a> | <code>!</code>) <code>=&gt;</code> <a href="../expressions.html"><em>Expression</em></a> <code>,</code><sup>?</sup>)<sup>*</sup> <code>}</code></p>
+</blockquote>
+<p><em><sup>
+<a href="../types.html#either-types">Destructs Type</a>
+| <a href="construction.html#either-selections">Destructs Expression</a>
+| <a href="../statements/commands.html#match-commands">Statement</a>
+</sup></em></p>
+<p>Match expressions are similar to <code>match</code> in Rust or <code>case</code> in Haskell. Their pattern matching abilities are currently limited but will expand in the <a href="../future.html">future</a>.</p>
+<p>If <code>x</code> is of type <code>either { .l1 T1, ..., .ln Tn }</code>
+and</p>
+<ul>
+<li><code>p1</code> is a <a href="../patterns.html">pattern</a> for type <code>T1</code>, and so on, until <code>pn</code> is a pattern for type <code>Tn</code></li>
+<li><code>y1</code>, …, <code>yn</code> are all of type <code>U</code></li>
+</ul>
+<p>then <code>x { .l1 p1 =&gt; y1, ..., .ln pn =&gt; yn }</code> is of type <code>U</code>. It evaluates to the <code>yi</code> which label <code>.li</code> was matched.</p>
+<pre><code class="language-par">type Option&lt;T&gt; = either {
+  .none!,
+  .some T
+}
+
+let o: Option&lt;Nat&gt; = ...
+
+let o_add1: Option&lt;Nat&gt; = o {
+  .none! =&gt; .none!,
+  .some n =&gt; .some.succ n,
+}
+</code></pre>
+<p>A match expression is equivalent to a <a href="../statements/commands.html#match-commands">match command</a>:</p>
+<pre><code class="language-par">// in process syntax
+let y = x { .l1 p1 =&gt; y1, ..., .ln pn =&gt; yn }
+// is equivalent to
+let y = x
+y { .l1 =&gt; { q1; ... }, ..., .ln =&gt; { q1; ... } }
+</code></pre>
+<p>where <code>qi</code> is the command corresponding to <code>pi</code>. todo: how is this defined.</p>
+<h2 id="recursive-destructions"><a class="header" href="#recursive-destructions">Recursive Destructions</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>RecursiveDestruction</em> :<br />
+      <em>Applicable</em> <code>unfounded</code><sup>?</sup> <code>begin</code> <a href="../statements/commands.html#recursive-commands"><em>LoopLabel</em></a><sup>?</sup></p>
+<p><em>LoopApplication</em> :<br />
+      <em>Applicable</em> <code>loop</code> <a href="../statements/commands.html#recursive-commands"><em>LoopLabel</em></a><sup>?</sup></p>
+</blockquote>
+<p><em><sup>
+<a href="../types.html#recursive-types">Destructs Type</a>
+| <a href="../statements/commands.html#recursive-commands">Statement</a>
+</sup></em></p>
+<p>A <code>loop</code> corresponds to the innermost <code>begin</code> with the same loop label. <code>loop</code> without a label can only correspond to <code>begin</code> without a label.</p>
+<p>If <code>x</code> is of type <code>recursive T</code>, then <code>begin x</code> is of type <code>T</code>, replacing each corresponding <code>self</code> of <code>T</code> with <code>recursive T</code>.</p>
+<p>A <code>loop</code> corresponding to this <code>begin</code> can be used on values of type <code>recursive T</code>. Its behavior is equivalent to “pasting” the <code>begin</code> and every application that follows it.</p>
+<div class="warning">
+<p>Due to totality, <code>loop</code> can only be called on a descendant of the value <code>begin</code> was called on. I.e. on a value which type is a “<code>self</code>” correponding to the recursive type which <code>begin</code> was called on.</p>
+<p>If that is not the case, the unsafe <code>unfounded begin</code> must be used, which leaves it up to the programmer to ensure totality.</p>
+</div>
+<p>Consider the recursive type</p>
+<pre><code class="language-par">type List&lt;T&gt; = recursive either {
+  .empty!,
+  .item(T) self,
+}
+</code></pre>
+<p>This is a total <code>begin</code>-<code>loop</code></p>
+<pre><code class="language-par">dec reverse : [type T] [List&lt;T&gt;] List&lt;T&gt;
+def reverse = [type T] [list] do {
+  let rev = .empty!
+} in list begin {
+  .empty! =&gt; rev,
+  .item(head) tail =&gt; do {
+    let rev = .item(head) rev
+  } in tail loop
+  // tail corresponds to the self in the
+  // .item(T) self
+  // branch
+}
+</code></pre>
+<p>This is a total <code>unfounded begin</code>-<code>loop</code>, as the totality checker currently doesn’t recognize this loop as total.</p>
+<pre><code class="language-par">dec reverse : [type T] [List&lt;T&gt;] List&lt;T&gt;
+def reverse = [type T] [list] list unfounded begin {
+  .empty! =&gt; .empty!,
+  .item(head) tail =&gt; do {
+    let (left, right)! = split(type T)(.item(head) tail)
+  } in concat(type T)(
+    left loop,
+    right loop,
+  )
+}
+
+/// splits the list into two lists
+/// of equal length
+/// (the left list may be one longer)
+dec split : [type T] [List&lt;T&gt;] (List&lt;T&gt;, List&lt;T&gt;)!
+
+/// concatenates two lists
+dec concat : [type T] [List&lt;T&gt;, List&lt;T&gt;] List&lt;T&gt;
+</code></pre>
+<p>This is a nontotal <code>unfounded begin</code>-<code>loop</code>. Caution is required when using these to not lose totality.</p>
+<pre><code class="language-par">def infinite_loop: ! = do {
+  let list: List&lt;!&gt; = .item(!).empty!
+} in list unfounded begin {
+  .empty! =&gt; !, // this is total
+  .item(head) tail =&gt; do {
+    let list: List&lt;!&gt; = .item(head) tail
+  } in list loop, // this is not total
+}
+</code></pre>
+<h2 id="universal-specializations"><a class="header" href="#universal-specializations">Universal Specializations</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>UniversalSpecialization</em> : <em>Applicable</em> <code>(</code> <code>type</code> <a href="../types.html"><em>TypeList</em></a> <code>)</code></p>
+</blockquote>
+<p><em><sup>
+<a href="../types.html#universal-types">Destructs Type</a>
+| <a href="construction.html#universal-constructions">Destructs Expression</a>
+| <a href="../statements/commands.html#receive-type-commands">Statement</a>
+</sup></em></p>
+<p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<pre><code class="language-par">x(type T, U)
+// is equivalent to
+x(type T)(type U)
+</code></pre>
+<p>If <code>x</code> is of the universal type <code>[type T] R</code>, the specialization <code>f(type X)</code> is of type <code>R</code>.</p>
+<p>These expressions often “instantiate generic functions”</p>
+<pre><code class="language-par">def id: [type T] [T] T = [x] x
+
+def id_bool: [Bool] Bool = id(type Bool)
+def id_unit: [!] ! = id(type !)
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../expressions/construction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../patterns.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../expressions/construction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../patterns.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

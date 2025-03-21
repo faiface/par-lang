@@ -1,0 +1,871 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Types - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="types"><a class="header" href="#types">Types</a></h1>
+<p>At the heart of Par lies its type system, representing linear logic.</p>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>Type</em> :<br />
+      <a href="#named-types"><em>NamedType</em></a> <br />
+   | <a href="#the-unit-type"><em>Unit</em></a> <br />
+   | <a href="#pair-types"><em>PairType</em></a> <br />
+   | <a href="#function-types"><em>FunctionType</em></a> <br />
+   | <a href="#either-types"><em>EitherType</em></a> <br />
+   | <a href="#choice-types"><em>ChoiceType</em></a> <br />
+   | <a href="#recursive-types"><em>RecursiveType</em></a> <br />
+   | <a href="#iterative-types"><em>IterativeType</em></a> <br />
+   | <a href="#existential-types"><em>ExistentialType</em></a> <br />
+   | <a href="#universal-types"><em>UniversalType</em></a> <br />
+   | <a href="#the-bottom-type"><em>Bottom</em></a> <br />
+   | <a href="#channel-types"><em>ChannelType</em></a> <br />
+   | <em>Self</em> <!--\
+> &nbsp;&nbsp; | _ReplicableType_ \
+> &nbsp;&nbsp; | _TaggedType_ --></p>
+<p><em>Self</em> :<br />
+      <code>self</code> <a href="./statements/commands.html#recursive-commands"><em>LoopLabel</em></a><sup>?</sup></p>
+<p><em>TypeList</em> :<br />
+      <em>Type</em> (<code>,</code> <em>Type</em>)<sup>*</sup> <code>,</code><sup>?</sup></p>
+<p><em>TypeArguments</em> :<br />
+      <code>&lt;</code> <em>TypeList</em> <code>&gt;</code></p>
+<p><em>Annotation</em> :<br />
+      <code>:</code> <em>Type</em></p>
+<p><em>Label</em> :<br />
+      <code>.</code> <a href="./lexical.html#names">ID</a></p>
+</blockquote>
+<h2 id="named-types"><a class="header" href="#named-types">Named Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>NamedType</em> : <a href="./lexical.html#names">ID</a> <em>TypeArguments</em><sup>?</sup></p>
+</blockquote>
+<p>Defined via <a href="items.html#type-definitions">type aliases</a>, named types can always be replaced with their definition without changing meaning.</p>
+<pre><code class="language-par">let x: Option&lt;T&gt; = .none!
+// is equivalent to
+let x: either { .none!, .some T } = .none!
+</code></pre>
+<h2 id="the-unit-type"><a class="header" href="#the-unit-type">The Unit Type</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>Unit</em> : <code>!</code></p>
+</blockquote>
+<p><em><sup>
+<a href="#the-bottom-type">Dual</a>
+| <a href="./expressions/construction.html#the-unit-expression">Constructing Expression</a>
+| <a href="./patterns.html#todo">Pattern</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>Unit is a type providing no information. In C(++) it’s called <code>void</code>, in Rust it’s <code>()</code> (and it can be thought of as an empty tuple in Par as well). There is exactly one value of type <code>!</code>, and it’s also <code>!</code>.</p>
+<pre><code class="language-par">let unit: ! = !
+</code></pre>
+<p>Every value of a type <code>A</code> corresponds to a function <code>[!] A</code>:</p>
+<pre><code class="language-par">def select: [type T] [T] [!] T = [type T] [x] [!] x
+// uncurrying makes this clear
+// [T] [!] T = [T, !] T ≅ [(T) !] T ≅ [T] T
+
+def extract: [type T] [[!] T] T = [type T] [f] f(!)
+</code></pre>
+<p>For some types there is a function <code>[A] !</code>.
+Those can be destroyed without any transformation.</p>
+<pre><code class="language-par">// Types constructed only from ! are droppable
+def drop_bool: [Bool] ! = [b] b {
+  .true! =&gt; !
+  .false! =&gt; !
+}
+
+// Functions are not droppable in general
+def drop_impossible: [[Bool] Bool] ! = todo
+</code></pre>
+<!--// Replicables are droppable
+def drop_repl: [type T] [&T] ! = !-->
+<p>Mathematically, <code>!</code> is \(\mathbf{1}\), the unit for \(\otimes\).</p>
+<h2 id="pair-types"><a class="header" href="#pair-types">Pair Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>PairType</em> : <code>(</code> <em>TypeList</em> <code>)</code> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#function-types">Dual</a>
+| <a href="./expressions/construction.html#pair-expressions">Constructing Expression</a>
+| <a href="./patterns.html#todo">Pattern</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<pre><code class="language-par">type T = (A, B) R
+// is equivalent to
+type T = (A) (B) R
+</code></pre>
+<p>While <code>(A, B)!</code> and <code>(A) B</code> are both valid ways to define a pair of <code>A</code> and <code>B</code>, depending on the context, one might be more convenient than the other:</p>
+<pre><code class="language-par">// convert (A, B)! into (A) B
+def i : [(A, B)!] (A) B = [x]
+  let (a, b)! = x in (a) b
+// and back
+def j : [(A) B] (A, B)! = [x]
+  let (a) b = x in (a, b)!
+
+// a good use case of (A) B
+type List&lt;T&gt; = recursive either {
+  .empty!
+  .item(T) self
+}
+// can now be created like this:
+let bool_list: List&lt;Bool&gt; =
+  .item(.true!).item(.false!).empty!
+
+// in most cases, (A, B)! is the safer bet
+// as it uses more friendly syntax
+type Pair&lt;T, T&gt; = (T, T)!
+
+let bool_pair: Pair&lt;Bool&gt; =
+  (.true!, .false!)!
+</code></pre>
+<p>Values are created using <a href="./expressions/construction.html#pair-expressions">pair expressions</a>:</p>
+<pre><code class="language-par">let a: A = ...
+let b: B = ...
+
+let pair: (A) B = (a) b
+</code></pre>
+<p>and they can be destructed using <a href="">pair patterns</a> or <a href="">receive commands</a>:</p>
+<pre><code class="language-par">let triple: (A, B, C)! = (a, b, c)!
+
+// pattern matching
+let (first) rest = triple
+// first = a
+// rest = (b, c)!
+
+// commands
+do {
+  rest[second]
+  // after this command:
+  // rest = (c)! 
+  // second = b
+} in ...
+</code></pre>
+<p>Mathematically, <code>(A) B</code> is \(A \otimes B\). For session types, it means “send <code>A</code> and continue as <code>B</code>”.</p>
+<h2 id="function-types"><a class="header" href="#function-types">Function Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>FunctionType</em> : <code>[</code> <em>TypeList</em> <code>]</code> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#pair-types">Dual</a>
+| <a href="./expressions/construction.html#function-expressions">Constructing Expression</a>
+| <a href="./expressions/application.html#function-calls">Destructing Expression</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>Having multiple types between <code>[</code> and <code>]</code> is just syntax sugar:</p>
+<pre><code class="language-par">type T = [A, B] R
+// is equivalent to
+type T = [A] [B] R
+</code></pre>
+<p>Values are created using <a href="./expressions/construction.html#function-expressions">function expressions</a>:</p>
+<pre><code class="language-par">let add1: [Nat] Nat = [n] .succ n
+</code></pre>
+<p>and destructed by <a href="./expressions/application.html#function-calls">calling</a> the function:</p>
+<pre><code class="language-par">let one: Nat = .succ.zero!
+let two = add1(one)
+</code></pre>
+<p>Mathematically, <code>[A] B</code> is a <a href="./linearity.html">linear</a> function \(A \multimap B\). For session types, it means “receive <code>A</code> and continue as <code>B</code>”.</p>
+<h2 id="either-types"><a class="header" href="#either-types">Either Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>EitherType</em> : <code>either</code> <code>{</code> (<em>Label</em> <em>Type</em> <code>,</code><sup>?</sup>)<sup>*</sup> <code>}</code></p>
+</blockquote>
+<p><em><sup>
+<a href="#choice-types">Dual</a>
+| <a href="./expressions/construction.html#either-selections">Constructing Expression</a>
+| <a href="./expressions/application.html#either-destructions">Destructing Expression</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>An either type is the usual sum type aka. a tagged union (in Rust, it’s an <code>enum</code>). Every value of such a type consists of a label, marking the variant, and a value of the type corresponding to the label (its “payload”).</p>
+<pre><code class="language-par">// the most basic sum type
+type Bool = either {
+  .true!  // variant "true" with payload !
+  .false! // variant "false", also with payload !
+}
+
+// a slightly more complex example
+type TwoOrNone&lt;T&gt; = either {
+  .none!      // variant "none" with "no" payload (using !)
+  .two(T, T)! // variant "some" with "two" payloads
+}
+</code></pre>
+<p>Values are created by attaching a label to its required payload.
+Note that the corresponding either type must always be known when labeling an expression. A <a href="">type annotation</a> can be used for that.</p>
+<pre><code class="language-par">let no_bool: TwoOrNone&lt;Bool&gt; = .none!
+
+let both_bools: TwoOrNone&lt;Bool&gt; = .two(.true!, .false!)!
+</code></pre>
+<p>Mathematically, <code>either { .a A, .b B }</code> is \(A \oplus B\). For session types, it means “select from <code>A</code> or <code>B</code>”.
+An empty either type <code>either {}</code> is therefore \(\mathbf{0}\), the empty type.
+In Haskell, it’s called <code>void</code> and in Rust it’s <code>!</code> (not to be confused with the <code>!</code> in Par).
+There is a function from it to every type:</p>
+<pre><code class="language-par">def absurd: [type T] [either {}] T = [type T] [x] x {}
+</code></pre>
+<p>This function can never be called though.</p>
+<p>Either types are often used as <a href="#recursive-types">recursive</a> types.</p>
+<h2 id="choice-types"><a class="header" href="#choice-types">Choice Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>ChoiceType</em> :<br />
+      <code>{</code> (<em>Label</em> (<code>(</code> <em>ReceiveTypes</em> <code>)</code>)<sup>*</sup> <code>=&gt;</code> <em>Type</em> <code>,</code><sup>?</sup>)<sup>*</sup> <code>}</code></p>
+<p><em>ReceiveTypes</em> :<br />
+      <em>TypeList</em> <br />
+   | <code>type</code> <a href="./lexical.html#names"><em>ID_List</em></a></p>
+</blockquote>
+<p><em><sup>
+<a href="#either-types">Dual</a>
+| <a href="./expressions/construction.html#choice-constructions">Constructing Expression</a>
+| <a href="./expressions/application.html#choice-selections">Destructing Expression</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>A choice type is dual to an <a href="#either-types">either</a> type. Constructing a value of an either type is “making a choice” and similarly, destructing such a value looks exactly like constructing a value of a choice type.
+It consists of several labels that can be used as signals to destruct the receiver.</p>
+<pre><code class="language-par">// choice of two
+type BoolChoice&lt;A, B&gt; = {
+  .true =&gt; A
+  .false =&gt; B
+}
+
+// destruct a Bool
+def negate(b: Bool): Bool = b {
+  .true! =&gt; .false!
+  .false! =&gt; .true!
+}
+
+// construct a choice
+def negate_choice: BoolChoice&lt;Bool, Bool&gt; = {
+  .true =&gt; .false!
+  .false =&gt; .true!
+}
+
+// define negate using the choice
+// featuring selecting from the choice type value
+def also_negate: [Bool] Bool = [b] b {
+  .true! =&gt; negate_choice.true
+  .false! =&gt; negate_choice.false
+}
+</code></pre>
+<p><code>.cons =&gt; [A] B</code> can also be written as <code>.cons(A) =&gt; B</code></p>
+<p>A choice type represents an interface for interacting with data. While an either type describes its underlying data, a choice type describes what can be done with it.</p>
+<pre><code class="language-par">// creating an interface
+type Stack&lt;T, Unwrap&gt; = iterative {
+  .push(T) =&gt; self
+  .pop =&gt; (Option&lt;T&gt;) self
+  .unwrap =&gt; Unwrap
+}
+
+// implementing it
+dec list_stack : [type T] [List&lt;T&gt;] Stack&lt;T, List&lt;T&gt;&gt;
+def list_stack = [type T] [list] begin {
+  .push(x) =&gt; let list: List&lt;T&gt; = .item(x) list in loop
+  .pop =&gt; list {
+    .empty! =&gt; (.none!) let list: List&lt;T&gt; = .empty! in loop,
+    .item(head) tail =&gt; (.some head) let list = tail in loop
+  }
+  .unwrap =&gt; list
+}
+
+def main = do {
+  let stack = list_stack(type Bool)(.empty!)
+  stack.push(.true!)
+  stack.push(.false!)
+} in stack
+</code></pre>
+<p>For an explanation of <code>iterative</code>-<code>self</code> and <code>begin</code>-<code>loop</code>, see <a href="#iterative-types">iterative types</a></p>
+<p>Mathematically, <code>{ .a =&gt; A, .b =&gt; B }</code> is \(A \mathbin{\&amp;} B\). For session types, it means “offer a choice of <code>A</code> or <code>B</code>”.
+An empty choice <code>{}</code> is therefore \(\top\) and has exactly one value, <code>{}</code>. There is a function to it from every type:</p>
+<pre><code class="language-par">def immortalize: [type T] [T] {} = [type T] [x] {}
+</code></pre>
+<p>The result of this function can never be used though.</p>
+<p>Choice types are often used as <a href="#iterative-types">iterative</a> types.</p>
+<h2 id="recursive-types"><a class="header" href="#recursive-types">Recursive Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>RecursiveType</em> : <code>recursive</code> <a href="./statements/commands.html#recursive-commands"><em>LoopLabel</em></a><sup>?</sup> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#iterative-types">Dual</a>
+| <a href="./expressions/application.html#recursive-destructions">Destructing Expression</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>A recursive type can be used within itself via <code>self</code>.</p>
+<p>If no loop label is present, <code>self</code> corresponds to the innermost <code>recursive</code>/<code>iterative</code>. Else to the one with the same loop label.</p>
+<p>Recursive types are mostly used in conjunction with either types:</p>
+<pre><code class="language-par">type List&lt;T&gt; = recursive either {
+  .empty!
+  .item(T) self
+}
+</code></pre>
+<!--// another way of defining a recursive type is the following:
+// Node is not recursive
+type Node<Next> = either {
+  .base!
+  .step Next
+}
+// Defining the recursive type
+type Rec = recursive Node<self>
+
+// We have the following subtyping relation:
+// Node<recursive Node<self>> <: recursive Node<self>-->
+<p>Values of recursive types always terminate. They have to be constructed finitely.</p>
+<pre><code class="language-par">// a simple List
+let l: List&lt;Bool&gt; = .item(.true!).item(.false!).empty!
+</code></pre>
+<p>Mathematically, a recursive either type represents an inductive type.
+Constructors without <code>self</code> are the base cases while those with <code>self</code> represent
+inductive steps.</p>
+<p>A function from a recursive type is defined using induction:</p>
+<pre><code class="language-par">// recursive (inductive) type representing
+// the natural numbers
+type Nat = recursive either { 
+  .zero!, 
+  .succ self
+}
+
+dec is_even : [Nat] Bool
+// induction over n (marked by applying begin-loop)
+def is_even = [n] n begin {
+  // base case(s)
+  .zero! =&gt; .true!
+  // inductive step(s)
+  // pred loop is analogous to an inductive hypothesis
+  .succ pred =&gt; not(pred loop)
+}
+</code></pre>
+<h2 id="iterative-types"><a class="header" href="#iterative-types">Iterative Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>IterativeType</em> : <code>iterative</code> <a href="./statements/commands.html#recursive-commands"><em>LoopLabel</em></a><sup>?</sup> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#recursive-types">Dual</a>
+| <a href="./expressions/construction.html#iterative-constructions">Constructing Expression</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+</sup></em></p>
+<p>An iterative type can be used within itself via <code>self</code>.</p>
+<p>If no loop label is present, <code>self</code> corresponds to the innermost <code>recursive</code>/<code>iterative</code>. Else to the one with the same loop label.</p>
+<p>Iterative types are mostly used in conjunction with choice types, for example:</p>
+<!--```par
+type Repl<T> = iterative {
+  .copy => (self, self)!
+  .drop => !
+  .unwrap => T
+}
+```-->
+<pre><code class="language-par">type Stream&lt;T&gt; = iterative {
+  .close =&gt; !
+  .next =&gt; (T) self
+}
+</code></pre>
+<!--Here we construct a value of an iterative type. Note the similarity
+between this and destructing a recursive type.
+```par
+?type Bool = either { .true!, .false! }
+?type Nat = recursive either { .zero!, .succ self }
+?type List<T> = recursive either { .empty!, .item(T) self }
+?
+// construct a list of Repl<Bool>
+// i.e. a value of a recursive type
+//
+// at the same time, destruct a value
+// of the recursive type Nat
+dec repeat : [Nat, Repl<Bool>] List<Bool>
+def repeat = [n, b] n begin {
+  .zero! => do { b.drop? } in .empty!
+  .succ pred => let (b, c)! = b.copy in .item(c.unwrap) pred loop
+}
+
+// construct a value of the iterative Repl<Bool>
+dec repl_bool : [Bool] Repl<Bool>
+def repl_bool = [b] begin {
+  .copy => b {
+    .true! => (let b: Bool = .true! in loop, let b: Bool = .true! in loop)!
+    .false! => (let b: Bool = .false! in loop, let b: Bool = .false! in loop)!
+  }
+  .drop => b {
+    .true! => !
+    .false! => !
+  }
+  .unwrap => b
+}
+?
+?def main = repeat(.succ.succ.succ.zero!, repl_bool(.true!))
+```-->
+<p>Values of iterative types may be infinite. In contrast to recursive types, such values can only be <em>destructed</em> in finitely many steps.</p>
+<pre><code class="language-par">type Inf&lt;T&gt; = iterative (T) self
+
+def infinite_bools: Inf&lt;Bool&gt; = begin (.true!) loop
+</code></pre>
+<p>This infinite value can be constructed but there is no way of fully destructing (so: using) it.</p>
+<p>Mathematically, an iterative choice type represents a coinductive type.
+Destructors without <code>loop</code> break the iteration and return, while those containing <code>loop</code> yield and continue.</p>
+<p>A function to an iterative type is defined using coinduction (iteration):</p>
+<!--```par
+// iterative (coinductive) type representing
+// an infinite stream
+type Stream<T> = iterative { 
+  .close => !, 
+  .next => (T) self
+}
+
+dec alternate_true_false : [Nat] Bool
+// induction over n (marked by applying begin-loop to n)
+def is_even = [n] n begin {
+  // base case(s)
+  .zero! => .true!
+  // inductive step(s)
+  .succ pred => not(pred loop)
+}
+```-->
+<!--```par
+// construct a value of the iterative Repl<Bool>
+dec repl_bool : [Bool] Repl<Bool>
+// coinduction (marked by an independent begin-loop)
+def repl_bool = [b] begin {
+  // yield "(b, b)" and
+  // continue (coinductive step), written as `loop`
+  .copy => b {
+    .true! => (let b: Bool = .true! in loop, let b: Bool = .true! in loop)!
+    .false! => (let b: Bool = .false! in loop, let b: Bool = .false! in loop)!
+  }
+  // break, yield !
+  .drop => b {
+    .true! => !
+    .false! => !
+  }
+  // break, yield b
+  .unwrap => b
+}
+```-->
+<pre><code class="language-par"><span class="boring">type Nat = recursive either { .zero!, .succ self }
+</span><span class="boring">
+</span>// construct a stream of all natural numbers
+// in form of the iterative Stream&lt;Nat&gt;
+def nat_stream: Stream&lt;Nat&gt; = 
+  let n: Nat = .zero! in 
+  // coinduction (independent begin-loop)
+  begin {
+    // break, return !
+    .close =&gt; drop(n),
+
+    .next =&gt; do {
+      let (next, n)! = copy(n)
+      let n: Nat = .succ n
+    } in
+      // yield the next number 
+      (n1)
+      // continue (coinductive step)
+      loop 
+  }
+
+// helpers
+
+def drop: [Nat] ! = [n] n begin {
+  .zero! =&gt; !
+  .succ pred =&gt; pred loop
+}
+
+def copy: [Nat] (Nat, Nat)! = [n] n begin {
+  .zero! =&gt; (.zero!, .zero!)!
+  .succ pred =&gt; let (p1, p2)! = pred loop
+    in (.succ p1, .succ p2)!
+}
+</code></pre>
+<!--```par
+// fibonacci sequence
+def fib: Stream<Nat> = do {
+  let n: Nat  = .succ.zero!
+  let p: Nat = .succ.zero!
+  // coinduction
+} in begin {
+    // break, return !
+    .close => do {
+      drop(n)?
+      drop(p)?
+    } in !
+
+    .next => do {
+      let (n1, n2)! = copy(n)
+      let (p1, p2)! = copy(p)
+      let p = n1
+      let n = add(n2, p2)
+    } in
+      // yield
+      (p1)
+      // continue
+      loop
+  }
+def add: [Nat, Nat] Nat = [a, b] a begin {
+  .zero! => b,
+  .succ pred => .succ pred loop
+}
+```-->
+<h2 id="existential-types"><a class="header" href="#existential-types">Existential Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>ExistentialType</em> : <code>(</code> <code>type</code> <a href="./lexical.html#names"><em>ID_List</em></a> <code>)</code> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#universal-types">Dual</a>
+| <a href="./expressions/construction.html#existential-constructions">Constructing Expression</a>
+| <a href="./patterns.html#todo">Pattern</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<pre><code class="language-par">type T = (type A, B) X
+// is equivalent to
+type T = (type A) (type B) X
+</code></pre>
+<p>Existential types mirror pair types but they’re qualified over types rather than values.
+They are used to encapsulate their underlying type.</p>
+<pre><code class="language-par"><span class="boring">type Bool  = either { .true!, .false! }
+</span><span class="boring">type Nat = recursive either { .zero!, .succ self }
+</span><span class="boring">
+</span>type Any = (type T) T
+
+<span class="boring">def main = chan user {
+</span>// create values of the existential Any type
+// note that both have exactly the same type!
+let any1: Any = (type Bool) .true!
+let any2: Any = (type Nat) .succ.zero!
+<span class="boring">
+</span><span class="boring">user(any1)
+</span><span class="boring">user(any2)
+</span><span class="boring">user!
+</span><span class="boring">}
+</span></code></pre>
+<p>The qualifying types and values can both be extracted from a value of such a type:</p>
+<pre><code class="language-par">let any: Any = ...
+let (type X) x = any
+let y: X = x
+</code></pre>
+<p>Mathematically, <code>(type T) A</code> is \(\exists\ T: A\).</p>
+<h2 id="universal-types"><a class="header" href="#universal-types">Universal Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>UniversalType</em> : <code>[</code> <code>type</code> <a href="./lexical.html#names"><em>ID_List</em></a> <code>]</code> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#existential-types">Dual</a>
+| <a href="./expressions/construction.html#universal-constructions">Constructing Expression</a>
+| <a href="./expressions/application.html#universal-specializations">Destructing Expression</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>Having multiple types between <code>[</code> and <code>]</code> is just syntax sugar:</p>
+<pre><code class="language-par">type T = [type A, B] X
+// is equivalent to
+type T = [type A] [type B] X
+</code></pre>
+<p>Values of universal types can be instantiated for any type. These types syntactically mirror function types but they’re qualified over types rather than values.
+They’re also similar to parameterized types.
+They are used to obscure their underlying type.</p>
+<pre><code class="language-par">// compare the three types of parameterizing types
+type UnivEndo = [type T] [T] T
+type ParamEndo&lt;T&gt; = [T] T
+type ExistEndo = (type T) [T] T
+
+// a value of an universal type must be defined
+// for all types
+let id: UnivEndo = [type T] [x] x
+
+// a specialized version can be represented using
+// a parameterized type
+let id_bool: ParamEndo&lt;Bool&gt; = id(type Bool)
+
+// this type encapsulates the Bool
+let id_bool_2: ExistEndo = (type Bool) id_bool
+</code></pre>
+<p>For a more interesting example, see <a href="">(list reverse)</a>.</p>
+<p>Mathematically, <code>[type T] A</code> is \(\forall\ T: A\).</p>
+<h2 id="the-bottom-type"><a class="header" href="#the-bottom-type">The Bottom Type</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>Bottom</em> : <code>?</code></p>
+</blockquote>
+<p><em><sup>
+<a href="#the-unit-type">Dual</a>
+| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p>The bottom <code>?</code> is dual to the unit <code>!</code>.</p>
+<pre><code class="language-par">def main: Bool = chan user {
+  user.true
+  // user now has type ?
+  user!
+}
+</code></pre>
+<p>Mathematically, <code>?</code> is \(\bot\), the unit for \(⅋\). So \(\bot \mathbin{⅋} A = \mathbf{1} \multimap A \cong A\) (as seen before for the <a href="#the-unit-type">unit</a> type).</p>
+<h2 id="channel-types"><a class="header" href="#channel-types">Channel Types</a></h2>
+<blockquote>
+<p><strong><sup>Syntax</sup></strong><br />
+<em>ChannelType</em> : <code>chan</code> <em>Type</em></p>
+</blockquote>
+<p><em><sup>
+<a href="#types">Dual</a>
+| <a href="expressions.html#channel-expressions">Constructing Expression</a>
+| <a href="./statements/commands.html#todo">Destructing Statement</a>
+</sup></em></p>
+<p><code>chan A</code> represents a channel accepting an <code>A</code>:</p>
+<pre><code class="language-par">def just_true: Bool = chan yield {
+  let c: chan Bool = yield
+  c.true!
+}
+</code></pre>
+<p><code>chan</code> is merely a type transformer, turning a type into its dual.
+For example, <code>chan chan T</code> is <em>equal</em> to <code>T</code> (not just isomorphic).</p>
+<p>A more elaborate example can be seen <a href="https://github.com/faiface/par-lang/blob/main/examples/flatten.par">here</a></p>
+<p>A <code>chan A</code> can be linked with an <code>A</code> (using <code>&lt;&gt;</code>), annihilating both and ending the process.</p>
+<pre><code class="language-par">def just_true: Bool = chan yield {
+  let c: chan Bool = yield
+  let b: Bool = .true!
+  c &lt;&gt; b
+}
+</code></pre>
+<p>Note that <code>b &lt;&gt; c</code> would have been equally valid.</p>
+<p>Mathematically, <code>chan A</code> is \(A^\perp\), i.e. the dual type to <code>A</code>. Every type has a dual. We get for example:</p>
+<div class="table-wrapper"><table><thead><tr><th>type</th><th>dual</th></tr></thead><tbody>
+<tr><td><code>T</code></td><td><code>chan T</code></td></tr>
+<tr><td><code>chan T</code></td><td><code>T</code></td></tr>
+<tr><td><code>(A) B</code></td><td><code>[A] chan B</code></td></tr>
+<tr><td><code>[A] B</code></td><td><code>(A) chan B</code></td></tr>
+<tr><td><code>either { .a A, .b B }</code></td><td><code>{ .a =&gt; chan A, .b =&gt; chan B }</code></td></tr>
+<tr><td><code>{ .a =&gt; A, .b =&gt; B }</code></td><td><code>either { .a chan A, .b chan B }</code></td></tr>
+<tr><td><code>!</code></td><td><code>?</code></td></tr>
+<tr><td><code>?</code></td><td><code>!</code></td></tr>
+<tr><td><code>recursive T</code></td><td><code>iterative chan T</code></td></tr>
+<tr><td><code>iterative T</code></td><td><code>recursive chan T</code></td></tr>
+<tr><td><code>self</code></td><td><code>self</code></td></tr>
+<tr><td><code>(type T) A</code></td><td><code>[type T] chan A</code></td></tr>
+<tr><td><code>[type T] A</code></td><td><code>(type T) chan A</code></td></tr>
+</tbody></table>
+</div>
+<p>Moreover, <code>chan A ≅ [A]?</code> is an isomorphism</p>
+<pre><code class="language-par">dec i : [type A] [chan A] [A]?
+def i = [type A] [ch] chan receive {
+  // receive is of type (A)!
+  receive[a]?
+  ch &lt;&gt; a
+}
+
+dec j : [type A] [[A]?] chan A
+def j = [type A] [annihilate] chan a {
+  // a is of type A
+  annihilate(a)!
+}
+</code></pre>
+<p>So the dual of a type can be used to destruct a value.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="items.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="items.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
