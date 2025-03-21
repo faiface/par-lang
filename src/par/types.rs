@@ -74,8 +74,17 @@ pub enum Type<Loc, Name> {
 
 #[derive(Clone, Debug)]
 pub struct TypeDefs<Loc, Name> {
-    globals: Arc<IndexMap<Name, (Loc, Vec<Name>, Type<Loc, Name>)>>,
-    vars: IndexSet<Name>,
+    pub globals: Arc<IndexMap<Name, (Loc, Vec<Name>, Type<Loc, Name>)>>,
+    pub vars: IndexSet<Name>,
+}
+
+impl<Loc: Clone, Name: Clone + Eq + Hash> Default for TypeDefs<Loc, Name> {
+    fn default() -> Self {
+        Self {
+            globals: Default::default(),
+            vars: Default::default(),
+        }
+    }
 }
 
 impl<Loc: Clone, Name: Clone + Eq + Hash> TypeDefs<Loc, Name> {
@@ -1008,8 +1017,8 @@ struct CheckedDef<Loc, Name> {
 
 impl<Loc, Name> Context<Loc, Name>
 where
-    Loc: Clone + Eq + Hash,
-    Name: Clone + Eq + Hash,
+    Loc: std::fmt::Debug + Clone + Eq + Hash,
+    Name: Clone + Eq + Hash + std::fmt::Debug,
 {
     pub fn new_with_type_checking(
         program: &Program<Loc, Name, Arc<Expression<Loc, Name, ()>>>,
@@ -1111,13 +1120,19 @@ where
 
     pub fn get_checked_definitions(
         &self,
-    ) -> Vec<(Loc, Name, Arc<Expression<Loc, Name, Type<Loc, Name>>>)> {
+    ) -> IndexMap<Name, (Loc, Arc<Expression<Loc, Name, Type<Loc, Name>>>)> {
         self.checked_definitions
             .read()
             .unwrap()
             .iter()
-            .map(|(name, checked)| (checked.loc.clone(), name.clone(), checked.def.clone()))
+            .map(|(name, checked)| (name.clone(), (checked.loc.clone(), checked.def.clone())))
             .collect()
+    }
+    pub fn get_declarations(&self) -> IndexMap<Name, (Loc, Type<Loc, Name>)> {
+        (*self.declarations).clone()
+    }
+    pub fn get_type_defs(&self) -> &TypeDefs<Loc, Name> {
+        &self.type_defs
     }
 
     pub fn split(&self) -> Self {

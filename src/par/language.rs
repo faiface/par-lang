@@ -152,7 +152,9 @@ impl<Name: Display> Display for Internal<Name> {
 
 #[derive(Clone, Debug)]
 pub enum CompileError<Loc> {
+    PassNotPossible(Loc),
     MustEndProcess(Loc),
+    CannotEndInDoExpression(Loc),
 }
 
 type Pass<Loc, Name> = Option<Arc<process::Process<Loc, Internal<Name>, ()>>>;

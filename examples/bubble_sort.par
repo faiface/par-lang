@@ -10,7 +10,7 @@ type List<T> = recursive either {
 
 dec bubble_sort : [List<Nat>] List<Nat>
 def bubble_sort = [list] chan yield {
-  let yield: chan List<Nat> = list begin {
+  let yield: chan List<Nat> = list unfounded begin {
     .empty! => yield,
     .item(first) tail => do {
       let (head, last)! = bubble_sort_step(first, tail)

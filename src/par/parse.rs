@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 
 use indexmap::IndexMap;
 use pest::{

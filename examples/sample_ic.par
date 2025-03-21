@@ -1,0 +1,207 @@
+type Bool  = either { .true!, .false! }
+type Option<T>  = either { .some T, .none! }
+dec true: Bool
+def true = .true!
+dec false: Bool
+def false = .false!
+
+dec not: [Bool] Bool
+def not = [x] x {
+	.true! => .false!,
+	.false! => .true!
+}
+
+
+type Tree = recursive either {
+  .empty!
+  .item(self)(self)!
+}
+
+dec empty: Tree
+def empty = .empty!
+
+dec tree: Tree
+def tree =
+    let b: Tree = .item(empty)(empty)! in
+    .item(empty)(b)!
+
+
+dec xor: [Bool][Bool] Bool
+def xor = [a][b] a{
+	.true! => not(b),
+	.false! => b
+}
+
+dec xor_tree: [Tree] Bool
+
+def xor_tree = [tree: Tree] tree begin {
+	.empty! => .true!,
+	.item(lst1)(lst2)! => xor(lst1 loop)(lst2 loop)
+}
+
+
+dec is_some: [Option<Bool>] Bool
+def is_some = [option: Option<Bool>] option {
+    .some val => val,
+    .none! => .false!
+}
+
+dec main: Tree
+def main = .empty!
+
+dec quant: (type T) (T) (T) [T] [T] Bool
+def quant = (type Bool) (.true!) (.false!) [x] [y] x {
+    .true! => y {
+        .true! => .false!,
+        .false! => .true!
+    }
+    .false! => y {
+        .true! => .false!,
+        .false! => .true!
+    }
+
+}
+
+type Color = either { .red!, .green!, .blue! }
+
+type List<T> = recursive either {
+  .empty!
+  .item(T) self
+}
+
+type Seq<T> = iterative {
+  .close => !
+  .next  => (T) self
+}
+
+type Mapper<A, B> = iterative {
+  .close    => !
+  .apply(A) => (B) self
+}
+
+dec mapList : [type A, B] [List<A>, Mapper<A, B>] List<B>
+def mapList = [type A, B] [list, mapper]
+  list begin {
+    .empty! => do {
+      mapper.close?
+    } in .empty!
+
+    .item(x) xs => do {
+      mapper.apply(x)[y]
+    } in .item(y) xs loop
+  }
+
+dec mapSeq : [type A, B] [Seq<A>, Mapper<A, B>] Seq<B>
+def mapSeq = [type A, B] [seq, mapper]
+  begin {
+    .close => do {
+      seq.close?
+      mapper.close?
+    } in !
+    .next => do {
+      seq.next[x]
+      mapper.apply(x)[y]
+    } in (y) loop
+  }
+
+dec listrgb : List<Color>
+def listrgb =
+  .item(.red!)
+  .item(.green!)
+  .item(.blue!)
+  .empty!
+
+dec red_forever : Seq<Color>
+def red_forever = begin {
+  .close => !
+  .next  => (.red!) loop
+}
+
+dec rgb : [Color] Color
+def rgb = [value] value {
+  .red!   => .red!
+  .green! => .green!
+  .blue!  => .blue!
+}
+
+dec swap : [Bool] Bool
+def swap = [bool] bool {
+  .true! => .false!
+  .false! => .true!
+}
+
+
+def bools_forever =
+  let bool: Bool = .true! in
+  begin {
+    .close => bool {
+      .true! => !
+      .false! => !
+    }
+    .next => {
+      let (output: Bool, bool: Bool)! = bool {
+        .true! => (.true!, .false!)!
+        .false! => (.false!, .true!)!
+      } in (output) loop
+    }
+  }
+
+dec zip : [type T, U] [List<T>, Seq<U>] List<(T, U)!>
+def zip = [type T, U] [list, seq] list begin {
+  .empty! => do {
+    seq.close?
+  } in .empty!
+
+  .item(x) xs => do {
+    seq.next[y]
+  } in .item((x, y)!) xs loop
+}
+
+def zipped = zip(type Color, Color)(listrgb, red_forever)
+
+def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
+  .close => do {
+    seq1.close?
+    seq2.close?
+  } in !
+
+  .next => do {
+    seq1.next[x]
+    seq2.next[y]
+  } in ((x, y)!) loop
+}
+
+
+
+type Alternate<A, B> = recursive either {
+  .remainder either {
+    .left List<A>
+    .right List<B>
+  }
+  .choice {
+    .left => (A) self
+    .right => (B) self
+  }
+}
+
+dec alternate : [type A, B] [List<A>, List<B>] Alternate<A, B>
+
+def alternate = [type A, B] [la, lb] la begin :a {
+  .empty! => .remainder .right lb,
+  .item(ha) la => lb begin :b {
+    .empty! => .remainder .left .item (ha) la,
+    .item (hb) lb => .choice {
+      .left => (ha) let lb: List<B> = .item (hb) lb in la loop:a
+      .right => (hb) lb loop:b
+    }
+  }
+}
+
+
+dec left_list  : List<Bool>
+dec right_list : List<Bool>
+
+def left_list  = .item(.true!).item(.true!).empty!
+def right_list = .item(.true!).empty!
+
+def alternate_applied = alternate(type Bool)(type Bool)(left_list)(right_list)
