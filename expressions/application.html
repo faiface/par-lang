@@ -288,14 +288,6 @@ let o_add1: Option&lt;Nat&gt; = o {
   .some n =&gt; .some.succ n,
 }
 </code></pre>
-<p>A match expression is equivalent to a <a href="../statements/commands.html#match-commands">match command</a>:</p>
-<pre><code class="language-par">// in process syntax
-let y = x { .l1 p1 =&gt; y1, ..., .ln pn =&gt; yn }
-// is equivalent to
-let y = x
-y { .l1 =&gt; { q1; ... }, ..., .ln =&gt; { q1; ... } }
-</code></pre>
-<p>where <code>qi</code> is the command corresponding to <code>pi</code>. todo: how is this defined.</p>
 <h2 id="recursive-destructions"><a class="header" href="#recursive-destructions">Recursive Destructions</a></h2>
 <blockquote>
 <p><strong><sup>Syntax</sup></strong><br />

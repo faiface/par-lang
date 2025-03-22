@@ -246,16 +246,8 @@ $ cargo run
 <p>This will launch the Par playground.
 Some example code is already written for you.
 Just press <kbd>Compile</kbd> and <kbd>Run</kbd> to run any definition from the program on the left.</p>
-<h2 id="goals"><a class="header" href="#goals">Goals</a></h2>
-<p>todo</p>
-<h2 id="features"><a class="header" href="#features">Features</a></h2>
-<p>todo</p>
-<h2 id="anti-features"><a class="header" href="#anti-features">Anti-Features</a></h2>
-<p>todo</p>
-<h2 id="resources"><a class="header" href="#resources">Resources</a></h2>
-<p>To ask questions or discuss ideas, visit the <a href="https://discord.gg/8KsypefW99">Discord</a>.</p>
-<p>For a quick but in-depth tutorial, read the <a href="https://github.com/faiface/par-lang">Readme</a>.</p>
-<p>An then, there’s the document you’re currently reading, of course.</p>
+<h2 id="community"><a class="header" href="#community">Community</a></h2>
+<p>To ask questions or discuss ideas, join our <a href="https://discord.gg/8KsypefW99">Discord</a>.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="lexical-structure"><a class="header" href="#lexical-structure">Lexical Structure</a></h1>
 <h2 id="comments"><a class="header" href="#comments">Comments</a></h2>
 <blockquote>
@@ -342,7 +334,6 @@ Whitespace characters are:</p>
 <li>Tabs <code>'\t'</code>, <code>'\v'</code></li>
 <li>Newline <code>'\n'</code></li>
 <li>Carriage return <code>'\r'</code></li>
-<li>todo: more?</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="source-files"><a class="header" href="#source-files">Source Files</a></h1>
 <blockquote>
@@ -482,8 +473,9 @@ let x: either { .none!, .some T } = .none!
 <p><em><sup>
 <a href="types.html#the-bottom-type">Dual</a>
 | <a href="./expressions/construction.html#the-unit-expression">Constructing Expression</a>
-| <a href="./patterns.html#todo">Pattern</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./patterns.html#the-unit-pattern">Pattern</a>
+| <a href="./statements/commands.html#the-break-command">Constructing Statement</a>
+| <a href="./statements/commands.html#the-continue-command">Destructing Statement</a>
 </sup></em></p>
 <p>Unit is a type providing no information. In C(++) it’s called <code>void</code>, in Rust it’s <code>()</code> (and it can be thought of as an empty tuple in Par as well). There is exactly one value of type <code>!</code>, and it’s also <code>!</code>.</p>
 <pre><code class="language-par">let unit: ! = !
@@ -517,8 +509,9 @@ def drop_repl: [type T] [&T] ! = !-->
 <p><em><sup>
 <a href="types.html#function-types">Dual</a>
 | <a href="./expressions/construction.html#pair-expressions">Constructing Expression</a>
-| <a href="./patterns.html#todo">Pattern</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./patterns.html#pair-patterns">Pattern</a>
+| <a href="./statements/commands.html#send-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#receive-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = (A, B) R
@@ -581,8 +574,8 @@ do {
 <a href="types.html#pair-types">Dual</a>
 | <a href="./expressions/construction.html#function-expressions">Constructing Expression</a>
 | <a href="./expressions/application.html#function-calls">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#send-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>[</code> and <code>]</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = [A, B] R
@@ -606,8 +599,8 @@ let two = add1(one)
 <a href="types.html#choice-types">Dual</a>
 | <a href="./expressions/construction.html#either-selections">Constructing Expression</a>
 | <a href="./expressions/application.html#either-destructions">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#signal-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#match-commands">Destructing Statement</a>
 </sup></em></p>
 <p>An either type is the usual sum type aka. a tagged union (in Rust, it’s an <code>enum</code>). Every value of such a type consists of a label, marking the variant, and a value of the type corresponding to the label (its “payload”).</p>
 <pre><code class="language-par">// the most basic sum type
@@ -649,8 +642,8 @@ There is a function from it to every type:</p>
 <a href="types.html#either-types">Dual</a>
 | <a href="./expressions/construction.html#choice-constructions">Constructing Expression</a>
 | <a href="./expressions/application.html#choice-selections">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#match-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#signal-commands">Destructing Statement</a>
 </sup></em></p>
 <p>A choice type is dual to an <a href="types.html#either-types">either</a> type. Constructing a value of an either type is “making a choice” and similarly, destructing such a value looks exactly like constructing a value of a choice type.
 It consists of several labels that can be used as signals to destruct the receiver.</p>
@@ -720,7 +713,7 @@ An empty choice <code>{}</code> is therefore \(\top\) and has exactly one value,
 <p><em><sup>
 <a href="types.html#iterative-types">Dual</a>
 | <a href="./expressions/application.html#recursive-destructions">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#recursive-commands">Destructing Statement</a>
 </sup></em></p>
 <p>A recursive type can be used within itself via <code>self</code>.</p>
 <p>If no loop label is present, <code>self</code> corresponds to the innermost <code>recursive</code>/<code>iterative</code>. Else to the one with the same loop label.</p>
@@ -774,7 +767,7 @@ def is_even = [n] n begin {
 <p><em><sup>
 <a href="types.html#recursive-types">Dual</a>
 | <a href="./expressions/construction.html#iterative-constructions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#recursive-commands">Constructing Statement</a>
 </sup></em></p>
 <p>An iterative type can be used within itself via <code>self</code>.</p>
 <p>If no loop label is present, <code>self</code> corresponds to the innermost <code>recursive</code>/<code>iterative</code>. Else to the one with the same loop label.</p>
@@ -942,9 +935,9 @@ def add: [Nat, Nat] Nat = [a, b] a begin {
 <p><em><sup>
 <a href="types.html#universal-types">Dual</a>
 | <a href="./expressions/construction.html#existential-constructions">Constructing Expression</a>
-| <a href="./patterns.html#todo">Pattern</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./patterns.html#existential-patterns">Pattern</a>
+| <a href="./statements/commands.html#send-type-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#receive-type-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = (type A, B) X
@@ -984,8 +977,8 @@ let y: X = x
 <a href="types.html#existential-types">Dual</a>
 | <a href="./expressions/construction.html#universal-constructions">Constructing Expression</a>
 | <a href="./expressions/application.html#universal-specializations">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-type-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#send-type-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>[</code> and <code>]</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = [type A, B] X
@@ -1020,8 +1013,8 @@ let id_bool_2: ExistEndo = (type Bool) id_bool
 </blockquote>
 <p><em><sup>
 <a href="types.html#the-unit-type">Dual</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#the-continue-command">Constructing Statement</a>
+| <a href="./statements/commands.html#the-break-command">Destructing Statement</a>
 </sup></em></p>
 <p>The bottom <code>?</code> is dual to the unit <code>!</code>.</p>
 <pre><code class="language-par">def main: Bool = chan user {
@@ -1039,7 +1032,6 @@ let id_bool_2: ExistEndo = (type Bool) id_bool
 <p><em><sup>
 <a href="types.html#types">Dual</a>
 | <a href="expressions.html#channel-expressions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
 </sup></em></p>
 <p><code>chan A</code> represents a channel accepting an <code>A</code>:</p>
 <pre><code class="language-par">def just_true: Bool = chan yield {
@@ -1058,8 +1050,9 @@ For example, <code>chan chan T</code> is <em>equal</em> to <code>T</code> (not j
 }
 </code></pre>
 <p>Note that <code>b &lt;&gt; c</code> would have been equally valid.</p>
-<p>Mathematically, <code>chan A</code> is \(A^\perp\), i.e. the dual type to <code>A</code>. Every type has a dual. We get for example:</p>
-<div class="table-wrapper"><table><thead><tr><th>type</th><th>dual</th></tr></thead><tbody>
+<h2 id="duality-equations"><a class="header" href="#duality-equations">Duality equations</a></h2>
+<p>Mathematically, <code>chan A</code> is \(A^\perp\), i.e. the dual type to <code>A</code>. Every type has a dual. These are defined according to this table:</p>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Dual</th></tr></thead><tbody>
 <tr><td><code>T</code></td><td><code>chan T</code></td></tr>
 <tr><td><code>chan T</code></td><td><code>T</code></td></tr>
 <tr><td><code>(A) B</code></td><td><code>[A] chan B</code></td></tr>
@@ -1100,7 +1093,6 @@ def j = [type A] [annihilate] chan a {
    | <a href="expressions.html#do-expressions"><em>DoExpression</em></a> <br />
    | <a href="expressions.html#channel-expressions"><em>ChanExpression</em></a></p>
 </blockquote>
-<p>Some expressions are evaluated strictly, some lazily. todo: which</p>
 <p>Every expression desugars to a <a href="expressions.html#channel-expressions">channel expression</a>. In the most simple way, that is</p>
 <pre><code class="language-par">expr
 // is equivalent to
@@ -1207,6 +1199,8 @@ dual &lt;&gt; y
 </blockquote>
 <p>The name declared after the channel may be used inside the process and must be fully destructed inside or moved out of there.</p>
 <p>The expression <code>chan a: A { ... }</code> has type <code>chan A</code>. Conversely, if <code>chan b { ... }</code> has type <code>B</code>, <code>b</code> has type <code>chan B</code>.</p>
+<p>Note, that <code>chan A</code>, the <a href="./types.html#channel-types">channel type</a>, is not a separate type. It merely transforms the the <code>A</code> to its dual, according to the <a href="./types.html#duality-equations">duality equations</a>.</p>
+<p>These expressions are key to exploiting duality. The expression <code>chan c { ... }</code> spawns a process, and at the same time creates a channel, whose one end is accessible as <code>c</code> inside the process, and the other end is returned from the expression. The types of these are dual.</p>
 <p>Channel expressions are the only expression which is not syntax sugar. Under the hood, all expressions are syntax sugar for channel expressions.</p>
 <p>Par even has an intermediate representation in which all expressions are channel expressions.</p>
 <p>A channel expression constructs a value by destructing a value of its dual. For example:</p>
@@ -1648,14 +1642,6 @@ let o_add1: Option&lt;Nat&gt; = o {
   .some n =&gt; .some.succ n,
 }
 </code></pre>
-<p>A match expression is equivalent to a <a href="expressions/../statements/commands.html#match-commands">match command</a>:</p>
-<pre><code class="language-par">// in process syntax
-let y = x { .l1 p1 =&gt; y1, ..., .ln pn =&gt; yn }
-// is equivalent to
-let y = x
-y { .l1 =&gt; { q1; ... }, ..., .ln =&gt; { q1; ... } }
-</code></pre>
-<p>where <code>qi</code> is the command corresponding to <code>pi</code>. todo: how is this defined.</p>
 <h2 id="recursive-destructions"><a class="header" href="#recursive-destructions">Recursive Destructions</a></h2>
 <blockquote>
 <p><strong><sup>Syntax</sup></strong><br />
@@ -1862,7 +1848,7 @@ def negate = [b: Bool] let result: Bool = b {
 <p><em><sup>
 <a href="types.html#the-unit-type">Type</a>
 | <a href="./expressions/construction.html#the-unit-expression">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#the-continue-command">Destructing Statement</a>
 </sup></em></p>
 <p>The unit pattern <code>!</code> is always irrefutable and binds nothing.
 It can only be used on values of type <code>!</code>.</p>
@@ -1894,7 +1880,7 @@ dec drop_bool : [Bool] !
 <p><em><sup>
 <a href="types.html#pair-types">Type</a>
 | <a href="./expressions/construction.html#pair-expressions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-commands">Destructing Statement</a>
 </sup></em></p>
 <ul>
 <li>A pair pattern <code>(p) q</code> is irrefutable if and only if both <code>p</code> and <code>q</code> are irrefutable</li>
@@ -1912,38 +1898,6 @@ dec drop_bool : [Bool] !
 <pre><code class="language-par">dec uncurry : [type A, B, C] [[A, B] C] [(A, B)!] C
 def uncurry = [type A, B, C] [f] [(a, b)!] f(a, b)
 </code></pre>
-<!--## Variant Patterns
-
-> **<sup>Syntax</sup>**\
-> _VariantPattern_ : [_Label_](types.md) _PatternNoAlt_
-
-*<sup>
-[Type](types.md#either-types)
-| [Constructing Expression](./expressions/construction.md#either-selections)
-</sup>*
-
-- A variant pattern `.la p` can only be used on type `either { .la A, ... }` and `p` must be able to be used on type `A`
-- The pattern cannot be used if the type of the value being matched on is unknown
-- When it can match, it is irrefutable if and only if the `either` has exactly one variant
-- `.la p` matches `x` if and only if `x` is of the variant `.la` and `p` matches the payload of `x`
-- Its bindings are those of `p`
-
-Variant patterns are almost exclusively used in destructing values of either types (in [expressions](./expressions/application.md#either-destructions) or [statements](./statements/commands.md#todo)):
-```par
-dec get_second : [type T] [List<T>] (Option<T>) List<T>
-def get_second = [type T] [list] list {
-  .item(fst).item(snd) rest => (.some snd) .item(fst) rest,
-  other => (.none!) other
-}
-```
-
-## Grouped Patterns
-
-> **<sup>Syntax</sup>**\
-> _GroupedPattern_ : `{` _Pattern_ `}`
-
-A grouped pattern is equivalent to its body.
--->
 <h2 id="existential-patterns"><a class="header" href="#existential-patterns">Existential Patterns</a></h2>
 <blockquote>
 <p><strong><sup>Syntax</sup></strong><br />
@@ -1952,7 +1906,7 @@ A grouped pattern is equivalent to its body.
 <p><em><sup>
 <a href="types.html#existential-types">Type</a>
 | <a href="./expressions/construction.html#existential-constructions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-type-commands">Destructing Statement</a>
 </sup></em></p>
 <ul>
 <li>An existential pattern <code>(type X) p</code> can only be used on an existential type <code>(type T) A</code> and <code>p</code> must be able to be used on type <code>A</code></li>
@@ -1977,14 +1931,6 @@ def any_test: Any = do {
   let y: X = x_val
 } (type X) y
 </code></pre>
-<!--## Alternatives
-
-> **<sup>Syntax</sup>**\
-> _Alternatives_ : `|`<sup>?</sup> _PatternNoAlt_ (`|` _PatternNoAlt_)<sup>+</sup>
-
-- The alternatives `a | b | ...` can be used on type `T` if `a`, `b`, ... can all be used on type `T`
-- Together, they're an irrefutable pattern if and only if (todo)
--->
 <h2 id="future"><a class="header" href="#future">Future</a></h2>
 <p>More extensive pattern matching, along with more types of patterns is planned in the future. See <a href="future.html">here</a> for more.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="statements"><a class="header" href="#statements">Statements</a></h1>
@@ -2538,28 +2484,32 @@ r[type X][type Y]
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="future-1"><a class="header" href="#future-1">Future</a></h1>
 <p>Here the
-planned features are listed. You can read more and even actively help the language evolution on the Par <a href="https://discord.gg/8KsypefW99">Discord</a></p>
+planned features are listed. You can read more and even actively help the language grow on the Par <a href="https://discord.gg/8KsypefW99">Discord</a></p>
 <h2 id="primitives"><a class="header" href="#primitives">Primitives</a></h2>
-<p><sup>Priority: Essential | Progress: Not started</sup></p>
+<p><sup>Priority: Essential</sup></p>
 <h2 id="replicables"><a class="header" href="#replicables">Replicables</a></h2>
-<p><sup>Priority: Essential | Progress: Draft complete</sup></p>
-<h2 id="tagged-types"><a class="header" href="#tagged-types">Tagged Types</a></h2>
-<p><sup>Priority: High | Progress: Drafting</sup></p>
+<p><sup>Priority: Essential</sup></p>
+<h2 id="extensible-io-via-rust-controlled-objects"><a class="header" href="#extensible-io-via-rust-controlled-objects">Extensible I/O via Rust-controlled objects</a></h2>
+<p><sup>Priority: Essential</sup></p>
+<h2 id="non-determinism"><a class="header" href="#non-determinism">Non-determinism</a></h2>
+<p><sup>Priority: Essential</sup></p>
+<h2 id="tagged-types"><a class="header" href="#tagged-types">Tagged types</a></h2>
+<p><sup>Priority: High</sup></p>
 <h2 id="traits"><a class="header" href="#traits">Traits</a></h2>
-<p><sup>Priority: High | Progress: Draft complete</sup></p>
+<p><sup>Priority: High</sup></p>
 <h2 id="powerful-pattern-matching"><a class="header" href="#powerful-pattern-matching">Powerful pattern matching</a></h2>
-<p><sup>Priority: Medium | Progress: Drafting</sup></p>
+<p><sup>Priority: Medium</sup></p>
 <h2 id="records"><a class="header" href="#records">Records</a></h2>
-<p><sup>Priority: Medium | Progress: Drafting</sup></p>
-<h2 id="small-features"><a class="header" href="#small-features">Small features</a></h2>
-<p>todo: write something on these topics.</p>
+<p><sup>Priority: Medium</sup></p>
+<h2 id="reactive-values"><a class="header" href="#reactive-values">Reactive values</a></h2>
+<p><sup>Priority: Low</sup></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="appendix"><a class="header" href="#appendix">Appendix</a></h1>
 <p>Thank you for reading the Par documentation!</p>
 <p>Read about more technical topics in the next chapters.</p>
 <h2 id="contributors"><a class="header" href="#contributors">Contributors</a></h2>
-<p>todo</p>
+<p>TODO</p>
 <h2 id="influences"><a class="header" href="#influences">Influences</a></h2>
-<p>todo</p>
+<p>TODO</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="notation"><a class="header" href="#notation">Notation</a></h1>
 <h2 id="grammar"><a class="header" href="#grammar">Grammar</a></h2>
 <p>The grammar of Par is declared in <em>Lexer</em> and <em>Syntax</em> blocks. It uses the following notation:</p>

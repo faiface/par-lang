@@ -209,8 +209,9 @@ let x: either { .none!, .some T } = .none!
 <p><em><sup>
 <a href="#the-bottom-type">Dual</a>
 | <a href="./expressions/construction.html#the-unit-expression">Constructing Expression</a>
-| <a href="./patterns.html#todo">Pattern</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./patterns.html#the-unit-pattern">Pattern</a>
+| <a href="./statements/commands.html#the-break-command">Constructing Statement</a>
+| <a href="./statements/commands.html#the-continue-command">Destructing Statement</a>
 </sup></em></p>
 <p>Unit is a type providing no information. In C(++) it’s called <code>void</code>, in Rust it’s <code>()</code> (and it can be thought of as an empty tuple in Par as well). There is exactly one value of type <code>!</code>, and it’s also <code>!</code>.</p>
 <pre><code class="language-par">let unit: ! = !
@@ -244,8 +245,9 @@ def drop_repl: [type T] [&T] ! = !-->
 <p><em><sup>
 <a href="#function-types">Dual</a>
 | <a href="./expressions/construction.html#pair-expressions">Constructing Expression</a>
-| <a href="./patterns.html#todo">Pattern</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./patterns.html#pair-patterns">Pattern</a>
+| <a href="./statements/commands.html#send-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#receive-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = (A, B) R
@@ -308,8 +310,8 @@ do {
 <a href="#pair-types">Dual</a>
 | <a href="./expressions/construction.html#function-expressions">Constructing Expression</a>
 | <a href="./expressions/application.html#function-calls">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#send-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>[</code> and <code>]</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = [A, B] R
@@ -333,8 +335,8 @@ let two = add1(one)
 <a href="#choice-types">Dual</a>
 | <a href="./expressions/construction.html#either-selections">Constructing Expression</a>
 | <a href="./expressions/application.html#either-destructions">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#signal-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#match-commands">Destructing Statement</a>
 </sup></em></p>
 <p>An either type is the usual sum type aka. a tagged union (in Rust, it’s an <code>enum</code>). Every value of such a type consists of a label, marking the variant, and a value of the type corresponding to the label (its “payload”).</p>
 <pre><code class="language-par">// the most basic sum type
@@ -376,8 +378,8 @@ There is a function from it to every type:</p>
 <a href="#either-types">Dual</a>
 | <a href="./expressions/construction.html#choice-constructions">Constructing Expression</a>
 | <a href="./expressions/application.html#choice-selections">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#match-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#signal-commands">Destructing Statement</a>
 </sup></em></p>
 <p>A choice type is dual to an <a href="#either-types">either</a> type. Constructing a value of an either type is “making a choice” and similarly, destructing such a value looks exactly like constructing a value of a choice type.
 It consists of several labels that can be used as signals to destruct the receiver.</p>
@@ -447,7 +449,7 @@ An empty choice <code>{}</code> is therefore \(\top\) and has exactly one value,
 <p><em><sup>
 <a href="#iterative-types">Dual</a>
 | <a href="./expressions/application.html#recursive-destructions">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#recursive-commands">Destructing Statement</a>
 </sup></em></p>
 <p>A recursive type can be used within itself via <code>self</code>.</p>
 <p>If no loop label is present, <code>self</code> corresponds to the innermost <code>recursive</code>/<code>iterative</code>. Else to the one with the same loop label.</p>
@@ -501,7 +503,7 @@ def is_even = [n] n begin {
 <p><em><sup>
 <a href="#recursive-types">Dual</a>
 | <a href="./expressions/construction.html#iterative-constructions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
+| <a href="./statements/commands.html#recursive-commands">Constructing Statement</a>
 </sup></em></p>
 <p>An iterative type can be used within itself via <code>self</code>.</p>
 <p>If no loop label is present, <code>self</code> corresponds to the innermost <code>recursive</code>/<code>iterative</code>. Else to the one with the same loop label.</p>
@@ -669,9 +671,9 @@ def add: [Nat, Nat] Nat = [a, b] a begin {
 <p><em><sup>
 <a href="#universal-types">Dual</a>
 | <a href="./expressions/construction.html#existential-constructions">Constructing Expression</a>
-| <a href="./patterns.html#todo">Pattern</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./patterns.html#existential-patterns">Pattern</a>
+| <a href="./statements/commands.html#send-type-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#receive-type-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>(</code> and <code>)</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = (type A, B) X
@@ -711,8 +713,8 @@ let y: X = x
 <a href="#existential-types">Dual</a>
 | <a href="./expressions/construction.html#universal-constructions">Constructing Expression</a>
 | <a href="./expressions/application.html#universal-specializations">Destructing Expression</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-type-commands">Constructing Statement</a>
+| <a href="./statements/commands.html#send-type-commands">Destructing Statement</a>
 </sup></em></p>
 <p>Having multiple types between <code>[</code> and <code>]</code> is just syntax sugar:</p>
 <pre><code class="language-par">type T = [type A, B] X
@@ -747,8 +749,8 @@ let id_bool_2: ExistEndo = (type Bool) id_bool
 </blockquote>
 <p><em><sup>
 <a href="#the-unit-type">Dual</a>
-| <a href="./statements/commands.html#todo">Constructing Statement</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#the-continue-command">Constructing Statement</a>
+| <a href="./statements/commands.html#the-break-command">Destructing Statement</a>
 </sup></em></p>
 <p>The bottom <code>?</code> is dual to the unit <code>!</code>.</p>
 <pre><code class="language-par">def main: Bool = chan user {
@@ -766,7 +768,6 @@ let id_bool_2: ExistEndo = (type Bool) id_bool
 <p><em><sup>
 <a href="#types">Dual</a>
 | <a href="expressions.html#channel-expressions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
 </sup></em></p>
 <p><code>chan A</code> represents a channel accepting an <code>A</code>:</p>
 <pre><code class="language-par">def just_true: Bool = chan yield {
@@ -785,8 +786,9 @@ For example, <code>chan chan T</code> is <em>equal</em> to <code>T</code> (not j
 }
 </code></pre>
 <p>Note that <code>b &lt;&gt; c</code> would have been equally valid.</p>
-<p>Mathematically, <code>chan A</code> is \(A^\perp\), i.e. the dual type to <code>A</code>. Every type has a dual. We get for example:</p>
-<div class="table-wrapper"><table><thead><tr><th>type</th><th>dual</th></tr></thead><tbody>
+<h2 id="duality-equations"><a class="header" href="#duality-equations">Duality equations</a></h2>
+<p>Mathematically, <code>chan A</code> is \(A^\perp\), i.e. the dual type to <code>A</code>. Every type has a dual. These are defined according to this table:</p>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Dual</th></tr></thead><tbody>
 <tr><td><code>T</code></td><td><code>chan T</code></td></tr>
 <tr><td><code>chan T</code></td><td><code>T</code></td></tr>
 <tr><td><code>(A) B</code></td><td><code>[A] chan B</code></td></tr>

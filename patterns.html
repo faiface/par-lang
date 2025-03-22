@@ -275,7 +275,7 @@ def negate = [b: Bool] let result: Bool = b {
 <p><em><sup>
 <a href="types.html#the-unit-type">Type</a>
 | <a href="./expressions/construction.html#the-unit-expression">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#the-continue-command">Destructing Statement</a>
 </sup></em></p>
 <p>The unit pattern <code>!</code> is always irrefutable and binds nothing.
 It can only be used on values of type <code>!</code>.</p>
@@ -307,7 +307,7 @@ dec drop_bool : [Bool] !
 <p><em><sup>
 <a href="types.html#pair-types">Type</a>
 | <a href="./expressions/construction.html#pair-expressions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-commands">Destructing Statement</a>
 </sup></em></p>
 <ul>
 <li>A pair pattern <code>(p) q</code> is irrefutable if and only if both <code>p</code> and <code>q</code> are irrefutable</li>
@@ -325,38 +325,6 @@ dec drop_bool : [Bool] !
 <pre><code class="language-par">dec uncurry : [type A, B, C] [[A, B] C] [(A, B)!] C
 def uncurry = [type A, B, C] [f] [(a, b)!] f(a, b)
 </code></pre>
-<!--## Variant Patterns
-
-> **<sup>Syntax</sup>**\
-> _VariantPattern_ : [_Label_](types.md) _PatternNoAlt_
-
-*<sup>
-[Type](types.md#either-types)
-| [Constructing Expression](./expressions/construction.md#either-selections)
-</sup>*
-
-- A variant pattern `.la p` can only be used on type `either { .la A, ... }` and `p` must be able to be used on type `A`
-- The pattern cannot be used if the type of the value being matched on is unknown
-- When it can match, it is irrefutable if and only if the `either` has exactly one variant
-- `.la p` matches `x` if and only if `x` is of the variant `.la` and `p` matches the payload of `x`
-- Its bindings are those of `p`
-
-Variant patterns are almost exclusively used in destructing values of either types (in [expressions](./expressions/application.md#either-destructions) or [statements](./statements/commands.md#todo)):
-```par
-dec get_second : [type T] [List<T>] (Option<T>) List<T>
-def get_second = [type T] [list] list {
-  .item(fst).item(snd) rest => (.some snd) .item(fst) rest,
-  other => (.none!) other
-}
-```
-
-## Grouped Patterns
-
-> **<sup>Syntax</sup>**\
-> _GroupedPattern_ : `{` _Pattern_ `}`
-
-A grouped pattern is equivalent to its body.
--->
 <h2 id="existential-patterns"><a class="header" href="#existential-patterns">Existential Patterns</a></h2>
 <blockquote>
 <p><strong><sup>Syntax</sup></strong><br />
@@ -365,7 +333,7 @@ A grouped pattern is equivalent to its body.
 <p><em><sup>
 <a href="types.html#existential-types">Type</a>
 | <a href="./expressions/construction.html#existential-constructions">Constructing Expression</a>
-| <a href="./statements/commands.html#todo">Destructing Statement</a>
+| <a href="./statements/commands.html#receive-type-commands">Destructing Statement</a>
 </sup></em></p>
 <ul>
 <li>An existential pattern <code>(type X) p</code> can only be used on an existential type <code>(type T) A</code> and <code>p</code> must be able to be used on type <code>A</code></li>
@@ -390,14 +358,6 @@ def any_test: Any = do {
   let y: X = x_val
 } (type X) y
 </code></pre>
-<!--## Alternatives
-
-> **<sup>Syntax</sup>**\
-> _Alternatives_ : `|`<sup>?</sup> _PatternNoAlt_ (`|` _PatternNoAlt_)<sup>+</sup>
-
-- The alternatives `a | b | ...` can be used on type `T` if `a`, `b`, ... can all be used on type `T`
-- Together, they're an irrefutable pattern if and only if (todo)
--->
 <h2 id="future"><a class="header" href="#future">Future</a></h2>
 <p>More extensive pattern matching, along with more types of patterns is planned in the future. See <a href="future.html">here</a> for more.</p>
 
