@@ -1199,7 +1199,7 @@ dual &lt;&gt; y
 </blockquote>
 <p>The name declared after the channel may be used inside the process and must be fully destructed inside or moved out of there.</p>
 <p>The expression <code>chan a: A { ... }</code> has type <code>chan A</code>. Conversely, if <code>chan b { ... }</code> has type <code>B</code>, <code>b</code> has type <code>chan B</code>.</p>
-<p>Note, that <code>chan A</code>, the <a href="./types.html#channel-types">channel type</a>, is not a separate type. It merely transforms the the <code>A</code> to its dual, according to the <a href="./types.html#duality-equations">duality equations</a>.</p>
+<p>Note, that <code>chan A</code>, the <a href="./types.html#channel-types">channel type</a>, is not a separate type. It merely transforms the <code>A</code> to its dual, according to the <a href="./types.html#duality-equations">duality equations</a>.</p>
 <p>These expressions are key to exploiting duality. The expression <code>chan c { ... }</code> spawns a process, and at the same time creates a channel, whose one end is accessible as <code>c</code> inside the process, and the other end is returned from the expression. The types of these are dual.</p>
 <p>Channel expressions are the only expression which is not syntax sugar. Under the hood, all expressions are syntax sugar for channel expressions.</p>
 <p>Par even has an intermediate representation in which all expressions are channel expressions.</p>
