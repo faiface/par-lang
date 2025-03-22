@@ -15,6 +15,7 @@ use super::{
     },
     types::Type,
 };
+use core::str::FromStr;
 
 #[derive(Parser)]
 #[grammar = "par/syntax.pest"]
@@ -41,8 +42,8 @@ impl Display for Loc {
     }
 }
 
-impl Loc {
-    pub fn from(pair: &Pair<Rule>) -> Loc {
+impl<'a> From<&'a Pair<'a, Rule>> for Loc {
+    fn from(pair: &Pair<Rule>) -> Self {
         let (line, column) = pair.line_col();
         Loc::Code { line, column }
     }
@@ -56,6 +57,13 @@ pub struct Name {
 impl From<String> for Name {
     fn from(string: String) -> Self {
         Self { string }
+    }
+}
+impl FromStr for Name {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Name::from(s.to_owned()))
     }
 }
 

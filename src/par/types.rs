@@ -10,6 +10,8 @@ use super::{
     parse::Program,
     process::{Captures, Command, Expression, Process},
 };
+use crate::par::parse::Loc;
+use miette::LabeledSpan;
 
 #[derive(Clone, Debug)]
 pub enum TypeError<Loc, Name> {
@@ -2072,53 +2074,80 @@ fn indentation(f: &mut impl Write, indent: usize) -> fmt::Result {
     Ok(())
 }
 
-impl<Loc, Name: Display> TypeError<Loc, Name> {
-    pub fn pretty(&self, display_loc: impl Fn(&Loc) -> String) -> String {
+fn two_labels_from_two_locs(
+    code: &str,
+    loc1: &Loc,
+    loc2: &Loc,
+    label1: impl Into<Option<String>>,
+    label2: impl Into<Option<String>>,
+) -> Vec<LabeledSpan> {
+    use crate::playground::labels_from_loc;
+    let mut labels = labels_from_loc(code, loc1);
+    let label1 = label1.into();
+    let label2 = label2.into();
+    labels.iter_mut().for_each(|x| x.set_label(label1.clone()));
+    let mut labels2 = labels_from_loc(code, loc2);
+    labels2.iter_mut().for_each(|x| x.set_label(label2.clone()));
+    labels.extend(labels2);
+    labels
+}
+
+impl<Name: Display> TypeError<super::parse::Loc, Name> {
+    pub fn into_report(&self, source_code: Arc<str>) -> miette::Report {
+        use crate::playground::labels_from_loc;
+        let code = &source_code;
         match self {
             Self::TypeNameAlreadyDefined(loc1, loc2, name) => {
-                format!(
-                    "{}\nType `{}` is already defined here:\n\n{}",
-                    display_loc(loc1),
-                    name,
-                    display_loc(loc2)
+                miette::miette!(
+                    labels = two_labels_from_two_locs(code, loc1, loc2, "this".to_owned(), "is already defined here".to_owned()),
+                    "Type `{}` is already defined.", name
                 )
             }
             Self::NameAlreadyDeclared(loc1, loc2, name) => {
-                format!(
-                    "{}\n`{}` is already declared here:\n\n{}",
-                    display_loc(loc1),
+                miette::miette!(
+                    labels = two_labels_from_two_locs(code, loc1, loc2, "this".to_owned(), "is already declared here".to_owned()),
+                    "`{}` is already declared.",
                     name,
-                    display_loc(loc2),
                 )
             }
             Self::NameAlreadyDefined(loc1, loc2, name) => {
-                format!(
-                    "{}\n`{}` is already defined here:\n\n{}",
-                    display_loc(loc1),
+                miette::miette!(
+                    labels = two_labels_from_two_locs(code, loc1, loc2, "this".to_owned(), "is already defined here".to_owned()),
+                    "`{}` is already defined",
                     name,
-                    display_loc(loc2),
                 )
             }
-            Self::DeclaredButNotDefined(loc, name) => {
-                format!(
-                    "{}\n`{}` is declared here, but is missing a corresponding definition.",
-                    display_loc(loc),
+            Self::DeclaredButNotDefined(loc,  name) => {
+                let mut labels = labels_from_loc(code, loc);
+                labels.iter_mut().for_each(|x| {
+                    x.set_label(Some("declared here".to_owned()));
+                });
+                miette::miette!(
+                    labels = labels,
+                    "`{}` is declared, but is missing a corresponding definition.",
                     name
                 )
             }
             Self::NoMatchingRecursiveOrIterative(loc, _) => {
-                format!(
-                    "{}\nThis `self` has no matching `recursive` or `iterative`.",
-                    display_loc(loc)
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "This `self` has no matching `recursive` or `iterative`.",
                 )
             }
             Self::SelfUsedInNegativePosition(loc, _) => {
-                format!("{}\nThis `self` is used in a negative position.\n\nNegative self-references are not allowed.", display_loc(loc))
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "This `self` is used in a negative position.\n\nNegative self-references are not allowed."
+                )
             }
             Self::TypeNameNotDefined(loc, name) => {
-                format!("{}\nType `{}` is not defined.", display_loc(loc), name)
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(labels = labels, "Type `{}` is not defined.", name)
             }
             Self::DependencyCycle(loc, deps) => {
+                let labels = labels_from_loc(code, loc);
                 let mut deps_str = String::new();
                 for (i, dep) in deps.iter().enumerate() {
                     if i > 0 {
@@ -2126,56 +2155,63 @@ impl<Loc, Name: Display> TypeError<Loc, Name> {
                     }
                     write!(&mut deps_str, "{}", dep).unwrap();
                 }
-                format!(
-                    "{}\nThere is a dependency cycle:\n\n  {}\n\nDependency cycles are not allowed.",
-                    display_loc(loc),
+                miette::miette!(
+                    labels = labels,
+                    "There is a dependency cycle:\n\n  {}\n\nDependency cycles are not allowed.",
                     deps_str
                 )
             }
             Self::WrongNumberOfTypeArgs(loc, name, required_number, provided_number) => {
-                format!(
-                    "{}\nType `{}` has {} type arguments, but {} were provided.",
-                    display_loc(loc),
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "Type `{}` has {} type arguments, but {} were provided.",
                     name,
                     required_number,
                     provided_number
                 )
             }
             Self::NameNotDefined(loc, name) => {
-                format!("{}\n`{}` is not defined.", display_loc(loc), name)
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(labels = labels, "`{}` is not defined.", name)
             }
             Self::ShadowedObligation(loc, name) => {
-                format!(
-                    "{}\nCannot re-assign `{}` before handling it.",
-                    display_loc(loc),
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "Cannot re-assign `{}` before handling it.",
                     name,
                 )
             }
             Self::TypeMustBeKnownAtThisPoint(loc, _) => {
-                format!("{}\nType must be known at this point.", display_loc(loc))
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(labels = labels, "Type must be known at this point.")
             }
             Self::ParameterTypeMustBeKnown(loc, _, param) => {
-                format!(
-                    "{}\nType of parameter `{}` must be known.",
-                    display_loc(loc),
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "Type of parameter `{}` must be known.",
                     param,
                 )
             }
             Self::CannotAssignFromTo(loc, from_type, to_type) => {
+                let labels = labels_from_loc(code, loc);
                 let (mut from_type_str, mut to_type_str) = (String::new(), String::new());
                 from_type.pretty(&mut from_type_str, 1).unwrap();
                 to_type.pretty(&mut to_type_str, 1).unwrap();
-                format!(
-                    "{}\nThis type was required:\n\n  {}\n\nBut an incompatible type was provided:\n\n  {}",
-                    display_loc(loc),
+                miette::miette!(
+                    labels = labels,
+                    "This type was required:\n\n  {}\n\nBut an incompatible type was provided:\n\n  {}\n",
                     to_type_str,
                     from_type_str,
                 )
             }
             Self::UnfulfilledObligations(loc, names) => {
-                format!(
-                    "{}\nCannot end this process before handling {}.",
-                    display_loc(loc),
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "Cannot end this process before handling {}.",
                     names
                         .iter()
                         .enumerate()
@@ -2188,92 +2224,106 @@ impl<Loc, Name: Display> TypeError<Loc, Name> {
                 )
             }
             Self::InvalidOperation(loc, _, typ) => {
+                let labels = labels_from_loc(code, loc);
                 let mut typ_str = String::new();
                 typ.pretty(&mut typ_str, 1).unwrap();
-                format!(
-                    "{}\nThis operation cannot be performed on:\n\n  {}",
-                    display_loc(loc),
-                    typ_str,
+                miette::miette!(
+                    labels = labels,
+                    "This operation cannot be performed on:\n\n  {}\n",
+                    typ_str
                 )
             }
             Self::InvalidBranch(loc, branch, typ) => {
+                let labels = labels_from_loc(code, loc);
                 let mut typ_str = String::new();
                 typ.pretty(&mut typ_str, 1).unwrap();
-                format!(
-                    "{}\nBranch `{}` is not available on:\n\n  {}",
-                    display_loc(loc),
+                miette::miette!(
+                    labels = labels,
+                    "Branch `{}` is not available on:\n\n  {}\n",
                     branch,
-                    typ_str,
+                    typ_str
                 )
             }
             Self::MissingBranch(loc, branch, typ) => {
+                let labels = labels_from_loc(code, loc);
                 let mut typ_str = String::new();
                 typ.pretty(&mut typ_str, 1).unwrap();
-                format!(
-                    "{}\nBranch `{}` was not handled for:\n\n  {}",
-                    display_loc(loc),
+                miette::miette!(
+                    labels = labels,
+                    "Branch `{}` was not handled for:\n\n  {}\n",
                     branch,
-                    typ_str,
+                    typ_str
                 )
             }
             Self::RedundantBranch(loc, branch, typ) => {
+                let labels = labels_from_loc(code, loc);
                 let mut typ_str = String::new();
                 typ.pretty(&mut typ_str, 1).unwrap();
-                format!(
-                    "{}\nBranch `{}` is not possible for:\n\n  {}",
-                    display_loc(loc),
+                miette::miette!(
+                    labels = labels,
+                    "Branch `{}` is not possible for:\n\n  {}\n",
                     branch,
-                    typ_str,
+                    typ_str
                 )
             }
             Self::TypesCannotBeUnified(typ1, typ2) => {
-                format!(
-                    "{}\nThis is supposed to operate on the same type as this:\n\n{}\nBut these operations cannot be performed on the same type.",
-                    display_loc(typ1.get_loc()),
-                    display_loc(typ2.get_loc()),
+                miette::miette!(
+                    labels = two_labels_from_two_locs(
+                        code,
+                        typ1.get_loc(),
+                        typ2.get_loc(),
+                        "this".to_owned(),
+                        "should operate on the same type as this".to_owned()
+                    ),
+                    "Operations cannot be performed on the same type."
                 )
             }
             Self::NoSuchLoopPoint(loc, _) => {
-                format!(
-                    "{}\nThere is no matching loop point in scope.",
-                    display_loc(loc),
-                )
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(labels = labels, "There is no source_matching loop point in scope.")
             }
             Self::DoesNotDescendSubjectOfBegin(loc, _) => {
-                format!(
-                    "{}\nThis `loop` may diverge. Value does not descend from the corresponding `begin`.\n\nIf this is intended, use `unfounded begin`.",
-                    display_loc(loc),
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "This `loop` may diverge. Value does not descend from the corresponding `begin`.\n\nIf this is intended, use `unfounded begin`.",
                 )
             }
             Self::LoopVariableNotPreserved(loc, name) => {
-                format!(
-                    "{}\n`{}` is used by next iteration, but is no longer defined.",
-                    display_loc(loc),
+                let labels = labels_from_loc(code, loc);
+                miette::miette!(
+                    labels = labels,
+                    "`{}` is used by next iteration, but is no longer defined.",
                     name,
                 )
             }
             Self::LoopVariableChangedType(loc, name, loop_type, begin_type) => {
+                let labels = labels_from_loc(code, loc);
                 let (mut loop_type_str, mut begin_type_str) = (String::new(), String::new());
                 loop_type.pretty(&mut loop_type_str, 1).unwrap();
                 begin_type.pretty(&mut begin_type_str, 1).unwrap();
-                format!(
-                    "{}\nFor next iteration, `{}` is required to be:\n\n  {}\n\nBut it has an incompatible type:\n\n  {}",
-                    display_loc(loc),
+                miette::miette!(
+                    labels = labels,
+                    "For next iteration, `{}` is required to be:\n\n  {}\n\nBut it has an incompatible type:\n\n  {}\n",
                     name,
                     begin_type_str,
                     loop_type_str,
                 )
             }
             Self::Telltypes(loc, variables) => {
+                let labels = labels_from_loc(code, loc);
                 let mut buf = String::new();
-                write!(&mut buf, "{}\n", display_loc(loc)).unwrap();
                 for (name, typ) in variables {
                     write!(&mut buf, "{}: ", name).unwrap();
                     typ.pretty(&mut buf, 0).unwrap();
                     write!(&mut buf, "\n\n").unwrap();
                 }
-                buf
+                miette::miette! {
+                    labels = labels,
+                    "{}",
+                    buf
+                }
             }
-        }
+        }.with_source_code(source_code)
     }
 }
