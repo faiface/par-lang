@@ -986,8 +986,7 @@ let y: X = x
 type T = [type A] [type B] X
 </code></pre>
 <p>Values of universal types can be instantiated for any type. These types syntactically mirror function types but they’re qualified over types rather than values.
-They’re also similar to parameterized types.
-They are used to obscure their underlying type.</p>
+They’re also similar to parameterized types.</p>
 <pre><code class="language-par">// compare the three types of parameterizing types
 type UnivEndo = [type T] [T] T
 type ParamEndo&lt;T&gt; = [T] T
@@ -1496,7 +1495,7 @@ dual &lt;&gt; a
 | <a href="expressions/../statements/commands.html#receive-type-commands">Statement</a>
 | <a href="expressions/../statements/commands.html#send-type-commands">Destructing Statement</a>
 </sup></em></p>
-<p>Having multiple names between <code>(</code> and <code>)</code> is just syntax sugar:</p>
+<p>Having multiple names between <code>[</code> and <code>]</code> is just syntax sugar:</p>
 <pre><code class="language-par">[type T, U] x
 // is equivalent to
 [type T] [type U] x
@@ -1728,7 +1727,7 @@ x(type T)(type U)
 </code></pre>
 <p>If <code>x</code> is of the universal type <code>[type T] R</code>, the specialization <code>f(type X)</code> is of type <code>R</code>.</p>
 <p>These expressions often “instantiate generic functions”</p>
-<pre><code class="language-par">def id: [type T] [T] T = [x] x
+<pre><code class="language-par">def id = [type T] [x: T] x
 
 def id_bool: [Bool] Bool = id(type Bool)
 def id_unit: [!] ! = id(type !)

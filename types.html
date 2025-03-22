@@ -722,8 +722,7 @@ let y: X = x
 type T = [type A] [type B] X
 </code></pre>
 <p>Values of universal types can be instantiated for any type. These types syntactically mirror function types but they’re qualified over types rather than values.
-They’re also similar to parameterized types.
-They are used to obscure their underlying type.</p>
+They’re also similar to parameterized types.</p>
 <pre><code class="language-par">// compare the three types of parameterizing types
 type UnivEndo = [type T] [T] T
 type ParamEndo&lt;T&gt; = [T] T

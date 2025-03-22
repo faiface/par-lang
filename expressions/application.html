@@ -374,7 +374,7 @@ x(type T)(type U)
 </code></pre>
 <p>If <code>x</code> is of the universal type <code>[type T] R</code>, the specialization <code>f(type X)</code> is of type <code>R</code>.</p>
 <p>These expressions often “instantiate generic functions”</p>
-<pre><code class="language-par">def id: [type T] [T] T = [x] x
+<pre><code class="language-par">def id = [type T] [x: T] x
 
 def id_bool: [Bool] Bool = id(type Bool)
 def id_unit: [!] ! = id(type !)
