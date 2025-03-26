@@ -1003,7 +1003,7 @@ let id_bool: ParamEndo&lt;Bool&gt; = id(type Bool)
 // this type encapsulates the Bool
 let id_bool_2: ExistEndo = (type Bool) id_bool
 </code></pre>
-<p>For a more interesting example, see <a href="">(list reverse)</a>.</p>
+<p>A more interesting example is <a href="./expressions.html#channel-expressions">reversing a list</a> of any type.</p>
 <p>Mathematically, <code>[type T] A</code> is \(\forall\ T: A\).</p>
 <h2 id="the-bottom-type"><a class="header" href="#the-bottom-type">The Bottom Type</a></h2>
 <blockquote>
@@ -1232,7 +1232,27 @@ def is_even = chan return: (Nat) chan Bool {
   }
 }
 </code></pre>
-<p>Learn more about destructing values using commands <a href="./statements/commands.html">here</a></p>
+<p>Learn more about destructing values using commands <a href="./statements/commands.html">here</a>.</p>
+<p>A more elaborate example is reversing a list using the generator pattern:</p>
+<pre><code class="language-par">dec reverse : [type T] [List&lt;T&gt;] List&lt;T&gt;
+
+// We construct the reversed list by destructing its dual: `chan List&lt;T&gt;`.
+def reverse = [type T] [list] chan yield {
+  let yield: chan List&lt;T&gt; = list begin {
+    // The list is empty, give back the generator handle.
+    .empty!       =&gt; yield,
+    // The list starts with an item `x`.
+    .item(x) rest =&gt; do {
+      // Traverse into the rest of the list first.            
+      let yield = rest loop
+      // After that, produce `x` on the reversed list.          
+      yield.item(x)                  
+    } in yield // Finally, give back the generator handle.
+  }
+  // At the very end, signal the end of the list.
+  yield.empty!                       
+}
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="construction-expressions"><a class="header" href="#construction-expressions">Construction Expressions</a></h1>
 <blockquote>
 <p><strong><sup>Syntax</sup></strong><br />
