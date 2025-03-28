@@ -1,5 +1,6 @@
-use super::parse::{comment, Loc};
-use core::{ops::Range, str::FromStr};
+use super::parse::comment;
+use crate::location::{Point, Span};
+use core::str::FromStr;
 use winnow::{
     combinator::{alt, peek},
     error::{EmptyError, ParserError},
@@ -10,31 +11,48 @@ use winnow::{
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TokenKind {
-    LParen,
-    RParen,
-    LCurly,
-    RCurly,
-    LAngle,
-    RAngle,
-    LBrack,
-    RBrack,
+    LPar,
+    RPar,
+    LCrl,
+    RCrl,
+    LBkt,
+    RBkt,
+    Lt,
+    Gt,
+
     Colon,
-    Ident,
     Comma,
     Dot,
+    Eq,
     Arrow,
-    Equal,
     Bang,
     Quest,
     Link,
+
+    Identifier,
+    Begin,
+    Chan,
+    Dec,
+    Def,
+    Do,
+    Either,
+    In,
+    Iterative,
+    Let,
+    Loop,
+    Recursive,
+    Self_,
+    Telltypes,
+    Type,
+    Unfounded,
+
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'i> {
     pub kind: TokenKind,
     pub raw: &'i str,
-    pub loc: super::parse::Loc,
-    pub span: Range<usize>,
+    pub span: Span,
 }
 // More useful in winnow debug view
 // impl core::fmt::Debug for Token<'_> {
@@ -48,41 +66,58 @@ impl PartialEq<TokenKind> for Token<'_> {
         self.kind == *other
     }
 }
-impl From<TokenKind> for &'static str {
-    fn from(value: TokenKind) -> Self {
-        match value {
-            TokenKind::LParen => "(",
-            TokenKind::RParen => ")",
-            TokenKind::LCurly => "{",
-            TokenKind::RCurly => "}",
-            TokenKind::LBrack => "[",
-            TokenKind::RBrack => "]",
-            TokenKind::LAngle => "<",
-            TokenKind::RAngle => ">",
+
+impl TokenKind {
+    pub fn expected(&self) -> &'static str {
+        match self {
+            TokenKind::LPar => "(",
+            TokenKind::RPar => ")",
+            TokenKind::LCrl => "{",
+            TokenKind::RCrl => "}",
+            TokenKind::LBkt => "[",
+            TokenKind::RBkt => "]",
+            TokenKind::Lt => "<",
+            TokenKind::Gt => ">",
+
             TokenKind::Colon => ":",
-            TokenKind::Ident => "",
-            TokenKind::Unknown => "",
             TokenKind::Comma => ",",
             TokenKind::Dot => ".",
+            TokenKind::Eq => "=",
             TokenKind::Arrow => "=>",
-            TokenKind::Equal => "=",
             TokenKind::Bang => "!",
             TokenKind::Quest => "?",
             TokenKind::Link => "<>",
+
+            TokenKind::Identifier => "identifier",
+            TokenKind::Begin => "begin",
+            TokenKind::Chan => "chan",
+            TokenKind::Dec => "dec",
+            TokenKind::Def => "def",
+            TokenKind::Do => "do",
+            TokenKind::Either => "either",
+            TokenKind::In => "in",
+            TokenKind::Iterative => "iterative",
+            TokenKind::Let => "let",
+            TokenKind::Loop => "loop",
+            TokenKind::Recursive => "recursive",
+            TokenKind::Self_ => "self",
+            TokenKind::Telltypes => "telltypes",
+            TokenKind::Type => "type",
+            TokenKind::Unfounded => "unfounded",
+
+            TokenKind::Unknown => "???",
         }
     }
 }
 
 impl PartialEq<str> for Token<'_> {
     fn eq(&self, other: &str) -> bool {
-        <&str>::from(self.kind) == other
-            || (matches!(self.kind, TokenKind::Ident) && self.raw == other)
+        self.raw == other
     }
 }
 impl PartialEq<&str> for Token<'_> {
     fn eq(&self, &other: &&str) -> bool {
-        <&str>::from(self.kind) == other
-            || (matches!(self.kind, TokenKind::Ident) && self.raw == other)
+        self.raw == other
     }
 }
 
@@ -121,14 +156,32 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
             let Some((raw, kind)) = (match c {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
-                    let ident = take_while(
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    let raw = take_while(
                         0..,
                         |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'),
                     )
-                    .take()
-                    .parse_next(input)?;
-                    Some((ident, TokenKind::Ident))
+                        .take()
+                        .parse_next(input)?;
+                    let kind = match raw {
+                        "begin" => TokenKind::Begin,
+                        "chan" => TokenKind::Chan,
+                        "dec" => TokenKind::Dec,
+                        "def" => TokenKind::Def,
+                        "do" => TokenKind::Do,
+                        "either" => TokenKind::Either,
+                        "in" => TokenKind::In,
+                        "iterative" => TokenKind::Iterative,
+                        "let" => TokenKind::Let,
+                        "loop" => TokenKind::Loop,
+                        "recursive" => TokenKind::Recursive,
+                        "self" => TokenKind::Self_,
+                        "telltypes" => TokenKind::Telltypes,
+                        "type" => TokenKind::Type,
+                        "unfounded" => TokenKind::Unfounded,
+                        _ => TokenKind::Identifier,
+                    };
+                    Some((raw, kind))
                 }
                 '\n' => {
                     let _ = any::<&str, Error>.parse_next(input);
@@ -148,38 +201,38 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                 }
                 '[' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LBrack))
+                    Some((raw, TokenKind::LBkt))
                 }
                 ']' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RBrack))
+                    Some((raw, TokenKind::RBkt))
                 }
                 '(' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LParen))
+                    Some((raw, TokenKind::LPar))
                 }
                 ')' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RParen))
+                    Some((raw, TokenKind::RPar))
                 }
                 '{' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LCurly))
+                    Some((raw, TokenKind::LCrl))
                 }
                 '}' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RCurly))
+                    Some((raw, TokenKind::RCrl))
                 }
                 '<' => Some(
                     alt((
                         "<>".map(|raw| (raw, TokenKind::Link)),
-                        "<".map(|raw| (raw, TokenKind::LAngle)),
+                        "<".map(|raw| (raw, TokenKind::Lt)),
                     ))
                     .parse_next(input)?,
                 ),
                 '>' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RAngle))
+                    Some((raw, TokenKind::Gt))
                 }
                 '/' => {
                     let (is_comment, raw) = alt((
@@ -205,7 +258,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                 '=' => Some(
                     alt((
                         ("=>").map(|raw| (raw, TokenKind::Arrow)),
-                        ("=").map(|raw| (raw, TokenKind::Equal)),
+                        ("=").map(|raw| (raw, TokenKind::Eq)),
                     ))
                     .parse_next(input)?,
                 ),
@@ -224,17 +277,22 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
             }) else {
                 continue;
             };
+            let start = Point {
+                offset: idx,
+                row,
+                column,
+            };
+            idx += raw.len();
+            let end = Point {
+                offset: idx,
+                row,
+                column: column + raw.len(),
+            };
             tokens.push(Token {
                 kind,
                 raw,
-                // one-based row/column
-                loc: Loc::Code {
-                    line: row + 1,
-                    column: column + 1,
-                },
-                span: idx..idx + raw.len(),
+                span: Span { start, end },
             });
-            idx += raw.len();
         }
         Ok(tokens)
     })(input)
@@ -251,20 +309,20 @@ mod test {
         assert_eq!(
             tokens.iter().map(|x| x.kind).collect::<Vec<_>>(),
             vec![
-                TokenKind::LParen,
-                TokenKind::LCurly,
-                TokenKind::LBrack,
-                TokenKind::LAngle,
-                TokenKind::RAngle,
+                TokenKind::LPar,
+                TokenKind::LCrl,
+                TokenKind::LBkt,
+                TokenKind::Lt,
+                TokenKind::Gt,
                 TokenKind::Link,
-                TokenKind::RBrack,
-                TokenKind::RCurly,
-                TokenKind::RParen,
+                TokenKind::RBkt,
+                TokenKind::RCrl,
+                TokenKind::RPar,
                 TokenKind::Colon,
-                TokenKind::Ident,
+                TokenKind::Identifier,
                 TokenKind::Colon,
-                TokenKind::Ident,
-                TokenKind::Ident,
+                TokenKind::Identifier,
+                TokenKind::Identifier,
             ]
         );
         eprintln!("{:#?}", tokens);

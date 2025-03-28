@@ -7,6 +7,7 @@ use std::{
     hash::Hash,
     sync::{Arc, Mutex},
 };
+use crate::location::Span;
 
 pub struct Handle<Loc, Name, Typ> {
     refresh: Arc<dyn Fn() + Send + Sync>,
@@ -36,17 +37,16 @@ pub enum Request<Loc, Name> {
     Either(Loc, Arc<[Name]>),
 }
 
-impl<Loc, Name, Typ> Handle<Loc, Name, Typ>
+impl<Name, Typ> Handle<Span, Name, Typ>
 where
-    Loc: Default + Clone + Eq + Hash + Send + Sync + 'static,
     Name: Clone + Eq + Hash + Send + Sync + 'static,
     Typ: Send + Sync + 'static,
 {
-    pub fn events(&self) -> &[Event<Loc, Name, Typ>] {
+    pub fn events(&self) -> &[Event<Span, Name, Typ>] {
         &self.events
     }
 
-    pub fn interaction(&self) -> Option<Result<Request<Loc, Name>, runtime::Error<Loc, Name>>> {
+    pub fn interaction(&self) -> Option<Result<Request<Span, Name>, runtime::Error<Span, Name>>> {
         match &self.interaction {
             Some(Ok(int)) => Some(Ok(int.request.clone())),
             Some(Err(error)) => Some(Err(error.clone())),
@@ -54,7 +54,7 @@ where
         }
     }
 
-    pub fn choose(handle: Arc<Mutex<Self>>, loc: Loc, chosen: Name) {
+    pub fn choose(handle: Arc<Mutex<Self>>, loc: Span, chosen: Name) {
         if let Some(Ok(mut int)) = handle.lock().expect("lock failed").interaction.take() {
             int.context
                 .spawner()
@@ -63,7 +63,7 @@ where
                     async move {
                         match int
                             .context
-                            .choose_in(Loc::default(), int.value, chosen.clone())
+                            .choose_in(Span::default(), int.value, chosen.clone())
                             .await
                         {
                             Ok(value) => {
@@ -87,8 +87,8 @@ where
 
     pub fn start_expression(
         refresh: Arc<dyn Fn() + Send + Sync>,
-        context: Context<Loc, Name, Typ>,
-        expression: &Expression<Loc, Name, Typ>,
+        context: Context<Span, Name, Typ>,
+        expression: &Expression<Name, Typ>,
     ) -> Arc<Mutex<Self>> {
         let mut context = context;
         match context.evaluate(expression) {
@@ -104,8 +104,8 @@ where
 
     pub fn start(
         refresh: Arc<dyn Fn() + Send + Sync>,
-        context: Context<Loc, Name, Typ>,
-        value: Value<Loc, Name>,
+        context: Context<Span, Name, Typ>,
+        value: Value<Span, Name>,
     ) -> Arc<Mutex<Self>> {
         let handle = Arc::new(Mutex::new(Self {
             refresh,
@@ -124,8 +124,8 @@ where
 
     async fn run(
         handle: Arc<Mutex<Self>>,
-        mut context: Context<Loc, Name, Typ>,
-        mut value: Value<Loc, Name>,
+        mut context: Context<Span, Name, Typ>,
+        mut value: Value<Span, Name>,
     ) {
         let mut consecutive_dynamic: usize = 0;
 
@@ -156,7 +156,7 @@ where
                         Message::Swap(runtime::Request::Receive(loc), tx) => {
                             let (tx1, rx1) = oneshot::channel();
                             let (tx2, rx2) = oneshot::channel();
-                            tx.send(Message::Send(Loc::default(), Value::Receiver(rx1), rx2))
+                            tx.send(Message::Send(Span::default(), Value::Receiver(rx1), rx2))
                                 .ok()
                                 .expect("receiver dropped");
 
@@ -179,7 +179,7 @@ where
                         }
 
                         Message::Swap(runtime::Request::Continue(loc), tx) => {
-                            tx.send(Message::Break(Loc::default()))
+                            tx.send(Message::Break(Span::default()))
                                 .ok()
                                 .expect("receiver dropped");
                             handle.add_event(Event::Continue(loc));
@@ -215,29 +215,29 @@ where
 
                 Value::Sender(tx) => {
                     value = Value::Receiver(
-                        context.swap(runtime::Request::Dynamic(Loc::default()), tx),
+                        context.swap(runtime::Request::Dynamic(Span::default()), tx),
                     );
                 }
             };
         }
     }
 
-    fn add_event(&mut self, event: Event<Loc, Name, Typ>) {
+    fn add_event(&mut self, event: Event<Span, Name, Typ>) {
         self.events.push(event);
         (self.refresh)();
     }
 
     fn request_interaction(
         &mut self,
-        mut context: Context<Loc, Name, Typ>,
-        value: Value<Loc, Name>,
-        request: Request<Loc, Name>,
+        mut context: Context<Span, Name, Typ>,
+        value: Value<Span, Name>,
+        request: Request<Span, Name>,
     ) {
         if self.cancelled {
             context
                 .spawner()
                 .spawn(async move {
-                    let _ = context.continue_from(Loc::default(), value).await;
+                    let _ = context.continue_from(Span::default(), value).await;
                 })
                 .expect("spawn failed");
             return;
@@ -263,7 +263,7 @@ where
             int.context
                 .spawner()
                 .spawn(async move {
-                    let _ = int.context.continue_from(Loc::default(), int.value).await;
+                    let _ = int.context.continue_from(Span::default(), int.value).await;
                 })
                 .expect("spawn failed");
         }
