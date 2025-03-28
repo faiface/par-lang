@@ -2,6 +2,7 @@
 name = "par-lang"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/faiface/par-lang"
 
 [dependencies]
 pest_derive = "2.7.14"
@@ -17,3 +18,8 @@ winnow = { version = "0.7.4", features = [
     #"debug" # debug output/state of parser
 ] }
 miette = { version = "7.5.0", features = ["fancy"] }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
