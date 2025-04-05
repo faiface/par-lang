@@ -188,6 +188,10 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     ))
                     .parse_next(input)?;
                     if is_comment {
+                        if let Some(extra_len) = raw.chars().rev().position(|x| x == '\n') {
+                            last_newline = input.len() + extra_len;
+                        }
+                        row += raw.chars().filter(|&x| x == '\n').count();
                         idx += raw.len();
                         None
                     } else {
@@ -268,5 +272,37 @@ mod test {
             ]
         );
         eprintln!("{:#?}", tokens);
+    }
+
+    #[test]
+    fn block_comment() {
+        let tokens = lex(&mut "abc/*\n\n/* comment \n*///\n*/ not_a_comment /*  */ /");
+        eprintln!("{:#?}", tokens);
+        assert_eq!(
+            tokens,
+            vec![
+                Token {
+                    kind: TokenKind::Ident,
+                    raw: "abc",
+                    loc: Loc::Code { line: 1, column: 1 },
+                    span: 0..3
+                },
+                Token {
+                    kind: TokenKind::Ident,
+                    raw: "not_a_comment",
+                    loc: Loc::Code { line: 5, column: 4 },
+                    span: 27..40
+                },
+                Token {
+                    kind: TokenKind::Unknown,
+                    raw: "/",
+                    loc: Loc::Code {
+                        line: 5,
+                        column: 25
+                    },
+                    span: 48..49
+                }
+            ]
+        )
     }
 }
