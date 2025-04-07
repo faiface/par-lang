@@ -1,0 +1,36 @@
+type Bool    = either { .true!, .false! }
+type Nat     = recursive either { .zero!, .add1 self }
+type List<T> = recursive either { .empty!, .item(T) self }
+
+type Func<A, B> = iterative {
+  .drop => !
+  .apply(A) => (B) self
+}
+
+dec filter : [Func<Nat, Bool>, List<Nat>] List<Nat>
+def filter = [predicate, list] list begin {
+  .empty! => do {
+    predicate.drop?
+  } in .empty!
+
+  .item(value) rest => do {
+    predicate.apply(value)[result]
+  } in result {
+    .true! => .item(value) rest loop
+    .false! => rest loop
+  }
+}
+
+dec not : [Bool] Bool
+def not = [b] b { .true! => .false!, .false! => .true! }
+
+dec is_even : Func<Nat, Bool>
+def is_even = begin {
+  .drop => !
+  .apply(n) => (n begin {
+    .zero!  => .true!
+    .add1 n => not(n loop)
+  }) loop
+}
+
+def filter_even = filter(is_even)

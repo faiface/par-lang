@@ -1,0 +1,114 @@
+type Bool  = either { .true!, .false! }
+type Color = either { .red!, .green!, .blue! }
+
+type List<T> = recursive either {
+  .empty!
+  .item(T) self
+}
+
+type Seq<T> = iterative {
+  .close => !
+  .next  => (T) self
+}
+
+type Mapper<A, B> = iterative {
+  .close    => !
+  .apply(A) => (B) self
+}
+
+dec mapList : [type A, B] [List<A>, Mapper<A, B>] List<B>
+def mapList = [type A, B] [list, mapper]
+  list begin {
+    .empty! => do {
+      mapper.close?
+    } in .empty!
+
+    .item(x) xs => do {
+      mapper.apply(x)[y]
+    } in .item(y) xs loop
+  }
+
+dec mapSeq : [type A, B] [Seq<A>, Mapper<A, B>] Seq<B>
+def mapSeq = [type A, B] [seq, mapper]
+  begin {
+    .close => do {
+      seq.close?
+      mapper.close?
+    } in !
+    .next => do {
+      seq.next[x]
+      mapper.apply(x)[y]
+    } in (y) loop
+  }
+
+dec listrgb : List<Color>
+def listrgb =
+  .item(.red!)
+  .item(.green!)
+  .item(.blue!)
+  .empty!
+
+dec red_forever : Seq<Color>
+def red_forever = begin {
+  .close => !
+  .next  => (.red!) loop
+}
+
+dec rgb : [Color] Color
+def rgb = [value] value {
+  .red!   => .red!
+  .green! => .green!
+  .blue!  => .blue!
+}
+
+dec swap : [Bool] Bool
+def swap = [bool] bool {
+  .true! => .false!
+  .false! => .true!
+}
+
+dec true  : Bool
+dec false : Bool
+
+def true  = chan result { result.true! }
+def false = chan result { result.false! }
+
+def bools_forever =
+  let bool: Bool = .true! in
+  begin {
+    .close => bool {
+      .true! => !
+      .false! => !
+    }
+    .next => {
+      let (output: Bool, bool: Bool)! = bool {
+        .true! => (.true!, .false!)!
+        .false! => (.false!, .true!)!
+      } in (output) loop
+    }
+  }
+
+dec zip : [type T, U] [List<T>, Seq<U>] List<(T, U)!>
+def zip = [type T, U] [list, seq] list begin {
+  .empty! => do {
+    seq.close?
+  } in .empty!
+
+  .item(x) xs => do {
+    seq.next[y]
+  } in .item((x, y)!) xs loop
+}
+
+def zipped = zip(type Color, Color)(listrgb, red_forever)
+
+def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
+  .close => do {
+    seq1.close?
+    seq2.close?
+  } in !
+
+  .next => do {
+    seq1.next[x]
+    seq2.next[y]
+  } in ((x, y)!) loop
+}

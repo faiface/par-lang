@@ -1,0 +1,43 @@
+type Nat = recursive either {
+  .zero!
+  .succ self
+}
+
+type List<T> = recursive either {
+  .empty!
+  .item(T) self
+}
+
+dec bubble_sort : [List<Nat>] List<Nat>
+def bubble_sort = [list] chan yield {
+  let yield: chan List<Nat> = list unfounded begin {
+    .empty! => yield,
+    .item(first) tail => do {
+      let (head, last)! = bubble_sort_step(first, tail)
+      let yield = head loop
+      yield.item(last)
+    } in yield
+  }
+  yield.empty!
+}
+
+dec bubble_sort_step : [Nat, List<Nat>] (List<Nat>, Nat)!
+def bubble_sort_step = [first, tail] tail begin {
+  .empty! => (.empty!, first)!
+  .item(second) tail => do {
+    let (list_first, first)! = sort2(first, second)
+    let (between, last)! = tail loop
+  } in (.item(list_first) between, last)!
+}
+
+dec sort2 : [Nat, Nat] (Nat, Nat)!
+def sort2 = [n1, n2] n1 begin {
+  .zero! => (.zero!, n2)!
+  .succ p1 => n2 {
+    .zero! => (.zero!, .succ p1)!
+    .succ p2 => do {
+      let n2 = p2
+      let (p1, p2)! = p1 loop
+    } in (.succ p1, .succ p2)!
+  }
+}

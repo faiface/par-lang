@@ -1,0 +1,90 @@
+type Nat = recursive either { .zero!, .add1 self }
+
+def drop: [Nat] ! = [n] n begin {
+  .zero!  => !
+  .add1 n => n loop
+}
+
+type Move = either {
+  .rock!
+  .paper!
+  .scissors!
+}
+
+type Player = iterative :game {
+  .stop => !
+  .play_round => iterative :round {
+    .stop_round => self :game,
+    .play_move => (Move) {
+      .win  => self :game,
+      .lose => self :game,
+      .draw => self :round,
+    }
+  }
+}
+
+type Outcome = either {
+  .first_won!
+  .second_won!
+  .too_long!
+}
+
+type Game = iterative {
+  .stop => !
+  .play_round => (Outcome) self
+}
+
+dec start_game : [Player, Player] Game
+def start_game = [p1, p2] begin :game {
+  .stop => do {
+    p1.stop?
+    p2.stop?
+  } in !
+
+  .play_round => do {
+    let limit: Nat = .add1.add1.add1.zero!
+    p1.play_round
+    p2.play_round
+  } in limit begin :round {
+    .zero! => do {
+      p1.stop_round
+      p2.stop_round
+    } in (.too_long!) loop :game
+
+    .add1 limit => do {
+      p1.play_move[move1]
+      p2.play_move[move2]
+    } in calculate_round(move1, move2) {
+      .first! => do {
+        p1.win p2.lose
+        drop(limit)?
+      } in (.first_won!) loop :game
+
+      .second! => do {
+        p1.lose p2.win
+        drop(limit)?
+      } in (.second_won!) loop :game
+
+      .draw! => do { p1.draw p2.draw } in limit loop :round
+    }
+  }
+}
+
+dec calculate_round : [Move, Move] either { .first!, .second!, .draw! }
+def calculate_round = [move1, move2] move1 {
+  .rock! => move2 {
+    .rock! => .draw!
+    .paper! => .second!
+    .scissors! => .first!
+  }
+  .paper! => move2 {
+    .rock! => .first!
+    .paper! => .draw!
+    .scissors! => .second!
+  }
+  .scissors! => move2 {
+    .rock! => .second!
+    .paper! => .first!
+    .scissors! => .draw!
+  }
+}

@@ -1,0 +1,32 @@
+type Bool = either {
+  .true!
+  .false!
+}
+
+type List<T> = recursive either {
+  .empty!
+  .item(T) self
+}
+
+type Tree<T> = recursive either {
+  .empty!
+  .node(self, T, self)!
+}
+
+dec flatten : [type T] [Tree<T>] List<T>
+def flatten = [type T] [tree] chan yield {
+  let yield: chan List<T> = tree begin {
+    .empty! => yield,
+
+    .node(left, value, right)! => do {
+      let yield = left loop
+      yield.item(value)
+    } in right loop
+  }
+
+  yield.empty!
+}
+
+def main = flatten(type Bool)(
+  .node(.node(.empty!, .true!, .empty!)!, .false!, .empty!)!
+)

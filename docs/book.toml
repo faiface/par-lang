@@ -1,0 +1,19 @@
+[book]
+title = "Par Documentation"
+authors = ["s15n"]
+description = "Documentation for the Par programming language"
+src = "src"
+language = "en"
+multilingual = false
+
+[output.html]
+theme = "par-theme"
+default-theme = "light"
+preferred-dark-theme = "navy"
+smart-punctuation = true
+git-repository-url = "https://github.com/faiface/par-lang/tree/main/docs"
+mathjax-support = true
+edit-url-template = "https://github.com/faiface/par-lang/edit/main/docs/{path}"
+
+[output.html.code.hidelines]
+par = "?"
