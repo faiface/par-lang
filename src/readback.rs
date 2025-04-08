@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, RichText, Ui};
+use eframe::egui::{self, Color32, RichText, Ui, WidgetText};
 use futures::{
     channel::oneshot::{channel, Sender},
     future::{join, BoxFuture},
@@ -19,17 +19,23 @@ use crate::{
         readback::{ReadbackResult, SharedState},
         Tree,
     },
-    par::{parse::Loc, types::Type},
+    par::{
+        parse::{Loc, Program},
+        process::Expression,
+        types::Type,
+    },
 };
 
-use core::fmt::Debug;
+use core::fmt::{Debug, Display};
 use std::{
     collections::BTreeSet,
+    hash::Hash,
     sync::{Arc, Mutex},
 };
 
 use crate::icombs::Name;
 
+type Prog = Arc<Program<Loc, Name, Arc<Expression<Loc, Name, Type<Loc, Name>>>>>;
 #[derive(Clone)]
 pub struct ReadbackStateInner {
     pub shared: SharedState,
@@ -91,35 +97,15 @@ impl Debug for Handle {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Polarity {
-    Positive,
-    Negative,
-}
-
-impl Event {
-    fn polarity(&self) -> Polarity {
-        match self {
-            Self::Send(_) => Polarity::Positive,
-            Self::Receive(_) => Polarity::Negative,
-            Self::SendType(_) => Polarity::Positive,
-            Self::ReceiveType(_) => Polarity::Negative,
-            Self::Break => Polarity::Positive,
-            Self::Continue => Polarity::Negative,
-            Self::Either(_) => Polarity::Positive,
-            Self::Choose(_) => Polarity::Negative,
-            Self::Named(_) => Polarity::Positive,
-        }
-    }
-}
-
 pub struct ReadbackState {
     pub root: Arc<Mutex<Handle>>,
     pub inner: ReadbackStateInner,
     // it's OK that this is unused, because we only use it to drop it when we're dropped.
     #[allow(unused)]
     pub net_tx: Sender<()>,
-    root_impl: ReadbackImplLevel,
+    pub root_impl: ReadbackImplLevel,
+    pub show_net: bool,
+    pub show_stats: bool,
 }
 
 impl ReadbackState {
@@ -127,11 +113,42 @@ impl ReadbackState {
         ui.vertical(|ui| {
             self.root_impl.show_message(ui);
             ui.horizontal(|ui| {
+                ui.checkbox(&mut self.show_net, "Show net");
+                ui.checkbox(&mut self.show_stats, "Show stats");
+            });
+            if self.show_stats {
+                let rewrites = self
+                    .root
+                    .lock()
+                    .unwrap()
+                    .net
+                    .lock()
+                    .unwrap()
+                    .rewrites
+                    .clone();
+                ui.vertical(|ui| {
+                    let row = |ui: &mut Ui, s: &str, n: u64| {
+                        ui.horizontal(|ui| {
+                            ui.label(s);
+                            ui.label(RichText::from(n.to_string()).color(Color32::WHITE));
+                        });
+                    };
+                    row(ui, "Annihilate:", rewrites.annihilate);
+                    row(ui, "Commute:", rewrites.commute);
+                    row(ui, "Erase:", rewrites.era);
+                    row(ui, "Expand:", rewrites.expand);
+                    row(ui, "External:", rewrites.ext);
+                    row(ui, "Total:", rewrites.total());
+                });
+            }
+            ui.horizontal(|ui| {
                 self.inner.show_handle(ui, self.root.clone(), prog);
+                if self.show_net {
+                    ui.code(self.root.lock().unwrap().net.lock().unwrap().show());
+                };
             });
         });
     }
-
     pub fn initialize(
         ui: &mut egui::Ui,
         net: Net,
@@ -157,6 +174,8 @@ impl ReadbackState {
             root: Arc::new(Mutex::new(handle)),
             net_tx: net_tx,
             root_impl: root_impl,
+            show_net: false,
+            show_stats: false,
             inner: ReadbackStateInner {
                 shared,
                 spawner: spawner,
@@ -165,84 +184,9 @@ impl ReadbackState {
         }
     }
 }
-
 // first, we render as deep as we can. Button clicks replace nodes by a Halt node
 // then, we read back, replacing Halt nodes with other nodes. This is the async part
 impl ReadbackStateInner {
-    fn show_history_line<'h>(
-        &mut self,
-        ui: &mut egui::Ui,
-        prog: Arc<CheckedProgram>,
-        events: &'h [Event],
-    ) -> &'h [Event] {
-        let mut polarity = None::<Polarity>;
-        let mut events = events;
-
-        ui.horizontal(|ui| {
-            while let Some(event) = events.get(0) {
-                if polarity.map_or(false, |p| p != event.polarity()) {
-                    return events;
-                }
-
-                if polarity == None {
-                    match event.polarity() {
-                        Polarity::Positive => {
-                            ui.label(RichText::from("+").code());
-                        }
-                        Polarity::Negative => {
-                            ui.label(RichText::from("-").code());
-                        }
-                    }
-                }
-
-                polarity = Some(event.polarity());
-                events = &events[1..];
-
-                let prog = Arc::clone(&prog);
-
-                match event {
-                    Event::Send(handle) | Event::Receive(handle) => {
-                        self.show_handle(ui, handle.clone(), prog);
-                        return events;
-                    }
-                    Event::SendType(name) | Event::ReceiveType(name) => {
-                        ui.label(format!("type {}", name));
-                    }
-                    Event::Either(name) | Event::Choose(name) => {
-                        ui.label(RichText::from(name.to_string()).strong());
-                    }
-                    Event::Named(tree) => {
-                        let ty = &tree.ty;
-                        if let Type::Name(_, name, _) = ty {
-                            ui.label(format!("name {}", name));
-                        }
-                    }
-                    Event::Break | Event::Continue => {
-                        ui.label(RichText::from("!").strong().code());
-                    }
-                }
-            }
-
-            &[]
-        })
-        .inner
-    }
-
-    fn show_history<'h>(
-        &mut self,
-        ui: &mut egui::Ui,
-        prog: Arc<CheckedProgram>,
-        events: &'h [Event],
-    ) {
-        let mut events = events;
-
-        ui.vertical(|ui| {
-            while !events.is_empty() {
-                events = self.show_history_line(ui, Arc::clone(&prog), events);
-            }
-        });
-    }
-
     pub fn show_handle(
         &mut self,
         ui: &mut egui::Ui,
@@ -255,8 +199,72 @@ impl ReadbackStateInner {
             .outer_margin(egui::Margin::same(2))
             .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    self.show_history(ui, Arc::clone(&prog), &handle.lock().unwrap().history);
-
+                    for event in handle.lock().unwrap().history.iter_mut() {
+                        let prog = prog.clone();
+                        match event {
+                            Event::Send(handle) => {
+                                ui.horizontal(|ui| {
+                                    ui.label("+");
+                                    self.show_handle(ui, handle.clone(), prog);
+                                });
+                            }
+                            Event::Receive(handle) => {
+                                ui.horizontal(|ui| {
+                                    ui.label("-");
+                                    self.show_handle(ui, handle.clone(), prog);
+                                });
+                            }
+                            Event::SendType(name) => {
+                                ui.horizontal(|ui| {
+                                    ui.label("+");
+                                    ui.label(format!("type {}", name));
+                                });
+                            }
+                            Event::ReceiveType(name) => {
+                                ui.horizontal(|ui| {
+                                    ui.label("-");
+                                    ui.label(format!("type {}", name));
+                                });
+                            }
+                            Event::Either(name) => {
+                                ui.horizontal(|ui| {
+                                    ui.label("+");
+                                    ui.label(
+                                        RichText::from(name.to_string())
+                                            .color(Color32::WHITE)
+                                            .strong(),
+                                    );
+                                });
+                            }
+                            Event::Choose(name) => {
+                                ui.horizontal(|ui| {
+                                    ui.label("-");
+                                    ui.label(
+                                        RichText::from(name.to_string()).color(Color32::WHITE),
+                                    );
+                                });
+                            }
+                            Event::Named(tree) => {
+                                let ty = &tree.ty;
+                                let tree = &tree.tree;
+                                if let Type::Name(_, name, _) = ty {
+                                    ui.label(format!("name {}", name));
+                                }
+                            }
+                            Event::Break => {
+                                ui.horizontal(|ui| {
+                                    ui.label("+");
+                                    ui.label(RichText::from("!").color(Color32::WHITE).strong());
+                                });
+                            }
+                            Event::Continue => {
+                                ui.horizontal(|ui| {
+                                    ui.label("-");
+                                    ui.label(RichText::from("!").color(Color32::WHITE));
+                                });
+                            }
+                        }
+                    }
                     let mut lock = handle.lock().unwrap();
                     if let Some(end) = lock.end.as_mut() {
                         match end {
@@ -288,12 +296,15 @@ impl ReadbackStateInner {
                             Request::Waiting => {
                                 ui.label(RichText::from("waiting").italics());
                             }
-                            Request::Choose(_, options) => {
+                            Request::Choose(ctx, options) => {
                                 let mut chosen = None;
                                 ui.vertical(|ui| {
-                                    for (_, (name, _, _)) in options.iter().enumerate() {
+                                    for (idx, (name, _, _)) in options.iter().enumerate() {
                                         if ui
-                                            .button(RichText::new(name.to_string()).strong())
+                                            .button(
+                                                RichText::new(name.to_string())
+                                                    .color(Color32::WHITE),
+                                            )
                                             .clicked()
                                         {
                                             chosen = Some(name.clone());
@@ -328,7 +339,12 @@ impl ReadbackStateInner {
                                 }
                             }
                             Request::Expand(_) => {
-                                if ui.button(RichText::from("expand").italics()).clicked() {
+                                if ui
+                                    .button(
+                                        RichText::from("expand").italics().color(Color32::WHITE),
+                                    )
+                                    .clicked()
+                                {
                                     let Some(Request::Expand(package)) =
                                         core::mem::replace(&mut lock.end, Some(Request::Waiting))
                                     else {
@@ -349,7 +365,11 @@ impl ReadbackStateInner {
                             Request::Variable(id) => {
                                 ui.horizontal(|ui| {
                                     ui.label("Variable: ");
-                                    ui.label(RichText::new(number_to_string(*id)).strong().code());
+                                    ui.label(
+                                        RichText::new(number_to_string(*id))
+                                            .color(Color32::WHITE)
+                                            .code(),
+                                    );
                                 });
                             }
                         }
@@ -357,7 +377,6 @@ impl ReadbackStateInner {
                 });
             });
     }
-
     pub fn readback_result(
         &mut self,
         handle: Arc<Mutex<Handle>>,
@@ -467,7 +486,6 @@ impl ReadbackStateInner {
         .boxed()
     }
 }
-
 pub fn prepare_type_for_readback(
     type_defs: &TypeDefs<Loc, Name>,
     mut ty: Type<Loc, Name>,
@@ -521,7 +539,7 @@ impl ReadbackImplLevel {
         use core::ops::BitAnd;
         use ReadbackImplLevel::*;
         match typ {
-            Type::Chan(_, body) => ReadbackImplLevel::from_type(&body, prog, type_variables),
+            Type::Chan(loc, body) => ReadbackImplLevel::from_type(&body, prog, type_variables),
             Type::Name(loc, name, items) => {
                 if !type_variables.contains(name) {
                     ReadbackImplLevel::from_type(
@@ -561,7 +579,6 @@ impl ReadbackImplLevel {
             _ => unreachable!("Type not implemented: {typ:?}"),
         }
     }
-
     fn show_message(&self, ui: &mut Ui) {
         match self {
             ReadbackImplLevel::Incomplete => {

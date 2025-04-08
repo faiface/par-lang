@@ -166,6 +166,35 @@ impl Clone for Tree {
 }
 
 #[derive(Debug, Default, Clone)]
+pub struct Rewrites {
+    pub commute: u64,
+    pub annihilate: u64,
+    pub era: u64,
+    pub ext: u64,
+    pub expand: u64,
+}
+
+impl core::ops::Add<Rewrites> for Rewrites {
+    type Output = Rewrites;
+
+    fn add(self, rhs: Rewrites) -> Self::Output {
+        Self {
+            commute: self.commute + rhs.commute,
+            annihilate: self.annihilate + rhs.annihilate,
+            era: self.era + rhs.era,
+            expand: self.expand + rhs.expand,
+            ext: self.ext + rhs.ext,
+        }
+    }
+}
+
+impl Rewrites {
+    pub fn total(&self) -> u64 {
+        self.commute + self.annihilate + self.era + self.ext
+    }
+}
+
+#[derive(Debug, Default, Clone)]
 /// A Net represents the current state of the runtime
 /// It contains a list of active pairs, as well as a list of free ports.
 /// It also stores a map of variables, which records whether variables were linked by either of their sides
@@ -175,6 +204,7 @@ pub struct Net {
     pub vars: BTreeMap<VarId, Option<Tree>>,
     pub free_vars: Vec<VarId>,
     pub packages: Arc<IndexMap<usize, Net>>,
+    pub rewrites: Rewrites,
 }
 
 impl Net {
@@ -190,14 +220,18 @@ impl Net {
                 // link anyway
                 self.link(a, b);
             }
-            (Era, Era) => (),
+            (Era, Era) => {
+                self.rewrites.era += 1;
+            }
             (Con(a0, a1), Era) | (Dup(a0, a1), Era) | (Era, Con(a0, a1)) | (Era, Dup(a0, a1)) => {
                 self.link(*a0, Era);
                 self.link(*a1, Era);
+                self.rewrites.era += 1;
             }
             (Con(a0, a1), Con(b0, b1)) | (Dup(a0, a1), Dup(b0, b1)) => {
                 self.link(*a0, *b0);
                 self.link(*a1, *b1);
+                self.rewrites.annihilate += 1;
             }
             (Con(a0, a1), Dup(b0, b1)) | (Dup(b0, b1), Con(a0, a1)) => {
                 let (a00, b00) = self.create_wire();
@@ -208,14 +242,17 @@ impl Net {
                 self.link(*a1, Tree::Dup(Box::new(a10), Box::new(a11)));
                 self.link(*b0, Tree::Con(Box::new(b00), Box::new(b10)));
                 self.link(*b1, Tree::Con(Box::new(b01), Box::new(b11)));
+                self.rewrites.commute += 1;
             }
             (Ext(f, a), b) | (b, Ext(f, a)) => {
                 f(self, Ok(b), a);
+                self.rewrites.ext += 1;
             }
-            (Package(_), Era) | (Era, Package(_)) => {}
+            (Package(_), Era) | (Era, Package(_)) => self.rewrites.era += 1,
             (Package(id), Dup(a, b)) | (Dup(a, b), Package(id)) => {
                 self.link(*a, Package(id));
                 self.link(*b, Package(id));
+                self.rewrites.commute += 1;
             }
             (Package(_), Package(_)) => {
                 unreachable!("Packages should not interact with packages");
@@ -223,6 +260,7 @@ impl Net {
             (Package(id), a) | (a, Package(id)) => {
                 let b = self.dereference_package(id);
                 self.interact(a, b);
+                self.rewrites.expand += 1;
             }
         }
     }
@@ -254,6 +292,7 @@ impl Net {
         self.freshen_variables(&mut net);
         self.redexes.append(&mut net.redexes);
         self.vars.append(&mut net.vars);
+        self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites;
         net.ports.pop_back().unwrap()
     }
 
