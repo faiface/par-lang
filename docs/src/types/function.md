@@ -21,7 +21,7 @@ type BinaryFunction2 = [Int, Int] Int
 
 This is the preferred way to define functions of multiple arguments.
 
-Functions are [**linear**](TODO). While a globally defined function may be called any number of times,
+**Functions are [linear](TODO).** While a globally defined function may be called any number of times,
 a function stored in a local variable can (and must) only be called once:
 
 ```par

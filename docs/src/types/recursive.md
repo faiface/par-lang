@@ -357,7 +357,7 @@ between usual recursion and imperative loops.
 Together with `.begin`/`.loop` being usable deep in expressions, local variable retention is also
 very useful in avoiding the need for helper functions.
 
-Let's switch again to Haskell, and take a look at this list reversing function:
+Let's again switch to Haskell, and take a look at this list reversing function:
 
 ```haskell
 reverse list = reverseHelper [] list
@@ -372,7 +372,7 @@ eventually reversing the whole list. In Haskell, this requires a helper recursiv
 In Par, it doesn't!
 
 ```par
-// once again, for generic functions read up on forall
+// once again, for generic functions, read up on forall types
 dec Reverse : [List<Int>] List<Int>
 def Reverse = [list]
   let acc: List<Int> = .end!

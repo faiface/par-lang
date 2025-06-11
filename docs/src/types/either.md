@@ -42,24 +42,24 @@ type MaybeBoth<a, b> = either {
 }
 ```
 
-Either types are frequently used together with [_recursive_](./recursive.md) types to define finite
-tree-like structures.
-
-```par
-type BinaryTree<a> = recursive either {
-  .empty!,
-  .node(a, self, self)!,
-}
-```
-
-The pre-defined `List<a>` type is a combination of `recursive` and `either`:
-
-```par
-type List<a> = recursive either {
-  .end!,
-  .item(a) self,
-}
-```
+> Either types are frequently used together with [_recursive_](./recursive.md) types to define finite
+> tree-like structures.
+> 
+> ```par
+> type BinaryTree<a> = recursive either {
+>   .empty!,
+>   .node(a, self, self)!,
+> }
+> ```
+> 
+> The pre-defined `List<a>` type is a combination of `recursive` and `either`:
+> 
+> ```par
+> type List<a> = recursive either {
+>   .end!,
+>   .item(a) self,
+> }
+> ```
 
 ## Construction
 
