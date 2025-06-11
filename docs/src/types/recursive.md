@@ -1,18 +1,15 @@
 # Recursive
 
-The previous types had unfamiliar syntax, perhaps, but the concepts were familiar. Now we are entering
-the territory of unfamiliar concepts. Brace yourself, we're just getting started!
-
 _Par_ has, among others, these two ambitious design choices:
 - **Totality,** meaning preventing infinite loops by type-checking.
 - **A structural type system,** where global type definitions are merely aliases.
 
-Totality necessitates distinguishing between:
+When it comes to self-referential types, totality necessitates distinguishing between:
 - _Recursive types_, those are finite.
 - _Corecursive types_, potentially infinite. In Par, we call them [_iterative types_](./iterative.md).
 
-The choice of a structural type system has led to avoid defining self-referential types naively,
-and instead add a first-class syntax for anonymous self-referential types.
+The choice of a structural type system has led to avoiding defining self-referential types naively,
+and instead adding a first-class syntax for anonymous self-referential types.
 
 Par is very radical here. If you try the usual way of defining a singly-linked list, it fails:
 
@@ -73,6 +70,11 @@ type LegalList = recursive either {
   .item(String) self,  // Okay.
 }
 ```
+
+> **If there are nested `recursive` (or [`iterative`](./iterative.md)) types, it may be necessary to
+> distinguish between them.** For that, we can attach **labels** to `recursive` and `self`. That's
+> done with a slash: `recursive/label`, `self/label`. Any lower-case identifier can be used for the
+> label.
 
 The recursive type can be thought of as being equivalent to its _expansion_. That is, replacing each
 `self` inside the body with the `recursive` type itself:
@@ -198,3 +200,190 @@ done the same way.
 
 ## Destruction
 
+If we don't need to perform recursion, it's possible to treat recursive types as their expansions
+when destructing them, too. For example, here we treat a `List<String>` as its underlying `either`:
+
+```par
+type Option<a> = either {
+  .none!,
+  .some a,
+}
+
+// to make this function generic, read up on forall types
+dec Head : [List<String>] Option<String>
+def Head = [list] list.case {
+  .end!      => .none!,
+  .item(x) _ => .some x,
+}
+```
+
+**For a recursive reduction, we have `.begin`/`.loop`.** Here's how it works:
+1. Apply `.begin` to a value of a `recursive` type.
+2. Apply more operations to the resulting expanded value.
+3. Use `.loop` on a _descendent_ recursive value, descendent meaning it was a `self` in
+   the original value we applied `.begin` to.
+
+Let's see it in practice. Suppose we want to add up a list of integers.
+
+0. We obtain a value (`list`) of a recursive type (`List<Int>`):
+   ```par
+   dec SumList : [List<Int>] Int
+   
+   def SumList = [list]
+   ```
+1. We apply `.begin` to it:
+   ```par
+                        list.begin
+   ```
+2. We match on the possible variants:
+   ```par
+                                  .case {
+     .end!       => 0,
+     .item(x) xs =>
+   ```
+   If the list is empty, the result is `0`. Otherwise, we need to add the number `x`
+   ```par
+                    Int.Add(x, 
+   ```
+   to the sum of the rest of the list: `xs`.
+4. Since `xs` is a _descendant_ of the original `list` that we applied the `.begin` to, and is again a
+   `List<Int>`, we can recursively obtain its sum using `.loop`:
+   ```par
+                               xs.loop),
+   ```
+   And close the braces.
+   ```par
+   }
+   ```
+
+All put together, it looks like this:
+
+```par
+def SumList = [list] list.begin.case {
+  .end!       => 0,
+  .item(x) xs => Int.Add(x, xs.loop),
+}
+```
+
+You can think of `.loop` as going back to the corresponding `.begin`, but with the new value.
+
+The semantics of `.begin`/`.loop` are best explained by _expansion_, just like the recursive types
+themselves. In all cases, **the meaning of `.begin`/`.loop` is unchanged, if we replace each `.loop` with the entire body starting at `.begin`.**
+
+Observe:
+1. The original code:
+   ```par
+   def SumList = [list] list.begin.case {
+     .end!       => 0,
+     .item(x) xs => Int.Add(x, xs.loop),
+   }
+   ```
+2. The first expansion:
+   ```par
+   def SumList = [list] list.case {
+     .end!       => 0,
+     .item(x) xs => Int.Add(x, xs.begin.case {
+       .end!       => 0,
+       .item(x) xs => Int.Add(x, xs.loop),
+     }),
+   }
+   ```
+3. The second expansion:
+   ```par
+   def SumList = [list] list.case {
+     .end!       => 0,
+     .item(x) xs => Int.Add(x, xs.case {
+       .end!       => 0,
+       .item(x) xs => Int.Add(x, xs.begin.case {
+         .end!       => 0,
+         .item(x) xs => Int.Add(x, xs.loop),
+       }),
+     }),
+   }
+   ```
+4. And so on...
+
+`.loop` may be applied to any number of descendants. Here's a function adding up the leafs in the `Tree`
+type defined previously:
+
+```par
+dec SumTree : [Tree] Int
+def SumTree = [tree] tree.begin.case {
+  .leaf number        => number,
+  .node(left, right)! => Int.Add(left.loop, right.loop),
+}
+
+def BiggerSum = SumTree(BiggerTree)  // = 20
+```
+
+> **If there are multiple nested `.begin`/`.loop`, it may be necessary to
+> distinguish between them.** Labels can be used here too, just like with the types:
+> `.begin/label` and `.loop/label` does the job.
+
+### Retention of local variables
+
+Let's consider Haskell for a moment. Say we write a simple function that increments each item in
+a list by a specified amount:
+
+```haskell
+incBy n []     = []
+incBy n (x:xs) = (x + n) : incBy n xs
+```
+
+This recursive function has a parameter that has to be remembered across the iterations: `n`, the
+increment. In Haskell, that's achieved by explicitly passing it to the recursive call.
+
+Now, let's look at _Par_. In Par, `.loop` has a neat feature:
+**local variables are automatically passed to the next iteration.**
+
+```par
+dec IncBy : [List<Int>, Int] List<Int>
+def IncBy = [list, n] list.begin.case {
+  .end!       => .end!,
+  .item(x) xs => .item(Int.Add(x, n)) xs.loop,
+} 
+```
+
+Notice, that `xs.loop` makes no mention of `n`, the increment. Yet, `n` is available throughout the
+recursion, because it is automatically passed around.
+
+This feature is what makes `begin`/`loop` not just a universal recursion construct, but a sweet spot
+between usual recursion and imperative loops.
+
+> If you're confused about how or why it should work this way, try expanding the `.begin`/`.loop`
+> in the above function. Notice that when expanded, `n` is in fact visible in the next iteration.
+> It's truly the case that expanding a `.begin`/`.loop` never changes its meaning.
+
+Together with `.begin`/`.loop` being usable deep in expressions, local variable retention is also
+very useful in avoiding the need for helper functions.
+
+Let's switch again to Haskell, and take a look at this list reversing function:
+
+```haskell
+reverse list = reverseHelper [] list
+
+reverseHelper acc []     = acc
+reverseHelper acc (x:xs) = reverseHelper (x:acc) xs
+```
+
+This function uses a state: `acc`, the accumulator. It prepends a new item to it in every iteration,
+eventually reversing the whole list. In Haskell, this requires a helper recursive function.
+
+In Par, it doesn't!
+
+```par
+// once again, for generic functions read up on forall
+dec Reverse : [List<Int>] List<Int>
+def Reverse = [list]
+  let acc: List<Int> = .end!
+  in list.begin.case {
+    .end!       => acc,
+    .item(x) xs => let acc = .item(x) acc in xs.loop,
+  }
+```
+
+And there we go! All we had to do was to re-assign `acc` with the new value, and continue with `xs.loop`.
+
+### The escape-hatch from totality: `unfounded`
+
+TODO
