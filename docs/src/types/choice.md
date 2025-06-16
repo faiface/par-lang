@@ -2,10 +2,10 @@
 
 The famous slogan of [sum types](./either.md) is: **_Make illegal states unrepresentable!_**
 
-_Choice types_, the dual of sum types, otherwise known as _codata types_ deserve an equally potent
+_Choice types_ — the dual of sum types, also known as _codata_ — deserve an equally potent
 slogan:
 
-**_Make illegal operations unperformable!_**
+> **_Make illegal operations unperformable!_**
 
 Choice types are somewhat related to _interfaces_, like in Go, or Java, but I encourage you to
 approach them with a fresh mind. The differences are important enough to consider choice types
@@ -77,7 +77,7 @@ dropped, or copied. It must be destructed exactly once, using one of its branche
 Values of choice types are constructed using standalone `case` expressions.
 
 ```par
-def Example1: ChooseStringOrNumber = case {
+def Example: ChooseStringOrNumber = case {
   .string => "Hello!",
   .number => 42,
 }
@@ -104,7 +104,7 @@ Choices are destructed by _selecting_ a branch, transforming it into the corresp
 We do it by applying `.branch` after a value of a choice type.
 
 ```par
-def Number = Example1.number  // = 42
+def Number = Example.number  // = 42
 ```
 
 Above, we defined the type `CancellableFunction<a, b>`, and a value of that type: `IntToString`.
@@ -119,20 +119,20 @@ type Option<a> = either {
   .some a,
 }
 
-// once again, for generic functions, read up on forall types
 dec MapOption :
-  [Option<Int>]
-  [CancellableFunction<Int, String>]
-  Option<String>
+  [type a, b]
+  [Option<a>]
+  [CancellableFunction<a, b>]
+  Option<b>
 
-def MapOption = [option, func] option.case {
+def MapOption = [type a, b] [option, func] option.case {
   .none! => let ! = func.cancel in .none!,
 //                  \_________/
   .some x => let y = func.apply(x) in .some y,
 //                   \________/
 }
 
-def Result = MapOption(.some 42, IntToString)  // = .some "42"
+def Result = MapOption(type Int, String)(.some 42, IntToString)  // = .some "42"
 ```
 
 This example also shows that in Par, you don't have to be shy about writing your types on

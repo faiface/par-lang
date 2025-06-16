@@ -209,7 +209,7 @@ type Option<a> = either {
   .some a,
 }
 
-// to make this function generic, read up on forall types
+//TODO: forall on data types
 dec Head : [List<String>] Option<String>
 def Head = [list] list.case {
   .end!      => .none!,
@@ -372,18 +372,19 @@ eventually reversing the whole list. In Haskell, this requires a helper recursiv
 In Par, it doesn't!
 
 ```par
-// once again, for generic functions, read up on forall types
-dec Reverse : [List<Int>] List<Int>
-def Reverse = [list]
-  let acc: List<Int> = .end!
+dec Reverse : [type a] [List<Int>] List<Int>
+def Reverse = [type a] [list]
+  let acc: List<a> = .end!
   in list.begin.case {
     .end!       => acc,
     .item(x) xs => let acc = .item(x) acc in xs.loop,
   }
+
+def TestReverse = Reverse(type Int)(*(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
 ```
 
 And there we go! All we had to do was to re-assign `acc` with the new value, and continue with `xs.loop`.
 
-### The escape-hatch from totality: `unfounded`
+### The escape-hatch from totality: `.unfounded`
 
 TODO
