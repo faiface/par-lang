@@ -351,8 +351,7 @@ impl Compiler {
         // );
         // This is less efficient, but at least panics will now contain the lazy redexes
         let mut net2 = self.net.clone();
-        net2.redexes
-            .append(&mut self.lazy_redexes.clone().into());
+        net2.redexes.append(&mut self.lazy_redexes.clone().into());
         net2.assert_valid();
 
         self.net.normal();

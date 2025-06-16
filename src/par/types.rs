@@ -262,17 +262,21 @@ impl TypeDefs {
             vars: IndexSet::new(),
         };
 
+        let mut deps_map: IndexMap<GlobalName, Vec<GlobalName>> = Default::default();
+        for (name, (_, _, typ)) in type_defs.globals.iter() {
+            deps_map.insert(name.clone(), typ.get_dependencies());
+        }
+
+        for (name, _) in type_defs.globals.iter() {
+            type_defs.validate_acyclic(name, &Default::default(), &deps_map)?
+        }
+
         for (name, (_, params, typ)) in type_defs.globals.iter() {
             let mut type_defs = type_defs.clone();
             for param in params {
                 type_defs.vars.insert(param.clone());
             }
-            type_defs.validate_type(
-                typ,
-                &IndexSet::from([name.clone()]),
-                &IndexSet::new(),
-                &IndexSet::new(),
-            )?;
+            type_defs.validate_type(typ, &IndexSet::new(), &IndexSet::new())?;
         }
 
         Ok(type_defs)
@@ -319,16 +323,38 @@ impl TypeDefs {
         }
     }
 
+    fn validate_acyclic(
+        &self,
+        name: &GlobalName,
+        deps_stack: &IndexSet<GlobalName>,
+        deps_map: &IndexMap<GlobalName, Vec<GlobalName>>,
+    ) -> Result<(), TypeError> {
+        let mut deps_stack = deps_stack.clone();
+        if !deps_stack.insert(name.clone()) {
+            return Err(TypeError::DependencyCycle(
+                self.globals[name].0.clone(),
+                deps_stack
+                    .clone()
+                    .into_iter()
+                    .skip_while(|dep| dep != name)
+                    .collect(),
+            ));
+        }
+        for dep in deps_map.get(name).unwrap() {
+            self.validate_acyclic(dep, &deps_stack, deps_map)?;
+        }
+        Ok(())
+    }
+
     fn validate_type(
         &self,
         typ: &Type,
-        deps: &IndexSet<GlobalName>,
         self_pos: &IndexSet<Option<LocalName>>,
         self_neg: &IndexSet<Option<LocalName>>,
     ) -> Result<(), TypeError> {
         Ok(match typ {
             Type::Primitive(_, _) => (),
-            Type::Dual(_, t) => self.validate_type(t, deps, self_neg, self_pos)?,
+            Type::Dual(_, t) => self.validate_type(t, self_neg, self_pos)?,
             Type::Var(span, name) => {
                 if self.vars.contains(name) {
                     ()
@@ -341,7 +367,7 @@ impl TypeDefs {
             }
             Type::Name(span, name, args) => {
                 for arg in args {
-                    self.validate_type(arg, &deps, self_pos, self_neg)?;
+                    self.validate_type(arg, self_pos, self_neg)?;
                 }
                 /*let mut deps = deps.clone();
                 if !deps.insert(name.clone()) {
@@ -351,19 +377,19 @@ impl TypeDefs {
                     ));
                 }*/
                 let t = self.get(span, name, args)?;
-                self.validate_type(&t, &deps, self_pos, self_neg)?;
+                self.validate_type(&t, self_pos, self_neg)?;
             }
             Type::Pair(_, t, u) => {
-                self.validate_type(t, deps, self_pos, self_neg)?;
-                self.validate_type(u, deps, self_pos, self_neg)?;
+                self.validate_type(t, self_pos, self_neg)?;
+                self.validate_type(u, self_pos, self_neg)?;
             }
             Type::Function(_, t, u) => {
-                self.validate_type(t, deps, self_neg, self_pos)?;
-                self.validate_type(u, deps, self_pos, self_neg)?;
+                self.validate_type(t, self_neg, self_pos)?;
+                self.validate_type(u, self_pos, self_neg)?;
             }
             Type::Either(_, branches) | Type::Choice(_, branches) => {
                 for (_, t) in branches {
-                    self.validate_type(t, deps, self_pos, self_neg)?;
+                    self.validate_type(t, self_pos, self_neg)?;
                 }
             }
             Type::Break(_) | Type::Continue(_) => (),
@@ -371,7 +397,7 @@ impl TypeDefs {
                 let (mut self_pos, mut self_neg) = (self_pos.clone(), self_neg.clone());
                 self_pos.insert(label.clone());
                 self_neg.shift_remove(label);
-                self.validate_type(body, deps, &self_pos, &self_neg)?;
+                self.validate_type(body, &self_pos, &self_neg)?;
             }
             Type::Self_(span, label) => {
                 if self_neg.contains(label) {
@@ -385,7 +411,7 @@ impl TypeDefs {
             Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
                 let mut with_var = self.clone();
                 with_var.vars.insert(name.clone());
-                with_var.validate_type(body, deps, self_pos, self_neg)?;
+                with_var.validate_type(body, self_pos, self_neg)?;
             }
         })
     }
@@ -1392,6 +1418,45 @@ impl Type {
             Self::Forall(_, name, body) => name != var && body.contains_var(var),
 
             Self::Dual(_, t) => t.contains_var(var),
+        }
+    }
+    fn get_dependencies(&self) -> Vec<GlobalName> {
+        match self {
+            Self::Primitive(_, _) => vec![],
+            Self::Var(_, _) => vec![],
+            Self::Name(_, name, args) => {
+                let mut deps = vec![name.clone()];
+                for arg in args {
+                    deps.extend(arg.get_dependencies());
+                }
+                deps
+            }
+            Self::Pair(_, t, u) => {
+                let mut deps = t.get_dependencies();
+                deps.extend(u.get_dependencies());
+                deps
+            }
+            Self::Function(_, t, u) => {
+                let mut deps = t.get_dependencies();
+                deps.extend(u.get_dependencies());
+                deps
+            }
+            Self::Either(_, branches) => branches
+                .iter()
+                .flat_map(|(_, typ)| typ.get_dependencies())
+                .collect(),
+            Self::Choice(_, branches) => branches
+                .iter()
+                .flat_map(|(_, typ)| typ.get_dependencies())
+                .collect(),
+            Self::Break(_) => vec![],
+            Self::Continue(_) => vec![],
+            Self::Recursive { body, .. } => body.get_dependencies(),
+            Self::Iterative { body, .. } => body.get_dependencies(),
+            Self::Self_(_, _) => vec![],
+            Self::Exists(_, _, body) => body.get_dependencies(),
+            Self::Forall(_, _, body) => body.get_dependencies(),
+            Self::Dual(_, t) => t.get_dependencies(),
         }
     }
 }
