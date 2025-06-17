@@ -271,7 +271,7 @@ impl TypeDefs {
             type_defs.validate_acyclic(name, &Default::default(), &deps_map)?
         }
 
-        for (name, (_, params, typ)) in type_defs.globals.iter() {
+        for (_, (_, params, typ)) in type_defs.globals.iter() {
             let mut type_defs = type_defs.clone();
             for param in params {
                 type_defs.vars.insert(param.clone());
