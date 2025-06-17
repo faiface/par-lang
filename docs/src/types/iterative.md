@@ -21,10 +21,10 @@ So, let's take a look at the **iterative types.**
 An iterative type starts with the keyword `iterative` followed by a body that may contain any number
 of occurrences of `self`. Notice that the pattern is the same as with [recursive types](./recursive.md).
 
-The prototypical iterative type — and a good example to study — is an infinite stream.
+The prototypical iterative type — and a good example to study — is an infinite sequence.
 
 ```par
-type Stream<a> = iterative choice {
+type Sequence<a> = iterative choice {
     .close => !,
     .next => (a) self,
 }
@@ -38,21 +38,21 @@ type Stream<a> = iterative choice {
 Iterative types are **always linear,** regardless of what's in their bodies. As such, they can't be
 dropped, nor copied.
 
-Notice, that we included a `.close` branch on the inner [choice](./choice.md). Since `Stream<a>` is
+Notice, that we included a `.close` branch on the inner [choice](./choice.md). Since `Sequence<a>` is
 a linear type, there would be no way to get rid of it if it only contained the `.next` branch.
 
 Just like [recursive types](./recursive.md), iterative types can be equated with their _expansions_:
 
 1. The original definition:
    ```par
-   type Stream<a> = iterative choice {
+   type Sequence<a> = iterative choice {
      .close => !,
      .next => (a) self,
    }
    ```
 2. The first expansion:
    ```par
-   type Stream<a> = choice {
+   type Sequence<a> = choice {
      .close => !,
      .next => (a) iterative choice {
        .close => !,
@@ -62,7 +62,7 @@ Just like [recursive types](./recursive.md), iterative types can be equated with
    ```
 3. The second expansion:
    ```par
-   type Stream<a> = choice {
+   type Sequence<a> = choice {
      .close => !,
      .next => (a) choice {
        .close => !,
@@ -92,18 +92,18 @@ in the `self` places of the body type to go back to the corresponding `begin`.
 > distinguish between nested `begin`/`loop` (and `.begin`/`.loop`) uses. Just use a slash:
 > `begin/label` and `loop/label`.
 
-Here's a simple `Stream<Int>` that produces the number `7` forever:
+Here's a simple `Sequence<Int>` that produces the number `7` forever:
 
 ```par
-dec SevenForever : Stream<Int>
+dec SevenForever : Sequence<Int>
 def SevenForever = begin case {
   .close => !,
   .next  => (7) loop,
 }
 ```
 
-The `.next` branch produces a pair, as per the stream's body type, with the second element being
-the new version of the stream. Here we use `loop` to accomplish that corecursively, looping back
+The `.next` branch produces a pair, as per the sequence's body type, with the second element being
+the new version of the sequence. Here we use `loop` to accomplish that corecursively, looping back
 to the `begin`.
 
 The corecursive meaning of `begin`/`loop` can again be understood by seeing its expansions:
@@ -143,10 +143,10 @@ The corecursive meaning of `begin`/`loop` can again be understood by seeing its 
 **Retention of local variables** works the same as in [recursive's](./recursive.md) `.begin`/`.loop`.
 With iterative types, we can use it to carry and **update the internal state** of the iterative object.
 
-For example, here's an infinite stream of fibonacci numbers:
+For example, here's an infinite sequence of fibonacci numbers:
 
 ```par
-def Fibonacci : Stream<Nat> =
+def Fibonacci: Sequence<Nat> =
   let (a, b)! = (0, 1)!
   in begin case {
     .close => !,
@@ -165,21 +165,21 @@ In the `Fibonacci`'s case, the internal state is non-linear. That's why we're ab
 in the `.close` branch: `a` and `b` get dropped automatically.
 
 Let's take a look at a case where the internal state is linear! Suppose we need a function that takes
-an arbitrary stream of integers, and increments its items by `1`, producing a new stream.
+an arbitrary sequence of integers, and increments its items by `1`, producing a new sequence.
 
 ```par
-dec IncrementStream : [Stream<Int>] Stream<Int>
-def IncrementStream = [stream] begin case {
-  .close => let ! = stream.close in !,
+dec Increment : [Sequence<Int>] Sequence<Int>
+def Increment = [seq] begin case {
+  .close => let ! = seq.close in !,
   .next =>
-    let (x) stream = stream.next
+    let (x) seq = seq.next
     in (Int.Add(x, 1)) loop
 }
 
-def FibonacciPlusOne = IncrementStream(Fibonacci)
+def FibonacciPlusOne = Increment(Fibonacci)
 ```
 
-In this case, we need to explictly close the input `stream` in the `.close` branch. It's linear, so
+In this case, we need to explictly close the input `seq` in the `.close` branch. It's linear, so
 we can't just drop it.
 
 ### The escape-hatch from totality: `unfounded`
@@ -191,24 +191,24 @@ TODO
 Iterative types don't have any special syntax for destruction. Instead, we just operate on their bodies
 directly, as if they were expanded.
 
-For example, here's a function to take the first element from a stream and close it:
+For example, here's a function to take the first element from a sequence and close it:
 
 ```par
-def Head = [type a] [stream: Stream<a>]
-  let (x) stream = stream.next
-  in let ! = stream.close
+def Head = [type a] [seq: Sequence<a>]
+  let (x) seq = seq.next
+  in let ! = seq.close
   in x
 ```
 
 Using [recursion](./recursive.md), we can destruct an iterative type many times. Here's a function to
-take the first N elements of a stream and return them in a list:
+take the first N elements of a sequence and return them in a list:
 
 ```par
-dec Take : [type a] [Nat, Stream<a>] List<a>
-def Take = [type a] [n, stream] Nat.Repeat(n).begin.case {
-  .end! => let ! = stream.close in .end!,
+dec Take : [type a] [Nat, Sequence<a>] List<a>
+def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
+  .end! => let ! = seq.close in .end!,
   .step remaining =>
-    let (x) stream = stream.next
+    let (x) seq = seq.next
     in .item(x) remaining.loop
 }
 ```
