@@ -1,0 +1,3 @@
+def Program = Console.Open
+  .print("Hello, world!")
+  .close

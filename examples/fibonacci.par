@@ -1,9 +1,9 @@
-type Seq<a> = iterative choice {
+type Sequence<a> = iterative choice {
   .close => !
   .next  => (a) self
 }
 
-dec Fibonacci : Seq<Nat>
+dec Fibonacci : Sequence<Nat>
 def Fibonacci =
   let (a) b = (0) 1
   in begin case {
@@ -21,11 +21,11 @@ def NthFib = [n]
     .step s => do { fib.next[_] } in s.loop,
   }
 
-def Main: ! = do {
+def Program: ! = do {
   let console = Console.Open
   let fib = Fibonacci
 
-  Nat.Repeat(200).begin.case {
+  Nat.Repeat(30).begin.case {
     .end! => {}
     .step remaining => {
       fib.next[n]

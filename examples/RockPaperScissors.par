@@ -1,38 +1,39 @@
+dec StartGame : [Player, Player] Game
+
 type Move = either {
-  .rock!
-  .paper!
-  .scissors!
+  .rock!,
+  .paper!,
+  .scissors!,
 }
 
 type Player = iterative/game choice {
-  .stop => !
+  .stop => !,
   .play_round => iterative/round choice {
     .stop_round => self/game,
     .play_move => (Move) choice {
       .win  => self/game,
       .lose => self/game,
       .draw => self/round,
-    }
-  }
+    },
+  },
 }
 
 type Outcome = either {
-  .first_won!
-  .second_won!
-  .too_long!
+  .first_won!,
+  .second_won!,
+  .too_long!,
 }
 
 type Game = iterative choice {
-  .stop => !
-  .play_round => (Outcome) self
+  .stop => !,
+  .play_round => (Outcome) self,
 }
 
-dec StartGame : [Player, Player] Game
 def StartGame = [p1, p2] begin/game case {
   .stop => do {
     p1.stop?
     p2.stop?
-  } in !
+  } in !,
 
   .play_round => do {
     let limit = 3
@@ -42,7 +43,7 @@ def StartGame = [p1, p2] begin/game case {
     .end! => do {
       p1.stop_round
       p2.stop_round
-    } in (.too_long!) loop/game
+    } in (.too_long!) loop/game,
 
     .step remaining => do {
       p1.play_move[move1]
@@ -51,16 +52,19 @@ def StartGame = [p1, p2] begin/game case {
       .first! => do {
         p1.win
         p2.lose
-      } in (.first_won!) loop/game
+      } in (.first_won!) loop/game,
 
       .second! => do {
         p1.lose
         p2.win
-      } in (.second_won!) loop/game
+      } in (.second_won!) loop/game,
 
-      .draw! => do { p1.draw p2.draw } in remaining.loop
+      .draw! => do {
+        p1.draw
+        p2.draw
+      } in remaining.loop,
     }
-  }
+  },
 }
 
 dec CalculateRound : [Move, Move] either { .first!, .second!, .draw! }
