@@ -2661,6 +2661,7 @@ impl Type {
                     indentation(f, indent + 1)?;
                     write!(f, ".{} ", branch)?;
                     typ.pretty(f, indent + 1)?;
+                    write!(f, ",")?;
                 }
                 indentation(f, indent)?;
                 write!(f, "}}")
@@ -2672,6 +2673,7 @@ impl Type {
                     indentation(f, indent + 1)?;
                     write!(f, ".{} => ", branch)?;
                     typ.pretty(f, indent + 1)?;
+                    write!(f, ",")?;
                 }
                 indentation(f, indent)?;
                 write!(f, "}}")
