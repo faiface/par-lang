@@ -33,8 +33,8 @@ def Six = Add(1, Add(2, 3))  // Okay.
 
 // but a function in a local variable can be only called once
 def Illegal =
-  let add = Add
-  in add(1, add(2, 3))       // Error!
+  let inc = Add(1)
+  in Add(inc(2), inc(3))       // Error!
 ```
 
 [Linearity](TODO) brings a lot of expressivity that wouldn't be possible otherwise. After all, the main

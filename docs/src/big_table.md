@@ -1,4 +1,4 @@
-# Big Table
+# The Big Table
 
 ## Expression syntax
 

@@ -1,4 +1,4 @@
-# Types & Expressions
+# Types & Their Expressions
 
 Types in Par serve two seemingly incompatible purposes at the same time:
 
