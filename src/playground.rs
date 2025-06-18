@@ -570,6 +570,7 @@ fn par_syntax() -> Syntax {
             "def",
             "type",
             "chan",
+            "dual",
             "let",
             "do",
             "in",
