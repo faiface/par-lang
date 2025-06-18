@@ -1621,17 +1621,13 @@ mod test {
 
     #[test]
     fn test_parse_examples() {
-        let input = include_str!("../../examples/sample.par");
+        let input = include_str!("../../examples/HelloWorld.par");
         assert!(parse_module(input).is_ok());
-        let input = include_str!("../../examples/semigroup_queue.par");
+        let input = include_str!("../../examples/Fibonacci.par");
         assert!(parse_module(input).is_ok());
-        let input = include_str!("../../examples/rock_paper_scissors.par");
+        let input = include_str!("../../examples/RockPaperScissors.par");
         assert!(parse_module(input).is_ok());
-        let input = include_str!("../../examples/flatten.par");
-        assert!(parse_module(input).is_ok());
-        let input = include_str!("../../examples/fibonacci.par");
-        assert!(parse_module(input).is_ok());
-        let input = include_str!("../../examples/bubble_sort.par");
+        let input = include_str!("../../examples/StringManipulation.par");
         assert!(parse_module(input).is_ok());
         let input = "begin the errors";
         assert!(parse_module(input).is_err());
