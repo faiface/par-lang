@@ -2518,48 +2518,77 @@ impl Context {
 }
 
 impl Type {
+    pub fn expand_definition(&self, type_defs: &TypeDefs) -> Self {
+        match self {
+            Self::Name(span, name, args) => type_defs
+                .get(span, name, args)
+                .ok()
+                .unwrap_or_else(|| self.clone()),
+            Self::Dual(_, t) => match t.as_ref() {
+                Self::Name(span, name, args) => type_defs
+                    .get_dual(&span, &name, &args)
+                    .ok()
+                    .unwrap_or_else(|| self.clone()),
+                t => t.dual(type_defs).ok().unwrap_or_else(|| self.clone()),
+            },
+            _ => self.clone(),
+        }
+    }
+
     pub fn qualify(&mut self, module: &str) {
         match self {
-            Self::Primitive(_, _) => {}
-            Self::Dual(_, t) => t.qualify(module),
-            Self::Var(_, _) => {}
-            Self::Name(_, name, args) => {
+            Self::Primitive(span, _) => *span = Default::default(),
+            Self::Dual(span, t) => {
+                *span = Default::default();
+                t.qualify(module)
+            }
+            Self::Var(span, _) => *span = Default::default(),
+            Self::Name(span, name, args) => {
+                *span = Default::default();
                 name.qualify(module);
                 for arg in args {
                     arg.qualify(module);
                 }
             }
-            Self::Pair(_, t, u) => {
+            Self::Pair(span, t, u) => {
+                *span = Default::default();
                 t.qualify(module);
                 u.qualify(module);
             }
-            Self::Function(_, t, u) => {
+            Self::Function(span, t, u) => {
+                *span = Default::default();
                 t.qualify(module);
                 u.qualify(module);
             }
-            Self::Either(_, branches) => {
+            Self::Either(span, branches) => {
+                *span = Default::default();
                 for (_, typ) in branches {
                     typ.qualify(module);
                 }
             }
-            Self::Choice(_, branches) => {
+            Self::Choice(span, branches) => {
+                *span = Default::default();
                 for (_, typ) in branches {
                     typ.qualify(module);
                 }
             }
-            Self::Break(_) => {}
-            Self::Continue(_) => {}
-            Self::Recursive { body, .. } => {
+            Self::Break(span) => *span = Default::default(),
+            Self::Continue(span) => *span = Default::default(),
+            Self::Recursive { span, body, .. } => {
+                *span = Default::default();
                 body.qualify(module);
             }
-            Self::Iterative { body, .. } => {
+            Self::Iterative { span, body, .. } => {
+                *span = Default::default();
                 body.qualify(module);
             }
-            Self::Self_(_, _) => {}
-            Self::Exists(_, _, body) => {
+            Self::Self_(span, _) => *span = Default::default(),
+            Self::Exists(span, _, body) => {
+                *span = Default::default();
                 body.qualify(module);
             }
-            Self::Forall(_, _, body) => {
+            Self::Forall(span, _, body) => {
+                *span = Default::default();
                 body.qualify(module);
             }
         }
@@ -2833,6 +2862,60 @@ impl Type {
                 }
                 write!(f, "] ")?;
                 then.pretty_compact(f)
+            }
+        }
+    }
+
+    pub fn types_at_spans(
+        &self,
+        type_defs: &TypeDefs,
+        consume: &mut impl FnMut(Span, Option<String>, Type),
+    ) {
+        match self {
+            Self::Primitive(_, _) => {}
+            Self::Dual(span, t) => {
+                consume(*span, None, self.expand_definition(type_defs));
+                t.types_at_spans(type_defs, consume);
+            }
+            Self::Var(_, _) => {}
+            Self::Name(span, _, args) => {
+                consume(*span, None, self.expand_definition(type_defs));
+                for arg in args {
+                    arg.types_at_spans(type_defs, consume);
+                }
+            }
+            Self::Pair(_, t, u) => {
+                t.types_at_spans(type_defs, consume);
+                u.types_at_spans(type_defs, consume);
+            }
+            Self::Function(_, t, u) => {
+                t.types_at_spans(type_defs, consume);
+                u.types_at_spans(type_defs, consume);
+            }
+            Self::Either(_, branches) => {
+                for (_, t) in branches.iter() {
+                    t.types_at_spans(type_defs, consume);
+                }
+            }
+            Self::Choice(_, branches) => {
+                for (_, t) in branches.iter() {
+                    t.types_at_spans(type_defs, consume);
+                }
+            }
+            Self::Break(_) => {}
+            Self::Continue(_) => {}
+            Self::Recursive { body, .. } => {
+                body.types_at_spans(type_defs, consume);
+            }
+            Self::Iterative { body, .. } => {
+                body.types_at_spans(type_defs, consume);
+            }
+            Self::Self_(_, _) => {}
+            Self::Exists(_, _, body) => {
+                body.types_at_spans(type_defs, consume);
+            }
+            Self::Forall(_, _, body) => {
+                body.types_at_spans(type_defs, consume);
             }
         }
     }

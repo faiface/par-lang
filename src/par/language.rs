@@ -247,6 +247,7 @@ impl Display for LocalName {
 
 impl GlobalName {
     pub fn qualify(&mut self, module: &str) {
+        self.span = Default::default();
         let new = match self.module.take() {
             Some(old) => old,
             None => String::from(module),

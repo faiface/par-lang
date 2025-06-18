@@ -265,6 +265,7 @@ impl Process<Type> {
         match self {
             Process::Let {
                 name,
+                annotation,
                 typ,
                 value,
                 then,
@@ -272,6 +273,9 @@ impl Process<Type> {
             } => {
                 value.types_at_spans(type_defs, consume);
                 consume(name.span(), Some(format!("{}", name)), typ.clone());
+                if let Some(annotation) = annotation {
+                    annotation.types_at_spans(type_defs, consume);
+                }
                 then.types_at_spans(type_defs, consume);
             }
             Process::Do {
@@ -402,8 +406,11 @@ impl Command<Type> {
                 argument.types_at_spans(type_defs, consume);
                 process.types_at_spans(type_defs, consume);
             }
-            Self::Receive(param, _, param_type, process) => {
+            Self::Receive(param, annotation, param_type, process) => {
                 consume(param.span(), Some(format!("{}", param)), param_type.clone());
+                if let Some(annotation) = annotation {
+                    annotation.types_at_spans(type_defs, consume);
+                }
                 process.types_at_spans(type_defs, consume);
             }
             Self::Signal(_, process) => {
@@ -531,6 +538,7 @@ impl Expression<Type> {
             }
             Self::Fork {
                 chan_name,
+                chan_annotation,
                 chan_type,
                 process,
                 ..
@@ -540,6 +548,9 @@ impl Expression<Type> {
                     Some(format!("{}", chan_name)),
                     chan_type.clone(),
                 );
+                if let Some(chan_annotation) = chan_annotation {
+                    chan_annotation.types_at_spans(type_defs, consume);
+                }
                 process.types_at_spans(type_defs, consume);
             }
             Self::Primitive(_, _, _) => {}
@@ -564,7 +575,7 @@ impl Process<()> {
     pub fn qualify(self: Arc<Self>, module: &str) -> Arc<Self> {
         Arc::new(match Self::clone(&self) {
             Self::Let {
-                span,
+                span: _,
                 name,
                 mut annotation,
                 typ: (),
@@ -575,7 +586,7 @@ impl Process<()> {
                     annotation.qualify(module);
                 }
                 Self::Let {
-                    span,
+                    span: Default::default(),
                     name,
                     annotation,
                     typ: (),
@@ -584,14 +595,14 @@ impl Process<()> {
                 }
             }
             Self::Do {
-                span,
+                span: _,
                 name,
                 typ: (),
                 mut command,
             } => {
                 command.qualify(module);
                 Self::Do {
-                    span,
+                    span: Default::default(),
                     name,
                     typ: (),
                     command,
@@ -648,13 +659,13 @@ impl Command<()> {
 impl Expression<()> {
     pub fn qualify(self: Arc<Self>, module: &str) -> Arc<Self> {
         Arc::new(match Self::clone(&self) {
-            Self::Global(span, mut name, ()) => {
+            Self::Global(_, mut name, ()) => {
                 name.qualify(module);
-                Self::Global(span, name, ())
+                Self::Global(Default::default(), name, ())
             }
-            Self::Variable(span, name, ()) => Self::Variable(span, name, ()),
+            Self::Variable(_, name, ()) => Self::Variable(Default::default(), name, ()),
             Self::Fork {
-                span,
+                span: _,
                 captures,
                 chan_name,
                 mut chan_annotation,
@@ -666,7 +677,7 @@ impl Expression<()> {
                     chan_annotation.qualify(module);
                 }
                 Self::Fork {
-                    span,
+                    span: Default::default(),
                     captures,
                     chan_name,
                     chan_annotation,
@@ -675,7 +686,7 @@ impl Expression<()> {
                     process: process.qualify(module),
                 }
             }
-            Self::Primitive(span, primitive, ()) => Self::Primitive(span, primitive, ()),
+            Self::Primitive(_, primitive, ()) => Self::Primitive(Default::default(), primitive, ()),
             Self::External(mut claimed_type, f, ()) => {
                 claimed_type.qualify(module);
                 Self::External(claimed_type, f, ())

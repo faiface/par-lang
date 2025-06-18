@@ -259,6 +259,20 @@ impl TypeOnHover {
     pub fn new(program: &CheckedModule) -> Self {
         let mut pairs = Vec::new();
 
+        for (name, (_, _, typ)) in program.type_defs.globals.iter() {
+            if let Some((start, end)) = name.span.points() {
+                pairs.push((
+                    (start, end),
+                    NameWithType(Some(format!("{}", name)), typ.clone()),
+                ));
+            }
+            typ.types_at_spans(&program.type_defs, &mut |span, name, typ| {
+                if let Some((start, end)) = span.points() {
+                    pairs.push(((start, end), NameWithType(name, typ)))
+                }
+            });
+        }
+
         for (name, declaration) in &program.declarations {
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
@@ -266,6 +280,13 @@ impl TypeOnHover {
                     NameWithType(Some(format!("{}", name)), declaration.typ.clone()),
                 ));
             }
+            declaration
+                .typ
+                .types_at_spans(&program.type_defs, &mut |span, name, typ| {
+                    if let Some((start, end)) = span.points() {
+                        pairs.push(((start, end), NameWithType(name, typ)))
+                    }
+                });
         }
 
         for (name, definition) in &program.definitions {
