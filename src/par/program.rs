@@ -1,5 +1,6 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
+use arcstr::ArcStr;
 use indexmap::IndexMap;
 
 use crate::{
@@ -60,7 +61,7 @@ impl TypeDef {
                 .into_iter()
                 .map(|&var| LocalName {
                     span: Default::default(),
-                    string: String::from(var),
+                    string: ArcStr::from(var),
                 })
                 .collect(),
             typ,

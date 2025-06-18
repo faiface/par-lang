@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, fs::Metadata, future::Future, path::PathBuf, sync::Arc};
 
-use arcstr::Substr;
+use arcstr::{literal, Substr};
 use num_bigint::BigInt;
 use tokio::fs::{self, File, ReadDir};
 
@@ -385,9 +385,9 @@ async fn nat_equals(mut handle: Handle) {
     let x = handle.receive().nat().await;
     let y = handle.receive().nat().await;
     if x == y {
-        handle.signal(1, 2); // true
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(0, 2); // false
+        handle.signal(literal!("false"));
     }
     handle.break_();
 }
@@ -396,9 +396,9 @@ async fn nat_compare(mut handle: Handle) {
     let x = handle.receive().nat().await;
     let y = handle.receive().nat().await;
     match x.cmp(&y) {
-        Ordering::Equal => handle.signal(0, 3),
-        Ordering::Greater => handle.signal(1, 3),
-        Ordering::Less => handle.signal(2, 3),
+        Ordering::Less => handle.signal(literal!("less")),
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
     }
     handle.break_();
 }
@@ -406,10 +406,10 @@ async fn nat_compare(mut handle: Handle) {
 async fn nat_repeat(mut handle: Handle) {
     let mut n = handle.receive().nat().await;
     while n > BigInt::ZERO {
-        handle.signal(1, 2); // step
+        handle.signal(literal!("step"));
         n -= 1;
     }
-    handle.signal(0, 2); // end
+    handle.signal(literal!("end"));
     handle.break_();
 }
 
@@ -419,11 +419,11 @@ async fn nat_range(mut handle: Handle) {
 
     let mut i = lo;
     while i < hi {
-        handle.signal(1, 2); // item
+        handle.signal(literal!("item"));
         handle.send().provide_nat(i.clone());
         i += 1;
     }
-    handle.signal(0, 2); // end
+    handle.signal(literal!("end"));
     handle.break_();
 }
 
@@ -500,9 +500,9 @@ async fn int_equals(mut handle: Handle) {
     let x = handle.receive().int().await;
     let y = handle.receive().int().await;
     if x == y {
-        handle.signal(1, 2); // true
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(0, 2); // false
+        handle.signal(literal!("false"));
     }
     handle.break_();
 }
@@ -511,9 +511,9 @@ async fn int_compare(mut handle: Handle) {
     let x = handle.receive().int().await;
     let y = handle.receive().int().await;
     match x.cmp(&y) {
-        Ordering::Equal => handle.signal(0, 3),
-        Ordering::Greater => handle.signal(1, 3),
-        Ordering::Less => handle.signal(2, 3),
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.signal(literal!("less")),
     }
     handle.break_();
 }
@@ -524,11 +524,11 @@ async fn int_range(mut handle: Handle) {
 
     let mut i = lo;
     while i < hi {
-        handle.signal(1, 2); // item
+        handle.signal(literal!("item"));
         handle.send().provide_int(i.clone());
         i += 1;
     }
-    handle.signal(0, 2); // end
+    handle.signal(literal!("end"));
     handle.break_();
 }
 
@@ -541,9 +541,9 @@ async fn char_equals(mut handle: Handle) {
     let x = handle.receive().char().await;
     let y = handle.receive().char().await;
     if x == y {
-        handle.signal(1, 2); // true
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(0, 2); // false
+        handle.signal(literal!("false"));
     }
     handle.break_();
 }
@@ -557,9 +557,9 @@ async fn char_is(mut handle: Handle) {
     let ch = handle.receive().char().await;
     let class = CharClass::readback(handle.receive()).await;
     if class.contains(ch) {
-        handle.signal(1, 2); // true
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(0, 2); // false
+        handle.signal(literal!("false"));
     }
     handle.break_();
 }
@@ -577,41 +577,17 @@ enum CharClass {
 
 impl CharClass {
     async fn readback(mut handle: Handle) -> Self {
-        match handle.case(4).await {
-            0 => {
-                // any
-                Self::Any
-            }
-            1 => {
-                // ascii
-                match handle.case(4).await {
-                    0 => {
-                        // alpha
-                        Self::AsciiAlpha
-                    }
-                    1 => {
-                        // alphanum
-                        Self::AsciiAlphanum
-                    }
-                    2 => {
-                        // any
-                        Self::AsciiAny
-                    }
-                    3 => {
-                        // digit
-                        Self::AsciiDigit
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            2 => {
-                // char
-                Self::Char(handle.char().await)
-            }
-            3 => {
-                // whitespace
-                Self::Whitespace
-            }
+        match handle.case().await.as_str() {
+            "any" => Self::Any,
+            "ascii" => match handle.case().await.as_str() {
+                "alpha" => Self::AsciiAlpha,
+                "alphanum" => Self::AsciiAlphanum,
+                "any" => Self::AsciiAny,
+                "digit" => Self::AsciiDigit,
+                _ => unreachable!(),
+            },
+            "char" => Self::Char(handle.char().await),
+            "whitespace" => Self::Whitespace,
             _ => unreachable!(),
         }
     }
@@ -632,13 +608,11 @@ impl CharClass {
 async fn string_builder(mut handle: Handle) {
     let mut buf = String::new();
     loop {
-        match handle.case(2).await {
-            0 => {
-                // add
+        match handle.case().await.as_str() {
+            "add" => {
                 buf += &handle.receive().string().await;
             }
-            1 => {
-                // build
+            "build" => {
                 handle.provide_string(Substr::from(buf));
                 break;
             }
@@ -656,18 +630,16 @@ async fn string_reader(mut handle: Handle) {
     let mut remainder = handle.receive().string().await;
 
     loop {
-        match handle.case(4).await {
-            0 => {
-                // close
+        match handle.case().await.as_str() {
+            "close" => {
                 handle.break_();
                 return;
             }
-            1 => {
-                // match
+            "match" => {
                 let prefix = Pattern::readback(handle.receive()).await;
                 let suffix = Pattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
-                    handle.signal(0, 3); // end
+                    handle.signal(literal!("end"));
                     handle.break_();
                     return;
                 }
@@ -693,22 +665,21 @@ async fn string_reader(mut handle: Handle) {
 
                 match best_match {
                     Some((i, j)) => {
-                        handle.signal(2, 3); // match
+                        handle.signal(literal!("match"));
                         handle.send().provide_string(remainder.substr(..i));
                         handle.send().provide_string(remainder.substr(i..j));
                         remainder = remainder.substr(j..);
                     }
                     None => {
-                        handle.signal(1, 3); // fail
+                        handle.signal(literal!("fail"));
                     }
                 }
             }
-            2 => {
-                // matchEnd
+            "matchEnd" => {
                 let prefix = Pattern::readback(handle.receive()).await;
                 let suffix = Pattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
-                    handle.signal(0, 3); // end
+                    handle.signal(literal!("end"));
                     handle.break_();
                     return;
                 }
@@ -724,19 +695,18 @@ async fn string_reader(mut handle: Handle) {
 
                 match m.leftmost_accepting_split() {
                     Some(i) => {
-                        handle.signal(2, 3); // match
+                        handle.signal(literal!("match"));
                         handle.send().provide_string(remainder.substr(..i));
                         handle.send().provide_string(remainder.substr(i..));
                         handle.break_();
                         return;
                     }
                     None => {
-                        handle.signal(1, 3); // fail
+                        handle.signal(literal!("fail"));
                     }
                 }
             }
-            3 => {
-                // remainder
+            "remainder" => {
                 handle.provide_string(remainder);
                 return;
             }
@@ -763,8 +733,8 @@ enum Pattern {
 
 impl Pattern {
     async fn readback(mut handle: Handle) -> Box<Self> {
-        match handle.case(10).await {
-            0 => {
+        match handle.case().await.as_str() {
+            "and" => {
                 // .and List<self>
                 let mut conj = Box::new(Self::All);
                 let patterns =
@@ -774,7 +744,7 @@ impl Pattern {
                 }
                 conj
             }
-            1 => {
+            "concat" => {
                 // .concat List<self>
                 let mut conc = Box::new(Self::Empty);
                 let patterns =
@@ -784,27 +754,27 @@ impl Pattern {
                 }
                 conc
             }
-            2 => {
+            "empty" => {
                 // .empty!
                 handle.break_();
                 Box::new(Self::Empty)
             }
-            3 => {
+            "length" => {
                 // .length Nat
                 let n = handle.nat().await;
                 Box::new(Self::Length(n))
             }
-            4 => {
+            "non" => {
                 // .non Char.Class
                 let class = CharClass::readback(handle).await;
                 Box::new(Self::Non(class))
             }
-            5 => {
+            "one" => {
                 // .one Char.Class
                 let class = CharClass::readback(handle).await;
                 Box::new(Self::One(class))
             }
-            6 => {
+            "or" => {
                 // .or List<self>,
                 let mut disj = Box::new(Self::Nil);
                 let patterns =
@@ -814,17 +784,17 @@ impl Pattern {
                 }
                 disj
             }
-            7 => {
+            "repeat" => {
                 // .repeat self
                 let p = Box::pin(Self::readback(handle)).await;
                 Box::new(Self::Repeat(p))
             }
-            8 => {
+            "repeat1" => {
                 // .repeat1 self
                 let p = Box::pin(Self::readback(handle)).await;
                 Box::new(Self::Repeat1(p))
             }
-            9 => {
+            "str" => {
                 // .str String
                 let s = handle.string().await;
                 Box::new(Self::Str(s))
@@ -1095,14 +1065,12 @@ async fn debug_log(mut handle: Handle) {
 
 async fn console_open(mut handle: Handle) {
     loop {
-        match handle.case(2).await {
-            0 => {
-                // close
+        match handle.case().await.as_str() {
+            "close" => {
                 handle.break_();
                 break;
             }
-            1 => {
-                // print
+            "print" => {
                 println!("{}", handle.receive().string().await);
             }
             _ => unreachable!(),
@@ -1115,7 +1083,7 @@ async fn storage_open(mut handle: Handle) {
     let meta = match fs::metadata(&path).await {
         Ok(meta) => meta,
         Err(error) => {
-            handle.signal(1, 3); // err
+            handle.signal(literal!("err"));
             return handle.provide_string(Substr::from(error.to_string()));
         }
     };
@@ -1134,11 +1102,11 @@ fn handle_open_result(
             let file = match File::open(&path).await {
                 Ok(file) => file,
                 Err(error) => {
-                    handle.signal(1, 3); // err
+                    handle.signal(literal!("err"));
                     return handle.provide_string(Substr::from(error.to_string()));
                 }
             };
-            handle.signal(2, 3); // file
+            handle.signal(literal!("file"));
             return handle_file_info(
                 Substr::from(path.to_string_lossy()),
                 BigInt::from(meta.len()),
@@ -1152,36 +1120,32 @@ fn handle_open_result(
             let dir = match fs::read_dir(&path).await {
                 Ok(dir) => dir,
                 Err(error) => {
-                    handle.signal(1, 3); // err
+                    handle.signal(literal!("err"));
                     return handle.provide_string(Substr::from(error.to_string()));
                 }
             };
-            handle.signal(0, 3); // directory
+            handle.signal(literal!("directory"));
             return handle_directory_info(Substr::from(path.to_string_lossy()), dir, handle).await;
         }
 
-        handle.signal(1, 3); // err
+        handle.signal(literal!("err"));
         handle.provide_string(Substr::from("unsupported storage item type"));
     }
 }
 
 async fn handle_file_info(path: Substr, size: BigInt, _file: File, mut handle: Handle) {
     loop {
-        match handle.case(4).await {
-            0 => {
-                // close
+        match handle.case().await.as_str() {
+            "close" => {
                 return;
             }
-            1 => {
-                // getPath
+            "getPath" => {
                 handle.send().provide_string(path.clone());
             }
-            2 => {
-                // getSize
+            "getSize" => {
                 handle.send().provide_nat(size.clone());
             }
-            3 => {
-                // readUTF8
+            "readUTF8" => {
                 todo!("implement")
             }
             _ => unreachable!(),
@@ -1191,34 +1155,27 @@ async fn handle_file_info(path: Substr, size: BigInt, _file: File, mut handle: H
 
 async fn handle_directory_info(path: Substr, mut dir: ReadDir, mut handle: Handle) {
     loop {
-        match handle.case(3).await {
-            0 => {
-                // close
+        match handle.case().await.as_str() {
+            "close" => {
                 handle.break_();
                 return;
             }
-            1 => {
-                // getPath
+            "getPath" => {
                 handle.send().provide_string(path.clone());
             }
-            2 => {
-                // list
+            "list" => {
                 while let Ok(Some(entry)) = dir.next_entry().await {
                     let Ok(meta) = entry.metadata().await else {
                         continue;
                     };
 
-                    handle.signal(1, 2); // item
+                    handle.signal(literal!("item"));
                     handle.send().concurrently(|mut handle| async move {
                         let path = Substr::from(entry.path().to_string_lossy());
                         handle.send().provide_string(path);
-                        match handle.case(2).await {
-                            0 => {
-                                // open
-                                handle_open_result(entry.path(), meta, handle).await
-                            }
-                            1 => {
-                                // skip
+                        match handle.case().await.as_str() {
+                            "open" => handle_open_result(entry.path(), meta, handle).await,
+                            "skip" => {
                                 handle.break_();
                                 return;
                             }
@@ -1226,7 +1183,7 @@ async fn handle_directory_info(path: Substr, mut dir: ReadDir, mut handle: Handl
                         }
                     });
                 }
-                handle.signal(0, 2); // end
+                handle.signal(literal!("end"));
                 handle.break_();
                 return;
             }
@@ -1244,14 +1201,12 @@ where
 {
     let mut items = Vec::new();
     loop {
-        match handle.case(2).await {
-            0 => {
-                // end
+        match handle.case().await.as_str() {
+            "end" => {
                 handle.break_();
                 return items;
             }
-            1 => {
-                // item
+            "item" => {
                 let item = readback_item(handle.receive()).await;
                 items.push(item);
             }

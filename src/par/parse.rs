@@ -12,7 +12,7 @@ use crate::par::{
     program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
-use arcstr::Substr;
+use arcstr::{ArcStr, Substr};
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
@@ -150,7 +150,10 @@ fn uppercase_identifier(input: &mut Input) -> Result<(Span, String)> {
 
 fn local_name(input: &mut Input) -> Result<LocalName> {
     lowercase_identifier
-        .map(|(span, string)| LocalName { span, string })
+        .map(|(span, string)| LocalName {
+            span,
+            string: ArcStr::from(string),
+        })
         .parse_next(input)
 }
 

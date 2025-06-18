@@ -2,6 +2,8 @@
 
 use std::{collections::BTreeMap, fmt::Display, hash::Hash, sync::Arc};
 
+use arcstr::{literal, ArcStr};
+
 use super::{
     primitive::Primitive,
     process::{self, Captures},
@@ -12,7 +14,7 @@ use crate::location::{Span, Spanning};
 #[derive(Clone, Debug)]
 pub struct LocalName {
     pub span: Span,
-    pub string: String,
+    pub string: ArcStr,
 }
 
 #[derive(Clone, Debug)]
@@ -28,6 +30,15 @@ impl GlobalName {
             span: Default::default(),
             module: module.map(String::from),
             primary: String::from(primary),
+        }
+    }
+}
+
+impl From<ArcStr> for LocalName {
+    fn from(value: ArcStr) -> Self {
+        LocalName {
+            span: Span::None,
+            string: value,
         }
     }
 }
@@ -48,28 +59,28 @@ impl LocalName {
     pub fn result() -> Self {
         Self {
             span: Default::default(),
-            string: String::from("#result"),
+            string: literal!("#result"),
         }
     }
 
     pub fn object() -> Self {
         Self {
             span: Default::default(),
-            string: String::from("#object"),
+            string: literal!("#object"),
         }
     }
 
     pub fn match_(level: usize) -> Self {
         Self {
             span: Default::default(),
-            string: format!("#match{}", level),
+            string: arcstr::format!("#match{}", level),
         }
     }
 
     pub fn invalid() -> Self {
         Self {
             span: Default::default(),
-            string: String::from("#invalid"),
+            string: literal!("#invalid"),
         }
     }
 }
@@ -476,7 +487,7 @@ impl Expression {
                     command: process::Command::Signal(
                         LocalName {
                             span,
-                            string: "end".to_string(),
+                            string: literal!("end"),
                         },
                         Arc::new(process::Process::Do {
                             span,
@@ -495,7 +506,7 @@ impl Expression {
                         command: process::Command::Signal(
                             LocalName {
                                 span,
-                                string: "item".to_string(),
+                                string: literal!("item"),
                             },
                             Arc::new(process::Process::Do {
                                 span,
@@ -1021,7 +1032,7 @@ impl Process {
                 let span = global_name.span;
                 let local_name = LocalName {
                     span,
-                    string: format!("{}", global_name),
+                    string: arcstr::format!("{}", global_name),
                 };
                 Arc::new(process::Process::Let {
                     span,

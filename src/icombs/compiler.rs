@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
     sync::Arc,
 };
@@ -17,6 +17,7 @@ use crate::{
         types::TypeDefs,
     },
 };
+use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
 use std::hash::Hash;
 
@@ -474,12 +475,12 @@ impl Compiler {
         self.net.link(a.tree, b.tree);
     }
 
-    fn either_instance(&mut self, tree: Tree, index: usize, out_of: usize) -> Tree {
-        Tree::Signal(index as u16, out_of as u16, Box::new(tree))
+    fn either_instance(&mut self, signal: ArcStr, tree: Tree) -> Tree {
+        Tree::Signal(signal, Box::new(tree))
     }
 
-    fn choice_instance(&mut self, ctx_out: Tree, branches: Vec<usize>) -> Tree {
-        Tree::Choice(Box::new(ctx_out), Arc::from(branches))
+    fn choice_instance(&mut self, ctx_out: Tree, branches: HashMap<ArcStr, usize>) -> Tree {
+        Tree::Choice(Box::new(ctx_out), Arc::new(branches))
     }
 
     fn normalize_type(&mut self, ty: Type) -> Type {
@@ -652,9 +653,8 @@ impl Compiler {
                 let Some(branch_type) = branches.get(chosen) else {
                     unreachable!()
                 };
-                let branch_index = branches.keys().position(|k| k == chosen).unwrap();
                 let (v0, v1) = self.create_typed_wire(branch_type.clone());
-                let choosing_tree = self.either_instance(v1.tree, branch_index, branches.len());
+                let choosing_tree = self.either_instance(ArcStr::from(&chosen.string), v1.tree);
                 self.net.link(choosing_tree, subject.tree);
                 self.bind_variable(name, v0)?;
                 self.compile_process(process)?;
@@ -665,19 +665,19 @@ impl Compiler {
                 // Multiplex all other variables in the context.
                 let (context_in, pack_data) = self.context.pack(None, None, None, &mut self.net);
 
-                let mut branches = vec![];
+                let mut branches = HashMap::new();
                 let Type::Either(_, required_branches) = self.normalize_type(ty.clone()) else {
                     panic!("Unexpected type for Case: {:?}", ty);
                 };
                 let mut choice_and_process: Vec<_> = names.iter().zip(processes.iter()).collect();
                 choice_and_process.sort_by_key(|k| k.0);
 
-                for ((_, process), branch) in choice_and_process
+                for ((branch_name, process), branch_type) in choice_and_process
                     .into_iter()
                     .zip(required_branches.values())
                 {
                     let (package_id, _) = self.in_package(|this, _| {
-                        let (w0, w1) = this.create_typed_wire(branch.clone());
+                        let (w0, w1) = this.create_typed_wire(branch_type.clone());
                         this.bind_variable(name.clone(), w0)?;
 
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
@@ -685,7 +685,7 @@ impl Compiler {
                         Ok(Tree::Con(Box::new(context_out), Box::new(w1.tree))
                             .with_type(Type::Break(Default::default())))
                     })?;
-                    branches.push(package_id)
+                    branches.insert(ArcStr::from(&branch_name.string), package_id);
                 }
                 let t = self.choice_instance(context_in, branches);
 

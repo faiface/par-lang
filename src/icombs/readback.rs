@@ -3,13 +3,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use arcstr::Substr;
+use arcstr::{ArcStr, Substr};
 use futures::channel::oneshot;
 use num_bigint::BigInt;
 
 use crate::{
     location::Span,
     par::{
+        language::LocalName,
         primitive::Primitive,
         types::{PrimitiveType, Type, TypeDefs},
     },
@@ -41,8 +42,8 @@ pub enum TypedReadback {
 
     Times(TypedHandle, TypedHandle),
     Par(TypedHandle, TypedHandle),
-    Either(String, TypedHandle),
-    Choice(Vec<String>, Box<dyn Send + FnOnce(&str) -> TypedHandle>),
+    Either(ArcStr, TypedHandle),
+    Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr) -> TypedHandle>),
 
     Break,
     Continue,
@@ -177,11 +178,11 @@ impl Handle {
         }
     }
 
-    pub fn signal(&mut self, index: u16, size: u16) {
+    pub fn signal(&mut self, chosen: ArcStr) {
         let mut locked = self.net.lock().expect("lock failed");
         let (a0, a1) = locked.create_wire();
         locked.link(
-            Tree::Signal(index, size, Box::new(a1)),
+            Tree::Signal(chosen, Box::new(a1)),
             self.tree.take().unwrap(),
         );
         locked.notify_reducer();
@@ -190,7 +191,7 @@ impl Handle {
         self.tree = Some(a0);
     }
 
-    pub async fn case(&mut self, size: u16) -> u16 {
+    pub async fn case(&mut self) -> ArcStr {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -199,11 +200,9 @@ impl Handle {
             rx
         };
 
-        let (index, actual_size, tree) = rx.await.expect("sender dropped");
-        assert_eq!(size, actual_size);
-
+        let (chosen, tree) = rx.await.expect("sender dropped");
         self.tree = Some(*tree);
-        index
+        chosen
     }
 
     pub fn break_(self) {
@@ -265,13 +264,13 @@ impl TypedHandle {
             }
 
             Type::Either(_, _) => {
-                let (signal, handle) = self.case().await;
-                TypedReadback::Either(signal, handle)
+                let (chosen, handle) = self.case().await;
+                TypedReadback::Either(chosen, handle)
             }
 
             Type::Choice(_, branches) => TypedReadback::Choice(
                 branches.keys().map(|k| k.string.clone()).collect(),
-                Box::new(move |signal| self.signal(signal)),
+                Box::new(move |chosen| self.signal(chosen)),
             ),
 
             Type::Break(_) => {
@@ -458,22 +457,19 @@ impl TypedHandle {
         (t_handle, u_handle)
     }
 
-    pub fn signal(mut self, chosen: &str) -> Self {
+    pub fn signal(mut self, chosen: ArcStr) -> Self {
         self.prepare_for_readback();
         let Type::Choice(_, branches) = self.tree.ty else {
             panic!("Incorrect type for `signal`: {:?}", self.tree.ty);
         };
-        let size = branches.len() as u16;
-        let (index, (_, typ)) = branches
-            .into_iter()
-            .enumerate()
-            .find(|(_, (k, _))| k.string == chosen)
+        let typ = branches
+            .get(&LocalName::from(chosen.clone()))
+            .cloned()
             .unwrap();
-        let index = index as u16;
 
         let mut locked = self.net.lock().expect("lock failed");
         let (a0, a1) = locked.create_wire();
-        locked.link(Tree::Signal(index, size, Box::new(a1)), self.tree.tree);
+        locked.link(Tree::Signal(chosen, Box::new(a1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -484,7 +480,7 @@ impl TypedHandle {
         }
     }
 
-    pub async fn case(mut self) -> (String, Self) {
+    pub async fn case(mut self) -> (ArcStr, Self) {
         self.prepare_for_readback();
         let Type::Either(_, branches) = self.tree.ty else {
             panic!("Incorrect type for `case`: {:?}", self.tree.ty);
@@ -498,9 +494,11 @@ impl TypedHandle {
             rx
         };
 
-        let (index, size, tree) = rx.await.expect("sender dropped");
-        assert_eq!(branches.len(), size as usize);
-        let (name, typ) = branches.into_iter().skip(index as usize).next().unwrap();
+        let (chosen, tree) = rx.await.expect("sender dropped");
+        let typ = branches
+            .get(&LocalName::from(chosen.clone()))
+            .cloned()
+            .unwrap();
 
         let handle = Self {
             type_defs: self.type_defs,
@@ -508,7 +506,7 @@ impl TypedHandle {
             tree: tree.with_type(typ),
         };
 
-        (name.string, handle)
+        (chosen, handle)
     }
 
     pub fn break_(mut self) {

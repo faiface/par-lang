@@ -2,7 +2,7 @@ use crate::icombs::{
     readback::{TypedHandle, TypedReadback},
     Net,
 };
-use arcstr::Substr;
+use arcstr::{ArcStr, Substr};
 use core::fmt::Debug;
 use eframe::egui::{self, RichText, Ui};
 use futures::{
@@ -17,14 +17,14 @@ enum Request {
     Int(String, Box<dyn Send + FnOnce(BigInt)>),
     String(String, Box<dyn Send + FnOnce(Substr)>),
     Char(String, Box<dyn Send + FnOnce(char)>),
-    Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
+    Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr)>),
 }
 
 pub enum Event {
     Times(Arc<Mutex<Element>>),
     Par(Arc<Mutex<Element>>),
-    Either(String),
-    Choice(String),
+    Either(ArcStr),
+    Choice(ArcStr),
     Break,
     Continue,
     Nat(BigInt),
@@ -235,13 +235,16 @@ impl Element {
                                 let mut chosen = None;
                                 ui.vertical(|ui| {
                                     for signal in &signals {
-                                        if ui.button(RichText::new(signal).strong()).clicked() {
-                                            chosen = Some(signal.as_str());
+                                        if ui
+                                            .button(RichText::new(signal.to_string()).strong())
+                                            .clicked()
+                                        {
+                                            chosen = Some(signal.clone());
                                         }
                                     }
                                 });
                                 if let Some(chosen) = chosen {
-                                    self.history.push(Event::Choice(String::from(chosen)));
+                                    self.history.push(Event::Choice(chosen.clone()));
                                     callback(chosen);
                                 } else {
                                     self.request = Some(Request::Choice(signals, callback));
@@ -406,9 +409,9 @@ async fn handle_coroutine(
                 refresh();
             }
 
-            TypedReadback::Either(signal, handle1) => {
+            TypedReadback::Either(chosen, handle1) => {
                 let mut lock = element.lock().expect("lock failed");
-                lock.history.push(Event::Either(signal));
+                lock.history.push(Event::Either(chosen));
                 handle = handle1;
                 refresh();
             }
@@ -419,8 +422,8 @@ async fn handle_coroutine(
                     let mut lock = element.lock().expect("lock failed");
                     lock.request = Some(Request::Choice(
                         signals,
-                        Box::new(move |signal| {
-                            let handle = callback(signal);
+                        Box::new(move |chosen| {
+                            let handle = callback(chosen);
                             tx.send(handle).ok().unwrap();
                         }),
                     ));

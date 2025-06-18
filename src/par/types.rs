@@ -1,3 +1,4 @@
+use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -128,7 +129,7 @@ impl Type {
             Span::None,
             LocalName {
                 span: Span::None,
-                string: String::from(name),
+                string: ArcStr::from(name),
             },
         )
     }
@@ -150,7 +151,7 @@ impl Type {
                     (
                         LocalName {
                             span: Span::None,
-                            string: String::from(name),
+                            string: ArcStr::from(name),
                         },
                         typ,
                     )
@@ -168,7 +169,7 @@ impl Type {
                     (
                         LocalName {
                             span: Span::None,
-                            string: String::from(name),
+                            string: ArcStr::from(name),
                         },
                         typ,
                     )
@@ -191,7 +192,7 @@ impl Type {
             asc: IndexSet::new(),
             label: label.map(|label| LocalName {
                 span: Span::None,
-                string: String::from(label),
+                string: ArcStr::from(label),
             }),
             body: Box::new(body),
         }
@@ -203,7 +204,7 @@ impl Type {
             asc: IndexSet::new(),
             label: label.map(|label| LocalName {
                 span: Span::None,
-                string: String::from(label),
+                string: ArcStr::from(label),
             }),
             body: Box::new(body),
         }
@@ -214,7 +215,7 @@ impl Type {
             Span::None,
             label.map(|label| LocalName {
                 span: Span::None,
-                string: String::from(label),
+                string: ArcStr::from(label),
             }),
         )
     }
@@ -536,7 +537,7 @@ impl Type {
             Self::Exists(loc, mut name, mut body) => {
                 while map.values().any(|t| t.contains_var(&name)) {
                     let old_name = name.clone();
-                    name.string += "'";
+                    name.string = arcstr::format!("{}'", name.string);
                     body = Box::new(body.substitute(BTreeMap::from([(
                         &old_name,
                         &Type::Var(name.span(), name.clone()),
@@ -549,7 +550,7 @@ impl Type {
             Self::Forall(loc, mut name, mut body) => {
                 while map.values().any(|t| t.contains_var(&name)) {
                     let old_name = name.clone();
-                    name.string += "'";
+                    name.string = arcstr::format!("{}'", name.string);
                     body = Box::new(body.substitute(BTreeMap::from([(
                         &old_name,
                         &Type::Var(name.span(), name.clone()),

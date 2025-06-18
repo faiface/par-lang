@@ -1,13 +1,13 @@
 //! This module contains a simple implementation for Interaction Combinators.
 //! It is not performant; it's mainly here to act as a storage and interchange format
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use arcstr::Substr;
+use arcstr::{ArcStr, Substr};
 use futures::channel::{mpsc, oneshot};
 use futures::task::{Spawn, SpawnExt};
 use futures::StreamExt;
@@ -39,12 +39,12 @@ pub enum Tree {
     Era,
     Con(Box<Tree>, Box<Tree>),
     Dup(Box<Tree>, Box<Tree>),
-    Signal(u16, u16, Box<Tree>),
-    Choice(Box<Tree>, Arc<[usize]>),
+    Signal(ArcStr, Box<Tree>),
+    Choice(Box<Tree>, Arc<HashMap<ArcStr, usize>>),
     Var(usize),
     Package(usize),
 
-    SignalRequest(oneshot::Sender<(u16, u16, Box<Tree>)>),
+    SignalRequest(oneshot::Sender<(ArcStr, Box<Tree>)>),
 
     Primitive(Primitive),
     IntRequest(oneshot::Sender<BigInt>),
@@ -62,7 +62,7 @@ impl Tree {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            Self::Signal(_, _, payload) => {
+            Self::Signal(_, payload) => {
                 payload.map_vars(m);
             }
             Self::Choice(context, _) => {
@@ -90,10 +90,9 @@ impl core::fmt::Debug for Tree {
             Self::Era => f.debug_tuple("Era").finish(),
             Self::Con(a, b) => f.debug_tuple("Con").field(a).field(b).finish(),
             Self::Dup(a, b) => f.debug_tuple("Dup").field(a).field(b).finish(),
-            Self::Signal(index, size, payload) => f
+            Self::Signal(signal, payload) => f
                 .debug_tuple("Signal")
-                .field(index)
-                .field(size)
+                .field(signal)
                 .field(payload)
                 .finish(),
             Self::Choice(context, branches) => f
@@ -119,7 +118,7 @@ impl Clone for Tree {
             Self::Era => Self::Era,
             Self::Con(a, b) => Self::Con(a.clone(), b.clone()),
             Self::Dup(a, b) => Self::Dup(a.clone(), b.clone()),
-            Self::Signal(index, size, payload) => Self::Signal(*index, *size, payload.clone()),
+            Self::Signal(signal, payload) => Self::Signal(signal.clone(), payload.clone()),
             Self::Choice(context, branches) => Self::Choice(context.clone(), Arc::clone(branches)),
             Self::Var(id) => Self::Var(id.clone()),
             Self::Package(id) => Self::Package(id.clone()),
@@ -330,26 +329,24 @@ impl Net {
                 self.link(*b1, Tree::Con(Box::new(b01), Box::new(b11)));
                 self.rewrites.commute += 1;
             }
-            (Signal(index, size, payload), Choice(context, branches))
-            | (Choice(context, branches), Signal(index, size, payload)) => {
-                assert_eq!(branches.len(), size as usize);
+            (Signal(signal, payload), Choice(context, branches))
+            | (Choice(context, branches), Signal(signal, payload)) => {
                 self.link(
                     Tree::Con(context, payload),
-                    Tree::Package(branches[index as usize]),
+                    Tree::Package(branches.get(&signal).copied().unwrap()),
                 );
                 self.rewrites.signal += 1;
             }
-            (Signal(_, _, payload), Era) | (Era, Signal(_, _, payload)) => {
+            (Signal(_, payload), Era) | (Era, Signal(_, payload)) => {
                 self.link(*payload, Era);
                 self.rewrites.era += 1;
             }
-            (Signal(index, size, payload), Dup(b0, b1))
-            | (Dup(b0, b1), Signal(index, size, payload)) => {
+            (Signal(signal, payload), Dup(b0, b1)) | (Dup(b0, b1), Signal(signal, payload)) => {
                 let (a00, b00) = self.create_wire();
                 let (a10, b10) = self.create_wire();
                 self.link(*payload, Tree::Dup(Box::new(b00), Box::new(b10)));
-                self.link(*b0, Tree::Signal(index, size, Box::new(a00)));
-                self.link(*b1, Tree::Signal(index, size, Box::new(a10)));
+                self.link(*b0, Tree::Signal(signal.clone(), Box::new(a00)));
+                self.link(*b1, Tree::Signal(signal, Box::new(a10)));
                 self.rewrites.commute += 1;
             }
             (Package(_), Era) | (Era, Package(_)) => {
@@ -371,9 +368,9 @@ impl Net {
             (Primitive(p), a) | (a, Primitive(p)) => {
                 self.primitive_interact(p, a);
             }
-            (SignalRequest(tx), Signal(index, size, payload))
-            | (Signal(index, size, payload), SignalRequest(tx)) => {
-                tx.send((index, size, payload)).expect("receiver dropped");
+            (SignalRequest(tx), Signal(signal, payload))
+            | (Signal(signal, payload), SignalRequest(tx)) => {
+                tx.send((signal, payload)).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
             (External(f), a) | (a, External(f)) => match &self.reducer {
@@ -479,7 +476,7 @@ impl Net {
                 self.substitute_tree(a);
                 self.substitute_tree(b);
             }
-            Tree::Signal(_, _, payload) => self.substitute_tree(payload),
+            Tree::Signal(_, payload) => self.substitute_tree(payload),
             Tree::Choice(context, _) => self.substitute_tree(context),
             Tree::Var(id) => {
                 if let Ok(mut a) = self.variables.remove_linked(*id) {
@@ -586,8 +583,8 @@ impl Net {
             Tree::Era => format!("*"),
             Tree::Con(a, b) => format!("({} {})", self.show_tree(a), self.show_tree(b)),
             Tree::Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
-            Tree::Signal(index, size, payload) => {
-                format!("signal({} {} {})", index, size, self.show_tree(payload),)
+            Tree::Signal(signal, payload) => {
+                format!("signal({} {})", signal, self.show_tree(payload),)
             }
             Tree::Choice(context, branches) => {
                 format!("choice({} {:?})", self.show_tree(context), branches,)
@@ -621,7 +618,7 @@ impl Net {
                 self.assert_tree_not_contains(a, idx);
                 self.assert_tree_not_contains(b, idx);
             }
-            Tree::Signal(_, _, payload) => {
+            Tree::Signal(_, payload) => {
                 self.assert_tree_not_contains(payload, idx);
             }
             Tree::Choice(context, _) => {
@@ -695,7 +692,7 @@ impl Net {
                 a.append(&mut b);
                 a
             }
-            Tree::Signal(_, _, payload) => self.assert_tree_valid(payload),
+            Tree::Signal(_, payload) => self.assert_tree_valid(payload),
             Tree::Choice(context, _) => self.assert_tree_valid(context),
             Tree::Era => {
                 vec![]
