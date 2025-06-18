@@ -287,7 +287,7 @@ impl Process<Type> {
             } => {
                 consume(name.span(), Some(format!("{}", name)), typ.clone());
                 if name == &LocalName::result() {
-                    consume(*span, None, typ.dual(type_defs).unwrap());
+                    consume(*span, None, typ.clone().dual(Span::None));
                 } else if name == &LocalName::object() {
                     consume(*span, None, typ.clone());
                 } else {

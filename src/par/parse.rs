@@ -462,7 +462,7 @@ fn typ_chan(input: &mut Input) -> Result<Type> {
         t(TokenKind::Dual),
         typ.context(StrContext::Label("dual type")),
     )
-    .map(|(pre, typ)| Type::Dual(pre.span.join(typ.span()), Box::new(typ)))
+    .map(|(pre, typ)| typ.dual(pre.span))
     .parse_next(input)
 }
 

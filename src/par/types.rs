@@ -60,9 +60,11 @@ pub enum Operation {
 #[derive(Clone, Debug)]
 pub enum Type {
     Primitive(Span, PrimitiveType),
-    Dual(Span, Box<Self>),
+    DualPrimitive(Span, PrimitiveType),
     Var(Span, LocalName),
+    DualVar(Span, LocalName),
     Name(Span, GlobalName, Vec<Self>),
+    DualName(Span, GlobalName, Vec<Self>),
     Pair(Span, Box<Self>, Box<Self>),
     Function(Span, Box<Self>, Box<Self>),
     Either(Span, BTreeMap<LocalName, Self>),
@@ -86,6 +88,7 @@ pub enum Type {
         body: Box<Self>,
     },
     Self_(Span, Option<LocalName>),
+    DualSelf(Span, Option<LocalName>),
     Exists(Span, LocalName, Box<Self>),
     Forall(Span, LocalName, Box<Self>),
 }
@@ -101,60 +104,52 @@ pub enum PrimitiveType {
 #[allow(unused)]
 impl Type {
     pub fn nat() -> Self {
-        Self::Primitive(Default::default(), PrimitiveType::Nat)
+        Self::Primitive(Span::None, PrimitiveType::Nat)
     }
 
     pub fn int() -> Self {
-        Self::Primitive(Default::default(), PrimitiveType::Int)
+        Self::Primitive(Span::None, PrimitiveType::Int)
     }
 
     pub fn string() -> Self {
-        Self::Primitive(Default::default(), PrimitiveType::String)
+        Self::Primitive(Span::None, PrimitiveType::String)
     }
 
     pub fn char() -> Self {
-        Self::Primitive(Default::default(), PrimitiveType::Char)
-    }
-
-    pub fn dual_(t: Self) -> Self {
-        Self::Dual(Default::default(), Box::new(t))
+        Self::Primitive(Span::None, PrimitiveType::Char)
     }
 
     pub fn name(module: Option<&'static str>, primary: &'static str, args: Vec<Self>) -> Self {
-        Self::Name(
-            Default::default(),
-            GlobalName::external(module, primary),
-            args,
-        )
+        Self::Name(Span::None, GlobalName::external(module, primary), args)
     }
 
     pub fn var(name: &'static str) -> Self {
         Self::Var(
-            Default::default(),
+            Span::None,
             LocalName {
-                span: Default::default(),
+                span: Span::None,
                 string: String::from(name),
             },
         )
     }
 
     pub fn pair(t: Self, u: Self) -> Self {
-        Self::Pair(Default::default(), Box::new(t), Box::new(u))
+        Self::Pair(Span::None, Box::new(t), Box::new(u))
     }
 
     pub fn function(t: Self, u: Self) -> Self {
-        Self::Function(Default::default(), Box::new(t), Box::new(u))
+        Self::Function(Span::None, Box::new(t), Box::new(u))
     }
 
     pub fn either(branches: Vec<(&'static str, Self)>) -> Self {
         Self::Either(
-            Default::default(),
+            Span::None,
             branches
                 .into_iter()
                 .map(|(name, typ)| {
                     (
                         LocalName {
-                            span: Default::default(),
+                            span: Span::None,
                             string: String::from(name),
                         },
                         typ,
@@ -166,13 +161,13 @@ impl Type {
 
     pub fn choice(branches: Vec<(&'static str, Self)>) -> Self {
         Self::Choice(
-            Default::default(),
+            Span::None,
             branches
                 .into_iter()
                 .map(|(name, typ)| {
                     (
                         LocalName {
-                            span: Default::default(),
+                            span: Span::None,
                             string: String::from(name),
                         },
                         typ,
@@ -183,19 +178,19 @@ impl Type {
     }
 
     pub fn break_() -> Self {
-        Self::Break(Default::default())
+        Self::Break(Span::None)
     }
 
     pub fn continue_() -> Self {
-        Self::Continue(Default::default())
+        Self::Continue(Span::None)
     }
 
     pub fn recursive(label: Option<&'static str>, body: Self) -> Self {
         Self::Recursive {
-            span: Default::default(),
+            span: Span::None,
             asc: IndexSet::new(),
             label: label.map(|label| LocalName {
-                span: Default::default(),
+                span: Span::None,
                 string: String::from(label),
             }),
             body: Box::new(body),
@@ -204,10 +199,10 @@ impl Type {
 
     pub fn iterative(label: Option<&'static str>, body: Self) -> Self {
         Self::Iterative {
-            span: Default::default(),
+            span: Span::None,
             asc: IndexSet::new(),
             label: label.map(|label| LocalName {
-                span: Default::default(),
+                span: Span::None,
                 string: String::from(label),
             }),
             body: Box::new(body),
@@ -216,9 +211,9 @@ impl Type {
 
     pub fn self_(label: Option<&'static str>) -> Self {
         Self::Self_(
-            Default::default(),
+            Span::None,
             label.map(|label| LocalName {
-                span: Default::default(),
+                span: Span::None,
                 string: String::from(label),
             }),
         )
@@ -316,7 +311,8 @@ impl TypeDefs {
                     ));
                 }
                 Ok(typ
-                    .dual(self)?
+                    .clone()
+                    .dual(Span::None)
                     .substitute(params.iter().zip(args).collect())?)
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
@@ -353,9 +349,9 @@ impl TypeDefs {
         self_neg: &IndexSet<Option<LocalName>>,
     ) -> Result<(), TypeError> {
         Ok(match typ {
-            Type::Primitive(_, _) => (),
-            Type::Dual(_, t) => self.validate_type(t, self_neg, self_pos)?,
-            Type::Var(span, name) => {
+            Type::Primitive(_, _) | Type::DualPrimitive(_, _) => (),
+
+            Type::Var(span, name) | Type::DualVar(span, name) => {
                 if self.vars.contains(name) {
                     ()
                 } else {
@@ -369,16 +365,17 @@ impl TypeDefs {
                 for arg in args {
                     self.validate_type(arg, self_pos, self_neg)?;
                 }
-                /*let mut deps = deps.clone();
-                if !deps.insert(name.clone()) {
-                    return Err(TypeError::DependencyCycle(
-                        span.clone(),
-                        deps.into_iter().skip_while(|dep| dep != name).collect(),
-                    ));
-                }*/
                 let t = self.get(span, name, args)?;
                 self.validate_type(&t, self_pos, self_neg)?;
             }
+            Type::DualName(span, name, args) => {
+                for arg in args {
+                    self.validate_type(arg, self_neg, self_pos)?;
+                }
+                let t = self.get(span, name, args)?;
+                self.validate_type(&t, self_neg, self_pos)?;
+            }
+
             Type::Pair(_, t, u) => {
                 self.validate_type(t, self_pos, self_neg)?;
                 self.validate_type(u, self_pos, self_neg)?;
@@ -393,6 +390,7 @@ impl TypeDefs {
                 }
             }
             Type::Break(_) | Type::Continue(_) => (),
+
             Type::Recursive { label, body, .. } | Type::Iterative { label, body, .. } => {
                 let (mut self_pos, mut self_neg) = (self_pos.clone(), self_neg.clone());
                 self_pos.insert(label.clone());
@@ -404,6 +402,14 @@ impl TypeDefs {
                     return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
                 }
                 if !self_pos.contains(label) {
+                    return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
+                }
+            }
+            Type::DualSelf(span, label) => {
+                if self_pos.contains(label) {
+                    return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
+                }
+                if !self_neg.contains(label) {
                     return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
                 }
             }
@@ -421,9 +427,11 @@ impl Spanning for Type {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
-            | Self::Dual(span, _)
+            | Self::DualPrimitive(span, _)
             | Self::Var(span, _)
+            | Self::DualVar(span, _)
             | Self::Name(span, _, _)
+            | Self::DualName(span, _, _)
             | Self::Pair(span, _, _)
             | Self::Function(span, _, _)
             | Self::Either(span, _)
@@ -433,6 +441,7 @@ impl Spanning for Type {
             | Self::Recursive { span, .. }
             | Self::Iterative { span, .. }
             | Self::Self_(span, _)
+            | Self::DualSelf(span, _)
             | Self::Exists(span, _, _)
             | Self::Forall(span, _, _) => span.clone(),
         }
@@ -443,7 +452,7 @@ impl Type {
     pub fn substitute(self, map: BTreeMap<&LocalName, &Type>) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
-            Self::Dual(span, t) => Self::Dual(span, Box::new(t.substitute(map)?)),
+            Self::DualPrimitive(span, p) => Self::DualPrimitive(span, p),
             Self::Var(span, name) => {
                 if let Some(&typ) = map.get(&name) {
                     typ.clone()
@@ -451,7 +460,21 @@ impl Type {
                     Self::Var(span, name)
                 }
             }
+            Self::DualVar(span, name) => {
+                if let Some(&typ) = map.get(&name) {
+                    typ.clone().dual(Span::None)
+                } else {
+                    Self::DualVar(span, name)
+                }
+            }
             Self::Name(span, name, args) => Self::Name(
+                span,
+                name,
+                args.into_iter()
+                    .map(|arg| arg.substitute(map.clone()))
+                    .collect::<Result<_, _>>()?,
+            ),
+            Self::DualName(span, name, args) => Self::DualName(
                 span,
                 name,
                 args.into_iter()
@@ -508,6 +531,7 @@ impl Type {
                 body: Box::new(body.substitute(map)?),
             },
             Self::Self_(span, label) => Self::Self_(span, label),
+            Self::DualSelf(span, label) => Self::DualSelf(span, label),
 
             Self::Exists(loc, mut name, mut body) => {
                 while map.values().any(|t| t.contains_var(&name)) {
@@ -545,11 +569,15 @@ impl Type {
     pub fn is_positive(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
         Ok(match self {
             Self::Primitive(_, _) => true,
-            Self::Dual(_, t) => t.is_negative(type_defs)?,
+            Self::DualPrimitive(_, _) => false,
             Self::Var(_, _) => false,
+            Self::DualVar(_, _) => false,
             Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_positive(type_defs)?
             }
+            Self::DualName(loc, name, args) => type_defs
+                .get_dual(loc, name, args)?
+                .is_positive(type_defs)?,
             Self::Pair(_, t, u) => t.is_positive(type_defs)? && u.is_positive(type_defs)?,
             Self::Function(_, _, _) => false,
             Self::Either(_, branches) => {
@@ -566,6 +594,7 @@ impl Type {
             Self::Recursive { body, .. } => body.is_positive(type_defs)?,
             Self::Iterative { body, .. } => body.is_positive(type_defs)?,
             Self::Self_(_, _) => true,
+            Self::DualSelf(_, _) => true,
             Self::Exists(loc, name, t) => t
                 .clone()
                 .substitute(BTreeMap::from([(
@@ -580,47 +609,6 @@ impl Type {
                     &Type::Var(loc.clone(), name.clone()),
                 )]))?
                 .is_positive(type_defs)?,
-        })
-    }
-
-    pub fn is_negative(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
-        Ok(match self {
-            Self::Primitive(_, _) => true,
-            Self::Dual(_, t) => t.is_positive(type_defs)?,
-            Self::Var(_, _) => false,
-            Self::Name(loc, name, args) => {
-                type_defs.get(loc, name, args)?.is_negative(type_defs)?
-            }
-            Self::Pair(_, _, _) => false,
-            Self::Function(_, t, u) => t.is_positive(type_defs)? && u.is_negative(type_defs)?,
-            Self::Either(_, _) => false,
-            Self::Choice(_, branches) => {
-                for (_, t) in branches {
-                    if !t.is_negative(type_defs)? {
-                        return Ok(false);
-                    }
-                }
-                true
-            }
-            Self::Break(_) => false,
-            Self::Continue(_) => true,
-            Self::Recursive { body, .. } => body.is_negative(type_defs)?,
-            Self::Iterative { body, .. } => body.is_negative(type_defs)?,
-            Self::Self_(_, _) => true,
-            Self::Exists(loc, name, t) => t
-                .clone()
-                .substitute(BTreeMap::from([(
-                    name,
-                    &Type::Var(loc.clone(), name.clone()),
-                )]))?
-                .is_negative(type_defs)?,
-            Self::Forall(loc, name, t) => t
-                .clone()
-                .substitute(BTreeMap::from([(
-                    name,
-                    &Type::Var(loc.clone(), name.clone()),
-                )]))?
-                .is_negative(type_defs)?,
         })
     }
 
@@ -651,25 +639,25 @@ impl Type {
                 true
             }
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => p1 == p2,
-
-            (Self::Dual(_, dual_t1), Self::Dual(_, dual_t2)) => {
-                dual_t2.is_assignable_to(dual_t1, type_defs, ind)?
-            }
-            (Self::Dual(_, dual_t1), t2) => match t2.dual(type_defs)? {
-                Self::Dual(_, _) => false,
-                dual_t2 => dual_t2.is_assignable_to(dual_t1, type_defs, ind)?,
-            },
-            (t1, Self::Dual(_, dual_t2)) => match t1.dual(type_defs)? {
-                Self::Dual(_, _) => false,
-                dual_t1 => dual_t2.is_assignable_to(&dual_t1, type_defs, ind)?,
-            },
+            (
+                Self::DualPrimitive(_, PrimitiveType::Int),
+                Self::DualPrimitive(_, PrimitiveType::Nat),
+            ) => true,
+            (Self::DualPrimitive(_, p1), Self::DualPrimitive(_, p2)) => p1 == p2,
 
             (Self::Var(_, name1), Self::Var(_, name2)) => name1 == name2,
+            (Self::DualVar(_, name1), Self::DualVar(_, name2)) => name1 == name2,
             (Self::Name(span, name, args), t2) => type_defs
                 .get(span, name, args)?
                 .is_assignable_to(t2, type_defs, ind)?,
             (t1, Self::Name(span, name, args)) => {
                 t1.is_assignable_to(&type_defs.get(span, name, args)?, type_defs, ind)?
+            }
+            (Self::DualName(span, name, args), t2) => type_defs
+                .get_dual(span, name, args)?
+                .is_assignable_to(t2, type_defs, ind)?,
+            (t1, Self::DualName(span, name, args)) => {
+                t1.is_assignable_to(&type_defs.get_dual(span, name, args)?, type_defs, ind)?
             }
 
             (Self::Pair(_, t1, u1), Self::Pair(_, t2, u2)) => {
@@ -778,6 +766,9 @@ impl Type {
             (Self::Self_(_, label1), Self::Self_(_, label2)) => {
                 ind.contains(&(label1.clone(), label2.clone()))
             }
+            (Self::DualSelf(_, label1), Self::DualSelf(_, label2)) => {
+                ind.contains(&(label2.clone(), label1.clone()))
+            }
 
             (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
             | (Self::Forall(loc, name1, body1), Self::Forall(_, name2, body2)) => {
@@ -794,111 +785,97 @@ impl Type {
         })
     }
 
-    pub fn dual(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
-        self.dual_helper(type_defs, true)
-    }
+    pub fn dual(self, span0: Span) -> Self {
+        match self {
+            Self::Primitive(span, p) => Self::DualPrimitive(span0.join(span), p),
+            Self::DualPrimitive(span, p) => Self::Primitive(span0.join(span), p),
 
-    pub fn dual_helper(&self, type_defs: &TypeDefs, top_level: bool) -> Result<Self, TypeError> {
-        Ok(match self {
-            Self::Primitive(span, p) => Self::Dual(
-                span.clone(),
-                Box::new(Self::Primitive(span.clone(), p.clone())),
-            ),
+            Self::Var(span, name) => Self::DualVar(span0.join(span), name),
+            Self::DualVar(span, name) => Self::Var(span0.join(span), name),
 
-            Self::Dual(_, t) => *t.clone(),
+            Self::Name(span, name, args) => Self::DualName(span0.join(span), name, args),
+            Self::DualName(span, name, args) => Self::Name(span0.join(span), name, args),
 
-            Self::Var(span, name) => Self::Dual(
-                span.clone(),
-                Box::new(Self::Var(span.clone(), name.clone())),
-            ),
-            Self::Name(span, name, args) => match type_defs.get_dual(span, name, args) {
-                Ok(dual) if top_level => dual,
-                _ => Self::Dual(
-                    span.clone(),
-                    Box::new(Self::Name(span.clone(), name.clone(), args.clone())),
-                ),
-            },
-
-            Self::Pair(loc, t, u) => Self::Function(
-                loc.clone(),
-                t.clone(),
-                Box::new(u.dual_helper(type_defs, false)?),
-            ),
-            Self::Function(loc, t, u) => Self::Pair(
-                loc.clone(),
-                t.clone(),
-                Box::new(u.dual_helper(type_defs, false)?),
-            ),
+            Self::Pair(span, t, u) => {
+                Self::Function(span0.join(span), t, Box::new(u.dual(Span::None)))
+            }
+            Self::Function(span, t, u) => {
+                Self::Pair(span0.join(span), t, Box::new(u.dual(Span::None)))
+            }
             Self::Either(span, branches) => Self::Choice(
-                span.clone(),
+                span0.join(span),
                 branches
-                    .iter()
-                    .map(|(branch, t)| Ok((branch.clone(), t.dual_helper(type_defs, false)?)))
-                    .collect::<Result<_, _>>()?,
+                    .into_iter()
+                    .map(|(branch, t)| (branch, t.dual(Span::None)))
+                    .collect(),
             ),
             Self::Choice(span, branches) => Self::Either(
-                span.clone(),
+                span0.join(span),
                 branches
-                    .iter()
-                    .map(|(branch, t)| Ok((branch.clone(), t.dual_helper(type_defs, false)?)))
-                    .collect::<Result<_, _>>()?,
+                    .into_iter()
+                    .map(|(branch, t)| (branch.clone(), t.dual(Span::None)))
+                    .collect(),
             ),
-            Self::Break(span) => Self::Continue(span.clone()),
-            Self::Continue(span) => Self::Break(span.clone()),
+            Self::Break(span) => Self::Continue(span0.join(span)),
+            Self::Continue(span) => Self::Break(span0.join(span)),
 
             Self::Recursive {
                 span,
                 asc,
                 label,
                 body: t,
-            } => Self::Iterative {
-                span: span.clone(),
-                asc: asc.clone(),
-                label: label.clone(),
-                body: Box::new(t.dual_helper(type_defs, false)?.dualize_self(label)),
-            },
+            } => {
+                let body = Box::new(t.dual(Span::None).dualize_self(&label));
+                Self::Iterative {
+                    span: span0.join(span),
+                    asc,
+                    label,
+                    body,
+                }
+            }
             Self::Iterative {
                 span,
                 asc,
                 label,
                 body: t,
-            } => Self::Recursive {
-                span: span.clone(),
-                asc: asc.clone(),
-                label: label.clone(),
-                body: Box::new(t.dual_helper(type_defs, false)?.dualize_self(label)),
-            },
-            Self::Self_(span, label) => Self::Dual(
-                span.clone(),
-                Box::new(Self::Self_(span.clone(), label.clone())),
-            ),
+            } => {
+                let body = Box::new(t.dual(Span::None).dualize_self(&label));
+                Self::Recursive {
+                    span: span0.join(span),
+                    asc,
+                    label,
+                    body,
+                }
+            }
+            Self::Self_(span, label) => Self::DualSelf(span0.join(span), label),
+            Self::DualSelf(span, label) => Self::Self_(span0.join(span), label),
 
-            Self::Exists(loc, name, t) => Self::Forall(
-                loc.clone(),
-                name.clone(),
-                Box::new(t.dual_helper(type_defs, false)?),
-            ),
-            Self::Forall(loc, name, t) => Self::Exists(
-                loc.clone(),
-                name.clone(),
-                Box::new(t.dual_helper(type_defs, false)?),
-            ),
-        })
+            Self::Exists(span, name, t) => {
+                Self::Forall(span0.join(span), name, Box::new(t.dual(Span::None)))
+            }
+            Self::Forall(span, name, t) => {
+                Self::Exists(span0.join(span), name, Box::new(t.dual(Span::None)))
+            }
+        }
     }
 
     fn dualize_self(self, label: &Option<LocalName>) -> Self {
         match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
-
-            Self::Dual(span, t) => match *t {
-                Self::Self_(span, label1) if &label1 == label => Self::Self_(span, label1),
-                t => Self::Dual(span, Box::new(t.dualize_self(label))),
-            },
+            Self::DualPrimitive(span, p) => Self::DualPrimitive(span, p),
 
             Self::Var(span, name) => Self::Var(span, name),
+            Self::DualVar(span, name) => Self::DualVar(span, name),
             Self::Name(span, name, args) => Self::Name(
-                span.clone(),
-                name.clone(),
+                span,
+                name,
+                args.into_iter()
+                    .map(|arg| arg.dualize_self(label))
+                    .collect(),
+            ),
+            Self::DualName(span, name, args) => Self::DualName(
+                span,
+                name,
                 args.into_iter()
                     .map(|arg| arg.dualize_self(label))
                     .collect(),
@@ -977,9 +954,16 @@ impl Type {
             }
             Self::Self_(span, label1) => {
                 if &label1 == label {
-                    Self::Dual(span.clone(), Box::new(Self::Self_(span, label1)))
+                    Self::DualSelf(span, label1)
                 } else {
                     Self::Self_(span, label1)
+                }
+            }
+            Self::DualSelf(span, label1) => {
+                if &label1 == label {
+                    Self::Self_(span, label1)
+                } else {
+                    Self::DualSelf(span, label1)
                 }
             }
 
@@ -1011,22 +995,20 @@ impl Type {
     ) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
-
-            Self::Dual(span, t) => match *t {
-                Self::Self_(span, label) if &label == top_label => Self::Iterative {
-                    span,
-                    asc: top_asc.clone(),
-                    label: label.clone(),
-                    body: Box::new(top_body.dual(type_defs)?.dualize_self(&label)),
-                },
-                t => Self::Dual(
-                    span,
-                    Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
-                ),
-            },
+            Self::DualPrimitive(span, p) => Self::DualPrimitive(span, p),
 
             Self::Var(span, name) => Self::Var(span, name),
+            Self::DualVar(span, name) => Self::DualVar(span, name),
             Self::Name(span, name, args) => Self::Name(
+                span,
+                name,
+                args.into_iter()
+                    .map(|arg| {
+                        Ok(arg.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?)
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            Self::DualName(span, name, args) => Self::DualName(
                 span,
                 name,
                 args.into_iter()
@@ -1133,6 +1115,19 @@ impl Type {
                     Self::Self_(span, label)
                 }
             }
+            Self::DualSelf(span, label) => {
+                if &label == top_label {
+                    (Self::Recursive {
+                        span,
+                        asc: top_asc.clone(),
+                        label,
+                        body: Box::new(top_body.clone()),
+                    })
+                    .dual(Span::None)
+                } else {
+                    Self::DualSelf(span, label)
+                }
+            }
 
             Self::Exists(loc, name, t) => Self::Exists(
                 loc,
@@ -1166,22 +1161,20 @@ impl Type {
     ) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
-
-            Self::Dual(span, t) => match *t {
-                Self::Self_(span, label) if &label == top_label => Self::Recursive {
-                    span,
-                    asc: top_asc.clone(),
-                    label: label.clone(),
-                    body: Box::new(top_body.dual(type_defs)?.dualize_self(&label)),
-                },
-                t => Self::Dual(
-                    span,
-                    Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
-                ),
-            },
+            Self::DualPrimitive(span, p) => Self::DualPrimitive(span, p),
 
             Self::Var(span, name) => Self::Var(span, name),
+            Self::DualVar(span, name) => Self::DualVar(span, name),
             Self::Name(span, name, args) => Self::Name(
+                span,
+                name,
+                args.into_iter()
+                    .map(|arg| {
+                        Ok(arg.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?)
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            Self::DualName(span, name, args) => Self::DualName(
                 span,
                 name,
                 args.into_iter()
@@ -1288,6 +1281,19 @@ impl Type {
                     Self::Self_(span, label)
                 }
             }
+            Self::DualSelf(span, label) => {
+                if &label == top_label {
+                    (Self::Iterative {
+                        span,
+                        asc: top_asc.clone(),
+                        label,
+                        body: Box::new(top_body.clone()),
+                    })
+                    .dual(Span::None)
+                } else {
+                    Self::DualSelf(span, label)
+                }
+            }
 
             Self::Exists(loc, name, t) => Self::Exists(
                 loc,
@@ -1304,9 +1310,9 @@ impl Type {
 
     fn invalidate_ascendent(&mut self, label: &Option<LocalName>) {
         match self {
-            Self::Primitive(_, _) => {}
-            Self::Var(_, _) => {}
-            Self::Name(_, _, args) => {
+            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
+            Self::Var(_, _) | Self::DualVar(_, _) => {}
+            Self::Name(_, _, args) | Self::DualName(_, _, args) => {
                 for arg in args {
                     arg.invalidate_ascendent(label);
                 }
@@ -1350,7 +1356,7 @@ impl Type {
                 asc.shift_remove(label);
                 t.invalidate_ascendent(label);
             }
-            Self::Self_(_, _) => {}
+            Self::Self_(_, _) | Self::DualSelf(_, _) => {}
 
             Self::Exists(_, _, t) => {
                 t.invalidate_ascendent(label);
@@ -1358,18 +1364,16 @@ impl Type {
             Self::Forall(_, _, t) => {
                 t.invalidate_ascendent(label);
             }
-
-            Self::Dual(_, t) => {
-                t.invalidate_ascendent(label);
-            }
         }
     }
 
     fn contains_self(&self, label: &Option<LocalName>) -> bool {
         match self {
-            Self::Primitive(_, _) => false,
-            Self::Var(_, _) => false,
-            Self::Name(_, _, args) => args.iter().any(|arg| arg.contains_self(label)),
+            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => false,
+            Self::Var(_, _) | Self::DualVar(_, _) => false,
+            Self::Name(_, _, args) | Self::DualName(_, _, args) => {
+                args.iter().any(|arg| arg.contains_self(label))
+            }
 
             Self::Pair(_, t, u) => t.contains_self(label) || u.contains_self(label),
             Self::Function(_, t, u) => t.contains_self(label) || u.contains_self(label),
@@ -1388,20 +1392,20 @@ impl Type {
                 body,
                 ..
             } => label1 != label && body.contains_self(label),
-            Self::Self_(_, label1) => label1 == label,
+            Self::Self_(_, label1) | Self::DualSelf(_, label1) => label1 == label,
 
             Self::Exists(_, _, body) => body.contains_self(label),
             Self::Forall(_, _, body) => body.contains_self(label),
-
-            Self::Dual(_, t) => t.contains_self(label),
         }
     }
 
     fn contains_var(&self, var: &LocalName) -> bool {
         match self {
-            Self::Primitive(_, _) => false,
-            Self::Var(_, name) => name == var,
-            Self::Name(_, _, args) => args.iter().any(|arg| arg.contains_var(var)),
+            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => false,
+            Self::Var(_, name) | Self::DualVar(_, name) => name == var,
+            Self::Name(_, _, args) | Self::DualName(_, _, args) => {
+                args.iter().any(|arg| arg.contains_var(var))
+            }
 
             Self::Pair(_, t, u) => t.contains_var(var) || u.contains_var(var),
             Self::Function(_, t, u) => t.contains_var(var) || u.contains_var(var),
@@ -1412,19 +1416,18 @@ impl Type {
 
             Self::Recursive { body, .. } => body.contains_var(var),
             Self::Iterative { body, .. } => body.contains_var(var),
-            Self::Self_(_, _) => false,
+            Self::Self_(_, _) | Self::DualSelf(_, _) => false,
 
             Self::Exists(_, name, body) => name != var && body.contains_var(var),
             Self::Forall(_, name, body) => name != var && body.contains_var(var),
-
-            Self::Dual(_, t) => t.contains_var(var),
         }
     }
+
     fn get_dependencies(&self) -> Vec<GlobalName> {
         match self {
-            Self::Primitive(_, _) => vec![],
-            Self::Var(_, _) => vec![],
-            Self::Name(_, name, args) => {
+            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => vec![],
+            Self::Var(_, _) | Self::DualVar(_, _) => vec![],
+            Self::Name(_, name, args) | Self::DualName(_, name, args) => {
                 let mut deps = vec![name.clone()];
                 for arg in args {
                     deps.extend(arg.get_dependencies());
@@ -1453,10 +1456,9 @@ impl Type {
             Self::Continue(_) => vec![],
             Self::Recursive { body, .. } => body.get_dependencies(),
             Self::Iterative { body, .. } => body.get_dependencies(),
-            Self::Self_(_, _) => vec![],
+            Self::Self_(_, _) | Self::DualSelf(_, _) => vec![],
             Self::Exists(_, _, body) => body.get_dependencies(),
             Self::Forall(_, _, body) => body.get_dependencies(),
-            Self::Dual(_, t) => t.get_dependencies(),
         }
     }
 }
@@ -1718,6 +1720,16 @@ impl Context {
                 analyze_process,
             );
         }
+        if let Type::DualName(_, name, args) = typ {
+            return self.check_command(
+                inference_subject,
+                span,
+                object,
+                &self.type_defs.get_dual(span, name, args)?,
+                command,
+                analyze_process,
+            );
+        }
         if !matches!(command, Command::Link(_)) {
             if let Type::Iterative {
                 asc: top_asc,
@@ -1754,26 +1766,11 @@ impl Context {
                 );
             }
         }
-        if let Type::Dual(_, dual_typ) = typ {
-            match dual_typ.dual(&self.type_defs)? {
-                Type::Dual(_, _) => {}
-                typ => {
-                    return self.check_command(
-                        inference_subject,
-                        span,
-                        object,
-                        &typ,
-                        command,
-                        analyze_process,
-                    )
-                }
-            }
-        }
 
         Ok(match command {
             Command::Link(expression) => {
                 let expression =
-                    self.check_expression(None, expression, &typ.dual(&self.type_defs)?)?;
+                    self.check_expression(None, expression, &typ.clone().dual(Span::None))?;
                 self.cannot_have_obligations(span)?;
                 (Command::Link(expression), None)
             }
@@ -2198,7 +2195,7 @@ impl Context {
             Command::Link(expression) => {
                 let (expression, typ) = self.infer_expression(Some(subject), expression)?;
                 self.cannot_have_obligations(span)?;
-                (Command::Link(expression), typ.dual(&self.type_defs)?)
+                (Command::Link(expression), typ.dual(Span::None))
             }
 
             Command::Send(argument, process) => {
@@ -2372,7 +2369,7 @@ impl Context {
                 process,
                 ..
             } => {
-                let target_dual = target_type.dual(&self.type_defs)?;
+                let target_dual = target_type.clone().dual(Span::None);
                 let (chan_type, expr_type) = match annotation {
                     Some(annotated_type) => {
                         annotated_type.check_assignable(span, &target_dual, &self.type_defs)?;
@@ -2407,7 +2404,7 @@ impl Context {
 
             Expression::External(claimed_type, f, ()) => {
                 let typ = claimed_type.clone();
-                typ.check_assignable(&Default::default(), target_type, &self.type_defs)?;
+                typ.check_assignable(&Span::None, target_type, &self.type_defs)?;
                 Ok(Arc::new(Expression::External(
                     claimed_type.clone(),
                     *f,
@@ -2469,7 +2466,7 @@ impl Context {
                     }
                     None => context.infer_process(process, channel)?,
                 };
-                let dual = typ.dual(&self.type_defs)?;
+                let dual = typ.clone().dual(Span::None);
                 Ok((
                     Arc::new(Expression::Fork {
                         span: span.clone(),
@@ -2518,77 +2515,64 @@ impl Context {
 }
 
 impl Type {
-    pub fn expand_definition(&self, type_defs: &TypeDefs) -> Self {
+    pub fn expand_definition(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
         match self {
-            Self::Name(span, name, args) => type_defs
-                .get(span, name, args)
-                .ok()
-                .unwrap_or_else(|| self.clone()),
-            Self::Dual(_, t) => match t.as_ref() {
-                Self::Name(span, name, args) => type_defs
-                    .get_dual(&span, &name, &args)
-                    .ok()
-                    .unwrap_or_else(|| self.clone()),
-                t => t.dual(type_defs).ok().unwrap_or_else(|| self.clone()),
-            },
-            _ => self.clone(),
+            Self::Name(span, name, args) => type_defs.get(span, name, args),
+            Self::DualName(span, name, args) => type_defs.get_dual(span, name, args),
+            _ => Ok(self.clone()),
         }
     }
 
     pub fn qualify(&mut self, module: &str) {
         match self {
-            Self::Primitive(span, _) => *span = Default::default(),
-            Self::Dual(span, t) => {
-                *span = Default::default();
-                t.qualify(module)
-            }
-            Self::Var(span, _) => *span = Default::default(),
-            Self::Name(span, name, args) => {
-                *span = Default::default();
+            Self::Primitive(span, _) | Self::DualPrimitive(span, _) => *span = Span::None,
+            Self::Var(span, _) | Self::DualVar(span, _) => *span = Span::None,
+            Self::Name(span, name, args) | Self::DualName(span, name, args) => {
+                *span = Span::None;
                 name.qualify(module);
                 for arg in args {
                     arg.qualify(module);
                 }
             }
             Self::Pair(span, t, u) => {
-                *span = Default::default();
+                *span = Span::None;
                 t.qualify(module);
                 u.qualify(module);
             }
             Self::Function(span, t, u) => {
-                *span = Default::default();
+                *span = Span::None;
                 t.qualify(module);
                 u.qualify(module);
             }
             Self::Either(span, branches) => {
-                *span = Default::default();
+                *span = Span::None;
                 for (_, typ) in branches {
                     typ.qualify(module);
                 }
             }
             Self::Choice(span, branches) => {
-                *span = Default::default();
+                *span = Span::None;
                 for (_, typ) in branches {
                     typ.qualify(module);
                 }
             }
-            Self::Break(span) => *span = Default::default(),
-            Self::Continue(span) => *span = Default::default(),
+            Self::Break(span) => *span = Span::None,
+            Self::Continue(span) => *span = Span::None,
             Self::Recursive { span, body, .. } => {
-                *span = Default::default();
+                *span = Span::None;
                 body.qualify(module);
             }
             Self::Iterative { span, body, .. } => {
-                *span = Default::default();
+                *span = Span::None;
                 body.qualify(module);
             }
-            Self::Self_(span, _) => *span = Default::default(),
+            Self::Self_(span, _) | Self::DualSelf(span, _) => *span = Span::None,
             Self::Exists(span, _, body) => {
-                *span = Default::default();
+                *span = Span::None;
                 body.qualify(module);
             }
             Self::Forall(span, _, body) => {
-                *span = Default::default();
+                *span = Span::None;
                 body.qualify(module);
             }
         }
@@ -2601,13 +2585,29 @@ impl Type {
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
             Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
 
-            Self::Dual(_, body) => {
-                write!(f, "dual ")?;
-                body.pretty(f, indent)
-            }
+            Self::DualPrimitive(_, PrimitiveType::Nat) => write!(f, "dual Nat"),
+            Self::DualPrimitive(_, PrimitiveType::Int) => write!(f, "dual Int"),
+            Self::DualPrimitive(_, PrimitiveType::String) => write!(f, "dual String"),
+            Self::DualPrimitive(_, PrimitiveType::Char) => write!(f, "dual Char"),
+
             Self::Var(_, name) => write!(f, "{}", name),
+            Self::DualVar(_, name) => write!(f, "dual {}", name),
             Self::Name(_, name, args) => {
                 write!(f, "{}", name)?;
+                if !args.is_empty() {
+                    write!(f, "<")?;
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        arg.pretty(f, indent)?;
+                    }
+                    write!(f, ">")?
+                }
+                Ok(())
+            }
+            Self::DualName(_, name, args) => {
+                write!(f, "dual {}", name)?;
                 if !args.is_empty() {
                     write!(f, "<")?;
                     for (i, arg) in args.iter().enumerate() {
@@ -2707,6 +2707,13 @@ impl Type {
                 }
                 Ok(())
             }
+            Self::DualSelf(_, label) => {
+                write!(f, "dual self")?;
+                if let Some(label) = label {
+                    write!(f, "/{}", label)?;
+                }
+                Ok(())
+            }
 
             Self::Exists(_, name, then) => {
                 let mut then = then;
@@ -2739,13 +2746,29 @@ impl Type {
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
             Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
 
-            Self::Dual(_, body) => {
-                write!(f, "dual ")?;
-                body.pretty_compact(f)
-            }
+            Self::DualPrimitive(_, PrimitiveType::Nat) => write!(f, "dual Nat"),
+            Self::DualPrimitive(_, PrimitiveType::Int) => write!(f, "dual Int"),
+            Self::DualPrimitive(_, PrimitiveType::String) => write!(f, "dual String"),
+            Self::DualPrimitive(_, PrimitiveType::Char) => write!(f, "dual Char"),
+
             Self::Var(_, name) => write!(f, "{}", name),
+            Self::DualVar(_, name) => write!(f, "dual {}", name),
             Self::Name(_, name, args) => {
                 write!(f, "{}", name)?;
+                if !args.is_empty() {
+                    write!(f, "<")?;
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        arg.pretty_compact(f)?;
+                    }
+                    write!(f, ">")?
+                }
+                Ok(())
+            }
+            Self::DualName(_, name, args) => {
+                write!(f, "dual {}", name)?;
                 if !args.is_empty() {
                     write!(f, "<")?;
                     for (i, arg) in args.iter().enumerate() {
@@ -2843,6 +2866,13 @@ impl Type {
                 }
                 Ok(())
             }
+            Self::DualSelf(_, label) => {
+                write!(f, "dual self")?;
+                if let Some(label) = label {
+                    write!(f, "/{}", label)?;
+                }
+                Ok(())
+            }
 
             Self::Exists(_, name, then) => {
                 let mut then = then;
@@ -2874,14 +2904,16 @@ impl Type {
         consume: &mut impl FnMut(Span, Option<String>, Type),
     ) {
         match self {
-            Self::Primitive(_, _) => {}
-            Self::Dual(span, t) => {
-                consume(*span, None, self.expand_definition(type_defs));
-                t.types_at_spans(type_defs, consume);
-            }
-            Self::Var(_, _) => {}
-            Self::Name(span, _, args) => {
-                consume(*span, None, self.expand_definition(type_defs));
+            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
+            Self::Var(_, _) | Self::DualVar(_, _) => {}
+            Self::Name(span, _, args) | Self::DualName(span, _, args) => {
+                consume(
+                    *span,
+                    None,
+                    self.expand_definition(type_defs)
+                        .ok()
+                        .unwrap_or_else(|| self.clone()),
+                );
                 for arg in args {
                     arg.types_at_spans(type_defs, consume);
                 }
@@ -2912,7 +2944,7 @@ impl Type {
             Self::Iterative { body, .. } => {
                 body.types_at_spans(type_defs, consume);
             }
-            Self::Self_(_, _) => {}
+            Self::Self_(_, _) | Self::DualSelf(_, _) => {}
             Self::Exists(_, _, body) => {
                 body.types_at_spans(type_defs, consume);
             }

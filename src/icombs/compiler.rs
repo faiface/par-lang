@@ -465,7 +465,7 @@ impl Compiler {
             },
             TypedTree {
                 tree: v1,
-                ty: t.dual(&self.type_defs).unwrap(),
+                ty: t.dual(Span::None),
             },
         )
     }
@@ -488,8 +488,10 @@ impl Compiler {
                 let ty = self.type_defs.get(&loc, &name, &args).unwrap();
                 self.normalize_type(ty)
             }
-            Type::Either(loc, branch_map) => Type::Either(loc, branch_map),
-            Type::Choice(loc, branch_map) => Type::Choice(loc, branch_map),
+            Type::DualName(loc, name, args) => {
+                let ty = self.type_defs.get_dual(&loc, &name, &args).unwrap();
+                self.normalize_type(ty)
+            }
             Type::Recursive {
                 asc, label, body, ..
             } => self.normalize_type(
@@ -500,15 +502,7 @@ impl Compiler {
             } => self.normalize_type(
                 Type::expand_iterative(&asc, &label, &body, &self.type_defs).unwrap(),
             ),
-            Type::Dual(_, body) => {
-                let dual = body.dual(&self.type_defs).unwrap();
-                if matches!(dual, Type::Dual(..)) {
-                    dual
-                } else {
-                    self.normalize_type(dual)
-                }
-            }
-            a => a,
+            ty => ty,
         }
     }
 

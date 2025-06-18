@@ -7,9 +7,12 @@ use arcstr::Substr;
 use futures::channel::oneshot;
 use num_bigint::BigInt;
 
-use crate::par::{
-    primitive::Primitive,
-    types::{PrimitiveType, Type, TypeDefs},
+use crate::{
+    location::Span,
+    par::{
+        primitive::Primitive,
+        types::{PrimitiveType, Type, TypeDefs},
+    },
 };
 
 use super::{compiler::TypedTree, Net, Tree};
@@ -238,22 +241,18 @@ impl TypedHandle {
             Type::Primitive(_, PrimitiveType::String) => TypedReadback::String(self.string().await),
             Type::Primitive(_, PrimitiveType::Char) => TypedReadback::Char(self.char().await),
 
-            typ @ Type::Dual(_, dual) => match dual.as_ref() {
-                Type::Primitive(_, PrimitiveType::Nat) => {
-                    TypedReadback::NatRequest(Box::new(move |value| self.provide_nat(value)))
-                }
-                Type::Primitive(_, PrimitiveType::Int) => {
-                    TypedReadback::IntRequest(Box::new(move |value| self.provide_int(value)))
-                }
-                Type::Primitive(_, PrimitiveType::String) => {
-                    TypedReadback::StringRequest(Box::new(move |value| self.provide_string(value)))
-                }
-                Type::Primitive(_, PrimitiveType::Char) => {
-                    TypedReadback::CharRequest(Box::new(move |value| self.provide_char(value)))
-                }
-
-                _ => panic!("Unsupported dual type for readback: {:?}", typ),
-            },
+            Type::DualPrimitive(_, PrimitiveType::Nat) => {
+                TypedReadback::NatRequest(Box::new(move |value| self.provide_nat(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::Int) => {
+                TypedReadback::IntRequest(Box::new(move |value| self.provide_int(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::String) => {
+                TypedReadback::StringRequest(Box::new(move |value| self.provide_string(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::Char) => {
+                TypedReadback::CharRequest(Box::new(move |value| self.provide_char(value)))
+            }
 
             Type::Pair(_, _, _) => {
                 let (t_handle, u_handle) = self.receive();
@@ -312,14 +311,8 @@ impl TypedHandle {
         assert!(value >= BigInt::ZERO);
 
         self.prepare_for_readback();
-        let Type::Dual(span, dual) = self.tree.ty else {
+        let Type::DualPrimitive(_, PrimitiveType::Nat | PrimitiveType::Int) = self.tree.ty else {
             panic!("Incorrect type for `provide_nat`: {:?}", self.tree.ty);
-        };
-        let Type::Primitive(_, PrimitiveType::Nat | PrimitiveType::Int) = *dual else {
-            panic!(
-                "Incorrect type for `provide_nat`: {:?}",
-                Type::Dual(span, dual)
-            );
         };
 
         let mut locked = self.net.lock().expect("lock failed");
@@ -346,14 +339,8 @@ impl TypedHandle {
 
     pub fn provide_int(mut self, value: BigInt) {
         self.prepare_for_readback();
-        let Type::Dual(span, dual) = self.tree.ty else {
+        let Type::DualPrimitive(_, PrimitiveType::Int) = self.tree.ty else {
             panic!("Incorrect type for `provide_int`: {:?}", self.tree.ty);
-        };
-        let Type::Primitive(_, PrimitiveType::Int) = *dual else {
-            panic!(
-                "Incorrect type for `provide_int`: {:?}",
-                Type::Dual(span, dual)
-            );
         };
 
         let mut locked = self.net.lock().expect("lock failed");
@@ -380,14 +367,8 @@ impl TypedHandle {
 
     pub fn provide_string(mut self, value: Substr) {
         self.prepare_for_readback();
-        let Type::Dual(span, dual) = self.tree.ty else {
+        let Type::DualPrimitive(_, PrimitiveType::String) = self.tree.ty else {
             panic!("Incorrect type for `provide_string`: {:?}", self.tree.ty);
-        };
-        let Type::Primitive(_, PrimitiveType::String) = *dual else {
-            panic!(
-                "Incorrect type for `provide_string`: {:?}",
-                Type::Dual(span, dual)
-            );
         };
 
         let mut locked = self.net.lock().expect("lock failed");
@@ -414,14 +395,8 @@ impl TypedHandle {
 
     pub fn provide_char(mut self, value: char) {
         self.prepare_for_readback();
-        let Type::Dual(span, dual) = self.tree.ty else {
+        let Type::DualPrimitive(_, PrimitiveType::Char) = self.tree.ty else {
             panic!("Incorrect type for `provide_char`: {:?}", self.tree.ty);
-        };
-        let Type::Primitive(_, PrimitiveType::Char) = *dual else {
-            panic!(
-                "Incorrect type for `provide_char`: {:?}",
-                Type::Dual(span, dual)
-            );
         };
 
         let mut locked = self.net.lock().expect("lock failed");
@@ -445,7 +420,7 @@ impl TypedHandle {
         let t_handle = Self {
             type_defs: self.type_defs.clone(),
             net: Arc::clone(&self.net),
-            tree: t0.with_type(t.dual(&self.type_defs).unwrap()),
+            tree: t0.with_type(t.dual(Span::None)),
         };
         let u_handle = Self {
             type_defs: self.type_defs,
@@ -572,13 +547,8 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
     let mut typ = typ;
     loop {
         typ = match typ {
-            Type::Dual(_, ref t) => match t.as_ref() {
-                Type::Primitive(_, _) => break typ,
-                Type::Var(_, _) => break typ,
-                Type::Name(span, name, args) => type_defs.get_dual(&span, &name, &args).unwrap(),
-                _ => panic!("too many duals"),
-            },
             Type::Name(span, name, args) => type_defs.get(&span, &name, &args).unwrap(),
+            Type::DualName(span, name, args) => type_defs.get_dual(&span, &name, &args).unwrap(),
             Type::Recursive {
                 span: _,
                 asc,
