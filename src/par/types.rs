@@ -678,19 +678,9 @@ impl Type {
                         return Ok(false);
                     }
                 }
-                for (branch, _) in branches2 {
-                    if branches1.get(branch).is_none() {
-                        return Ok(false);
-                    }
-                }
                 true
             }
             (Self::Choice(_, branches1), Self::Choice(_, branches2)) => {
-                for (branch, _) in branches1 {
-                    if branches2.get(branch).is_none() {
-                        return Ok(false);
-                    }
-                }
                 for (branch, t2) in branches2 {
                     let Some(t1) = branches1.get(branch) else {
                         return Ok(false);
@@ -2232,11 +2222,12 @@ impl Context {
                 )
             }
 
-            Command::Signal(_, _) => {
-                return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                    span.clone(),
-                    subject.clone(),
-                ))
+            Command::Signal(chosen, process) => {
+                let (process, then_type) = self.infer_process(process, subject)?;
+                (
+                    Command::Signal(chosen.clone(), process),
+                    Type::Either(span.clone(), BTreeMap::from([(chosen.clone(), then_type)])),
+                )
             }
 
             Command::Case(branches, processes) => {
