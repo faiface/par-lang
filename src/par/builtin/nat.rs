@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, sync::Arc};
 
-use arcstr::{literal, Substr};
+use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
@@ -95,11 +95,6 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     ),
                 ),
                 |handle| Box::pin(nat_range(handle)),
-            ),
-            Definition::external(
-                "ToString",
-                Type::function(Type::nat(), Type::string()),
-                |handle| Box::pin(nat_to_string(handle)),
             ),
         ],
     }
@@ -200,9 +195,4 @@ async fn nat_range(mut handle: Handle) {
     }
     handle.signal(literal!("end"));
     handle.break_();
-}
-
-async fn nat_to_string(mut handle: Handle) {
-    let x = handle.receive().nat().await;
-    handle.provide_string(Substr::from(x.to_str_radix(10)))
 }
