@@ -68,6 +68,18 @@ async fn string_reader(mut handle: Handle) {
                 handle.break_();
                 return;
             }
+            "char" => match remainder.chars().next() {
+                Some(ch) => {
+                    handle.signal(literal!("char"));
+                    handle.send().provide_char(ch);
+                    remainder = remainder.substr(ch.len_utf8()..);
+                }
+                None => {
+                    handle.signal(literal!("end"));
+                    handle.break_();
+                    return;
+                }
+            },
             "match" => {
                 let prefix = Pattern::readback(handle.receive()).await;
                 let suffix = Pattern::readback(handle.receive()).await;
