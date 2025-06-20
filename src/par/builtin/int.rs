@@ -60,6 +60,9 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(int_clamp(handle)),
             ),
+            Definition::external("Abs", Type::function(Type::int(), Type::nat()), |handle| {
+                Box::pin(int_abs(handle))
+            }),
             Definition::external(
                 "Equals",
                 Type::function(
@@ -161,6 +164,15 @@ async fn int_clamp(mut handle: Handle) {
     let min = handle.receive().int().await;
     let max = handle.receive().int().await;
     handle.provide_int(int.min(max).max(min));
+}
+
+async fn int_abs(mut handle: Handle) {
+    let int = handle.receive().int().await;
+    if int < BigInt::ZERO {
+        handle.provide_nat(-int);
+    } else {
+        handle.provide_nat(int);
+    }
 }
 
 async fn int_equals(mut handle: Handle) {
