@@ -7,7 +7,7 @@
 - [Basic Program Structure](./basic_program_structure.md)
   - [Definitions & Declarations](./structure/definitions_and_declarations.md)
   - [Strings & Numbers](./structure/strings_and_numbers.md)
-  - [`let` Expressions](./structure/let_expressions.md)
+  - [The `let` Expression](./structure/let_expressions.md)
 - [Types & Their Expressions](./types_and_expressions.md)
   - [Unit](./types/unit.md)
   - [Either](./types/either.md)
