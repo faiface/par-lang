@@ -493,6 +493,7 @@ impl Compiler {
                 let ty = self.type_defs.get_dual(&loc, &name, &args).unwrap();
                 self.normalize_type(ty)
             }
+            Type::Box(_, inner) => self.normalize_type(*inner),
             Type::Recursive {
                 asc, label, body, ..
             } => self.normalize_type(
@@ -511,6 +512,17 @@ impl Compiler {
         match expr {
             Expression::Global(_, name, _) => self.use_global(name),
             Expression::Variable(_, name, _) => Ok(self.use_variable(name, false)?.0),
+
+            Expression::Box(_, captures, expression, typ) => self.with_captures(captures, |this| {
+                let (context_in, pack_data) = this.context.pack(None, None, None, &mut this.net);
+                let (package_id, _) = this.in_package(|this, _| {
+                    let context_out = this.context.unpack(&pack_data, &mut this.net);
+                    let body = this.compile_expression(&expression)?;
+                    Ok(Tree::Con(Box::new(context_out), Box::new(body.tree))
+                        .with_type(Type::Break(Span::default())))
+                })?;
+                Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
+            }),
 
             Expression::Fork {
                 captures,

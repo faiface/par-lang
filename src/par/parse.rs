@@ -422,6 +422,7 @@ fn typ(input: &mut Input) -> Result<Type> {
     alt((
         typ_var,
         typ_name,
+        typ_box,
         typ_chan,
         typ_either,
         typ_choice,
@@ -457,6 +458,15 @@ fn typ_name(input: &mut Input) -> Result<Type> {
             None => Type::Name(name.span.clone(), name, vec![]),
         }),
     )
+    .parse_next(input)
+}
+
+fn typ_box(input: &mut Input) -> Result<Type> {
+    commit_after(
+        t(TokenKind::Box),
+        typ.context(StrContext::Label("box type")),
+    )
+    .map(|(pre, typ)| Type::Box(pre.span, Box::new(typ)))
     .parse_next(input)
 }
 
@@ -722,6 +732,7 @@ fn expression(input: &mut Input) -> Result<Expression> {
         expr_list,
         expr_let,
         expr_do,
+        expr_box,
         expr_fork,
         application,
         construction.map(Expression::Construction),
@@ -823,6 +834,12 @@ fn expr_do(input: &mut Input) -> Result<Expression> {
         then: Box::new(expression),
     })
     .parse_next(input)
+}
+
+fn expr_box(input: &mut Input) -> Result<Expression> {
+    commit_after(t(TokenKind::Box), expression)
+        .map(|(pre, expression)| Expression::Box(pre.span, Box::new(expression)))
+        .parse_next(input)
 }
 
 fn expr_fork(input: &mut Input) -> Result<Expression> {

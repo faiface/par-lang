@@ -40,6 +40,7 @@ pub enum TokenKind {
     LowercaseIdentifier,
     UppercaseIdentifier,
     Begin,
+    Box,
     Case,
     Chan,
     Choice,
@@ -112,6 +113,7 @@ impl TokenKind {
             TokenKind::LowercaseIdentifier => "lower-case identifier",
             TokenKind::UppercaseIdentifier => "upper-case identifier",
             TokenKind::Begin => "begin",
+            TokenKind::Box => "box",
             TokenKind::Case => "case",
             TokenKind::Chan => "chan",
             TokenKind::Choice => "choice",
@@ -240,6 +242,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     .parse_next(input)?;
                     let kind = match raw {
                         "begin" => TokenKind::Begin,
+                        "box" => TokenKind::Box,
                         "case" => TokenKind::Case,
                         "chan" => TokenKind::Chan,
                         "choice" => TokenKind::Choice,

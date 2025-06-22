@@ -41,6 +41,7 @@ pub enum TypeError {
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),
+    CannotUseLinearVariableInBox(Span, LocalName),
     Telltypes(Span, IndexMap<LocalName, Type>),
 }
 
@@ -66,6 +67,8 @@ pub enum Type {
     DualVar(Span, LocalName),
     Name(Span, GlobalName, Vec<Self>),
     DualName(Span, GlobalName, Vec<Self>),
+    Box(Span, Box<Self>),
+    DualBox(Span, Box<Self>),
     Pair(Span, Box<Self>, Box<Self>),
     Function(Span, Box<Self>, Box<Self>),
     Either(Span, BTreeMap<LocalName, Self>),
@@ -377,6 +380,9 @@ impl TypeDefs {
                 self.validate_type(&t, self_neg, self_pos)?;
             }
 
+            Type::Box(_, body) => self.validate_type(body, self_pos, self_neg)?,
+            Type::DualBox(_, body) => self.validate_type(body, self_neg, self_pos)?,
+
             Type::Pair(_, t, u) => {
                 self.validate_type(t, self_pos, self_neg)?;
                 self.validate_type(u, self_pos, self_neg)?;
@@ -433,6 +439,8 @@ impl Spanning for Type {
             | Self::DualVar(span, _)
             | Self::Name(span, _, _)
             | Self::DualName(span, _, _)
+            | Self::Box(span, _)
+            | Self::DualBox(span, _)
             | Self::Pair(span, _, _)
             | Self::Function(span, _, _)
             | Self::Either(span, _)
@@ -482,6 +490,8 @@ impl Type {
                     .map(|arg| arg.substitute(map.clone()))
                     .collect::<Result<_, _>>()?,
             ),
+            Self::Box(span, body) => Self::Box(span, Box::new(body.substitute(map)?)),
+            Self::DualBox(span, body) => Self::DualBox(span, Box::new(body.substitute(map)?)),
             Self::Pair(loc, t, u) => Self::Pair(
                 loc,
                 Box::new(t.substitute(map.clone())?),
@@ -534,7 +544,7 @@ impl Type {
             Self::Self_(span, label) => Self::Self_(span, label),
             Self::DualSelf(span, label) => Self::DualSelf(span, label),
 
-            Self::Exists(loc, mut name, mut body) => {
+            Self::Exists(span, mut name, mut body) => {
                 while map.values().any(|t| t.contains_var(&name)) {
                     let old_name = name.clone();
                     name.string = arcstr::format!("{}'", name.string);
@@ -545,9 +555,9 @@ impl Type {
                 }
                 let mut map = map;
                 map.remove(&name);
-                Self::Exists(loc, name, Box::new(body.substitute(map)?))
+                Self::Exists(span, name, Box::new(body.substitute(map)?))
             }
-            Self::Forall(loc, mut name, mut body) => {
+            Self::Forall(span, mut name, mut body) => {
                 while map.values().any(|t| t.contains_var(&name)) {
                     let old_name = name.clone();
                     name.string = arcstr::format!("{}'", name.string);
@@ -558,7 +568,7 @@ impl Type {
                 }
                 let mut map = map;
                 map.remove(&name);
-                Self::Forall(loc, name, Box::new(body.substitute(map)?))
+                Self::Forall(span, name, Box::new(body.substitute(map)?))
             }
         })
     }
@@ -579,6 +589,8 @@ impl Type {
             Self::DualName(loc, name, args) => type_defs
                 .get_dual(loc, name, args)?
                 .is_positive(type_defs)?,
+            Self::Box(_, _) => true, //TODO: distinguish between box and data types
+            Self::DualBox(_, _) => false,
             Self::Pair(_, t, u) => t.is_positive(type_defs)? && u.is_positive(type_defs)?,
             Self::Function(_, _, _) => false,
             Self::Either(_, branches) => {
@@ -660,6 +672,13 @@ impl Type {
             (t1, Self::DualName(span, name, args)) => {
                 t1.is_assignable_to(&type_defs.get_dual(span, name, args)?, type_defs, ind)?
             }
+
+            (Self::Box(_, t1), Self::Box(_, t2)) => t1.is_assignable_to(t2, type_defs, ind)?,
+            (Self::Box(_, t1), t2) => t1.is_assignable_to(t2, type_defs, ind)?,
+            (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
+                t2.is_assignable_to(t1, type_defs, ind)?
+            }
+            (t1, Self::DualBox(_, t2)) => t2.is_assignable_to(t1, type_defs, ind)?,
 
             (Self::Pair(_, t1, u1), Self::Pair(_, t2, u2)) => {
                 t1.is_assignable_to(t2, type_defs, ind)?
@@ -787,6 +806,9 @@ impl Type {
             Self::Name(span, name, args) => Self::DualName(span0.join(span), name, args),
             Self::DualName(span, name, args) => Self::Name(span0.join(span), name, args),
 
+            Self::Box(span, body) => Self::DualBox(span, body),
+            Self::DualBox(span, body) => Self::Box(span, body),
+
             Self::Pair(span, t, u) => {
                 Self::Function(span0.join(span), t, Box::new(u.dual(Span::None)))
             }
@@ -871,6 +893,9 @@ impl Type {
                     .map(|arg| arg.dualize_self(label))
                     .collect(),
             ),
+
+            Self::Box(span, body) => Self::Box(span, Box::new(body.dualize_self(label))),
+            Self::DualBox(span, body) => Self::DualBox(span, Box::new(body.dualize_self(label))),
 
             Self::Pair(loc, t, u) => Self::Pair(
                 loc.clone(),
@@ -1007,6 +1032,15 @@ impl Type {
                         Ok(arg.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?)
                     })
                     .collect::<Result<_, _>>()?,
+            ),
+
+            Self::Box(span, body) => Self::Box(
+                span,
+                Box::new(body.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
+            ),
+            Self::DualBox(span, body) => Self::DualBox(
+                span,
+                Box::new(body.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
             ),
 
             Self::Pair(loc, t, u) => Self::Pair(
@@ -1175,6 +1209,15 @@ impl Type {
                     .collect::<Result<_, _>>()?,
             ),
 
+            Self::Box(span, body) => Self::Box(
+                span,
+                Box::new(body.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
+            ),
+            Self::DualBox(span, body) => Self::DualBox(
+                span,
+                Box::new(body.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
+            ),
+
             Self::Pair(loc, t, u) => Self::Pair(
                 loc,
                 Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
@@ -1308,6 +1351,9 @@ impl Type {
                     arg.invalidate_ascendent(label);
                 }
             }
+            Self::Box(_, body) | Self::DualBox(_, body) => {
+                body.invalidate_ascendent(label);
+            }
             Self::Pair(_, t, u) => {
                 t.invalidate_ascendent(label);
                 u.invalidate_ascendent(label);
@@ -1366,6 +1412,9 @@ impl Type {
                 args.iter().any(|arg| arg.contains_self(label))
             }
 
+            Self::Box(_, body) => body.contains_self(label),
+            Self::DualBox(_, body) => body.contains_self(label),
+
             Self::Pair(_, t, u) => t.contains_self(label) || u.contains_self(label),
             Self::Function(_, t, u) => t.contains_self(label) || u.contains_self(label),
             Self::Either(_, branches) => branches.iter().any(|(_, typ)| typ.contains_self(label)),
@@ -1398,6 +1447,8 @@ impl Type {
                 args.iter().any(|arg| arg.contains_var(var))
             }
 
+            Self::Box(_, body) | Self::DualBox(_, body) => body.contains_var(var),
+
             Self::Pair(_, t, u) => t.contains_var(var) || u.contains_var(var),
             Self::Function(_, t, u) => t.contains_var(var) || u.contains_var(var),
             Self::Either(_, branches) => branches.iter().any(|(_, typ)| typ.contains_var(var)),
@@ -1425,6 +1476,7 @@ impl Type {
                 }
                 deps
             }
+            Self::Box(_, body) | Self::DualBox(_, body) => body.get_dependencies(),
             Self::Pair(_, t, u) => {
                 let mut deps = t.get_dependencies();
                 deps.extend(u.get_dependencies());
@@ -1597,6 +1649,7 @@ impl Context {
         &mut self,
         inference_subject: Option<&LocalName>,
         cap: &Captures,
+        only_non_linear: bool,
         target: &mut Self,
     ) -> Result<(), TypeError> {
         for (name, span) in &cap.names {
@@ -1612,6 +1665,11 @@ impl Context {
             };
             if !typ.is_linear(&self.type_defs)? {
                 self.put(span, name.clone(), typ.clone())?;
+            } else if only_non_linear {
+                return Err(TypeError::CannotUseLinearVariableInBox(
+                    span.clone(),
+                    name.clone(),
+                ));
             }
             target.put(span, name.clone(), typ)?;
         }
@@ -1717,6 +1775,16 @@ impl Context {
                 span,
                 object,
                 &self.type_defs.get_dual(span, name, args)?,
+                command,
+                analyze_process,
+            );
+        }
+        if let Type::Box(_, inner) = typ {
+            return self.check_command(
+                inference_subject,
+                span,
+                object,
+                inner,
                 command,
                 analyze_process,
             );
@@ -2353,6 +2421,31 @@ impl Context {
                 )))
             }
 
+            Expression::Box(span, captures, expression, ()) => {
+                if let Some(inference_subject) = inference_subject {
+                    if captures.names.contains_key(inference_subject) {
+                        return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                            *span,
+                            inference_subject.clone(),
+                        ));
+                    }
+                }
+                let mut context = self.split();
+                self.capture(inference_subject, captures, true, &mut context)?;
+                let target_inner_type = match target_type {
+                    Type::Box(_, typ) => typ,
+                    typ => typ,
+                };
+                let expression =
+                    self.check_expression(inference_subject, expression, target_inner_type)?;
+                Ok(Arc::new(Expression::Box(
+                    *span,
+                    captures.clone(),
+                    expression,
+                    target_type.clone(),
+                )))
+            }
+
             Expression::Fork {
                 span,
                 captures,
@@ -2370,7 +2463,7 @@ impl Context {
                     None => (target_dual, target_type),
                 };
                 let mut context = self.split();
-                self.capture(inference_subject, captures, &mut context)?;
+                self.capture(inference_subject, captures, false, &mut context)?;
                 context.put(span, channel.clone(), chan_type.clone())?;
                 let process = context.check_process(process)?;
                 Ok(Arc::new(Expression::Fork {
@@ -2437,7 +2530,31 @@ impl Context {
                         name.clone(),
                         typ.clone(),
                     )),
-                    typ.clone(),
+                    typ,
+                ))
+            }
+
+            Expression::Box(span, captures, expression, ()) => {
+                if let Some(inference_subject) = inference_subject {
+                    if captures.names.contains_key(inference_subject) {
+                        return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                            *span,
+                            inference_subject.clone(),
+                        ));
+                    }
+                }
+                let mut context = self.split();
+                self.capture(inference_subject, captures, true, &mut context)?;
+                let (expression, typ) = self.infer_expression(inference_subject, expression)?;
+                let typ = Type::Box(*span, Box::new(typ.clone()));
+                Ok((
+                    Arc::new(Expression::Box(
+                        *span,
+                        captures.clone(),
+                        expression,
+                        typ.clone(),
+                    )),
+                    typ,
                 ))
             }
 
@@ -2450,7 +2567,7 @@ impl Context {
                 ..
             } => {
                 let mut context = self.split();
-                self.capture(inference_subject, captures, &mut context)?;
+                self.capture(inference_subject, captures, false, &mut context)?;
                 let (process, typ) = match annotation {
                     Some(typ) => {
                         context.put(span, channel.clone(), typ.clone())?;
@@ -2525,6 +2642,10 @@ impl Type {
                 for arg in args {
                     arg.qualify(module);
                 }
+            }
+            Self::Box(span, body) | Self::DualBox(span, body) => {
+                *span = Span::None;
+                body.qualify(module);
             }
             Self::Pair(span, t, u) => {
                 *span = Span::None;
@@ -2611,6 +2732,15 @@ impl Type {
                     write!(f, ">")?
                 }
                 Ok(())
+            }
+
+            Self::Box(_, body) => {
+                write!(f, "box ")?;
+                body.pretty(f, indent)
+            }
+            Self::DualBox(_, body) => {
+                write!(f, "dual box ")?;
+                body.pretty(f, indent)
             }
 
             Self::Pair(_, arg, then) => {
@@ -2774,6 +2904,15 @@ impl Type {
                 Ok(())
             }
 
+            Self::Box(_, body) => {
+                write!(f, "box ")?;
+                body.pretty_compact(f)
+            }
+            Self::DualBox(_, body) => {
+                write!(f, "dual box ")?;
+                body.pretty_compact(f)
+            }
+
             Self::Pair(_, arg, then) => {
                 let mut then = then;
                 write!(f, "(")?;
@@ -2910,6 +3049,7 @@ impl Type {
                     arg.types_at_spans(type_defs, consume);
                 }
             }
+            Self::Box(_, body) | Self::DualBox(_, body) => body.types_at_spans(type_defs, consume),
             Self::Pair(_, t, u) => {
                 t.types_at_spans(type_defs, consume);
                 u.types_at_spans(type_defs, consume);
@@ -3062,7 +3202,7 @@ impl TypeError {
             }
             Self::VariableDoesNotExist(span, name) => {
                 let labels = labels_from_span(code, span);
-                miette::miette!(labels = labels, "`Variable {}` does not exist.", name)
+                miette::miette!(labels = labels, "Variable `{}` does not exist.", name)
             }
             Self::ShadowedObligation(span, name) => {
                 let labels = labels_from_span(code, span);
@@ -3199,6 +3339,10 @@ impl TypeError {
                     loop_type_str,
                 )
             }
+            Self::CannotUseLinearVariableInBox(span, name) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(labels = labels, "Cannot use linear variable `{}` in a `box` expression.", name)
+            }
             Self::Telltypes(span, variables) => {
                 let labels = labels_from_span(code, span);
                 let mut buf = String::new();
@@ -3246,6 +3390,7 @@ impl TypeError {
             | Self::DoesNotDescendSubjectOfBegin(span, _)
             | Self::LoopVariableNotPreserved(span, _)
             | Self::LoopVariableChangedType(span, _, _, _)
+            | Self::CannotUseLinearVariableInBox(span, _)
             | Self::Telltypes(span, _) => (span.clone(), None),
 
             Self::TypesCannotBeUnified(typ1, typ2) => (typ1.span(), Some(typ2.span())),

@@ -585,6 +585,7 @@ fn par_syntax() -> Syntax {
             "recursive",
             "iterative",
             "self",
+            "box",
         ]),
         types: BTreeSet::from([]),
         special: BTreeSet::from(["<>"]),

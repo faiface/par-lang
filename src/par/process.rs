@@ -58,6 +58,7 @@ pub enum Command<Typ> {
 pub enum Expression<Typ> {
     Global(Span, GlobalName, Typ),
     Variable(Span, LocalName, Typ),
+    Box(Span, Captures, Arc<Self>, Typ),
     Fork {
         span: Span,
         captures: Captures,
@@ -445,14 +446,21 @@ impl<Typ: Clone> Expression<Typ> {
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
     ) -> (Arc<Self>, Captures) {
         match self {
-            Self::Global(loc, name, typ) => (
-                Arc::new(Self::Global(loc.clone(), name.clone(), typ.clone())),
+            Self::Global(span, name, typ) => (
+                Arc::new(Self::Global(*span, name.clone(), typ.clone())),
                 Captures::new(),
             ),
-            Self::Variable(loc, name, typ) => (
-                Arc::new(Self::Variable(loc.clone(), name.clone(), typ.clone())),
-                Captures::single(name.clone(), loc.clone()),
+            Self::Variable(span, name, typ) => (
+                Arc::new(Self::Variable(*span, name.clone(), typ.clone())),
+                Captures::single(name.clone(), span.clone()),
             ),
+            Self::Box(span, _, expression, typ) => {
+                let (expression, caps) = expression.fix_captures(loop_points);
+                (
+                    Arc::new(Self::Box(*span, caps.clone(), expression, typ.clone())),
+                    caps,
+                )
+            }
             Self::Fork {
                 span,
                 chan_name: channel,
@@ -466,7 +474,7 @@ impl<Typ: Clone> Expression<Typ> {
                 caps.remove(channel);
                 (
                     Arc::new(Self::Fork {
-                        span: span.clone(),
+                        span: *span,
                         captures: caps.clone(),
                         chan_name: channel.clone(),
                         chan_annotation: annotation.clone(),
@@ -490,12 +498,18 @@ impl<Typ: Clone> Expression<Typ> {
 
     pub fn optimize(&self) -> Arc<Self> {
         match self {
-            Self::Global(loc, name, typ) => {
-                Arc::new(Self::Global(loc.clone(), name.clone(), typ.clone()))
+            Self::Global(span, name, typ) => {
+                Arc::new(Self::Global(*span, name.clone(), typ.clone()))
             }
-            Self::Variable(loc, name, typ) => {
-                Arc::new(Self::Variable(loc.clone(), name.clone(), typ.clone()))
+            Self::Variable(span, name, typ) => {
+                Arc::new(Self::Variable(*span, name.clone(), typ.clone()))
             }
+            Self::Box(span, caps, expression, typ) => Arc::new(Self::Box(
+                *span,
+                caps.clone(),
+                expression.optimize(),
+                typ.clone(),
+            )),
             Self::Fork {
                 span,
                 captures,
@@ -536,6 +550,10 @@ impl Expression<Type> {
             Self::Variable(_, name, typ) => {
                 consume(name.span(), Some(format!("{}", name)), typ.clone());
             }
+            Self::Box(span, _, expression, typ) => {
+                consume(*span, None, typ.clone());
+                expression.types_at_spans(type_defs, consume);
+            }
             Self::Fork {
                 chan_name,
                 chan_annotation,
@@ -564,6 +582,7 @@ impl<Typ: Clone> Expression<Typ> {
         match self {
             Self::Global(_, _, typ) => typ.clone(),
             Self::Variable(_, _, typ) => typ.clone(),
+            Self::Box(_, _, _, typ) => typ.clone(),
             Self::Fork { expr_type, .. } => expr_type.clone(),
             Self::Primitive(_, _, typ) => typ.clone(),
             Self::External(_, _, typ) => typ.clone(),
@@ -664,6 +683,9 @@ impl Expression<()> {
                 Self::Global(Default::default(), name, ())
             }
             Self::Variable(_, name, ()) => Self::Variable(Default::default(), name, ()),
+            Self::Box(_, caps, expression, ()) => {
+                Self::Box(Default::default(), caps, expression.qualify(module), ())
+            }
             Self::Fork {
                 span: _,
                 captures,
@@ -828,6 +850,11 @@ impl<Typ> Expression<Typ> {
 
             Self::Variable(_, name, _) => {
                 write!(f, "{}", name)
+            }
+
+            Self::Box(_, _, expression, _) => {
+                write!(f, "box ")?;
+                expression.pretty(f, indent)
             }
 
             Self::Fork {

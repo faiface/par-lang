@@ -111,6 +111,7 @@ pub enum Expression {
         process: Box<Process>,
         then: Box<Self>,
     },
+    Box(Span, Box<Self>),
     Fork {
         span: Span,
         channel: LocalName,
@@ -540,6 +541,16 @@ impl Expression {
 
             Self::Grouped(_, expression) => expression.compile()?,
 
+            Self::Box(span, expression) => {
+                let expression = expression.compile()?;
+                Arc::new(process::Expression::Box(
+                    *span,
+                    Captures::new(),
+                    expression,
+                    (),
+                ))
+            }
+
             Self::Let {
                 span,
                 pattern,
@@ -655,6 +666,7 @@ impl Spanning for Expression {
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
             | Self::Do { span, .. }
+            | Self::Box(span, _)
             | Self::Fork { span, .. }
             | Self::Application(span, _, _) => span.clone(),
 
