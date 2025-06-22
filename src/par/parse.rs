@@ -889,6 +889,7 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
     alt((
         expr_literal,
         expr_list,
+        expr_box,
         expr_fork,
         expr_let,
         expr_do,
