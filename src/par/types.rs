@@ -673,6 +673,13 @@ impl Type {
                 t1.is_assignable_to(&type_defs.get_dual(span, name, args)?, type_defs, ind)?
             }
 
+            (t1, Self::Box(_, t2)) if t1.is_positive(type_defs)? => {
+                t1.is_assignable_to(t2, type_defs, ind)?
+            }
+            (Self::DualBox(_, t1), t2) if t1.is_positive(type_defs)? => t1
+                .clone()
+                .dual(Span::None)
+                .is_assignable_to(t2, type_defs, ind)?,
             (Self::Box(_, t1), Self::Box(_, t2)) => t1.is_assignable_to(t2, type_defs, ind)?,
             (Self::Box(_, t1), t2) => t1.is_assignable_to(t2, type_defs, ind)?,
             (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
@@ -1789,6 +1796,18 @@ impl Context {
                 analyze_process,
             );
         }
+        if let Type::DualBox(_, inner) = typ {
+            if inner.is_positive(&self.type_defs)? {
+                return self.check_command(
+                    inference_subject,
+                    span,
+                    object,
+                    &inner.clone().dual(Span::None),
+                    command,
+                    analyze_process,
+                );
+            }
+        }
         if !matches!(command, Command::Link(_)) {
             if let Type::Iterative {
                 asc: top_asc,
@@ -2432,12 +2451,14 @@ impl Context {
                 }
                 let mut context = self.split();
                 self.capture(inference_subject, captures, true, &mut context)?;
-                let target_inner_type = match target_type {
-                    Type::Box(_, typ) => typ,
-                    typ => typ,
-                };
+                let mut target_inner_type = target_type.clone();
+                while let Type::Box(_, inner) =
+                    target_inner_type.expand_definition(&self.type_defs)?
+                {
+                    target_inner_type = *inner;
+                }
                 let expression =
-                    self.check_expression(inference_subject, expression, target_inner_type)?;
+                    self.check_expression(inference_subject, expression, &target_inner_type)?;
                 Ok(Arc::new(Expression::Box(
                     *span,
                     captures.clone(),

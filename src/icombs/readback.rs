@@ -547,6 +547,10 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
         typ = match typ {
             Type::Name(span, name, args) => type_defs.get(&span, &name, &args).unwrap(),
             Type::DualName(span, name, args) => type_defs.get_dual(&span, &name, &args).unwrap(),
+            Type::Box(_, inner) => expand_type(*inner, type_defs),
+            Type::DualBox(_, inner) if inner.is_positive(type_defs).unwrap() => {
+                expand_type(inner.clone().dual(Span::None), type_defs)
+            }
             Type::Recursive {
                 span: _,
                 asc,

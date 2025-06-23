@@ -494,6 +494,9 @@ impl Compiler {
                 self.normalize_type(ty)
             }
             Type::Box(_, inner) => self.normalize_type(*inner),
+            Type::DualBox(_, inner) if inner.is_positive(&self.type_defs).unwrap() => {
+                self.normalize_type(inner.clone().dual(Span::None))
+            }
             Type::Recursive {
                 asc, label, body, ..
             } => self.normalize_type(
@@ -518,6 +521,7 @@ impl Compiler {
                 let (package_id, _) = this.in_package(|this, _| {
                     let context_out = this.context.unpack(&pack_data, &mut this.net);
                     let body = this.compile_expression(&expression)?;
+                    this.end_context()?;
                     Ok(Tree::Con(Box::new(context_out), Box::new(body.tree))
                         .with_type(Type::Break(Span::default())))
                 })?;
