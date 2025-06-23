@@ -381,7 +381,7 @@ impl Playground {
                 let mut net = compiled.create_net();
                 let child_net = compiled.get_with_name(name).unwrap();
                 let tree = net.inject_net(child_net).with_type(ty.clone());
-                let (net, _future) = net.start_reducer(Arc::new(TokioSpawn));
+                let net = net.start_reducer(Arc::new(TokioSpawn));
 
                 let ctx = ui.ctx().clone();
                 *element = Some(Element::new(
@@ -389,7 +389,7 @@ impl Playground {
                         ctx.request_repaint();
                     }),
                     Arc::new(TokioSpawn),
-                    TypedHandle::from_wrapper(program.type_defs.clone(), net, tree),
+                    TypedHandle::new(program.type_defs.clone(), net, tree),
                 ));
             }
         }
