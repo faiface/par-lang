@@ -1,11 +1,11 @@
+use arcstr::{ArcStr, Substr};
+use futures::channel::{mpsc, oneshot};
+use num_bigint::BigInt;
+use std::sync::atomic::AtomicUsize;
 use std::{
     future::Future,
     sync::{Arc, Mutex},
 };
-
-use arcstr::{ArcStr, Substr};
-use futures::channel::oneshot;
-use num_bigint::BigInt;
 
 use crate::{
     location::Span,
@@ -18,14 +18,80 @@ use crate::{
 
 use super::{compiler::TypedTree, Net, Tree};
 
+pub(crate) mod private {
+    use crate::icombs::net::ReducerMessage;
+    use crate::icombs::Net;
+    use futures::channel::mpsc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::{Arc, LockResult, Mutex};
+
+    pub struct NetWrapper {
+        net: Arc<Mutex<Net>>,
+        notify: mpsc::UnboundedSender<crate::icombs::net::ReducerMessage>,
+        handle_count: Arc<AtomicUsize>,
+    }
+
+    impl NetWrapper {
+        pub(crate) fn new(
+            net: Arc<Mutex<Net>>,
+            mut notify: mpsc::UnboundedSender<ReducerMessage>,
+            handle_count: Arc<AtomicUsize>,
+        ) -> Self {
+            handle_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Self {
+                net,
+                notify,
+                handle_count,
+            }
+        }
+        pub(crate) fn lock(&self) -> LockResult<std::sync::MutexGuard<'_, Net>> {
+            self.net.lock()
+        }
+
+        pub(crate) fn net(&self) -> Arc<Mutex<Net>> {
+            Arc::clone(&self.net)
+        }
+    }
+
+    impl Clone for NetWrapper {
+        fn clone(&self) -> Self {
+            self.handle_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+            Self {
+                net: Arc::clone(&self.net),
+                notify: self.notify.clone(),
+                handle_count: Arc::clone(&self.handle_count),
+            }
+        }
+    }
+
+    impl Drop for NetWrapper {
+        fn drop(&mut self) {
+            if self
+                .handle_count
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
+                == 1
+            {
+                self.notify
+                    .unbounded_send(ReducerMessage::Ping)
+                    .expect("Failed to notify reducer");
+            }
+        }
+    }
+}
+
+use crate::icombs::net::ReducerMessage;
+use private::NetWrapper;
+
 pub struct Handle {
-    net: Arc<Mutex<Net>>,
+    net: NetWrapper,
     tree: Option<Tree>,
 }
 
 pub struct TypedHandle {
     type_defs: TypeDefs,
-    net: Arc<Mutex<Net>>,
+    net: NetWrapper,
     tree: TypedTree,
 }
 
@@ -50,9 +116,14 @@ pub enum TypedReadback {
 }
 
 impl Handle {
-    pub fn new(net: Arc<Mutex<Net>>, tree: Tree) -> Self {
+    pub fn new(
+        net: Arc<Mutex<Net>>,
+        notify: mpsc::UnboundedSender<ReducerMessage>,
+        handle_count: Arc<AtomicUsize>,
+        tree: Tree,
+    ) -> Self {
         Self {
-            net,
+            net: NetWrapper::new(net, notify, handle_count),
             tree: Some(tree),
         }
     }
@@ -155,7 +226,7 @@ impl Handle {
 
         self.tree = Some(u0);
         Self {
-            net: Arc::clone(&self.net),
+            net: self.net.clone(),
             tree: Some(t0),
         }
     }
@@ -173,7 +244,7 @@ impl Handle {
 
         self.tree = Some(u0);
         Self {
-            net: Arc::clone(&self.net),
+            net: self.net.clone(),
             tree: Some(t0),
         }
     }
@@ -219,7 +290,21 @@ impl Handle {
 }
 
 impl TypedHandle {
-    pub fn new(type_defs: TypeDefs, net: Arc<Mutex<Net>>, tree: TypedTree) -> Self {
+    pub fn new(
+        type_defs: TypeDefs,
+        net: Arc<Mutex<Net>>,
+        notify: mpsc::UnboundedSender<ReducerMessage>,
+        handle_count: Arc<AtomicUsize>,
+        tree: TypedTree,
+    ) -> Self {
+        Self {
+            type_defs,
+            net: NetWrapper::new(net, notify, handle_count),
+            tree,
+        }
+    }
+
+    pub fn from_wrapper(type_defs: TypeDefs, net: NetWrapper, tree: TypedTree) -> Self {
         Self {
             type_defs,
             net,
@@ -228,7 +313,7 @@ impl TypedHandle {
     }
 
     pub fn net(&self) -> Arc<Mutex<Net>> {
-        Arc::clone(&self.net)
+        self.net.net()
     }
 
     pub async fn readback(mut self) -> TypedReadback {
@@ -418,7 +503,7 @@ impl TypedHandle {
 
         let t_handle = Self {
             type_defs: self.type_defs.clone(),
-            net: Arc::clone(&self.net),
+            net: self.net.clone(),
             tree: t0.with_type(t.dual(Span::None)),
         };
         let u_handle = Self {
@@ -445,7 +530,7 @@ impl TypedHandle {
 
         let t_handle = Self {
             type_defs: self.type_defs.clone(),
-            net: Arc::clone(&self.net),
+            net: self.net.clone(),
             tree: t0.with_type(*t),
         };
         let u_handle = Self {
