@@ -608,17 +608,21 @@ fn typ_recv_type(input: &mut Input) -> Result<Type> {
 }
 
 fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
-    // TODO should be able to use `<` to improve error message
-    opt((t(TokenKind::Lt), list(local_name), t(TokenKind::Gt)))
-        .map(|opt| opt.map(|(open, names, close)| (open.span.join(close.span), names)))
-        .parse_next(input)
+    opt(commit_after(
+        t(TokenKind::Lt),
+        (list(local_name), t(TokenKind::Gt)),
+    ))
+    .map(|opt| opt.map(|(open, (names, close))| (open.span.join(close.span), names)))
+    .parse_next(input)
 }
 
 fn type_args<'s>(input: &mut Input) -> Result<Option<(Span, Vec<Type>)>> {
-    // TODO should be able to use `<` to improve error message
-    opt((t(TokenKind::Lt), list(typ), t(TokenKind::Gt)))
-        .map(|opt| opt.map(|(open, types, close)| (open.span.join(close.span), types)))
-        .parse_next(input)
+    opt(commit_after(
+        t(TokenKind::Lt),
+        (list(typ), t(TokenKind::Gt)),
+    ))
+    .map(|opt| opt.map(|(open, (types, close))| (open.span.join(close.span), types)))
+    .parse_next(input)
 }
 
 fn typ_branch(input: &mut Input) -> Result<Type> {
