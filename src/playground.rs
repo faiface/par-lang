@@ -4,11 +4,13 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    thread,
 };
 
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
+use crate::spawn::TokioSpawn;
 use crate::{
     icombs::readback::TypedHandle,
     par::{
@@ -20,10 +22,10 @@ use crate::{
 use crate::{
     icombs::{compile_file, IcCompiled},
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
-    spawn::TokioSpawn,
 };
 use crate::{location::Span, par::program::CheckedModule};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
+use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
     file_path: Option<PathBuf>,
@@ -36,6 +38,8 @@ pub struct Playground {
     element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (usize, usize),
     theme_mode: ThemeMode,
+    rt: tokio::runtime::Runtime,
+    cancel_token: Option<CancellationToken>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +195,11 @@ impl Playground {
             element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
+            rt: tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create Tokio runtime"),
+            cancel_token: None,
         });
 
         if let Some(path) = file_path {
@@ -370,6 +379,8 @@ impl Playground {
     }
 
     fn readback(
+        tokio: tokio::runtime::Handle,
+        cancel_token: &mut Option<CancellationToken>,
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
@@ -377,20 +388,42 @@ impl Playground {
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
+
+                if let Some(cancel_token) = cancel_token {
+                    cancel_token.cancel();
+                }
+                let token = CancellationToken::new();
+                *cancel_token = Some(token.clone());
+
                 let ty = compiled.get_type_of(name).unwrap();
                 let mut net = compiled.create_net();
                 let child_net = compiled.get_with_name(name).unwrap();
                 let tree = net.inject_net(child_net).with_type(ty.clone());
-                let net = net.start_reducer(Arc::new(TokioSpawn));
+                let (net, _future) =
+                    net.start_reducer(Arc::new(TokioSpawn::from_handle(tokio.clone())));
 
                 let ctx = ui.ctx().clone();
                 *element = Some(Element::new(
                     Arc::new(move || {
                         ctx.request_repaint();
                     }),
-                    Arc::new(TokioSpawn),
-                    TypedHandle::new(program.type_defs.clone(), net, tree),
+                    Arc::new(TokioSpawn::from_handle(tokio.clone())),
+                    TypedHandle::from_wrapper(program.type_defs.clone(), net, tree),
                 ));
+                let tokio_clone = tokio.clone();
+                thread::spawn(move || {
+                    tokio_clone.block_on(async {
+                        tokio::select! {
+                            _ = token.cancelled() => {
+                                println!("Note: Reducer cancelled.");
+                            }
+                            _ = _future => {
+                                println!("Note: Reducer completed.");
+                            }
+                        }
+                    });
+                });
+                break;
             }
         }
     }
@@ -430,7 +463,10 @@ impl Playground {
                                 .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
                                 |ui| {
                                     egui::ScrollArea::vertical().show(ui, |ui| {
+
                                         Self::readback(
+                                            self.rt.handle().clone(),
+                                            &mut self.cancel_token,
                                             &mut self.element,
                                             ui,
                                             checked.program.clone(),

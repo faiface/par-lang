@@ -4,11 +4,13 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use arcstr::{ArcStr, Substr};
 use futures::channel::{mpsc, oneshot};
+use futures::future::RemoteHandle;
 use futures::task::{Spawn, SpawnExt};
 use futures::StreamExt;
 use indexmap::IndexMap;
@@ -16,7 +18,7 @@ use num_bigint::BigInt;
 
 use crate::par::primitive::Primitive;
 
-use super::readback::Handle;
+use super::readback::{private::NetWrapper, Handle};
 
 pub type VarId = usize;
 
@@ -203,11 +205,16 @@ pub struct Net {
     reducer: Option<Reducer>,
 }
 
+pub(crate) enum ReducerMessage {
+    Ping,
+}
+
 #[derive(Clone)]
 struct Reducer {
     net: Weak<Mutex<Net>>,
     spawner: Arc<dyn Spawn + Send + Sync>,
-    notify: mpsc::UnboundedSender<()>,
+    notify: mpsc::UnboundedSender<ReducerMessage>,
+    handle_count: Arc<AtomicUsize>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -258,41 +265,49 @@ impl Variables {
 }
 
 impl Net {
-    pub fn start_reducer(mut self, spawner: Arc<dyn Spawn + Send + Sync>) -> Arc<Mutex<Self>> {
+    pub fn start_reducer(
+        mut self,
+        spawner: Arc<dyn Spawn + Send + Sync>,
+    ) -> (NetWrapper, RemoteHandle<()>) {
         if self.reducer.is_some() {
             panic!("reducer already started");
         }
 
         self.redexes.extend(self.waiting_for_reducer.drain(..));
 
-        let (notify, resume) = mpsc::unbounded();
+        let (notify, mut resume) = mpsc::unbounded();
         let net = Arc::new(Mutex::new(self));
         let weak_net = Arc::downgrade(&net);
+        let handle_count = Arc::new(AtomicUsize::new(0));
         net.lock().unwrap().reducer = Some(Reducer {
             net: weak_net,
             spawner: Arc::clone(&spawner),
-            notify,
+            notify: notify.clone(),
+            handle_count: handle_count.clone(),
         });
-        {
-            let net = Arc::clone(&net);
-            //let mut resume = Box::pin(resume);
-            let mut resume = resume;
-            spawner
-                .spawn(async move {
-                    loop {
-                        {
-                            let mut lock = net.lock().expect("lock failed");
-                            while lock.reduce_one() {}
-                        }
-                        match resume.next().await {
-                            Some(()) => continue,
-                            None => break,
+
+        let net_wrapper = NetWrapper::new(Arc::clone(&net), notify.clone(), handle_count.clone());
+
+        let net = Arc::clone(&net);
+        let future = spawner
+            .spawn_with_handle(async move {
+                loop {
+                    {
+                        let mut lock = net.lock().expect("lock failed");
+                        while lock.reduce_one() {}
+                        if handle_count.load(Ordering::SeqCst) == 0 {
+                            break;
                         }
                     }
-                })
-                .expect("spawn failed");
-        }
-        net
+
+                    match resume.next().await {
+                        Some(ReducerMessage::Ping) => continue,
+                        None => break,
+                    }
+                }
+            })
+            .expect("spawn failed");
+        (net_wrapper, future)
     }
 
     pub fn spawn(&self, fut: Pin<Box<dyn Send + Future<Output = ()>>>) {
@@ -306,7 +321,11 @@ impl Net {
         let Some(reducer) = &self.reducer else {
             panic!("reducer not started");
         };
-        reducer.notify.unbounded_send(()).expect("notify failed");
+        let res = reducer.notify.unbounded_send(ReducerMessage::Ping);
+        if res.is_err() {
+            println!("Warning: Failed to ping reducer");
+        }
+        // .expect("notify ping failed");
     }
 
     fn interact(&mut self, a: Tree, b: Tree) {
@@ -403,10 +422,11 @@ impl Net {
             (External(f), a) | (a, External(f)) => match &self.reducer {
                 Some(reducer) => {
                     if let Some(net) = reducer.net.upgrade() {
-                        reducer
-                            .spawner
-                            .spawn(f(Handle::new(net, a)))
-                            .expect("spawn failed");
+                        let notify = reducer.notify.clone();
+                        let handle_count = reducer.handle_count.clone();
+                        let handle = Handle::new(net, notify, handle_count, a);
+                        let future = f(handle);
+                        reducer.spawner.spawn(future).expect("spawn failed");
                     }
                 }
                 None => {
