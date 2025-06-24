@@ -321,10 +321,11 @@ impl Net {
         let Some(reducer) = &self.reducer else {
             panic!("reducer not started");
         };
-        reducer
-            .notify
-            .unbounded_send(ReducerMessage::Ping)
-            .expect("notify ping failed");
+        let res = reducer.notify.unbounded_send(ReducerMessage::Ping);
+        if res.is_err() {
+            println!("Warning: Failed to ping reducer");
+        }
+        // .expect("notify ping failed");
     }
 
     fn interact(&mut self, a: Tree, b: Tree) {

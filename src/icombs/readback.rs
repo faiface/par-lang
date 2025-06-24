@@ -73,9 +73,11 @@ pub(crate) mod private {
                 .fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
                 == 1
             {
-                self.notify
-                    .unbounded_send(ReducerMessage::Ping)
-                    .expect("Failed to notify reducer");
+                let res = self.notify.unbounded_send(ReducerMessage::Ping);
+                //.expect("Failed to notify reducer");
+                if res.is_err() {
+                    println!("Warning: Failed to notify reducer on drop of NetWrapper");
+                }
             }
         }
     }

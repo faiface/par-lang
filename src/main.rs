@@ -56,22 +56,19 @@ fn main() {
 }
 
 fn run_playground(file: Option<PathBuf>) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    runtime.block_on(async {
-        let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
-            ..Default::default()
-        };
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
+        ..Default::default()
+    };
 
-        par::parse::set_miette_hook();
+    par::parse::set_miette_hook();
 
-        eframe::run_native(
-            "⅋layground",
-            options,
-            Box::new(|cc| Ok(Playground::new(cc, file))),
-        )
-        .expect("egui crashed");
-    });
+    eframe::run_native(
+        "⅋layground",
+        options,
+        Box::new(|cc| Ok(Playground::new(cc, file))),
+    )
+    .expect("egui crashed");
 }
 
 fn run_function(file: PathBuf, function: String) {
@@ -132,10 +129,10 @@ fn run_function(file: PathBuf, function: String) {
         let child_net = ic_compiled.get_with_name(name).unwrap();
         let tree = net.inject_net(child_net).with_type(ty.clone());
 
-        let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn));
+        let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
 
         // let ctx = ui.ctx().clone();
-        let spawner = Arc::new(TokioSpawn);
+        let spawner = Arc::new(TokioSpawn::new());
         let readback_future = spawner
             .spawn_with_handle(async move {
                 let mut handle =

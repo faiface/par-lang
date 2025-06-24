@@ -11,7 +11,6 @@ egui_code_editor = "0.2.12"
 indexmap = "2.7.0"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs"] }
 stacker = "0.1.19"
-async-watch = "0.3.1"
 rfd = "0.15.2"
 winnow = { version = "0.7.4", features = [
     #"unstable-doc", # build docs locally
@@ -29,6 +28,7 @@ colored = "3.0.0"
 arcstr = "1.2.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
+tokio-util = "0.7.15"
 # dialoguer = "0.11.0" # for dialogues
 # indicatif = "0.17.11" # for progress bars
 
