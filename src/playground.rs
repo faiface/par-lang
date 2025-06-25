@@ -610,7 +610,6 @@ fn par_syntax() -> Syntax {
             "let",
             "do",
             "in",
-            "pass",
             "case",
             "begin",
             "unfounded",
