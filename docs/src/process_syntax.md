@@ -12,7 +12,7 @@ Process languages are not based on expressions. Instead, they work with concurre
 channels, and operations on them, like sending, and receiving. _CP_ was formulated by
 [Phil Wadler](https://en.wikipedia.org/wiki/Philip_Wadler), an influential computer scientist,
 in his wonderful paper called [_"Propositions as Sessions"_](https://www.pure.ed.ac.uk/ws/portalfiles/portal/18383989/Wadler_2012_Propositions_as_Sessions.pdf). It was not intended to become a basis
-for a practical programming language, _GV_ — a functional language in the same paper — was supposed
+for a practical programming language; _GV_ — a functional language in the same paper — was supposed
 to take that role. However, I saw much more potential in _CP_, and decided to turn it into
 a practical language.
 
@@ -125,7 +125,7 @@ It might not look better on the first sight, due to unfamiliarity. But notice, t
 of explicitly re-assigning `seq1` and `seq2`, we simply command them to give us their items. They automatically update in-place.
 
 Here's where [**session types**](https://en.wikipedia.org/wiki/Session_type) come in. We now treat `seq1` as a channel. First,
-we notify of our intention with the `.next` signal. Then, we receive an item and save it to a variable with `[x]`. The
+we notify it of our intention with the `.next` signal. Then, we receive an item and save it to a variable with `[x]`. The
 resemblance to the [construction syntax of functions](./types/function.md#construction) is not a coincidence!
 
 **Now, let's learn what this process syntax is all about!** We'll start by gradually enriching our programs with some commands,
