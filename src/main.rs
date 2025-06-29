@@ -87,7 +87,7 @@ fn run_function(file: PathBuf, function: String) {
         let compiled = match stacker::grow(32 * 1024 * 1024, || Compiled::from_string(&code)) {
             Ok(compiled) => compiled,
             Err(err) => {
-                println!("Compilation failed: {:?}", err);
+                println!("{}", err.display(Arc::from(code.as_str())).bright_red());
                 return;
             }
         };
