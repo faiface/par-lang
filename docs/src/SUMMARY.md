@@ -22,3 +22,6 @@
 - [The Process Syntax](./process_syntax.md)
   - [The `do` Expression](./processes/do_expression.md)
   - [Commands](./processes/commands.md)
+    - [Selecting & Sending](./processes/commands/selecting_and_sending.md)
+    - [Looping & Branching](./processes/commands/looping_and_branching.md)
+    - [Receiving Where It Shines](./processes/commands/receiving_where_it_shines.md)
