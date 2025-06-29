@@ -21,3 +21,4 @@
   - [Continuation](./types/continuation.md)
 - [The Process Syntax](./process_syntax.md)
   - [The `do` Expression](./processes/do_expression.md)
+  - [Commands](./processes/commands.md)

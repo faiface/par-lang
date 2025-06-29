@@ -21,7 +21,7 @@ type IllegalList = either {
 ```
 
 In general, **cyclic dependencies between global definitions are disallowed.** Instead, we have:
-- First-class anonymous self-referential types: `recursive` and [`iterative`](./iterative.md).
+- Anonymous self-referential types: `recursive` and [`iterative`](./iterative.md).
 - A single, universal recursion construct: `begin`/`loop`. It's suitable for recursive destruction,
   iterative construction, and imperative-style loops in [process syntax](../processes.md).
 
