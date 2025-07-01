@@ -105,7 +105,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     Type::string(),
                     Type::either(vec![("ok", Type::int()), ("err", Type::break_())]),
                 ),
-                |handle| Box::pin(string_to_int(handle)),
+                |handle| Box::pin(int_from_string(handle)),
             ),
         ],
     }
@@ -225,7 +225,7 @@ async fn int_to_string(mut handle: Handle) {
     handle.provide_string(Substr::from(x.to_str_radix(10)))
 }
 
-async fn string_to_int(mut handle: Handle) {
+async fn int_from_string(mut handle: Handle) {
     let string = handle.receive().string().await;
     match string.as_str().parse::<BigInt>() {
         Ok(num) => {
