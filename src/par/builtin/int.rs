@@ -1,9 +1,3 @@
-use std::{cmp::Ordering, sync::Arc};
-use std::collections::BTreeMap;
-use arcstr::{literal, Substr};
-use num_bigint::{BigInt, ParseBigIntError};
-use winnow::binary::Endianness::Big;
-use winnow::token::literal;
 use crate::{
     icombs::readback::Handle,
     par::{
@@ -12,8 +6,12 @@ use crate::{
         types::Type,
     },
 };
-use crate::location::Span;
-use crate::par::language::LocalName;
+use arcstr::{literal, Substr};
+use num_bigint::{BigInt, ParseBigIntError};
+use std::collections::BTreeMap;
+use std::{cmp::Ordering, sync::Arc};
+use winnow::binary::Endianness::Big;
+use winnow::token::literal;
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
@@ -103,12 +101,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "FromString",
-                Type::function(Type::string(),Type::either(
-                    vec![
-                        ("ok", Type::int()),
-                        ("err", Type::break_()),
-                    ]
-                )),
+                Type::function(
+                    Type::string(),
+                    Type::either(vec![("ok", Type::int()), ("err", Type::break_())]),
+                ),
                 |handle| Box::pin(string_to_int(handle)),
             ),
         ],
