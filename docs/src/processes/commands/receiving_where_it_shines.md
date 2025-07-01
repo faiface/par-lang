@@ -1,4 +1,4 @@
-# Receiving Where It Shines
+# Receiving, Where It Shines
 
 The previous section showed the `value[variable]` receive command — but it didn’t feel essential.
 Let’s now explore a use-case where this command really shines: polling values from an
@@ -97,7 +97,7 @@ def Program: ! = do {
     .end! => {}
     .step remaining => {
       fib.next[n]
-      console.print(Nat.ToString(n))
+      console.print(Int.ToString(n))
       remaining.loop
     }
   }
@@ -111,7 +111,7 @@ Here’s what’s happening:
 
 - `Nat.Repeat(30)` becomes the subject of the `.begin` and `.case` commands.
 - In each `.step`, we receive a number from the `fib` sequence using the `fib.next[n]` command.
-- We convert it to a string using `Nat.ToString(n)` and print it to the console.
+- We convert it to a string using `Int.ToString(n)` and print it to the console.
 - Then we `loop`.
 
 The `fib.next[n]` line is where _receive_ command truly shines. It receives the payload

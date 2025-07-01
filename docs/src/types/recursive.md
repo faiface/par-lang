@@ -319,6 +319,11 @@ def BiggerSum = SumTree(BiggerTree)  // = 20
 > **If there are multiple nested `.begin`/`.loop`, it may be necessary to
 > distinguish between them.** Labels can be used here too, just like with the types:
 > `.begin/label` and `.loop/label` does the job.
+>
+> TODO:
+> ```par
+> type Tree<a> = recursive List<(a) self>
+> ```
 
 ### Retention of local variables
 
