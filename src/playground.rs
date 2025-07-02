@@ -388,7 +388,6 @@ impl Playground {
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
-
                 if let Some(cancel_token) = cancel_token {
                     cancel_token.cancel();
                 }
@@ -463,7 +462,6 @@ impl Playground {
                                 .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
                                 |ui| {
                                     egui::ScrollArea::vertical().show(ui, |ui| {
-
                                         Self::readback(
                                             self.rt.handle().clone(),
                                             &mut self.cancel_token,
