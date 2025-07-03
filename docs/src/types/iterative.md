@@ -184,7 +184,10 @@ we can't just drop it.
 
 ### The escape-hatch from totality: `unfounded`
 
-TODO
+Just like with [recursive destruction](./recursive.md#the-escape-hatch-from-totality-unfounded),
+it may happen that your iterative construction is total — meaning it never enters an infinite,
+unproductive loop — yet not accepted by Par's type checker. In such cases, it's possible to
+disable Par's totality checking by replacing `begin` with `unfounded`.
 
 ## Destruction
 

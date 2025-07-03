@@ -392,4 +392,11 @@ And there we go! All we had to do was to re-assign `acc` with the new value, and
 
 ### The escape-hatch from totality: `.unfounded`
 
-TODO
+If the Par's type checker refuses to accept your recursive algorithm despite you being certain it's
+total — meaning it resolves on all inputs — it's possible to disable the totality checking by
+replacing `.begin` with `.unfounded`.
+
+Par's totality checking is currently not powerful enough for some algorithms, especially divide
+and conquer, and it's also lacking when decomposing recursive algorithms into multiple functions.
+In such cases, using `.unfounded` is okay. We do, however, aim to make the type system stronger,
+and eventually remove `.unfounded`.

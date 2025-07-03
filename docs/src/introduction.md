@@ -15,3 +15,5 @@ parallel computation, especially the multiplicatives.
 This was in 1987. In hindsight, it wasn't that obvious. What's obvious is that it _is there_
 — the parallel computation, that is. What isn't obvious at all is how to turn it into a practical
 programming language.
+
+TODO
