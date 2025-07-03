@@ -340,8 +340,10 @@ impl TypeDefs {
                     .collect(),
             ));
         }
-        for dep in deps_map.get(name).unwrap() {
-            self.validate_acyclic(dep, &deps_stack, deps_map)?;
+        if let Some(deps) = deps_map.get(name) {
+            for dep in deps {
+                self.validate_acyclic(dep, &deps_stack, deps_map)?;
+            }
         }
         Ok(())
     }

@@ -461,7 +461,7 @@ impl Net {
                 self.rewrites.commute += 1;
             }
 
-            _ => unreachable!("Invalid interaction with a primitive"),
+            (p,tree) => unreachable!("Invalid primitive interaction of {:?} with {:?}", p, tree),
         }
     }
 
