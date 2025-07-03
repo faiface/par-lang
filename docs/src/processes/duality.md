@@ -22,84 +22,84 @@ it's defined structurally:
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual !</pre></code></td>
+<td><code class="language-par">dual !</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>?</pre></code></td>
+<td><code class="language-par">&#63;</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual ?</pre></code></td>
+<td><code class="language-par">dual &#63;</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>!</pre></code></td>
+<td><code class="language-par">!</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual (A) B</pre></code></td>
+<td><code class="language-par">dual (A) B</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>[A] dual B</pre></code></td>
+<td><code class="language-par">[A] dual B</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual [A] B</pre></code></td>
+<td><code class="language-par">dual [A] B</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>(A) dual B</pre></code></td>
+<td><code class="language-par">(A) dual B</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual either {
+<td><pre><code class="language-par">dual either {
   .left A,
   .right B,
-}</pre></code></td>
+}</code></pre></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>choice {
+<td><pre><code class="language-par">choice {
   .left => dual A,
   .right => dual B,
-}</pre></code></td>
+}</code></pre></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual choice {
+<td><pre><code class="language-par">dual choice {
   .left => A,
   .right => B,
-}</pre></code></td>
+}</code></pre></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>either {
+<td><pre><code class="language-par">either {
   .left dual A,
   .right dual B,
-}</pre></code></td>
+}</code></pre></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual recursive F&lt;self&gt;</pre></code></td>
+<td><code class="language-par">dual recursive F&lt;self&gt;</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>iterative dual F&lt;dual self&gt;</pre></code></td>
+<td><code class="language-par">iterative dual F&lt;dual self&gt;</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual iterative F&lt;self&gt;</pre></code></td>
+<td><code class="language-par">dual iterative F&lt;self&gt;</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>recursive dual F&lt;dual self&gt;</pre></code></td>
+<td><code class="language-par">recursive dual F&lt;dual self&gt;</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual [type a] F&lt;a&gt;</pre></code></td>
+<td><code class="language-par">dual [type a] F&lt;a&gt;</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>(type a) dual F&lt;a&gt;</pre></code></td>
+<td><code class="language-par">(type a) dual F&lt;a&gt;</code></td>
 </tr>
 
 <tr/>
 <tr>
-<td><code class="language-par"><pre>dual (type a) F&lt;a&gt;</pre></code></td>
+<td><code class="language-par">dual (type a) F&lt;a&gt;</code></td>
 <td><strong>＝</strong></td>
-<td><code class="language-par"><pre>[type a] dual F&lt;a&gt;</pre></code></td>
+<td><code class="language-par">[type a] dual F&lt;a&gt;</code></td>
 </tr>
 
 </table>
