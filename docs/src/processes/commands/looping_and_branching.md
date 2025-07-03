@@ -69,9 +69,15 @@ not return something.
 There's another key difference: notice the `.item` branch has `=>` right after the branch name!
 There's no pattern. That's because in process syntax, binding the payload of an
 [either](../types/either.md) is optional. Normally, **the subject itself becomes the payload.**
+However, it is possible to match the payload fully, if desired.
 
 So, inside the `.item` branch, strings now has the type `(String) List<String>` — it’s a pair, and
 we want to peel off its first part, to add it to the string builder.
+
+There's **one last important detail,** and that's concerning **control flow.** If a `.case`
+branch process does not end (we'll learn about ending processes in the section about
+[`chan` expressions](../chan_expression.md)), then it proceeds to the next line after the closing
+parenthesis of the `.case` command. All local variables are kept.
 
 ## Receiving
 

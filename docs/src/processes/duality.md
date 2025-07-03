@@ -221,8 +221,8 @@ It makes a bunch of concepts we've already covered come together.
   - The nested `.begin`/`.loop` shines here; no helper functions needed.
 - In the inner loop:
   - If it’s `.end!`, we’re done with that list — we continue the outer loop.
-  - If it’s `.item(value)`, we yield it, then loop again. Re-binding of the rest of the list
-    is not needed here, either.
+  - If it’s `.item(value)`, we yield it to the consumer with `yield.item(value)`, then loop again.
+    Re-binding of the rest of the list is not needed here, either.
 
 And so we see, duality combined with the `chan` expressions gives us a lot of expressivity.
 Constructing lists generator-style is just one of the use-cases. Whenever it feels more
