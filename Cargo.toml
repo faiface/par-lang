@@ -29,10 +29,3 @@ arcstr = "1.2.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
 tokio-util = "0.7.15"
-# dialoguer = "0.11.0" # for dialogues
-# indicatif = "0.17.11" # for progress bars
-
-# The profile that 'dist' will build with
-[profile.dist]
-inherits = "release"
-lto = "thin"
