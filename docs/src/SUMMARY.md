@@ -26,3 +26,4 @@
     - [Looping & Branching](./processes/commands/looping_and_branching.md)
     - [Receiving, Where It Shines](./processes/commands/receiving_where_it_shines.md)
   - [Channels & Linking](./processes/chan_expression.md)
+  - [Construction by Destruction](./processes/duality.md)
