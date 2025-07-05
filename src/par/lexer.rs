@@ -1,10 +1,10 @@
 use crate::location::{Point, Span};
 use core::str::FromStr;
 use winnow::{
-    combinator::{alt, not, peek, preceded, repeat},
+    combinator::{alt, not, opt, peek, preceded, repeat},
     error::{EmptyError, ParserError},
     stream::{ParseSlice, TokenSlice},
-    token::{any, literal, take_while},
+    token::{any, literal, take, take_while},
     Parser, Result,
 };
 
@@ -19,6 +19,7 @@ pub enum TokenKind {
     Lt,
     Gt,
 
+    Slash,
     Colon,
     Comma,
     Dot,
@@ -26,15 +27,27 @@ pub enum TokenKind {
     Arrow,
     Bang,
     Quest,
+    Star,
     Link,
+
+    Integer,
+    String,
+    Char,
+
+    InvalidString,
+    InvalidChar,
 
     LowercaseIdentifier,
     UppercaseIdentifier,
     Begin,
+    Box,
+    Case,
     Chan,
+    Choice,
     Dec,
     Def,
     Do,
+    Dual,
     Either,
     In,
     Iterative,
@@ -79,6 +92,7 @@ impl TokenKind {
             TokenKind::Lt => "<",
             TokenKind::Gt => ">",
 
+            TokenKind::Slash => "/",
             TokenKind::Colon => ":",
             TokenKind::Comma => ",",
             TokenKind::Dot => ".",
@@ -86,15 +100,27 @@ impl TokenKind {
             TokenKind::Arrow => "=>",
             TokenKind::Bang => "!",
             TokenKind::Quest => "?",
+            TokenKind::Star => "*",
             TokenKind::Link => "<>",
+
+            TokenKind::Integer => "integer",
+            TokenKind::String => "string",
+            TokenKind::Char => "char",
+
+            TokenKind::InvalidString => "invalid string",
+            TokenKind::InvalidChar => "invalid char",
 
             TokenKind::LowercaseIdentifier => "lower-case identifier",
             TokenKind::UppercaseIdentifier => "upper-case identifier",
             TokenKind::Begin => "begin",
+            TokenKind::Box => "box",
+            TokenKind::Case => "case",
             TokenKind::Chan => "chan",
+            TokenKind::Choice => "choice",
             TokenKind::Dec => "dec",
             TokenKind::Def => "def",
             TokenKind::Do => "do",
+            TokenKind::Dual => "dual",
             TokenKind::Either => "either",
             TokenKind::In => "in",
             TokenKind::Iterative => "iterative",
@@ -157,6 +183,56 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
             let Some((raw, kind)) = (match c {
+                '0'..='9' | '-' | '+' => {
+                    let raw = (
+                        take(1 as usize),
+                        take_while(0.., |c| matches!(c, '0'..='9' | '_')),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    Some((raw, TokenKind::Integer))
+                }
+                '"' => {
+                    any.parse_next(input)?;
+                    let raw = (
+                        repeat(0.., alt((preceded('\\', any), any.verify(|c| *c != '"'))))
+                            .map(|()| ()),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    let is_closed = opt('"').parse_next(input)?.is_some();
+                    let is_valid = unescaper::unescape(raw).is_ok();
+                    Some((
+                        raw,
+                        if is_closed && is_valid {
+                            TokenKind::String
+                        } else {
+                            TokenKind::InvalidString
+                        },
+                    ))
+                }
+                '\'' => {
+                    any.parse_next(input)?;
+                    let raw = (
+                        repeat(0.., alt((preceded('\\', any), any.verify(|c| *c != '\''))))
+                            .map(|()| ()),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    let is_closed = opt('\'').parse_next(input)?.is_some();
+                    let is_valid = unescaper::unescape(raw)
+                        .ok()
+                        .filter(|unescaped| unescaped.chars().count() == 1)
+                        .is_some();
+                    Some((
+                        raw,
+                        if is_closed && is_valid {
+                            TokenKind::Char
+                        } else {
+                            TokenKind::InvalidChar
+                        },
+                    ))
+                }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let raw = take_while(
                         0..,
@@ -166,10 +242,14 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     .parse_next(input)?;
                     let kind = match raw {
                         "begin" => TokenKind::Begin,
+                        "box" => TokenKind::Box,
+                        "case" => TokenKind::Case,
                         "chan" => TokenKind::Chan,
+                        "choice" => TokenKind::Choice,
                         "dec" => TokenKind::Dec,
                         "def" => TokenKind::Def,
                         "do" => TokenKind::Do,
+                        "dual" => TokenKind::Dual,
                         "either" => TokenKind::Either,
                         "in" => TokenKind::In,
                         "iterative" => TokenKind::Iterative,
@@ -255,7 +335,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                         idx += raw.len();
                         None
                     } else {
-                        Some((raw, TokenKind::Unknown))
+                        Some((raw, TokenKind::Slash))
                     }
                 }
                 ',' => {
@@ -281,6 +361,10 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
                     Some((raw, TokenKind::Quest))
                 }
+                '*' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Star))
+                }
                 _ => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
                     Some((raw, TokenKind::Unknown))
@@ -302,7 +386,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
             tokens.push(Token {
                 kind,
                 raw,
-                span: Span { start, end },
+                span: Span::At { start, end },
             });
         }
         Ok(tokens)
@@ -394,7 +478,7 @@ mod test {
                 Token {
                     kind: TokenKind::LowercaseIdentifier,
                     raw: "abc",
-                    span: Span {
+                    span: Span::At {
                         start: Point {
                             offset: 0,
                             row: 0,
@@ -410,7 +494,7 @@ mod test {
                 Token {
                     kind: TokenKind::LowercaseIdentifier,
                     raw: "not_a_comment",
-                    span: Span {
+                    span: Span::At {
                         start: Point {
                             offset: 27,
                             row: 4,
@@ -426,7 +510,7 @@ mod test {
                 Token {
                     kind: TokenKind::Unknown,
                     raw: "/",
-                    span: Span {
+                    span: Span::At {
                         start: Point {
                             offset: 48,
                             row: 4,

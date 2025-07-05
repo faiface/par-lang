@@ -15,15 +15,7 @@
 //! back into Par expressions.
 
 pub mod compiler;
-mod equivalence;
 pub mod net;
-pub mod parse;
 pub use compiler::{compile_file, IcCompiled};
-//pub use equivalence::are_equivalent;
-pub use net::{Net, Tree, VarId};
-
-use crate::par::language::Internal;
+pub use net::{Net, Tree};
 pub mod readback;
-
-/// Names used internally by the interaction combinator compiler.
-pub type Name = Internal<crate::par::language::Name>;

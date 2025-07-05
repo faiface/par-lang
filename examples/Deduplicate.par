@@ -1,0 +1,47 @@
+type Eq<a> = box [a, a] Bool
+
+type SetModule<a> = (type set) box choice {
+  .empty => box set,
+  .insert(a, box set) => box set,
+  .contains(a, box set) => Bool,
+}
+
+dec ListSet : [type a] [Eq<box a>] SetModule<box a>
+def ListSet = [type a] [eq] (type List<box a>) box case {
+  .empty => .end!,
+
+  .insert(x, set) => .item(x) set,
+
+  .contains(y, set) => set.begin.case {
+    .end! => .false!,
+    .item(x) xs => eq(x, y).case {
+      .true! => .true!,
+      .false! => xs.loop,
+    },
+  },
+}
+
+dec Deduplicate : [type a] [SetModule<a>, List<box a>] List<box a>
+def Deduplicate = [type a] [(type set) mSet, list]
+  let visited = mSet.empty
+  in list.begin.case {
+    .end! => .end!,
+    .item(x) xs => mSet.contains(x, visited).case {
+      .true! => xs.loop,
+      .false! =>
+        let visited = mSet.insert(x, visited)
+        in .item(x) xs.loop,
+    }
+  }
+
+dec Map : [type a, b] [box [a] b, List<a>] List<b>
+def Map = [type a, b] [f, list] list.begin.case {
+  .end! => .end!,
+  .item(x) xs => .item(f(x)) xs.loop,
+}
+
+def IntListSet = ListSet(type Int)(box Int.Equals)
+
+def TestDedup =
+  Deduplicate(type Int)(IntListSet)
+    (Map(type Int, Int)(box [n] Int.Mod(n, 7), Int.Range(1, 1000)))

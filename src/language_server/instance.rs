@@ -5,6 +5,7 @@ use crate::par::program::NameWithType;
 use crate::playground::{Checked, Compiled};
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
+use std::fmt::Write;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
@@ -37,61 +38,14 @@ impl Instance {
 
         let payload = match &self.compiled {
             Some(Ok(compiled)) => {
-                /*let mut message: Option<String> = Some(format!("{}:{}", pos.line, pos.character));
-
-                let mut inside_item = false;
-
-                for (name, (span, _, _)) in compiled.program.type_defs.globals.as_ref() {
-                    if !is_inside(pos, span) {
-                        continue;
-                    }
-                    inside_item = true;
-                    message = Some(format!("Type: {}", name.to_string()));
-                    break;
-                }
-
-                if !inside_item {
-                    for (name, declaration) in &compiled.program.declarations {
-                        if !is_inside(pos, &declaration.span) {
-                            continue;
-                        }
-                        inside_item = true;
-                        let mut msg = format!("Declaration: {}: ", name.to_string());
-                        let indent = msg.len();
-                        declaration.typ.pretty(&mut msg, indent + 1).unwrap();
-                        message = Some(msg);
-                        break;
-                    }
-                }
-
-                if !inside_item {
-                    for (name, definition) in &compiled.program.definitions {
-                        if !is_inside(pos, &definition.span) {
-                            continue;
-                        }
-                        //inside_item = true;
-                        let mut msg = format!("Definition: {}: ", name.to_string());
-                        let indent = msg.len();
-                        definition
-                            .expression
-                            .get_type()
-                            .pretty(&mut msg, indent + 1)
-                            .unwrap();
-                        message = Some(msg);
-                        break;
-                    }
-                }
-
-                if let Some(message) = message {
-                    message
-                } else {
-                    return None;
-                }*/
                 if let Some(NameWithType(name, typ)) = compiled
                     .type_on_hover
                     .query(pos.line as usize, pos.character as usize)
                 {
-                    let mut buf = format!("{}: ", name);
+                    let mut buf = String::new();
+                    if let Some(name) = name {
+                        write!(&mut buf, "{}: ", name).unwrap();
+                    }
                     typ.pretty(&mut buf, 0).unwrap();
                     lsp::MarkedString::LanguageString(lsp::LanguageString {
                         language: "par".to_owned(),
@@ -144,65 +98,95 @@ impl Instance {
          */
 
         for (name, (span, _, _)) in compiled.program.type_defs.globals.as_ref() {
-            symbols.insert(
-                name,
-                lsp::DocumentSymbol {
-                    name: name.to_string(),
-                    detail: None,
-                    kind: lsp::SymbolKind::TYPE_PARAMETER, // fits best?
-                    tags: None,
-                    deprecated: None, // must be specified
-                    range: span.into(),
-                    selection_range: name.span().into(),
-                    children: None,
-                },
-            );
+            if let (Some((name_start, name_end)), Some((start, end))) =
+                (name.span.points(), span.points())
+            {
+                symbols.insert(
+                    name,
+                    lsp::DocumentSymbol {
+                        name: name.to_string(),
+                        detail: None,
+                        kind: lsp::SymbolKind::INTERFACE,
+                        tags: None,
+                        deprecated: None, // must be specified
+                        range: lsp::Range {
+                            start: start.into(),
+                            end: end.into(),
+                        },
+                        selection_range: lsp::Range {
+                            start: name_start.into(),
+                            end: name_end.into(),
+                        },
+                        children: None,
+                    },
+                );
+            }
         }
 
         for (name, declaration) in &compiled.program.declarations {
             let mut detail = String::new();
             declaration.typ.pretty_compact(&mut detail).unwrap();
 
-            symbols.insert(
-                name,
-                lsp::DocumentSymbol {
-                    name: name.to_string(),
-                    detail: Some(detail),
-                    kind: lsp::SymbolKind::FUNCTION,
-                    tags: None,
-                    deprecated: None, // must be specified
-                    range: declaration.span.into(),
-                    selection_range: name.span().into(),
-                    children: None,
-                },
-            );
-        }
-
-        for (name, definition) in &compiled.program.definitions {
-            let range = definition.span.into();
-            let selection_range = name.span().into();
-            symbols
-                .entry(name)
-                .and_modify(|symbol| {
-                    symbol.range = range;
-                    symbol.selection_range = selection_range;
-                })
-                .or_insert({
-                    let typ = definition.expression.get_type();
-                    let mut detail = String::new();
-                    typ.pretty_compact(&mut detail).unwrap();
-
+            if let (Some((name_start, name_end)), Some((start, end))) =
+                (name.span.points(), declaration.span.points())
+            {
+                symbols.insert(
+                    name,
                     lsp::DocumentSymbol {
                         name: name.to_string(),
                         detail: Some(detail),
                         kind: lsp::SymbolKind::FUNCTION,
                         tags: None,
                         deprecated: None, // must be specified
-                        range,
-                        selection_range,
+                        range: lsp::Range {
+                            start: start.into(),
+                            end: end.into(),
+                        },
+                        selection_range: lsp::Range {
+                            start: name_start.into(),
+                            end: name_end.into(),
+                        },
                         children: None,
-                    }
-                });
+                    },
+                );
+            }
+        }
+
+        for (name, definition) in &compiled.program.definitions {
+            if let (Some((name_start, name_end)), Some((start, end))) =
+                (name.span.points(), definition.span.points())
+            {
+                let range = lsp::Range {
+                    start: start.into(),
+                    end: end.into(),
+                };
+                let selection_range = lsp::Range {
+                    start: name_start.into(),
+                    end: name_end.into(),
+                };
+                symbols
+                    .entry(name)
+                    .and_modify(|symbol| {
+                        symbol.range = range;
+                        symbol.selection_range = selection_range;
+                    })
+                    .or_insert({
+                        let typ = definition.expression.get_type();
+                        let mut detail = String::new();
+                        typ.pretty_compact(&mut detail).unwrap();
+
+                        lsp::DocumentSymbol {
+                            name: name.to_string(),
+                            detail: Some(detail),
+                            kind: lsp::SymbolKind::FUNCTION,
+                            tags: None,
+                            deprecated: None, // must be specified
+                            range,
+                            selection_range,
+                            children: None,
+                        }
+                    });
+            }
         }
 
         // todo: fix the bug that causes this
@@ -265,10 +249,16 @@ impl Instance {
 
         let declaration = original?;
 
-        Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: self.uri.clone(),
-            range: declaration.name.span().into(),
-        }))
+        match declaration.name.span {
+            Span::None => None,
+            Span::At { start, end } => Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
+                uri: self.uri.clone(),
+                range: lsp::Range {
+                    start: start.into(),
+                    end: end.into(),
+                },
+            })),
+        }
     }
 
     pub fn handle_goto_definition(
@@ -312,10 +302,16 @@ impl Instance {
 
         let definition = original?;
 
-        Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: self.uri.clone(),
-            range: definition.0.span().into(),
-        }))
+        match definition.0.span {
+            Span::None => None,
+            Span::At { start, end } => Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
+                uri: self.uri.clone(),
+                range: lsp::Range {
+                    start: start.into(),
+                    end: end.into(),
+                },
+            })),
+        }
     }
 
     // todo: caching
@@ -331,38 +327,41 @@ impl Instance {
         let mut semantic_tokens = Vec::new();
 
         for (name, _) in compiled.program.type_defs.globals.as_ref() {
-            let name_span = name.span();
-            semantic_tokens.push(lsp::SemanticToken {
-                delta_line: name_span.start.row as u32,
-                delta_start: name_span.start.column as u32,
-                length: name_span.len() as u32,
-                token_type: semantic_token_types::TYPE,
-                token_modifiers_bitset: 0u32,
-            });
+            if let Some(start) = name.span.start() {
+                semantic_tokens.push(lsp::SemanticToken {
+                    delta_line: start.row as u32,
+                    delta_start: start.column as u32,
+                    length: name.span.len() as u32,
+                    token_type: semantic_token_types::TYPE,
+                    token_modifiers_bitset: 0u32,
+                });
+            }
         }
 
         for (name, _) in &compiled.program.declarations {
-            let name_span = name.span();
-            semantic_tokens.push(lsp::SemanticToken {
-                delta_line: name_span.start.row as u32,
-                delta_start: name_span.start.column as u32,
-                length: name_span.len() as u32,
-                token_type: semantic_token_types::FUNCTION,
-                token_modifiers_bitset: semantic_token_modifiers::DECLARATION
-                    | semantic_token_modifiers::READONLY,
-            });
+            if let Some(start) = name.span.start() {
+                semantic_tokens.push(lsp::SemanticToken {
+                    delta_line: start.row as u32,
+                    delta_start: start.column as u32,
+                    length: name.span.len() as u32,
+                    token_type: semantic_token_types::FUNCTION,
+                    token_modifiers_bitset: semantic_token_modifiers::DECLARATION
+                        | semantic_token_modifiers::READONLY,
+                });
+            }
         }
 
         for (name, _) in &compiled.program.definitions {
-            let name_span = name.span();
-            semantic_tokens.push(lsp::SemanticToken {
-                delta_line: name_span.start.row as u32,
-                delta_start: name_span.start.column as u32,
-                length: name_span.len() as u32,
-                token_type: semantic_token_types::FUNCTION,
-                token_modifiers_bitset: semantic_token_modifiers::DEFINITION
-                    | semantic_token_modifiers::READONLY,
-            });
+            if let Some(start) = name.span.start() {
+                semantic_tokens.push(lsp::SemanticToken {
+                    delta_line: start.row as u32,
+                    delta_start: start.column as u32,
+                    length: name.span.len() as u32,
+                    token_type: semantic_token_types::FUNCTION,
+                    token_modifiers_bitset: semantic_token_modifiers::DEFINITION
+                        | semantic_token_modifiers::READONLY,
+                });
+            }
         }
 
         semantic_tokens.sort_by(|a, b| a.delta_line.cmp(&b.delta_line));
@@ -393,14 +392,17 @@ impl Instance {
             return None;
         };
 
-        // todo: display run button over declaration if it is exactly one line above definition
         Some(
             compiled
                 .program
                 .definitions
                 .iter()
-                .map(|(name, _)| lsp::CodeLens {
-                    range: name.span().into(),
+                .filter_map(|(name, def)| name.span().points().map(|pts| (pts, name, def)))
+                .map(|((start, end), name, _)| lsp::CodeLens {
+                    range: lsp::Range {
+                        start: start.into(),
+                        end: end.into(),
+                    },
                     command: Some(lsp::Command {
                         title: "$(play) Run".to_owned(),
                         command: "run".to_owned(),
@@ -427,7 +429,8 @@ impl Instance {
                 .definitions
                 .iter()
                 .filter(|(name, _)| !compiled.program.declarations.contains_key(*name))
-                .map(|(name, definition)| {
+                .filter_map(|(name, def)| name.span().points().map(|pts| (pts, name, def)))
+                .map(|((_, end), _, definition)| {
                     let mut label = ": ".to_owned();
                     definition
                         .expression
@@ -436,7 +439,7 @@ impl Instance {
                         .unwrap();
 
                     lsp::InlayHint {
-                        position: name.span().end.into(),
+                        position: end.into(),
                         label: lsp::InlayHintLabel::String(label),
                         kind: Some(lsp::InlayHintKind::TYPE),
                         text_edits: None,
@@ -510,11 +513,12 @@ impl Instance {
 }
 
 fn is_inside(pos: lsp::Position, span: &Span) -> bool {
+    let Some((start, end)) = span.points() else {
+        return false;
+    };
+
     let pos_row = pos.line as usize;
     let pos_column = pos.character as usize;
-
-    let start = span.start;
-    let end = span.end;
 
     !(pos_row < start.row || pos_row > end.row)
         && !(pos_row == start.row && pos_column < start.column)

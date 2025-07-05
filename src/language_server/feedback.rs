@@ -124,14 +124,26 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
 }
 
 fn span_to_lsp_range(span: &Span) -> lsp::Range {
-    lsp::Range {
-        start: lsp::Position {
-            line: span.start.row as u32,
-            character: span.start.column as u32,
+    match span {
+        Span::None => lsp::Range {
+            start: lsp::Position {
+                line: 0,
+                character: 0,
+            },
+            end: lsp::Position {
+                line: 0,
+                character: 0,
+            },
         },
-        end: lsp::Position {
-            line: span.end.row as u32,
-            character: span.end.column as u32,
+        Span::At { start, end } => lsp::Range {
+            start: lsp::Position {
+                line: start.row as u32,
+                character: start.column as u32,
+            },
+            end: lsp::Position {
+                line: end.row as u32,
+                character: end.column as u32,
+            },
         },
     }
 }

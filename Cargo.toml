@@ -6,14 +6,11 @@ repository = "https://github.com/faiface/par-lang"
 
 [dependencies]
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-pest = "2.7.14"
-pest_derive = "2.7.14"
 eframe = { version = "0.31", features = ["default", "__screenshot"] }
 egui_code_editor = "0.2.12"
 indexmap = "2.7.0"
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs"] }
 stacker = "0.1.19"
-async-watch = "0.3.1"
 rfd = "0.15.2"
 winnow = { version = "0.7.4", features = [
     #"unstable-doc", # build docs locally
@@ -26,14 +23,9 @@ lsp-server = "0.7.8"
 lsp-types = "0.97.0"
 serde_json = "1.0.140"
 serde = { version = "1.0.218", features = ["derive"] }
-
-# CLI
 clap = { version = "4.5.34", features = ["cargo"] }
 colored = "3.0.0"
-# dialoguer = "0.11.0" # for dialogues
-# indicatif = "0.17.11" # for progress bars
-
-# The profile that 'dist' will build with
-[profile.dist]
-inherits = "release"
-lto = "thin"
+arcstr = "1.2.0"
+num-bigint = "0.4.6"
+unescaper = "0.1.6"
+tokio-util = "0.7.15"

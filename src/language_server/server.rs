@@ -88,12 +88,13 @@ impl<'c> LanguageServer<'c> {
                     |instance| instance.handle_goto_definition(&params),
                 )
             }
-            SemanticTokensFullRequest::METHOD => {
+            /*SemanticTokensFullRequest::METHOD => {
                 let params = extract_request::<SemanticTokensFullRequest>(request);
                 self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
                     instance.provide_semantic_tokens(&params)
                 })
             }
+            // don't really work yet
             CodeLensRequest::METHOD => {
                 let params = extract_request::<CodeLensRequest>(request);
                 self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
@@ -105,7 +106,7 @@ impl<'c> LanguageServer<'c> {
                 self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
                     instance.provide_inlay_hints(&params)
                 })
-            }
+            }*/
             ExecuteCommand::METHOD => {
                 let params = extract_request::<ExecuteCommand>(request);
                 match params.command.as_str() {

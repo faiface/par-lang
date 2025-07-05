@@ -1,588 +1,656 @@
-use crate::icombs::compiler::multiplex_trees;
-use crate::par::types::{Type, TypeDefs};
-use futures::{
-    channel::oneshot::{channel, Receiver, Sender},
-    future::{join, select, BoxFuture, Either},
-    FutureExt, SinkExt, StreamExt,
-};
+use arcstr::{ArcStr, Substr};
+use futures::channel::{mpsc, oneshot};
+use num_bigint::BigInt;
+use std::sync::atomic::AtomicUsize;
 use std::{
-    any::Any,
-    fmt::Debug,
     future::Future,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+    sync::{Arc, Mutex},
+};
+
+use crate::{
+    location::Span,
+    par::{
+        language::LocalName,
+        primitive::Primitive,
+        types::{PrimitiveType, Type, TypeDefs},
     },
 };
 
-use super::{compiler::TypedTree, Name, Net, Tree};
-pub struct CoroState {
-    pub(crate) net: Arc<Mutex<Net>>,
-    new_redex: Mutex<Vec<futures::channel::mpsc::Sender<()>>>,
-    new_var: AtomicUsize,
-    type_defs: TypeDefs<Name>,
-}
+use super::{compiler::TypedTree, Net, Tree};
 
-impl Debug for CoroState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CoroState")
-            .field("net", &self.net)
-            .field("new_redex", &self.new_redex)
-            .field("new_var", &self.new_var)
-            .finish_non_exhaustive()
+pub(crate) mod private {
+    use crate::icombs::net::ReducerMessage;
+    use crate::icombs::Net;
+    use futures::channel::mpsc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::{Arc, LockResult, Mutex};
+
+    pub struct NetWrapper {
+        net: Arc<Mutex<Net>>,
+        notify: mpsc::UnboundedSender<crate::icombs::net::ReducerMessage>,
+        handle_count: Arc<AtomicUsize>,
     }
-}
 
-struct WaitingOutsideExt(Tree, async_watch::Receiver<bool>);
-struct WaitingInsideExt(Tree, async_watch::Sender<bool>);
-struct ReadbackExt(Sender<PortContents>);
-
-#[derive(Clone, Debug)]
-pub struct SharedState {
-    pub(crate) shared: Arc<CoroState>,
-}
-
-#[derive(Debug)]
-pub enum PortContents {
-    Aux(Sender<PortContents>),
-    AuxLazy(Sender<PortContents>),
-    AuxLazyPicked(usize),
-
-    // Waiting :)
-    Waiting(Tree, async_watch::Receiver<bool>),
-    // A tree, which should be readback further, if necessary
-    Tree(Tree),
-}
-
-fn do_copy(
-    net: &mut Net,
-    root: Tree,
-    a: Tree,
-    b: Tree,
-    cons: fn(Tree, Tree) -> Tree,
-    build: impl Fn(Tree) -> Tree,
-) {
-    let (v0, v1) = net.create_wire();
-    let (w0, w1) = net.create_wire();
-    net.link(root, cons(v0, w0));
-    net.link(a, build(v1));
-    net.link(b, build(w1));
-}
-
-impl SharedState {
-    pub fn with_net(net: Arc<Mutex<Net>>, type_defs: TypeDefs<Name>) -> Self {
-        Self {
-            shared: Arc::new(CoroState {
+    impl NetWrapper {
+        pub(crate) fn new(
+            net: Arc<Mutex<Net>>,
+            mut notify: mpsc::UnboundedSender<ReducerMessage>,
+            handle_count: Arc<AtomicUsize>,
+        ) -> Self {
+            handle_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Self {
                 net,
-                new_redex: Default::default(),
-                new_var: Default::default(),
-                type_defs,
-            }),
-        }
-    }
-
-    pub fn make_oneshot_ext_from_tx(tx: Sender<PortContents>) -> Tree {
-        Tree::ext(
-            move |net, tree, ext| {
-                let ext: Box<ReadbackExt> = ext.downcast().unwrap();
-                let tx = ext.0;
-                match tree {
-                    Err(ext) => {
-                        if ext.is::<WaitingOutsideExt>() {
-                            let ext: Box<WaitingOutsideExt> = ext.downcast().unwrap();
-                            tx.send(PortContents::Waiting(ext.0, ext.1)).unwrap();
-                        } else if ext.is::<PortContents>() {
-                            tx.send(*ext.downcast().unwrap()).unwrap();
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    Ok(Tree::Ext(f, ext)) => {
-                        if ext.is::<WaitingOutsideExt>() {
-                            let ext: Box<WaitingOutsideExt> = ext.downcast().unwrap();
-                            tx.send(PortContents::Waiting(ext.0, ext.1)).unwrap();
-                        } else if ext.is::<WaitingInsideExt>() {
-                            f(net, Ok(Self::make_oneshot_ext_from_tx(tx)), ext);
-                        } else if ext.is::<ReadbackExt>() {
-                            f(net, Err(Box::new(PortContents::Aux(tx))), ext);
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    Ok(tree) => {
-                        tx.send(PortContents::Tree(tree)).unwrap();
-                    }
-                }
-            },
-            ReadbackExt(tx),
-        )
-    }
-
-    pub fn make_oneshot_ext(&self) -> (Tree, Receiver<PortContents>) {
-        let (tx, rx) = channel();
-        let tree = Self::make_oneshot_ext_from_tx(tx);
-        (tree, rx)
-    }
-
-    pub async fn expand_once(&self, tree: Tree) -> Tree {
-        struct ExpandOnceExt(Tree);
-
-        fn expand_once_f(
-            net: &mut Net,
-            tree: Result<Tree, Box<dyn Any + Send + Sync>>,
-            ext: Box<dyn Any + Send + Sync>,
-        ) {
-            let ext = ext.downcast::<ExpandOnceExt>().unwrap();
-            match tree {
-                Ok(Tree::Ext(f, data)) => f(net, Err(ext), data),
-                Ok(Tree::Era) => net.link(ext.0, Tree::e()),
-                Ok(Tree::Con(a, b)) => {
-                    do_copy(net, ext.0, *a, *b, Tree::c, |w| {
-                        Tree::ext(expand_once_f, ExpandOnceExt(w))
-                    });
-                }
-                Ok(Tree::Dup(a, b)) => {
-                    do_copy(net, ext.0, *a, *b, Tree::d, |w| {
-                        Tree::ext(expand_once_f, ExpandOnceExt(w))
-                    });
-                }
-                Ok(Tree::Package(id)) => {
-                    let package = net.dereference_package(id);
-                    net.link(package, ext.0);
-                }
-                Ok(tree) => {
-                    net.link(tree, ext.0);
-                }
-                Err(_) => unreachable!(),
+                notify,
+                handle_count,
             }
         }
-        let (v0, v1) = self.shared.net.lock().unwrap().create_wire();
-        self.add_redex(tree, Tree::ext(expand_once_f, ExpandOnceExt(v1)))
-            .await;
-        v0
-    }
+        pub(crate) fn lock(&self) -> LockResult<std::sync::MutexGuard<'_, Net>> {
+            self.net.lock()
+        }
 
-    // this is async because it will only work when ran under an async context.
-    pub async fn add_redex(&self, a: Tree, b: Tree) {
-        self.shared.net.lock().unwrap().link(a, b);
-        let notify_tgts = self.shared.new_redex.lock().unwrap().clone();
-        for mut i in notify_tgts {
-            let _ = i.send(()).await;
+        pub(crate) fn net(&self) -> Arc<Mutex<Net>> {
+            Arc::clone(&self.net)
         }
     }
 
-    pub async fn read_port(&self, tree: Tree) -> PortContents {
-        let (ext, rx) = self.make_oneshot_ext();
-        self.add_redex(ext, tree).await;
-        rx.await.unwrap()
-    }
+    impl Clone for NetWrapper {
+        fn clone(&self) -> Self {
+            self.handle_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    pub async fn read_port_as_tree(&self, tree: Tree) -> Tree {
-        let (ext, rx) = self.make_oneshot_ext();
-        self.add_redex(ext, tree).await;
-        match rx.await.unwrap() {
-            PortContents::Aux(sender) | PortContents::AuxLazy(sender) => {
-                Self::make_oneshot_ext_from_tx(sender)
-            }
-            PortContents::Tree(Tree::Package(id)) => {
-                self.shared.net.lock().unwrap().dereference_package(id)
-            }
-            PortContents::Tree(tree) => tree,
-            _ => unreachable!(),
-        }
-    }
-
-    pub async fn read_port_as_maybe_var(&self, tree: Tree) -> Tree {
-        match self.read_port(tree).await {
-            PortContents::Aux(sender) | PortContents::AuxLazy(sender) => {
-                let (v0, v1) = self.shared.net.lock().unwrap().create_wire();
-                sender.send(PortContents::Tree(v0)).unwrap();
-                v1
-            }
-            PortContents::Tree(tree) => tree,
-            _ => unreachable!(),
-        }
-    }
-
-    pub async fn as_con(&self, tree: Tree) -> (Tree, Tree) {
-        match tree {
-            Tree::Con(a, b) => (*a, *b),
-            other => {
-                // eta expand
-                let ((v0, v1), (w0, w1)) = {
-                    let mut net = self.shared.net.lock().unwrap();
-                    (net.create_wire(), net.create_wire())
-                };
-                self.add_redex(other, Tree::c(v0, w0)).await;
-                (v1, w1)
+            Self {
+                net: Arc::clone(&self.net),
+                notify: self.notify.clone(),
+                handle_count: Arc::clone(&self.handle_count),
             }
         }
     }
 
-    pub async fn as_era(&self, tree: Tree) {
-        match tree {
-            Tree::Era => (),
-            other => {
-                // eta expand
-                self.add_redex(other, Tree::e()).await;
-            }
-        }
-    }
-
-    /// Eagerly read back a CON node.
-    /// If we don't get a CON node, eta-expand and return the readback of that.
-    pub async fn read_con(&self, tree: Tree) -> (Tree, Tree) {
-        let tree = self.read_port_as_tree(tree).await;
-        self.as_con(tree).await
-    }
-
-    pub async fn read_era(&self, tree: Tree) {
-        let tree = self.read_port_as_tree(tree).await;
-        self.as_era(tree).await
-    }
-
-    pub async fn as_par(&self, tree: Tree) -> (Tree, Tree) {
-        self.as_con(tree).await
-    }
-
-    pub async fn as_times(&self, tree: Tree) -> (Tree, Tree) {
-        self.as_con(tree).await
-    }
-
-    pub fn flatten_multiplexed(&self, tree: Tree, len: usize) -> BoxFuture<Vec<Tree>> {
-        use futures::future::FutureExt;
-        async move {
-            if len == 0 {
-                self.read_era(tree).await;
-                vec![]
-            } else if len == 1 {
-                vec![tree]
-            } else {
-                let fst_len = len / 2;
-                let snd_len = len - fst_len;
-                let (fst, snd) = self.read_con(tree).await;
-                [
-                    self.flatten_multiplexed(fst, fst_len).await,
-                    self.flatten_multiplexed(snd, snd_len).await,
-                ]
-                .concat()
-            }
-        }
-        .boxed()
-    }
-
-    fn choice_instance(ctx_out: Tree, cases: Vec<(Tree, Tree)>) -> Tree {
-        Tree::c(
-            ctx_out,
-            multiplex_trees(cases.into_iter().map(|(a, b)| Tree::c(a, b)).collect()),
-        )
-    }
-
-    fn tree_to_num(tree: Tree) -> usize {
-        match tree {
-            Tree::Era => 1,
-            Tree::Con(a, b) => {
-                let a = Self::tree_to_num(*a);
-                let b = Self::tree_to_num(*b);
-                a + b
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub async fn as_either(&self, tree: Tree, variants: Vec<Name>) -> (Name, Tree) {
-        // TODO: This as_either function is weaker than it should be
-
-        let mut branches = vec![];
-        let (ctx0, ctx1) = {
-            let mut net = self.shared.net.lock().unwrap();
-            let (ctx0, ctx1) = net.create_wire();
-            for i in 0..variants.len() {
-                let (v0, v1) = net.create_wire();
-                let mut erasers = vec![];
-                for _ in 0..(i + 1) {
-                    erasers.push(Tree::e());
-                }
-                branches.push((Tree::c(v0, multiplex_trees(erasers)), v1));
-            }
-            (ctx0, ctx1)
-        };
-
-        let t = Self::choice_instance(ctx0, branches);
-        self.add_redex(tree, t).await;
-        let tree = self.read_port_as_tree(ctx1).await;
-        if let Tree::Con(payload, era_variant) = tree {
-            let variant = Self::tree_to_num(*era_variant) - 1;
-            assert!(variant < variants.len());
-            let name = variants[variant].clone();
-            (name, *payload)
-        } else {
-            unreachable!()
-        }
-    }
-
-    pub async fn as_choice<Name>(
-        &self,
-        tree: Tree,
-        variants: Vec<Name>,
-    ) -> (Tree, Vec<(Name, Tree, Tree)>) {
-        let (context, cases) = self.as_con(tree).await;
-        let cases = self.flatten_multiplexed(cases, variants.len()).await;
-        let mut res = vec![];
-        for (case, name) in cases.into_iter().zip(variants) {
-            let (ctx, payload) = self.read_con(case).await;
-            res.push((name, ctx, payload));
-        }
-        (context, res)
-    }
-
-    pub async fn read_with_type(&self, tree: TypedTree) -> ReadbackResult {
-        let ty = tree.ty;
-        let port = self.read_port(tree.tree).await;
-        self.as_with_type(port, ty).await
-    }
-
-    pub fn type_defs(&self) -> &TypeDefs<Name> {
-        &self.shared.type_defs
-    }
-
-    pub fn as_with_type(&self, port: PortContents, ty: Type<Name>) -> BoxFuture<ReadbackResult> {
-        async move {
-            let tree = match port {
-                PortContents::Aux(tx) => {
-                    let (tx_, rx) = channel();
-                    tx.send(PortContents::AuxLazy(tx_)).unwrap();
-                    return self.as_with_type(rx.await.unwrap(), ty).await;
-                }
-                PortContents::AuxLazy(tx) => {
-                    let var_id = self.shared.new_var.fetch_add(1, Ordering::AcqRel);
-                    tx.send(PortContents::AuxLazyPicked(var_id)).unwrap();
-                    return ReadbackResult::Variable(var_id);
-                }
-                PortContents::AuxLazyPicked(n) => {
-                    return ReadbackResult::Variable(n);
-                }
-                PortContents::Tree(Tree::Package(id)) => {
-                    return ReadbackResult::Expand(Tree::Package(id).with_type(ty));
-                }
-                PortContents::Tree(tree) => tree,
-                PortContents::Waiting(tree, rx) => {
-                    return ReadbackResult::Waiting(tree.with_type(ty), rx)
-                }
-            };
-            match ty {
-                Type::Send(_, from, to) => {
-                    let (a, b) = self.as_par(tree).await;
-                    ReadbackResult::Send(
-                        b.with_type(*from).into_readback_result_boxed(),
-                        a.with_type(*to).into_readback_result_boxed(),
-                    )
-                }
-                Type::Receive(_, from, to) => {
-                    let (a, b) = self.as_par(tree).await;
-                    ReadbackResult::Receive(
-                        b.with_type((*from).dual(self.type_defs()).unwrap())
-                            .into_readback_result_boxed(),
-                        a.with_type(*to).into_readback_result_boxed(),
-                    )
-                }
-                Type::Either(_, mut variants) => {
-                    variants.sort_keys();
-                    let (name, payload) = self
-                        .as_either(tree, variants.keys().cloned().collect())
-                        .await;
-                    ReadbackResult::Either(
-                        name.clone(),
-                        payload
-                            .with_type(variants.get(&name).unwrap().clone())
-                            .into_readback_result_boxed(),
-                    )
-                }
-                Type::Choice(_, mut variants) => {
-                    variants.sort_keys();
-                    let (ctx, cases) = self
-                        .as_choice(tree, variants.keys().cloned().collect())
-                        .await;
-                    ReadbackResult::Choice(
-                        ctx,
-                        cases
-                            .into_iter()
-                            .map(|(name, b, c)| {
-                                (
-                                    name.clone(),
-                                    b,
-                                    c.with_type(variants.get(&name).unwrap().clone()),
-                                )
-                            })
-                            .collect(),
-                    )
-                }
-                Type::SendType(_, name, payload) => ReadbackResult::SendType(
-                    name,
-                    tree.with_type(*payload).into_readback_result_boxed(),
-                ),
-                Type::ReceiveType(_, name, payload) => ReadbackResult::ReceiveType(
-                    name,
-                    tree.with_type(*payload).into_readback_result_boxed(),
-                ),
-
-                Type::Break(_) => {
-                    self.read_era(tree).await;
-                    ReadbackResult::Break
-                }
-                Type::Continue(_) => {
-                    self.read_era(tree).await;
-                    ReadbackResult::Continue
-                }
-                ty @ Type::Name(..) => ReadbackResult::Named(tree.with_type(ty)),
-                ty => ReadbackResult::Unsupported(tree.with_type(ty)),
-            }
-        }
-        .boxed()
-    }
-
-    // returns outside and inside
-    pub fn create_waiting_ext(&self) -> (Tree, Tree) {
-        use crate::icombs::net::Net;
-        let (v0, v1) = self.shared.net.lock().as_mut().unwrap().create_wire();
-        let (tx, rx) = async_watch::channel(false);
-        fn inside_f(
-            net: &mut Net,
-            tree: Result<Tree, Box<dyn Any + Send + Sync>>,
-            ext: Box<dyn Any + Send + Sync>,
-        ) {
-            let ext = ext.downcast::<WaitingInsideExt>().unwrap();
-            match tree {
-                Ok(tree) => {
-                    let _ = ext.1.send(true);
-                    net.link(tree, ext.0);
-                }
-                Err(_) => unreachable!(),
-            }
-        }
-        fn outside_f(
-            net: &mut Net,
-            tree: Result<Tree, Box<dyn Any + Send + Sync>>,
-            ext: Box<dyn Any + Send + Sync>,
-        ) {
-            let ext = ext.downcast::<WaitingOutsideExt>().unwrap();
-            match tree {
-                Ok(Tree::Ext(f, data)) => f(net, Err(ext), data),
-                Ok(Tree::Era) => net.link(ext.0, Tree::e()),
-                Ok(Tree::Con(a, b)) => {
-                    do_copy(net, ext.0, *a, *b, Tree::c, |w| {
-                        Tree::ext(outside_f, WaitingOutsideExt(w, ext.1.clone()))
-                    });
-                }
-                Ok(Tree::Dup(a, b)) => {
-                    do_copy(net, ext.0, *a, *b, Tree::d, |w| {
-                        Tree::ext(outside_f, WaitingOutsideExt(w, ext.1.clone()))
-                    });
-                }
-                Ok(tree) => {
-                    net.link(tree, ext.0);
-                }
-                Err(ext2) => {
-                    if ext2.is::<WaitingOutsideExt>() {
-                    } else {
-                        unreachable!()
-                    }
+    impl Drop for NetWrapper {
+        fn drop(&mut self) {
+            if self
+                .handle_count
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
+                == 1
+            {
+                let res = self.notify.unbounded_send(ReducerMessage::Ping);
+                //.expect("Failed to notify reducer");
+                if res.is_err() {
+                    println!("Warning: Failed to notify reducer on drop of NetWrapper");
                 }
             }
         }
-        (
-            Tree::ext(outside_f, WaitingOutsideExt(v0, rx)),
-            Tree::ext(inside_f, WaitingInsideExt(v1, tx)),
-        )
-    }
-
-    pub fn create_net_reducer(
-        &self,
-        mut drop_channel: Receiver<()>,
-    ) -> impl Future<Output = ()> + Send + Sync {
-        let (tx, mut rx) = futures::channel::mpsc::channel(16);
-        self.shared.new_redex.lock().unwrap().push(tx);
-        let shared = self.shared.clone();
-        async move {
-            loop {
-                {
-                    let mut net = shared.net.lock().unwrap();
-                    while net.reduce_one() {}
-                }
-                match select(drop_channel, rx.next()).await {
-                    Either::Left(_) => {
-                        return;
-                    }
-                    Either::Right((a, b)) => {
-                        a.unwrap();
-                        drop_channel = b;
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn choose_choice(
-        &self,
-        chosen: Name,
-        ctx: Tree,
-        options: Vec<(Name, Tree, TypedTree)>,
-        spawner: &(dyn futures::task::Spawn + Send + Sync),
-    ) -> TypedTree {
-        use futures::task::SpawnExt;
-        let mut ctx = Some(ctx);
-        let mut ret_payload = None;
-        for (_, (name, ctx_here, payload)) in options.into_iter().enumerate() {
-            let this = self.clone();
-            if name == chosen {
-                let ctx = ctx.take().unwrap();
-                spawner
-                    .spawn(async move {
-                        this.add_redex(ctx_here, ctx).await;
-                    })
-                    .unwrap();
-                ret_payload = Some(payload);
-            } else {
-                spawner
-                    .spawn(async move {
-                        join(
-                            this.add_redex(ctx_here, Tree::e()),
-                            this.add_redex(payload.tree, Tree::e()),
-                        )
-                        .await;
-                    })
-                    .unwrap();
-            }
-        }
-        ret_payload.unwrap()
     }
 }
 
-#[derive(Debug, Default)]
-pub enum ReadbackResult {
-    #[default]
+use crate::icombs::net::ReducerMessage;
+use private::NetWrapper;
+
+pub struct Handle {
+    net: NetWrapper,
+    tree: Option<Tree>,
+}
+
+pub struct TypedHandle {
+    type_defs: TypeDefs,
+    net: NetWrapper,
+    tree: TypedTree,
+}
+
+pub enum TypedReadback {
+    Nat(BigInt),
+    Int(BigInt),
+    String(Substr),
+    Char(char),
+
+    NatRequest(Box<dyn Send + FnOnce(BigInt)>),
+    IntRequest(Box<dyn Send + FnOnce(BigInt)>),
+    StringRequest(Box<dyn Send + FnOnce(Substr)>),
+    CharRequest(Box<dyn Send + FnOnce(char)>),
+
+    Times(TypedHandle, TypedHandle),
+    Par(TypedHandle, TypedHandle),
+    Either(ArcStr, TypedHandle),
+    Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr) -> TypedHandle>),
+
     Break,
     Continue,
-    Send(Box<ReadbackResult>, Box<ReadbackResult>),
-    Receive(Box<ReadbackResult>, Box<ReadbackResult>),
-    SendType(Name, Box<ReadbackResult>),
-    ReceiveType(Name, Box<ReadbackResult>),
-    Either(Name, Box<ReadbackResult>),
-    Choice(Tree, Vec<(Name, Tree, TypedTree)>),
-    Named(TypedTree),
-    Expand(TypedTree),
-    Suspended(TypedTree),
-    Waiting(TypedTree, async_watch::Receiver<bool>),
-    Variable(usize),
-    Unsupported(TypedTree),
 }
 
-impl TypedTree {
-    fn into_readback_result(self) -> ReadbackResult {
-        ReadbackResult::Suspended(self)
+impl Handle {
+    pub fn new(
+        net: Arc<Mutex<Net>>,
+        notify: mpsc::UnboundedSender<ReducerMessage>,
+        handle_count: Arc<AtomicUsize>,
+        tree: Tree,
+    ) -> Self {
+        Self {
+            net: NetWrapper::new(net, notify, handle_count),
+            tree: Some(tree),
+        }
     }
 
-    fn into_readback_result_boxed(self) -> Box<ReadbackResult> {
-        Box::new(self.into_readback_result())
+    pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
+    where
+        F: 'static + Send + Future<Output = ()>,
+    {
+        self.net
+            .clone()
+            .lock()
+            .expect("lock failed")
+            .spawn(Box::pin(f(self)));
+    }
+
+    pub async fn nat(self) -> BigInt {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree.unwrap());
+            locked.notify_reducer();
+            rx
+        };
+        let value = rx.await.expect("sender dropped");
+        assert!(value >= BigInt::ZERO);
+        value
+    }
+
+    pub fn provide_nat(self, value: BigInt) {
+        assert!(value >= BigInt::ZERO);
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
+        locked.notify_reducer();
+    }
+
+    pub async fn int(self) -> BigInt {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree.unwrap());
+            locked.notify_reducer();
+            rx
+        };
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_int(self, value: BigInt) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
+        locked.notify_reducer();
+    }
+
+    pub async fn string(self) -> Substr {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::StringRequest(tx), self.tree.unwrap());
+            locked.notify_reducer();
+            rx
+        };
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_string(self, value: Substr) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(
+            Tree::Primitive(Primitive::String(value)),
+            self.tree.unwrap(),
+        );
+        locked.notify_reducer();
+    }
+
+    pub async fn char(self) -> char {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::CharRequest(tx), self.tree.unwrap());
+            locked.notify_reducer();
+            rx
+        };
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_char(self, value: char) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.unwrap());
+        locked.notify_reducer();
+    }
+
+    pub fn send(&mut self) -> Self {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(
+            Tree::Con(Box::new(u1), Box::new(t1)),
+            self.tree.take().unwrap(),
+        );
+        locked.notify_reducer();
+        drop(locked);
+
+        self.tree = Some(u0);
+        Self {
+            net: self.net.clone(),
+            tree: Some(t0),
+        }
+    }
+
+    pub fn receive(&mut self) -> Self {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(
+            Tree::Con(Box::new(u1), Box::new(t1)),
+            self.tree.take().unwrap(),
+        );
+        locked.notify_reducer();
+        drop(locked);
+
+        self.tree = Some(u0);
+        Self {
+            net: self.net.clone(),
+            tree: Some(t0),
+        }
+    }
+
+    pub fn signal(&mut self, chosen: ArcStr) {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (a0, a1) = locked.create_wire();
+        locked.link(
+            Tree::Signal(chosen, Box::new(a1)),
+            self.tree.take().unwrap(),
+        );
+        locked.notify_reducer();
+        drop(locked);
+
+        self.tree = Some(a0);
+    }
+
+    pub async fn case(&mut self) -> ArcStr {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::SignalRequest(tx), self.tree.take().unwrap());
+            locked.notify_reducer();
+            rx
+        };
+
+        let (chosen, tree) = rx.await.expect("sender dropped");
+        self.tree = Some(*tree);
+        chosen
+    }
+
+    pub fn break_(self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Era, self.tree.unwrap());
+        locked.notify_reducer();
+    }
+
+    pub fn continue_(self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Era, self.tree.unwrap());
+        locked.notify_reducer();
+    }
+}
+
+impl TypedHandle {
+    pub fn new(
+        type_defs: TypeDefs,
+        net: Arc<Mutex<Net>>,
+        notify: mpsc::UnboundedSender<ReducerMessage>,
+        handle_count: Arc<AtomicUsize>,
+        tree: TypedTree,
+    ) -> Self {
+        Self {
+            type_defs,
+            net: NetWrapper::new(net, notify, handle_count),
+            tree,
+        }
+    }
+
+    pub fn from_wrapper(type_defs: TypeDefs, net: NetWrapper, tree: TypedTree) -> Self {
+        Self {
+            type_defs,
+            net,
+            tree,
+        }
+    }
+
+    pub fn net(&self) -> Arc<Mutex<Net>> {
+        self.net.net()
+    }
+
+    pub async fn readback(mut self) -> TypedReadback {
+        self.prepare_for_readback();
+
+        match &self.tree.ty {
+            Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.nat().await),
+            Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.int().await),
+            Type::Primitive(_, PrimitiveType::String) => TypedReadback::String(self.string().await),
+            Type::Primitive(_, PrimitiveType::Char) => TypedReadback::Char(self.char().await),
+
+            Type::DualPrimitive(_, PrimitiveType::Nat) => {
+                TypedReadback::NatRequest(Box::new(move |value| self.provide_nat(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::Int) => {
+                TypedReadback::IntRequest(Box::new(move |value| self.provide_int(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::String) => {
+                TypedReadback::StringRequest(Box::new(move |value| self.provide_string(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::Char) => {
+                TypedReadback::CharRequest(Box::new(move |value| self.provide_char(value)))
+            }
+
+            Type::Pair(_, _, _) => {
+                let (t_handle, u_handle) = self.receive();
+                TypedReadback::Times(t_handle, u_handle)
+            }
+
+            Type::Function(_, _, _) => {
+                let (t_handle, u_handle) = self.send();
+                TypedReadback::Par(t_handle, u_handle)
+            }
+
+            Type::Either(_, _) => {
+                let (chosen, handle) = self.case().await;
+                TypedReadback::Either(chosen, handle)
+            }
+
+            Type::Choice(_, branches) => TypedReadback::Choice(
+                branches.keys().map(|k| k.string.clone()).collect(),
+                Box::new(move |chosen| self.signal(chosen)),
+            ),
+
+            Type::Break(_) => {
+                self.continue_();
+                TypedReadback::Break
+            }
+
+            Type::Continue(_) => {
+                self.break_();
+                TypedReadback::Continue
+            }
+
+            typ => panic!("Unsupported type for readback: {:?}", typ),
+        }
+    }
+
+    pub async fn nat(mut self) -> BigInt {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::Nat) = self.tree.ty else {
+            panic!("Incorrect type for `nat`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        let value = rx.await.expect("sender dropped");
+        assert!(value >= BigInt::ZERO);
+        value
+    }
+
+    pub fn provide_nat(mut self, value: BigInt) {
+        assert!(value >= BigInt::ZERO);
+
+        self.prepare_for_readback();
+        let Type::DualPrimitive(_, PrimitiveType::Nat | PrimitiveType::Int) = self.tree.ty else {
+            panic!("Incorrect type for `provide_nat`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.tree);
+        locked.notify_reducer();
+    }
+
+    pub async fn int(mut self) -> BigInt {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::Int | PrimitiveType::Nat) = self.tree.ty else {
+            panic!("Incorrect type for `int`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_int(mut self, value: BigInt) {
+        self.prepare_for_readback();
+        let Type::DualPrimitive(_, PrimitiveType::Int) = self.tree.ty else {
+            panic!("Incorrect type for `provide_int`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.tree);
+        locked.notify_reducer();
+    }
+
+    pub async fn string(mut self) -> Substr {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::String) = self.tree.ty else {
+            panic!("Incorrect type for `string`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::StringRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_string(mut self, value: Substr) {
+        self.prepare_for_readback();
+        let Type::DualPrimitive(_, PrimitiveType::String) = self.tree.ty else {
+            panic!("Incorrect type for `provide_string`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::String(value)), self.tree.tree);
+        locked.notify_reducer();
+    }
+
+    pub async fn char(mut self) -> char {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::Char) = self.tree.ty else {
+            panic!("Incorrect type for `char`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::CharRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_char(mut self, value: char) {
+        self.prepare_for_readback();
+        let Type::DualPrimitive(_, PrimitiveType::Char) = self.tree.ty else {
+            panic!("Incorrect type for `provide_char`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.tree);
+        locked.notify_reducer();
+    }
+
+    pub fn send(mut self) -> (Self, Self) {
+        self.prepare_for_readback();
+        let Type::Function(_, t, u) = self.tree.ty else {
+            panic!("Incorrect type for `send`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
+        locked.notify_reducer();
+        drop(locked);
+
+        let t_handle = Self {
+            type_defs: self.type_defs.clone(),
+            net: self.net.clone(),
+            tree: t0.with_type(t.dual(Span::None)),
+        };
+        let u_handle = Self {
+            type_defs: self.type_defs,
+            net: self.net,
+            tree: u0.with_type(*u),
+        };
+
+        (t_handle, u_handle)
+    }
+
+    pub fn receive(mut self) -> (Self, Self) {
+        self.prepare_for_readback();
+        let Type::Pair(_, t, u) = self.tree.ty else {
+            panic!("Incorrect type for `receive`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
+        locked.notify_reducer();
+        drop(locked);
+
+        let t_handle = Self {
+            type_defs: self.type_defs.clone(),
+            net: self.net.clone(),
+            tree: t0.with_type(*t),
+        };
+        let u_handle = Self {
+            type_defs: self.type_defs,
+            net: self.net,
+            tree: u0.with_type(*u),
+        };
+
+        (t_handle, u_handle)
+    }
+
+    pub fn signal(mut self, chosen: ArcStr) -> Self {
+        self.prepare_for_readback();
+        let Type::Choice(_, branches) = self.tree.ty else {
+            panic!("Incorrect type for `signal`: {:?}", self.tree.ty);
+        };
+        let typ = branches
+            .get(&LocalName::from(chosen.clone()))
+            .cloned()
+            .unwrap();
+
+        let mut locked = self.net.lock().expect("lock failed");
+        let (a0, a1) = locked.create_wire();
+        locked.link(Tree::Signal(chosen, Box::new(a1)), self.tree.tree);
+        locked.notify_reducer();
+        drop(locked);
+
+        Self {
+            type_defs: self.type_defs,
+            net: self.net,
+            tree: a0.with_type(typ),
+        }
+    }
+
+    pub async fn case(mut self) -> (ArcStr, Self) {
+        self.prepare_for_readback();
+        let Type::Either(_, branches) = self.tree.ty else {
+            panic!("Incorrect type for `case`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::SignalRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        let (chosen, tree) = rx.await.expect("sender dropped");
+        let typ = branches
+            .get(&LocalName::from(chosen.clone()))
+            .cloned()
+            .unwrap();
+
+        let handle = Self {
+            type_defs: self.type_defs,
+            net: self.net,
+            tree: tree.with_type(typ),
+        };
+
+        (chosen, handle)
+    }
+
+    pub fn break_(mut self) {
+        self.prepare_for_readback();
+        let Type::Continue(_) = self.tree.ty else {
+            panic!("Incorrect type for `break`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Era, self.tree.tree);
+        locked.notify_reducer();
+    }
+
+    pub fn continue_(mut self) {
+        self.prepare_for_readback();
+        let Type::Break(_) = self.tree.ty else {
+            panic!("Incorrect type for `break`: {:?}", self.tree.ty);
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Era, self.tree.tree);
+        locked.notify_reducer();
+    }
+}
+
+impl TypedHandle {
+    fn prepare_for_readback(&mut self) {
+        self.tree.ty = expand_type(
+            std::mem::replace(&mut self.tree.ty, Type::Break(Default::default())),
+            &self.type_defs,
+        );
+    }
+}
+
+pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
+    let mut typ = typ;
+    loop {
+        typ = match typ {
+            Type::Name(span, name, args) => type_defs.get(&span, &name, &args).unwrap(),
+            Type::DualName(span, name, args) => type_defs.get_dual(&span, &name, &args).unwrap(),
+            Type::Box(_, inner) => expand_type(*inner, type_defs),
+            Type::DualBox(_, inner) if inner.is_positive(type_defs).unwrap() => {
+                expand_type(inner.clone().dual(Span::None), type_defs)
+            }
+            Type::Recursive {
+                span: _,
+                asc,
+                label,
+                body,
+            } => Type::expand_recursive(&asc, &label, &body, &type_defs).unwrap(),
+            Type::Iterative {
+                span: _,
+                asc,
+                label,
+                body,
+            } => Type::expand_iterative(&asc, &label, &body, &type_defs).unwrap(),
+            typ => break typ,
+        };
     }
 }

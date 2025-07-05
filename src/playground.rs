@@ -3,27 +3,29 @@ use std::{
     fmt::Write,
     fs::File,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
+    thread,
 };
 
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
-use indexmap::IndexMap;
 
-use crate::par::program::{Declaration, Definition, NameWithType, Program, TypeDef, TypeOnHover};
+use crate::spawn::TokioSpawn;
+use crate::{
+    icombs::readback::TypedHandle,
+    par::{
+        builtin::import_builtins,
+        program::{Definition, Module, NameWithType, ParseAndCompileError, TypeOnHover},
+    },
+    readback::Element,
+};
 use crate::{
     icombs::{compile_file, IcCompiled},
-    par::{
-        language::{CompileError, Internal, Name},
-        parse::{parse_program, SyntaxError},
-        process::Expression,
-        types::TypeError,
-    },
-    readback::ReadbackState,
-    spawn::TokioSpawn,
+    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
-use crate::{location::Span, par::program::CheckedProgram};
+use crate::{location::Span, par::program::CheckedModule};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
+use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
     file_path: Option<PathBuf>,
@@ -33,10 +35,11 @@ pub struct Playground {
     editor_font_size: f32,
     show_compiled: bool,
     show_ic: bool,
-    readback_state: Option<crate::readback::ReadbackState>,
+    element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (usize, usize),
     theme_mode: ThemeMode,
-    last_is_dark: bool,
+    rt: tokio::runtime::Runtime,
+    cancel_token: Option<CancellationToken>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,67 +85,12 @@ pub(crate) struct Compiled {
 
 impl Compiled {
     pub(crate) fn from_string(source: &str) -> Result<Compiled, Error> {
-        parse_program(source)
-            .map_err(Error::Parse)
-            .and_then(|program| {
-                let type_defs = program
-                    .type_defs
-                    .into_iter()
-                    .map(
-                        |TypeDef {
-                             span,
-                             name,
-                             params,
-                             typ,
-                         }| TypeDef {
-                            span,
-                            name: Internal::Original(name),
-                            params: params.into_iter().map(|x| Internal::Original(x)).collect(),
-                            typ: typ.map_names(&mut Internal::Original),
-                        },
-                    )
-                    .collect();
-                let declarations = program
-                    .declarations
-                    .into_iter()
-                    .map(|Declaration { span, name, typ }| Declaration {
-                        span,
-                        name: Internal::Original(name),
-                        typ: typ.map_names(&mut Internal::Original),
-                    })
-                    .collect();
-                let compile_result = program
-                    .definitions
-                    .into_iter()
-                    .map(
-                        |Definition {
-                             span,
-                             name,
-                             expression,
-                         }| {
-                            expression.compile().map(|compiled| Definition {
-                                span,
-                                name: Internal::Original(name.clone()),
-                                expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
-                            })
-                        },
-                    )
-                    .collect::<Result<_, CompileError>>();
-                compile_result
-                    .map_err(|error| Error::Compile(error))
-                    .and_then(|compiled| {
-                        Ok(Compiled::from_program(Program {
-                            type_defs,
-                            declarations,
-                            definitions: compiled,
-                        })?)
-                    })
-            })
+        let mut module = Module::parse_and_compile(source)?;
+        import_builtins(&mut module);
+        Ok(Compiled::from_module(module)?)
     }
 
-    pub(crate) fn from_program(
-        program: Program<Internal<Name>, Arc<Expression<Internal<Name>, ()>>>,
-    ) -> Result<Self, Error> {
+    pub(crate) fn from_module(program: Module<Arc<Expression<()>>>) -> Result<Self, Error> {
         let pretty = program
             .definitions
             .iter()
@@ -175,14 +123,14 @@ impl Compiled {
 
 #[derive(Clone)]
 pub(crate) struct Checked {
-    pub(crate) program: Arc<CheckedProgram<Internal<Name>>>,
-    pub(crate) type_on_hover: Arc<TypeOnHover<Internal<Name>>>,
+    pub(crate) program: Arc<CheckedModule>,
+    pub(crate) type_on_hover: Arc<TypeOnHover>,
     pub(crate) ic_compiled: Option<crate::icombs::IcCompiled>,
 }
 
 impl Checked {
     pub(crate) fn from_program(
-        program: CheckedProgram<Internal<Name>>,
+        program: CheckedModule,
     ) -> Result<Self, crate::icombs::compiler::Error> {
         // attempt to compile to interaction combinators
         Ok(Checked {
@@ -198,7 +146,16 @@ pub(crate) enum Error {
     Parse(SyntaxError),
     Compile(CompileError),
     InetCompile(crate::icombs::compiler::Error),
-    Type(TypeError<Internal<Name>>),
+    Type(TypeError),
+}
+
+impl From<ParseAndCompileError> for Error {
+    fn from(error: ParseAndCompileError) -> Self {
+        match error {
+            ParseAndCompileError::Parse(error) => Self::Parse(error),
+            ParseAndCompileError::Compile(error) => Self::Compile(error),
+        }
+    }
 }
 
 impl Playground {
@@ -235,10 +192,14 @@ impl Playground {
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,
-            readback_state: Default::default(),
+            element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
-            last_is_dark: initial_is_dark,
+            rt: tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create Tokio runtime"),
+            cancel_token: None,
         });
 
         if let Some(path) = file_path {
@@ -263,14 +224,8 @@ impl eframe::App for Playground {
         } else {
             egui::Visuals::light()
         };
-
-        visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-        visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-        visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
-
         ctx.set_visuals(visuals);
-        self.last_is_dark = is_dark;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::SidePanel::left("interaction")
@@ -424,28 +379,50 @@ impl Playground {
     }
 
     fn readback(
-        readback_state: &mut Option<ReadbackState>,
+        tokio: tokio::runtime::Handle,
+        cancel_token: &mut Option<CancellationToken>,
+        element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
-        program: Arc<CheckedProgram<Internal<Name>>>,
+        program: Arc<CheckedModule>,
         compiled: &IcCompiled,
     ) {
-        for (internal_name, _) in &program.definitions {
-            if let Internal::Original(name) = internal_name {
-                if ui.button(format!("{}", name)).clicked() {
-                    let ty = compiled
-                        .get_type_of(&Internal::Original(name.clone()))
-                        .unwrap();
-                    let mut net = compiled.create_net();
-                    let child_net = compiled.get_with_name(&internal_name).unwrap();
-                    let tree = net.inject_net(child_net).with_type(ty.clone());
-                    *readback_state = Some(ReadbackState::initialize(
-                        ui,
-                        net,
-                        tree,
-                        Arc::new(TokioSpawn),
-                        &program,
-                    ));
+        for (name, _) in &program.definitions {
+            if ui.button(format!("{}", name)).clicked() {
+                if let Some(cancel_token) = cancel_token {
+                    cancel_token.cancel();
                 }
+                let token = CancellationToken::new();
+                *cancel_token = Some(token.clone());
+
+                let ty = compiled.get_type_of(name).unwrap();
+                let mut net = compiled.create_net();
+                let child_net = compiled.get_with_name(name).unwrap();
+                let tree = net.inject_net(child_net).with_type(ty.clone());
+                let (net, _future) =
+                    net.start_reducer(Arc::new(TokioSpawn::from_handle(tokio.clone())));
+
+                let ctx = ui.ctx().clone();
+                *element = Some(Element::new(
+                    Arc::new(move || {
+                        ctx.request_repaint();
+                    }),
+                    Arc::new(TokioSpawn::from_handle(tokio.clone())),
+                    TypedHandle::from_wrapper(program.type_defs.clone(), net, tree),
+                ));
+                let tokio_clone = tokio.clone();
+                thread::spawn(move || {
+                    tokio_clone.block_on(async {
+                        tokio::select! {
+                            _ = token.cancelled() => {
+                                println!("Note: Reducer cancelled.");
+                            }
+                            _ = _future => {
+                                println!("Note: Reducer completed.");
+                            }
+                        }
+                    });
+                });
+                break;
             }
         }
     }
@@ -486,7 +463,9 @@ impl Playground {
                                 |ui| {
                                     egui::ScrollArea::vertical().show(ui, |ui| {
                                         Self::readback(
-                                            &mut self.readback_state,
+                                            self.rt.handle().clone(),
+                                            &mut self.cancel_token,
+                                            &mut self.element,
                                             ui,
                                             checked.program.clone(),
                                             ic_compiled,
@@ -549,8 +528,8 @@ impl Playground {
                                 }
 
                                 if !self.show_compiled && !self.show_ic {
-                                    if let Some(rb) = &mut self.readback_state {
-                                        rb.show_readback(ui, checked.program.clone())
+                                    if let Some(element) = &mut self.element {
+                                        element.lock().unwrap().show(ui);
                                     }
                                 }
                             }
@@ -567,10 +546,15 @@ impl Playground {
 
 /// Create a `LabeledSpan` without a label at `span`
 pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
-    vec![LabeledSpan::new_with_span(
-        None,
-        SourceSpan::new(SourceOffset::from(span.start.offset), span.len()),
-    )]
+    span.start()
+        .into_iter()
+        .map(|start| {
+            LabeledSpan::new_with_span(
+                None,
+                SourceSpan::new(SourceOffset::from(start.offset), span.len()),
+            )
+        })
+        .collect()
 }
 
 impl Error {
@@ -602,7 +586,7 @@ impl Error {
             Self::Type(error) => format!("{:?}", error.to_report(code)),
 
             Self::InetCompile(err) => {
-                format!("inet compilation error: {}", err.display(&code))
+                format!("inet compilation error: {:?}", err)
             }
         }
     }
@@ -620,18 +604,21 @@ fn par_syntax() -> Syntax {
             "def",
             "type",
             "chan",
+            "dual",
             "let",
             "do",
             "in",
-            "pass",
+            "case",
             "begin",
             "unfounded",
             "loop",
             "telltypes",
             "either",
+            "choice",
             "recursive",
             "iterative",
             "self",
+            "box",
         ]),
         types: BTreeSet::from([]),
         special: BTreeSet::from(["<>"]),
@@ -650,14 +637,17 @@ fn fix_light_theme(mut theme: ColorTheme) -> ColorTheme {
     theme
 }
 
+#[allow(unused)]
 fn red() -> egui::Color32 {
     egui::Color32::from_hex("#DE3C4B").unwrap()
 }
 
+#[allow(unused)]
 fn green() -> egui::Color32 {
     egui::Color32::from_hex("#7ac74f").unwrap()
 }
 
+#[allow(unused)]
 fn blue() -> egui::Color32 {
     egui::Color32::from_hex("#118ab2").unwrap()
 }

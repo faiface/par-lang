@@ -1,93 +1,40 @@
-use eframe::egui::{self, Color32, RichText, Ui};
-use futures::{
-    channel::oneshot::{channel, Sender},
-    future::{join, BoxFuture},
-    task::{Spawn, SpawnExt},
-    FutureExt,
+use crate::icombs::{
+    readback::{TypedHandle, TypedReadback},
+    Net,
 };
-use indexmap::IndexSet;
-
-use crate::{
-    icombs::{net::number_to_string, Net},
-    par::{program::CheckedProgram, types::TypeDefs},
-};
-
-use crate::{
-    icombs::{
-        compiler::TypedTree,
-        readback::{ReadbackResult, SharedState},
-        Tree,
-    },
-    par::types::Type,
-};
-
+use arcstr::{ArcStr, Substr};
 use core::fmt::Debug;
-use std::{
-    collections::BTreeSet,
-    sync::{Arc, Mutex},
+use eframe::egui::{self, RichText, Ui};
+use futures::{
+    channel::oneshot,
+    task::{Spawn, SpawnExt},
 };
+use num_bigint::BigInt;
+use std::sync::{Arc, Mutex};
 
-use crate::icombs::Name;
-
-#[derive(Clone)]
-pub struct ReadbackStateInner {
-    pub shared: SharedState,
-    pub spawner: Arc<dyn Spawn + Send + Sync>,
-    pub type_variables: IndexSet<Name>,
-}
-
-pub struct Handle {
-    refresh: Arc<dyn Fn() + Send + Sync>,
-    history: Vec<Event>,
-    end: Option<Request>,
-    net: Arc<Mutex<Net>>,
-}
-
-impl Handle {
-    fn child(&self) -> Self {
-        Self {
-            refresh: self.refresh.clone(),
-            history: vec![],
-            end: None,
-            net: self.net.clone(),
-        }
-    }
-    fn add_event(&mut self, ev: Event) {
-        self.history.push(ev);
-        (self.refresh)()
-    }
-    fn set_end(&mut self, end: Option<Request>) {
-        self.end = end;
-        (self.refresh)()
-    }
-}
-
-#[derive(Debug)]
 enum Request {
-    Waiting,
-    Port(TypedTree),
-    Expand(TypedTree),
-    Variable(usize),
-    Choose(Tree, Vec<(Name, Tree, TypedTree)>),
+    Nat(String, Box<dyn Send + FnOnce(BigInt)>),
+    Int(String, Box<dyn Send + FnOnce(BigInt)>),
+    String(String, Box<dyn Send + FnOnce(Substr)>),
+    Char(String, Box<dyn Send + FnOnce(char)>),
+    Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr)>),
 }
 
-#[derive(Debug)]
 pub enum Event {
-    Send(Arc<Mutex<Handle>>),
-    Receive(Arc<Mutex<Handle>>),
-    SendType(Name),
-    ReceiveType(Name),
+    Times(Arc<Mutex<Element>>),
+    Par(Arc<Mutex<Element>>),
+    Either(ArcStr),
+    Choice(ArcStr),
     Break,
     Continue,
-    Either(Name),
-    Choose(Name),
-    Named(TypedTree),
-}
-
-impl Debug for Handle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Handle").finish_non_exhaustive()
-    }
+    Nat(BigInt),
+    NatRequest(BigInt),
+    Int(BigInt),
+    IntRequest(BigInt),
+    String(Substr),
+    StringRequest(Substr),
+    Char(char),
+    CharRequest(char),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,67 +46,57 @@ enum Polarity {
 impl Event {
     fn polarity(&self) -> Polarity {
         match self {
-            Self::Send(_) => Polarity::Positive,
-            Self::Receive(_) => Polarity::Negative,
-            Self::SendType(_) => Polarity::Positive,
-            Self::ReceiveType(_) => Polarity::Negative,
+            Self::Times(_) => Polarity::Positive,
+            Self::Par(_) => Polarity::Negative,
+            Self::Either(_) => Polarity::Positive,
+            Self::Choice(_) => Polarity::Negative,
             Self::Break => Polarity::Positive,
             Self::Continue => Polarity::Negative,
-            Self::Either(_) => Polarity::Positive,
-            Self::Choose(_) => Polarity::Negative,
-            Self::Named(_) => Polarity::Positive,
+            Self::Nat(_) => Polarity::Positive,
+            Self::NatRequest(_) => Polarity::Negative,
+            Self::Int(_) => Polarity::Positive,
+            Self::IntRequest(_) => Polarity::Negative,
+            Self::String(_) => Polarity::Positive,
+            Self::StringRequest(_) => Polarity::Negative,
+            Self::Char(_) => Polarity::Positive,
+            Self::CharRequest(_) => Polarity::Negative,
         }
     }
 }
 
-pub struct ReadbackState {
-    pub root: Arc<Mutex<Handle>>,
-    pub inner: ReadbackStateInner,
-    // it's OK that this is unused, because we only use it to drop it when we're dropped.
-    #[allow(unused)]
-    pub net_tx: Sender<()>,
-    root_impl: ReadbackImplLevel,
+pub struct Element {
+    history: Vec<Event>,
+    request: Option<Request>,
+    net: Arc<Mutex<Net>>,
 }
 
-impl ReadbackState {
-    pub fn initialize(
-        ui: &mut egui::Ui,
-        net: Net,
-        tree: TypedTree,
+impl Element {
+    pub fn new(
+        refresh: Arc<dyn Fn() + Send + Sync>,
         spawner: Arc<dyn Spawn + Send + Sync>,
-        program: &Arc<CheckedProgram<Name>>,
-    ) -> Self {
-        let root_impl = ReadbackImplLevel::from_type(&tree.ty, &program, &mut Default::default());
-        let ctx = ui.ctx().clone();
-        let handle = Handle {
-            refresh: Arc::new(move || {
-                ctx.request_repaint();
-            }),
+        handle: TypedHandle,
+    ) -> Arc<Mutex<Self>> {
+        let element = Arc::new(Mutex::new(Self {
             history: vec![],
-            end: Some(Request::Port(tree)),
-            net: Arc::new(Mutex::new(net)),
-        };
-        let (net_tx, net_rx) = channel();
-        let shared = SharedState::with_net(handle.net.clone(), program.type_defs.clone());
-        // the net_tx channel gets dropped when the readback state is dropped.
-        spawner.spawn(shared.create_net_reducer(net_rx)).unwrap();
-        Self {
-            root: Arc::new(Mutex::new(handle)),
-            net_tx: net_tx,
-            root_impl: root_impl,
-            inner: ReadbackStateInner {
-                shared,
-                spawner: spawner,
-                type_variables: IndexSet::new(),
-            },
-        }
+            request: None,
+            net: handle.net(),
+        }));
+
+        spawner
+            .spawn(handle_coroutine(
+                refresh,
+                Arc::clone(&spawner),
+                handle,
+                Arc::clone(&element),
+            ))
+            .expect("spawn failed");
+        element
     }
 
-    pub fn show_readback(&mut self, ui: &mut egui::Ui, prog: Arc<CheckedProgram<Name>>) {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
-            self.root_impl.show_message(ui);
             ui.horizontal(|ui| {
-                self.inner.show_handle(ui, self.root.clone(), prog);
+                self.show_content(ui);
             });
             ui.separator();
             self.show_stats(ui);
@@ -167,15 +104,7 @@ impl ReadbackState {
     }
 
     pub fn show_stats(&self, ui: &mut egui::Ui) {
-        let rewrites = self
-            .root
-            .lock()
-            .unwrap()
-            .net
-            .lock()
-            .unwrap()
-            .rewrites
-            .clone();
+        let rewrites = self.net.lock().unwrap().rewrites.clone();
         ui.vertical(|ui| {
             let row = |ui: &mut Ui, s: &str, n: u128| {
                 ui.horizontal(|ui| {
@@ -185,25 +114,158 @@ impl ReadbackState {
             };
             row(ui, "Annihilate:", rewrites.annihilate);
             row(ui, "Commute:", rewrites.commute);
+            row(ui, "Signal", rewrites.signal);
             row(ui, "Erase:", rewrites.era);
             row(ui, "Expand:", rewrites.expand);
-            row(ui, "External:", rewrites.ext);
+            row(ui, "Responds:", rewrites.resp);
             row(ui, "Total:", rewrites.total());
             row(ui, "Busy time (ms):", rewrites.busy_duration.as_millis());
             row(ui, "Total / s:", rewrites.total_per_second());
         });
     }
-}
 
-// first, we render as deep as we can. Button clicks replace nodes by a Halt node
-// then, we read back, replacing Halt nodes with other nodes. This is the async part
-impl ReadbackStateInner {
-    fn show_history_line<'h>(
-        &mut self,
-        ui: &mut egui::Ui,
-        prog: Arc<CheckedProgram<Name>>,
-        events: &'h [Event],
-    ) -> &'h [Event] {
+    pub fn show_content(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::default()
+            .stroke(egui::Stroke::new(1.0, egui::Color32::GRAY))
+            .inner_margin(egui::Margin::same(4))
+            .outer_margin(egui::Margin::same(2))
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    Self::show_history(ui, &self.history);
+
+                    if let Some(request) = self.request.take() {
+                        match request {
+                            Request::Nat(mut input, callback) => {
+                                let input_number = BigInt::parse_bytes(input.as_bytes(), 10);
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a natural number..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_number.is_some()
+                                                && input_number.as_ref().unwrap() >= &BigInt::ZERO,
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_number.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let number = input_number.unwrap();
+                                    self.history.push(Event::NatRequest(number.clone()));
+                                    callback(number);
+                                } else {
+                                    self.request = Some(Request::Nat(input, callback));
+                                }
+                            }
+
+                            Request::Int(mut input, callback) => {
+                                let input_number = BigInt::parse_bytes(input.as_bytes(), 10);
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type an integer..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_number.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_number.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let number = input_number.unwrap();
+                                    self.history.push(Event::IntRequest(number.clone()));
+                                    callback(number);
+                                } else {
+                                    self.request = Some(Request::Int(input, callback));
+                                }
+                            }
+
+                            Request::String(mut input, callback) => {
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::multiline(&mut input)
+                                                .desired_rows(1)
+                                                .hint_text("Type a string..."),
+                                        );
+                                        ui.add(egui::Button::small(egui::Button::new("OK")))
+                                            .clicked()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let string = Substr::from(input);
+                                    self.history.push(Event::StringRequest(string.clone()));
+                                    callback(string);
+                                } else {
+                                    self.request = Some(Request::String(input, callback));
+                                }
+                            }
+
+                            Request::Char(mut input, callback) => {
+                                let input_char = Some(&input)
+                                    .filter(|s| s.chars().count() == 1)
+                                    .and_then(|s| s.chars().next());
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a single character..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_char.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_char.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let character = input_char.unwrap();
+                                    self.history.push(Event::CharRequest(character));
+                                    callback(character);
+                                } else {
+                                    self.request = Some(Request::Char(input, callback));
+                                }
+                            }
+
+                            Request::Choice(signals, callback) => {
+                                let mut chosen = None;
+                                ui.vertical(|ui| {
+                                    for signal in &signals {
+                                        if ui
+                                            .button(RichText::new(signal.to_string()).strong())
+                                            .clicked()
+                                        {
+                                            chosen = Some(signal.clone());
+                                        }
+                                    }
+                                });
+                                if let Some(chosen) = chosen {
+                                    self.history.push(Event::Choice(chosen.clone()));
+                                    callback(chosen);
+                                } else {
+                                    self.request = Some(Request::Choice(signals, callback));
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+    }
+
+    fn show_history<'h>(ui: &mut egui::Ui, events: &'h [Event]) {
+        let mut events = events;
+        ui.vertical(|ui| {
+            while !events.is_empty() {
+                events = Self::show_history_line(ui, events);
+            }
+        });
+    }
+
+    fn show_history_line<'h>(ui: &mut egui::Ui, events: &'h [Event]) -> &'h [Event] {
         let mut polarity = None::<Polarity>;
         let mut events = events;
 
@@ -216,10 +278,10 @@ impl ReadbackStateInner {
                 if polarity == None {
                     match event.polarity() {
                         Polarity::Positive => {
-                            ui.label(RichText::from("+").code());
+                            ui.label(RichText::from(">").code());
                         }
                         Polarity::Negative => {
-                            ui.label(RichText::from("-").code());
+                            ui.label(RichText::from("<").code());
                         }
                     }
                 }
@@ -227,27 +289,28 @@ impl ReadbackStateInner {
                 polarity = Some(event.polarity());
                 events = &events[1..];
 
-                let prog = Arc::clone(&prog);
-
                 match event {
-                    Event::Send(handle) | Event::Receive(handle) => {
-                        self.show_handle(ui, handle.clone(), prog);
+                    Event::Times(child) | Event::Par(child) => {
+                        child.lock().unwrap().show_content(ui);
                         return events;
                     }
-                    Event::SendType(name) | Event::ReceiveType(name) => {
-                        ui.label(format!("type {}", name));
-                    }
-                    Event::Either(name) | Event::Choose(name) => {
+                    Event::Either(name) | Event::Choice(name) => {
                         ui.label(RichText::from(name.to_string()).strong());
-                    }
-                    Event::Named(tree) => {
-                        let ty = &tree.ty;
-                        if let Type::Name(_, name, _) = ty {
-                            ui.label(format!("name {}", name));
-                        }
                     }
                     Event::Break | Event::Continue => {
                         ui.label(RichText::from("!").strong().code());
+                    }
+                    Event::Nat(i) | Event::NatRequest(i) => {
+                        ui.label(RichText::from(format!("{}", i)).strong().code());
+                    }
+                    Event::Int(i) | Event::IntRequest(i) => {
+                        ui.label(RichText::from(format!("{}", i)).strong().code());
+                    }
+                    Event::String(s) | Event::StringRequest(s) => {
+                        ui.label(RichText::from(format!("{:?}", s)).strong().code());
+                    }
+                    Event::Char(s) | Event::CharRequest(s) => {
+                        ui.label(RichText::from(format!("{:?}", s)).strong().code());
                     }
                 }
             }
@@ -256,356 +319,133 @@ impl ReadbackStateInner {
         })
         .inner
     }
-
-    fn show_history<'h>(
-        &mut self,
-        ui: &mut egui::Ui,
-        prog: Arc<CheckedProgram<Name>>,
-        events: &'h [Event],
-    ) {
-        let mut events = events;
-
-        ui.vertical(|ui| {
-            while !events.is_empty() {
-                events = self.show_history_line(ui, Arc::clone(&prog), events);
-            }
-        });
-    }
-
-    pub fn show_handle(
-        &mut self,
-        ui: &mut egui::Ui,
-        handle: Arc<Mutex<Handle>>,
-        prog: Arc<CheckedProgram<Name>>,
-    ) {
-        egui::Frame::default()
-            .stroke(egui::Stroke::new(1.0, egui::Color32::GRAY))
-            .inner_margin(egui::Margin::same(4))
-            .outer_margin(egui::Margin::same(2))
-            .show(ui, |ui| {
-                ui.vertical(|ui| {
-                    self.show_history(ui, Arc::clone(&prog), &handle.lock().unwrap().history);
-
-                    let mut lock = handle.lock().unwrap();
-                    if let Some(end) = lock.end.as_mut() {
-                        match end {
-                            port @ Request::Port(..) => {
-                                let Request::Port(mut port) =
-                                    core::mem::replace(port, Request::Waiting)
-                                else {
-                                    unreachable!()
-                                };
-
-                                let shared = self.shared.clone();
-                                port.ty = prepare_type_for_readback(
-                                    self.shared.type_defs(),
-                                    port.ty,
-                                    &self.type_variables,
-                                );
-                                {
-                                    let handle = handle.clone();
-                                    let mut this = self.clone();
-                                    self.spawner
-                                        .spawn(async move {
-                                            let port = shared.read_with_type(port).await;
-                                            this.readback_result(handle, port, prog).await;
-                                        })
-                                        .unwrap();
-                                }
-                                (lock.refresh)()
-                            }
-                            Request::Waiting => {
-                                ui.label(RichText::from("waiting").italics());
-                            }
-                            Request::Choose(_, options) => {
-                                let mut chosen = None;
-                                ui.vertical(|ui| {
-                                    for (_, (name, _, _)) in options.iter().enumerate() {
-                                        if ui
-                                            .button(RichText::new(name.to_string()).strong())
-                                            .clicked()
-                                        {
-                                            chosen = Some(name.clone());
-                                        }
-                                    }
-                                });
-                                if let Some(chosen) = chosen {
-                                    let Some(Request::Choose(ctx, options)) =
-                                        core::mem::replace(&mut lock.end, Some(Request::Waiting))
-                                    else {
-                                        unreachable!()
-                                    };
-                                    lock.add_event(Event::Choose(chosen.clone()));
-                                    let payload = self.shared.choose_choice(
-                                        chosen,
-                                        ctx,
-                                        options,
-                                        &self.spawner,
-                                    );
-                                    let mut this = self.clone();
-                                    let handle = handle.clone();
-                                    self.spawner
-                                        .spawn(async move {
-                                            this.readback_result(
-                                                handle,
-                                                ReadbackResult::Suspended(payload),
-                                                prog,
-                                            )
-                                            .await;
-                                        })
-                                        .unwrap();
-                                }
-                            }
-                            Request::Expand(_) => {
-                                if ui.button(RichText::from("expand").italics()).clicked() {
-                                    let Some(Request::Expand(package)) =
-                                        core::mem::replace(&mut lock.end, Some(Request::Waiting))
-                                    else {
-                                        unreachable!()
-                                    };
-                                    let handle = handle.clone();
-                                    let this = self.clone();
-                                    self.spawner
-                                        .spawn(async move {
-                                            let tree = this.shared.expand_once(package.tree).await;
-                                            let mut lock = handle.lock().unwrap();
-                                            lock.end =
-                                                Some(Request::Port(tree.with_type(package.ty)));
-                                        })
-                                        .unwrap();
-                                }
-                            }
-                            Request::Variable(id) => {
-                                ui.horizontal(|ui| {
-                                    ui.label("Variable: ");
-                                    ui.label(RichText::new(number_to_string(*id)).strong().code());
-                                });
-                            }
-                        }
-                    }
-                });
-            });
-    }
-
-    pub fn readback_result(
-        &mut self,
-        handle: Arc<Mutex<Handle>>,
-        port: ReadbackResult,
-        prog: Arc<CheckedProgram<Name>>,
-    ) -> BoxFuture<()> {
-        async move {
-            let handle_2 = handle.clone();
-            match port {
-                ReadbackResult::Break => {
-                    let mut lock = handle_2.lock().unwrap();
-                    lock.add_event(Event::Break);
-                    lock.end = None;
-                }
-                ReadbackResult::Continue => {
-                    let mut lock = handle_2.lock().unwrap();
-                    lock.add_event(Event::Continue);
-                    lock.end = None;
-                }
-                ReadbackResult::Send(lft, rgt) => {
-                    let child = {
-                        let mut lock = handle_2.lock().unwrap();
-                        let child = Arc::new(Mutex::new(lock.child()));
-                        lock.add_event(Event::Send(child.clone()));
-                        child
-                    };
-                    let mut this = self.clone();
-                    join(
-                        self.readback_result(child, *lft, prog.clone()),
-                        this.readback_result(handle, *rgt, prog),
-                    )
-                    .await;
-                }
-                ReadbackResult::Receive(lft, rgt) => {
-                    let child = {
-                        let mut lock = handle_2.lock().unwrap();
-                        let child = Arc::new(Mutex::new(lock.child()));
-                        lock.add_event(Event::Receive(child.clone()));
-                        child
-                    };
-                    let mut this = self.clone();
-                    join(
-                        self.readback_result(child, *lft, prog.clone()),
-                        this.readback_result(handle, *rgt, prog),
-                    )
-                    .await;
-                }
-                ReadbackResult::Either(name, payload) => {
-                    {
-                        let mut lock = handle_2.lock().unwrap();
-                        lock.add_event(Event::Either(name));
-                    }
-                    self.readback_result(handle, *payload, prog).await;
-                }
-                ReadbackResult::Choice(ctx_in, options) => {
-                    let mut lock = handle_2.lock().unwrap();
-                    lock.set_end(Some(Request::Choose(ctx_in, options)));
-                }
-                ReadbackResult::Expand(package) => {
-                    let mut lock = handle_2.lock().unwrap();
-                    lock.set_end(Some(Request::Expand(package)));
-                }
-                ReadbackResult::Suspended(mut tree) => {
-                    let mut this = self.clone();
-                    self.spawner
-                        .spawn(async move {
-                            tree.ty = prepare_type_for_readback(
-                                this.shared.type_defs(),
-                                tree.ty,
-                                &this.type_variables,
-                            );
-                            let res = this.shared.read_with_type(tree).await;
-                            this.readback_result(handle, res, prog).await;
-                        })
-                        .unwrap();
-                }
-                ReadbackResult::Variable(id) => {
-                    let mut lock = handle_2.lock().unwrap();
-                    lock.set_end(Some(Request::Variable(id)));
-                }
-                ReadbackResult::SendType(name, payload) => {
-                    {
-                        let mut lock = handle_2.lock().unwrap();
-                        lock.add_event(Event::SendType(name.clone()));
-                    }
-                    self.type_variables.insert(name);
-                    self.readback_result(handle, *payload, prog).await;
-                }
-                ReadbackResult::ReceiveType(name, payload) => {
-                    {
-                        let mut lock = handle_2.lock().unwrap();
-                        lock.add_event(Event::ReceiveType(name.clone()));
-                    }
-                    self.type_variables.insert(name);
-                    self.readback_result(handle, *payload, prog).await;
-                }
-                ReadbackResult::Named(tree) => {
-                    let mut lock = handle_2.lock().unwrap();
-                    lock.add_event(Event::Named(tree));
-                    lock.set_end(None);
-                }
-                e => {
-                    eprintln!("Don't know how to read back: {e:?}");
-                }
-            }
-        }
-        .boxed()
-    }
 }
 
-pub fn prepare_type_for_readback(
-    type_defs: &TypeDefs<Name>,
-    mut ty: Type<Name>,
-    type_variables: &IndexSet<Name>,
-) -> Type<Name> {
+async fn handle_coroutine(
+    refresh: Arc<dyn Fn() + Send + Sync>,
+    spawner: Arc<dyn Spawn + Send + Sync>,
+    handle: TypedHandle,
+    element: Arc<Mutex<Element>>,
+) {
+    let mut handle = handle;
+
     loop {
-        ty = match ty {
-            Type::Name(loc, name, args) => {
-                if type_variables.contains(&name) {
-                    break Type::Name(loc, name, args);
-                } else {
-                    type_defs.get(&loc, &name, &args).unwrap()
-                }
+        match handle.readback().await {
+            TypedReadback::Nat(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Nat(value));
+                refresh();
+                break;
             }
-            Type::Recursive {
-                span: _,
-                asc,
-                label,
-                body,
-            } => Type::expand_recursive(&asc, &label, &*body, &type_defs).unwrap(),
-            Type::Iterative {
-                span: _,
-                asc,
-                label,
-                body,
-            } => Type::expand_iterative(&asc, &label, &*body, &type_defs).unwrap(),
-            ty => break ty,
-        };
-    }
-}
 
-enum ReadbackImplLevel {
-    Incomplete,
-    QuantifiedTypes,
-    Ok,
-}
+            TypedReadback::NatRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Nat(String::new(), callback));
+                refresh();
+                break;
+            }
 
-impl core::ops::BitAnd<ReadbackImplLevel> for ReadbackImplLevel {
-    type Output = ReadbackImplLevel;
+            TypedReadback::Int(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Int(value));
+                refresh();
+                break;
+            }
 
-    fn bitand(self, rhs: ReadbackImplLevel) -> Self::Output {
-        use ReadbackImplLevel::*;
-        match (self, rhs) {
-            (Incomplete, _) | (_, Incomplete) => Incomplete,
-            (QuantifiedTypes, _) | (_, QuantifiedTypes) => QuantifiedTypes,
-            _ => Ok,
-        }
-    }
-}
+            TypedReadback::IntRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Int(String::new(), callback));
+                refresh();
+                break;
+            }
 
-impl ReadbackImplLevel {
-    fn from_type(
-        typ: &Type<Name>,
-        prog: &CheckedProgram<Name>,
-        type_variables: &mut BTreeSet<Name>,
-    ) -> Self {
-        use core::ops::BitAnd;
-        use ReadbackImplLevel::*;
-        match typ {
-            Type::Chan(_, body) => ReadbackImplLevel::from_type(&body, prog, type_variables),
-            Type::Name(loc, name, items) => {
-                if !type_variables.contains(name) {
-                    ReadbackImplLevel::from_type(
-                        &prog.type_defs.get(&loc, name, &items).unwrap(),
-                        prog,
-                        type_variables,
-                    )
-                } else {
-                    ReadbackImplLevel::QuantifiedTypes
-                }
+            TypedReadback::String(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::String(value));
+                refresh();
+                break;
             }
-            Type::Send(_, a, b) | Type::Receive(_, a, b) => {
-                ReadbackImplLevel::from_type(a, prog, type_variables)
-                    & ReadbackImplLevel::from_type(b, prog, type_variables)
+
+            TypedReadback::StringRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::String(String::new(), callback));
+                refresh();
+                break;
             }
-            Type::Either(_, index_map) | Type::Choice(_, index_map) => index_map
-                .values()
-                .map(|x| ReadbackImplLevel::from_type(x, prog, type_variables))
-                .fold(Ok, ReadbackImplLevel::bitand),
-            Type::Break(_) | Type::Continue(_) => Ok,
-            Type::Recursive { body, .. } => {
-                ReadbackImplLevel::from_type(body, prog, type_variables)
+
+            TypedReadback::Char(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Char(value));
+                refresh();
+                break;
             }
-            Type::Iterative { body, .. } => {
-                ReadbackImplLevel::from_type(body, prog, type_variables)
+
+            TypedReadback::CharRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Char(String::new(), callback));
+                refresh();
+                break;
             }
-            Type::ReceiveType(_, name, body) | Type::SendType(_, name, body) => {
-                let inserted = type_variables.insert(name.clone());
-                let res =
-                    ReadbackImplLevel::from_type(body, prog, type_variables) & QuantifiedTypes;
-                if inserted {
-                    type_variables.remove(name);
+
+            TypedReadback::Times(handle1, handle2) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Times(Element::new(
+                    Arc::clone(&refresh),
+                    Arc::clone(&spawner),
+                    handle1,
+                )));
+                handle = handle2;
+                refresh();
+            }
+
+            TypedReadback::Par(handle1, handle2) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Par(Element::new(
+                    Arc::clone(&refresh),
+                    Arc::clone(&spawner),
+                    handle1,
+                )));
+                handle = handle2;
+                refresh();
+            }
+
+            TypedReadback::Either(chosen, handle1) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Either(chosen));
+                handle = handle1;
+                refresh();
+            }
+
+            TypedReadback::Choice(signals, callback) => {
+                let rx = {
+                    let (tx, rx) = oneshot::channel();
+                    let mut lock = element.lock().expect("lock failed");
+                    lock.request = Some(Request::Choice(
+                        signals,
+                        Box::new(move |chosen| {
+                            let handle = callback(chosen);
+                            tx.send(handle).ok().unwrap();
+                        }),
+                    ));
+                    rx
                 };
-                res
+                handle = rx.await.unwrap();
+                refresh();
             }
-            Type::Self_(_, _) => Ok,
-            _ => ReadbackImplLevel::Incomplete,
-        }
-    }
 
-    fn show_message(&self, ui: &mut Ui) {
-        match self {
-            ReadbackImplLevel::Incomplete => {
-                ui.label(RichText::from("This type uses type constructors whose readback has not been implemented yet").color(Color32::RED));
+            TypedReadback::Break => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Break);
+                refresh();
+                break;
             }
-            ReadbackImplLevel::QuantifiedTypes => {
-                ui.label(RichText::from("This type uses quantified types. You will be able to see most of the data structure, but you won't be able to operate on quantified-over types").color(Color32::YELLOW));
+
+            TypedReadback::Continue => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Continue);
+                refresh();
+                break;
             }
-            ReadbackImplLevel::Ok => {}
         }
     }
 }

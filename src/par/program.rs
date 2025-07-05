@@ -1,55 +1,170 @@
-use std::{hash::Hash, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc};
 
+use arcstr::ArcStr;
 use indexmap::IndexMap;
 
-use crate::location::{Span, Spanning};
+use crate::{
+    icombs::readback::Handle,
+    location::{Point, Span},
+    par::parse::parse_module,
+};
 
 use super::{
+    language::{CompileError, GlobalName, LocalName},
+    parse::SyntaxError,
     process,
     types::{Context, Type, TypeDefs, TypeError},
 };
 
 #[derive(Clone, Debug)]
-pub struct Program<Name, Expr> {
-    pub type_defs: Vec<TypeDef<Name>>,
-    pub declarations: Vec<Declaration<Name>>,
-    pub definitions: Vec<Definition<Name, Expr>>,
+pub struct Module<Expr> {
+    pub type_defs: Vec<TypeDef>,
+    pub declarations: Vec<Declaration>,
+    pub definitions: Vec<Definition<Expr>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct CheckedProgram<Name> {
-    pub type_defs: TypeDefs<Name>,
-    pub declarations: IndexMap<Name, Declaration<Name>>,
-    pub definitions: IndexMap<Name, Definition<Name, Arc<process::Expression<Name, Type<Name>>>>>,
+pub struct CheckedModule {
+    pub type_defs: TypeDefs,
+    pub declarations: IndexMap<GlobalName, Declaration>,
+    pub definitions: IndexMap<GlobalName, Definition<Arc<process::Expression<Type>>>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct TypeDef<Name> {
+pub struct TypeDef {
     pub span: Span,
-    pub name: Name,
-    pub params: Vec<Name>,
-    pub typ: Type<Name>,
+    pub name: GlobalName,
+    pub params: Vec<LocalName>,
+    pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
-pub struct Declaration<Name> {
+pub struct Declaration {
     pub span: Span,
-    pub name: Name,
-    pub typ: Type<Name>,
+    pub name: GlobalName,
+    pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
-pub struct Definition<Name, Expr> {
+pub struct Definition<Expr> {
     pub span: Span,
-    pub name: Name,
+    pub name: GlobalName,
     pub expression: Expr,
 }
 
-impl<Name> Program<Name, Arc<process::Expression<Name, ()>>>
-where
-    Name: Clone + Eq + Hash,
-{
-    pub fn type_check(&self) -> Result<CheckedProgram<Name>, TypeError<Name>> {
+impl TypeDef {
+    pub fn external(name: &'static str, params: &[&'static str], typ: Type) -> Self {
+        Self {
+            span: Default::default(),
+            name: GlobalName::external(None, name),
+            params: params
+                .into_iter()
+                .map(|&var| LocalName {
+                    span: Default::default(),
+                    string: ArcStr::from(var),
+                })
+                .collect(),
+            typ,
+        }
+    }
+}
+
+impl Definition<Arc<process::Expression<()>>> {
+    pub fn external(
+        name: &'static str,
+        typ: Type,
+        f: fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+    ) -> Self {
+        Self {
+            span: Default::default(),
+            name: GlobalName::external(None, name),
+            expression: Arc::new(process::Expression::External(typ, f, ())),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ParseAndCompileError {
+    Parse(SyntaxError),
+    Compile(CompileError),
+}
+
+impl From<SyntaxError> for ParseAndCompileError {
+    fn from(value: SyntaxError) -> Self {
+        Self::Parse(value)
+    }
+}
+
+impl From<CompileError> for ParseAndCompileError {
+    fn from(value: CompileError) -> Self {
+        Self::Compile(value)
+    }
+}
+
+impl Module<Arc<process::Expression<()>>> {
+    pub fn parse_and_compile(source: &str) -> Result<Self, ParseAndCompileError> {
+        let parsed = parse_module(source)?;
+
+        let compiled_definitions = parsed
+            .definitions
+            .into_iter()
+            .map(
+                |Definition {
+                     span,
+                     name,
+                     expression,
+                 }| {
+                    expression.compile().map(|compiled| Definition {
+                        span,
+                        name,
+                        expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
+                    })
+                },
+            )
+            .collect::<Result<_, _>>()?;
+
+        Ok(Module {
+            type_defs: parsed.type_defs,
+            declarations: parsed.declarations,
+            definitions: compiled_definitions,
+        })
+    }
+
+    pub fn import(&mut self, module_name: &str, module: Self) {
+        let mut module = module;
+        module.qualify(module_name);
+        self.type_defs.append(&mut module.type_defs);
+        self.declarations.append(&mut module.declarations);
+        self.definitions.append(&mut module.definitions);
+    }
+
+    fn qualify(&mut self, module: &str) {
+        for TypeDef {
+            span: _,
+            name,
+            params: _,
+            typ,
+        } in &mut self.type_defs
+        {
+            name.qualify(module);
+            typ.qualify(module);
+        }
+        for Declaration { span: _, name, typ } in &mut self.declarations {
+            name.qualify(module);
+            typ.qualify(module);
+        }
+        for Definition {
+            span: _,
+            name,
+            expression,
+        } in &mut self.definitions
+        {
+            name.qualify(module);
+            *expression = expression.clone().qualify(module);
+        }
+    }
+
+    pub fn type_check(&self) -> Result<CheckedModule, TypeError> {
         let type_defs = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
@@ -99,7 +214,7 @@ where
             context.check_definition(&span, &name)?;
         }
 
-        Ok(CheckedProgram {
+        Ok(CheckedModule {
             type_defs: context.get_type_defs().clone(),
             declarations: context
                 .get_declarations()
@@ -124,7 +239,7 @@ where
     }
 }
 
-impl<Name, Expr> Default for Program<Name, Expr> {
+impl<Expr> Default for Module<Expr> {
     fn default() -> Self {
         Self {
             type_defs: Vec::new(),
@@ -135,24 +250,64 @@ impl<Name, Expr> Default for Program<Name, Expr> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NameWithType<Name>(pub Name, pub Type<Name>);
+pub struct NameWithType(pub Option<String>, pub Type);
 
-pub struct TypeOnHover<Name> {
-    sorted_pairs: Vec<(Span, NameWithType<Name>)>,
+pub struct TypeOnHover {
+    sorted_pairs: Vec<((Point, Point), NameWithType)>,
 }
 
-impl<Name: Clone + Spanning> TypeOnHover<Name> {
-    pub fn new(program: &CheckedProgram<Name>) -> Self {
+impl TypeOnHover {
+    pub fn new(program: &CheckedModule) -> Self {
         let mut pairs = Vec::new();
 
-        for (_, definition) in &program.definitions {
-            definition.expression.types_at_spans(&mut |name, typ| {
-                pairs.push((name.span(), NameWithType(name, typ)))
+        for (name, (_, _, typ)) in program.type_defs.globals.iter() {
+            if let Some((start, end)) = name.span.points() {
+                pairs.push((
+                    (start, end),
+                    NameWithType(Some(format!("{}", name)), typ.clone()),
+                ));
+            }
+            typ.types_at_spans(&program.type_defs, &mut |span, name, typ| {
+                if let Some((start, end)) = span.points() {
+                    pairs.push(((start, end), NameWithType(name, typ)))
+                }
             });
         }
 
-        pairs.sort_by_key(|(span, _)| span.start.offset);
-        pairs.dedup_by_key(|(span, _)| span.start.offset);
+        for (name, declaration) in &program.declarations {
+            if let Some((start, end)) = name.span.points() {
+                pairs.push((
+                    (start, end),
+                    NameWithType(Some(format!("{}", name)), declaration.typ.clone()),
+                ));
+            }
+            declaration
+                .typ
+                .types_at_spans(&program.type_defs, &mut |span, name, typ| {
+                    if let Some((start, end)) = span.points() {
+                        pairs.push(((start, end), NameWithType(name, typ)))
+                    }
+                });
+        }
+
+        for (name, definition) in &program.definitions {
+            if let Some((start, end)) = name.span.points() {
+                pairs.push((
+                    (start, end),
+                    NameWithType(Some(format!("{}", name)), definition.expression.get_type()),
+                ));
+            }
+            definition
+                .expression
+                .types_at_spans(&program.type_defs, &mut |span, name, typ| {
+                    if let Some((start, end)) = span.points() {
+                        pairs.push(((start, end), NameWithType(name, typ)))
+                    }
+                });
+        }
+
+        pairs.sort_by_key(|((start, _), _)| start.offset);
+        pairs.dedup_by_key(|((start, _), _)| start.offset);
 
         Self {
             sorted_pairs: pairs,
@@ -160,16 +315,17 @@ impl<Name: Clone + Spanning> TypeOnHover<Name> {
     }
 }
 
-impl<Name: Clone> TypeOnHover<Name> {
-    pub fn query(&self, row: usize, column: usize) -> Option<NameWithType<Name>> {
+impl TypeOnHover {
+    pub fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
         if self.sorted_pairs.is_empty() {
             return None;
         }
+
         // find index with the greatest start that is <= than (row, column)
         let (mut lo, mut hi) = (0, self.sorted_pairs.len());
         while lo + 1 < hi {
             let mi = (lo + hi) / 2;
-            let mp = self.sorted_pairs[mi].0.start;
+            let ((mp, _), _) = self.sorted_pairs[mi];
             if mp.row < row || (mp.row == row && mp.column <= column) {
                 lo = mi;
             } else {
@@ -177,13 +333,13 @@ impl<Name: Clone> TypeOnHover<Name> {
             }
         }
 
-        let (span, typ) = &self.sorted_pairs[lo];
+        let ((start, end), typ) = &self.sorted_pairs[lo];
 
         // check if queried (row, column) is in the found span
-        if row < span.start.row || (row == span.start.row && column < span.start.column) {
+        if row < start.row || (row == start.row && column < start.column) {
             return None;
         }
-        if span.end.row < row || (span.end.row == row && span.end.column < column) {
+        if end.row < row || (end.row == row && end.column < column) {
             return None;
         }
 

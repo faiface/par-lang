@@ -65,18 +65,23 @@ blocks above. For example, constructing a list using the _generator syntax_, lik
 is possible by operating on the _dual_ of a list:
 
 ```
-dec reverse : [type T] [List<T>] List<T>
+dec Reverse : [type t] [List<t>] List<t>
 
 // We construct the reversed list by destructing its dual: `chan List<T>`.
-def reverse = [type T] [list] chan yield {
-  let yield: chan List<T> = list begin {
-    .empty!       => yield,          // The list is empty, give back the generator handle.
-    .item(x) rest => do {            // The list starts with an item `x`.
-      let yield = rest loop          // Traverse into the rest of the list first.
-      yield.item(x)                  // After that, produce `x` on the reversed list.
-    } in yield                       // Finally, give back the generator handle.
+def Reverse = [type t] [list] chan yield {
+  let yield: dual List<t> = list.begin.case {
+    // The list is empty, give back the generator handle.
+    .empty!       => yield,
+    // The list starts with an item `x`.
+    .item(x) rest => do {
+      // Traverse into the rest of the list first.            
+      let yield = rest.loop
+      // After that, produce `x` on the reversed list.          
+      yield.item(x)                  
+    } in yield // Finally, give back the generator handle.
   }
-  yield.empty!                       // At the very end, signal the end of the list.
+  // At the very end, signal the end of the list.
+  yield.empty!                       
 }
 ```
 
@@ -124,13 +129,13 @@ to opt-out of totality.
 
 ```
 // An iterative type. Constructed by `begin`/`loop`, and destructed step-by-step.
-type Stream<T> = iterative {
+type Stream<t> = iterative {
   .close => !                        // Close this stream, and destroy its internal resources.
-  .next => (T) self                  // Produce an item, then ask me what I want next.
+  .next => (t) self                  // Produce an item, then ask me what I want next.
 }
 
 // An infinite sequence of `.true!` values.
-def forever_true: Stream<either { .true!, .false! }> = begin {
+def ForeverTrue: Stream<either { .true!, .false! }> = begin {
   .close => !                        // No resources to destroy, we just end.
   .next => (.true!) loop             // We produce a `.true!`, and repeat the protocol.
 }

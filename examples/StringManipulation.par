@@ -1,0 +1,53 @@
+def TestTrim  = Trim("  Hello, world!    ", .whitespace!)
+//            = "Hello, world!"
+
+def TestFind  = Find("This is a random sentence.", .str "random")
+//            = .some("This is a ", "random", " sentence.")!
+
+def TestSplit = Split("  Some   more words .", .whitespace!)
+//            = *("Some", "more", "words", ".")
+
+def Trim = [s: String, c: Char.Class] chan ret {
+  let r = String.Reader(s)
+  r.match(.empty!, .repeat.one c).case {
+    .end! => { ret <> "" }
+    .fail => {}
+    .match(_, _) => {}
+  }
+  r.matchEnd(.repeat.one.any!, .repeat.one c).case {
+    .end! => { ret <> "" }
+    .fail => {
+      r.close
+      ret <> ""
+    }
+    .match(trimmed, _)! => {
+      ret <> trimmed
+    }
+  }
+}
+
+dec Find : [String, String.Pattern] either {
+  .none!,
+  .some(String, String, String)!,
+}
+def Find = [s, p] String.Reader(s).match(.repeat.one.any!, p).case {
+  .end! => .none!,
+  .fail r => do { r.close } in .none!,
+  .match(before, found) r => .some(before, found, r.remainder)!
+}
+
+dec Split : [String, Char.Class] List<String>
+def Split = [s, c] chan yield {
+  let r = String.Reader(s)
+  r.begin.match(.repeat.one c, .repeat1.non c).case {
+    .end! => { yield.end! }
+    .fail => {
+       r.close
+       yield.end!
+    }
+    .match(_, part) => {
+      yield.item(part)
+      r.loop
+    }
+  }
+}

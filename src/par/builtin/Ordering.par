@@ -1,0 +1,5 @@
+type Ordering = either {
+  .less!,
+  .equal!,
+  .greater!,
+}

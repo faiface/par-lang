@@ -1,31 +1,39 @@
-type Nat = recursive either {
-  .zero!
-  .add1 self
-}
-
-dec zero : Nat
-dec add1 : [Nat] Nat
-dec add  : [Nat, Nat] Nat
-
-def zero = .zero!
-def add1 = [n] .add1 n
-
-def add = [n1, n2] n1 begin {
-  .zero!   => n2,
-  .add1 n1 => add1(n1 loop)
-}
-
-type Seq<T> = iterative {
+type Sequence<a> = iterative choice {
   .close => !
-  .next  => (T) self
+  .next  => (a) self
 }
 
-dec fibonacci : Seq<Nat>
-def fibonacci =
-  let (a) b = (zero) add1(zero)
-  in begin {
+dec Fibonacci : Sequence<Nat>
+def Fibonacci =
+  let (a) b = (0) 1
+  in begin case {
     .close => !
     .next =>
-      let (a) b = (b) add(a, b)
+      let (a) b = (b) Nat.Add(a, b)
       in (a) loop
   }
+
+dec NthFib : [Nat] Nat
+def NthFib = [n]
+  let fib = Fibonacci
+  in Nat.Repeat(n).begin.case {
+    .end!   => do { fib.next[x].close? } in x,
+    .step s => do { fib.next[_] } in s.loop,
+  }
+
+def Program: ! = do {
+  let console = Console.Open
+  let fib = Fibonacci
+
+  Nat.Repeat(30).begin.case {
+    .end! => {}
+    .step remaining => {
+      fib.next[n]
+      console.print(Nat.ToString(n))
+      remaining.loop
+    }
+  }
+
+  fib.close
+  console.close
+} in !
