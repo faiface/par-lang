@@ -13,7 +13,7 @@ to play with.
 Let's open the playground!
 
 ```
-$ cargo run playground
+$ par-lang playground
 ```
 
 Press **Compile**, then hit the **Run** button:

@@ -24,7 +24,7 @@ Primitives are manipulated using magical built-in functions.
 
 1. Open the playground.
    ```
-   $ cargo run playground
+   $ par-lang playground
    ```
 2. Press **Compile,** and **Run.** Scroll the list that pops up.
    ![List of built-in functions](../images/strings_and_numbers_1.png)
