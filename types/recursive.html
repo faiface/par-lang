@@ -1,0 +1,546 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Recursive - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types/recursive.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="recursive"><a class="header" href="#recursive">Recursive</a></h1>
+<p><em>Par</em> has, among others, these two ambitious design choices:</p>
+<ul>
+<li><strong>Totality,</strong> meaning preventing infinite loops by type-checking.</li>
+<li><strong>A structural type system,</strong> where global type definitions are merely aliases.</li>
+</ul>
+<p>When it comes to self-referential types, totality necessitates distinguishing between:</p>
+<ul>
+<li><em>Recursive types</em>, those are finite.</li>
+<li><em>Corecursive types</em>, potentially infinite. In Par, we call them <a href="./iterative.html"><em>iterative types</em></a>.</li>
+</ul>
+<p>The choice of a structural type system has led to avoiding defining self-referential types naively,
+and instead adding a first-class syntax for anonymous self-referential types.</p>
+<p>Par is very radical here. If you try the usual way of defining a singly-linked list, it fails:</p>
+<pre><code class="language-par">type IllegalList = either {
+  .end!,
+  .item(String) IllegalList,  // Error! Cyclic dependency.
+}
+</code></pre>
+<p>In general, <strong>cyclic dependencies between global definitions are disallowed.</strong> Instead, we have:</p>
+<ul>
+<li>Anonymous self-referential types: <code>recursive</code> and <a href="./iterative.html"><code>iterative</code></a>.</li>
+<li>A single, universal recursion construct: <code>begin</code>/<code>loop</code>. It’s suitable for recursive destruction,
+iterative construction, and imperative-style loops in <a href="../processes.html">process syntax</a>.</li>
+</ul>
+<p><strong>Let’s take a look at <code>recursive</code>!</strong></p>
+<blockquote>
+<p><strong>Totality <em>does not</em> mean you can’t have a web server, or a game.</strong> While these are often
+implemented using infinite event loops, it doesn’t have to be done that way. Instead, we can employ
+corecursion, which Par supports with its <a href="./iterative.html">iterative</a> types.</p>
+<p>To make it clearer, consider this Python program:</p>
+<pre><code class="language-python">def __main__():
+    while True:
+        req = next_request()
+        if req is None:
+            break
+        handle_request(req)
+</code></pre>
+<p>That’s a simplified web server, handling requests one by one, using an infinite loop.</p>
+<p>Could we switch it around and not have an infinite loop? Absolutely!</p>
+<pre><code class="language-python">class WebServer:
+    def close(self):
+        pass
+
+    def handle(req):
+        handle_request(req)
+
+def __main__():
+    start_server(WebServer())
+</code></pre>
+<p>A small re-structuring goes a long way here. <a href="./iterative.html">Iterative</a> types in Par enable
+precisely this pattern, but with the ergonomics of the infinite loop version.</p>
+</blockquote>
+<p>A recursive type starts with the keyword <code>recursive</code> followed by a body that may contain any number
+of occurrences of <code>self</code>: the self-reference.</p>
+<pre><code class="language-par">type LegalList = recursive either {
+  .end!,
+  .item(String) self,  // Okay.
+}
+</code></pre>
+<blockquote>
+<p><strong>If there are nested <code>recursive</code> (or <a href="./iterative.html"><code>iterative</code></a>) types, it may be necessary to
+distinguish between them.</strong> For that, we can attach <strong>labels</strong> to <code>recursive</code> and <code>self</code>. That’s
+done with a slash: <code>recursive/label</code>, <code>self/label</code>. Any lower-case identifier can be used for the
+label.</p>
+</blockquote>
+<p>The recursive type can be thought of as being equivalent to its <em>expansion</em>. That is, replacing each
+<code>self</code> inside the body with the <code>recursive</code> type itself:</p>
+<ol>
+<li>The original definition:
+<pre><code class="language-par">recursive either {
+  .end!,
+  .item(String) self
+}
+</code></pre>
+</li>
+<li>The first expansion:
+<pre><code class="language-par">either {
+  .end!,
+  .item(String) recursive either {
+    .end!,
+    .item(String) self
+  }
+}
+</code></pre>
+</li>
+<li>The second expansion:
+<pre><code class="language-par">either {
+  .end!,
+  .item(String) either {
+    .end!,
+    .item(String) recursive either {
+      .end!,
+      .item(String) self
+    }
+  }
+}
+</code></pre>
+</li>
+<li>And so on…</li>
+</ol>
+<blockquote>
+<p>The body of a <code>recursive</code> often starts with an <code>either</code>, but doesn’t have to. Here’s an example of that:
+a non-empty list, which starts with a pair.</p>
+<pre><code class="language-par">type NonEmptyList&lt;a&gt; = recursive (a) either {
+  .end!,
+  .item self,
+}
+</code></pre>
+<p>Another example of a <code>recursive</code> type, which doesn’t start with an <code>either</code> would be a finite stream.</p>
+<pre><code class="language-par">type FiniteStream&lt;a&gt; = recursive choice {
+  .close =&gt; !,
+  .next =&gt; either {
+    .end!,
+    .item(a) self,
+  }
+}
+</code></pre>
+<p>This one starts with a <a href="./choice.html">choice</a>, which enables polling the elements on demand, or
+cancelling the rest of the stream. However, being recursive, a <code>FiniteStream&lt;a&gt;</code> is guaranteed
+to reach the <code>.end!</code> eventually, if not cancelled.</p>
+</blockquote>
+<p>The key features of <em>recursive types</em> are that <strong>their values are finite,</strong> and that
+<strong>we can perform recursion on them.</strong></p>
+<h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
+<p>Recursive types don’t have any special construction syntax. Instead, we directly construct their
+bodies, as if they were expanded.</p>
+<pre><code class="language-par">type Tree = recursive either {
+  .leaf Int,
+  .node(self, self)!,
+}
+
+def SmallTree: Tree = .node(
+  .node(
+    .leaf 1,
+    .leaf 2,
+  )!,
+  .node(
+    .leaf 3,
+    .leaf 4,
+  )!,
+)!
+</code></pre>
+<p>Already constructed recursive values can be used in the <code>self</code>-places of new ones:</p>
+<pre><code class="language-par">def BiggerTree: Tree = .node(SmallTree, SmallTree)!
+</code></pre>
+<p><strong>Lists</strong> are a frequently used recursive type, and so are pre-defined as:</p>
+<pre><code class="language-par">type List&lt;a&gt; = recursive either {
+  .end!,
+  .item(a) self,
+}
+</code></pre>
+<p>Constructing them goes like:</p>
+<pre><code class="language-par">dec OneThroughFive  : List&lt;Int&gt;
+dec ZeroThroughFive : List&lt;Int&gt;
+
+def OneThroughFive  = .item(1).item(2).item(3).item(4).item(5).end!
+def ZeroThroughFive = .item(0) OneThroughFive
+</code></pre>
+<p>Because lists are so ubiquitous, there is additionally a <strong>syntax sugar</strong> for constructing them more
+concisely:</p>
+<pre><code class="language-par">def OneThroughFive = *(1, 2, 3, 4, 5)
+</code></pre>
+<p>However, prepending onto an existing list has no syntax sugar, so <code>ZeroThroughFive</code> still has to be
+done the same way.</p>
+<h2 id="destruction"><a class="header" href="#destruction">Destruction</a></h2>
+<p>If we don’t need to perform recursion, it’s possible to treat recursive types as their expansions
+when destructing them, too. For example, here we treat a <code>List&lt;String&gt;</code> as its underlying <code>either</code>:</p>
+<pre><code class="language-par">type Option&lt;a&gt; = either {
+  .none!,
+  .some a,
+}
+
+dec Head : [List&lt;String&gt;] Option&lt;String&gt;
+def Head = [list] list.case {
+  .end!      =&gt; .none!,
+  .item(x) _ =&gt; .some x,
+}
+</code></pre>
+<p><strong>For a recursive reduction, we have <code>.begin</code>/<code>.loop</code>.</strong> Here’s how it works:</p>
+<ol>
+<li>Apply <code>.begin</code> to a value of a <code>recursive</code> type.</li>
+<li>Apply more operations to the resulting expanded value.</li>
+<li>Use <code>.loop</code> on a <em>descendent</em> recursive value, descendent meaning it was a <code>self</code> in
+the original value we applied <code>.begin</code> to.</li>
+</ol>
+<p>Let’s see it in practice. Suppose we want to add up a list of integers.</p>
+<ol start="0">
+<li>We obtain a value (<code>list</code>) of a recursive type (<code>List&lt;Int&gt;</code>):
+<pre><code class="language-par">dec SumList : [List&lt;Int&gt;] Int
+
+def SumList = [list]
+</code></pre>
+</li>
+<li>We apply <code>.begin</code> to it:
+<pre><code class="language-par">                     list.begin
+</code></pre>
+</li>
+<li>We match on the possible variants:
+<pre><code class="language-par">                               .case {
+  .end!       =&gt; 0,
+  .item(x) xs =&gt;
+</code></pre>
+If the list is empty, the result is <code>0</code>. Otherwise, we need to add the number <code>x</code>
+<pre><code class="language-par">                 Int.Add(x, 
+</code></pre>
+to the sum of the rest of the list: <code>xs</code>.</li>
+<li>Since <code>xs</code> is a <em>descendant</em> of the original <code>list</code> that we applied the <code>.begin</code> to, and is again a
+<code>List&lt;Int&gt;</code>, we can recursively obtain its sum using <code>.loop</code>:
+<pre><code class="language-par">                            xs.loop),
+</code></pre>
+And close the braces.
+<pre><code class="language-par">}
+</code></pre>
+</li>
+</ol>
+<p>All put together, it looks like this:</p>
+<pre><code class="language-par">def SumList = [list] list.begin.case {
+  .end!       =&gt; 0,
+  .item(x) xs =&gt; Int.Add(x, xs.loop),
+}
+</code></pre>
+<p>You can think of <code>.loop</code> as going back to the corresponding <code>.begin</code>, but with the new value.</p>
+<p>The semantics of <code>.begin</code>/<code>.loop</code> are best explained by <em>expansion</em>, just like the recursive types
+themselves. In all cases, <strong>the meaning of <code>.begin</code>/<code>.loop</code> is unchanged, if we replace each <code>.loop</code> with the entire body starting at <code>.begin</code>.</strong></p>
+<p>Observe:</p>
+<ol>
+<li>The original code:
+<pre><code class="language-par">def SumList = [list] list.begin.case {
+  .end!       =&gt; 0,
+  .item(x) xs =&gt; Int.Add(x, xs.loop),
+}
+</code></pre>
+</li>
+<li>The first expansion:
+<pre><code class="language-par">def SumList = [list] list.case {
+  .end!       =&gt; 0,
+  .item(x) xs =&gt; Int.Add(x, xs.begin.case {
+    .end!       =&gt; 0,
+    .item(x) xs =&gt; Int.Add(x, xs.loop),
+  }),
+}
+</code></pre>
+</li>
+<li>The second expansion:
+<pre><code class="language-par">def SumList = [list] list.case {
+  .end!       =&gt; 0,
+  .item(x) xs =&gt; Int.Add(x, xs.case {
+    .end!       =&gt; 0,
+    .item(x) xs =&gt; Int.Add(x, xs.begin.case {
+      .end!       =&gt; 0,
+      .item(x) xs =&gt; Int.Add(x, xs.loop),
+    }),
+  }),
+}
+</code></pre>
+</li>
+<li>And so on…</li>
+</ol>
+<p><code>.loop</code> may be applied to any number of descendants. Here’s a function adding up the leafs in the <code>Tree</code>
+type defined previously:</p>
+<pre><code class="language-par">dec SumTree : [Tree] Int
+def SumTree = [tree] tree.begin.case {
+  .leaf number        =&gt; number,
+  .node(left, right)! =&gt; Int.Add(left.loop, right.loop),
+}
+
+def BiggerSum = SumTree(BiggerTree)  // = 20
+</code></pre>
+<blockquote>
+<p><strong>If there are multiple nested <code>.begin</code>/<code>.loop</code>, it may be necessary to
+distinguish between them.</strong> Labels can be used here too, just like with the types:
+<code>.begin/label</code> and <code>.loop/label</code> does the job.</p>
+<p>TODO:</p>
+<pre><code class="language-par">type Tree&lt;a&gt; = recursive List&lt;(a) self&gt;
+</code></pre>
+</blockquote>
+<h3 id="retention-of-local-variables"><a class="header" href="#retention-of-local-variables">Retention of local variables</a></h3>
+<p>Let’s consider Haskell for a moment. Say we write a simple function that increments each item in
+a list by a specified amount:</p>
+<pre><code class="language-haskell">incBy n []     = []
+incBy n (x:xs) = (x + n) : incBy n xs
+</code></pre>
+<p>This recursive function has a parameter that has to be remembered across the iterations: <code>n</code>, the
+increment. In Haskell, that’s achieved by explicitly passing it to the recursive call.</p>
+<p>Now, let’s look at <em>Par</em>. In Par, <code>.loop</code> has a neat feature:
+<strong>local variables are automatically passed to the next iteration.</strong></p>
+<pre><code class="language-par">dec IncBy : [List&lt;Int&gt;, Int] List&lt;Int&gt;
+def IncBy = [list, n] list.begin.case {
+  .end!       =&gt; .end!,
+  .item(x) xs =&gt; .item(Int.Add(x, n)) xs.loop,
+} 
+</code></pre>
+<p>Notice, that <code>xs.loop</code> makes no mention of <code>n</code>, the increment. Yet, <code>n</code> is available throughout the
+recursion, because it is automatically passed around.</p>
+<p>This feature is what makes <code>begin</code>/<code>loop</code> not just a universal recursion construct, but a sweet spot
+between usual recursion and imperative loops.</p>
+<blockquote>
+<p>If you’re confused about how or why it should work this way, try expanding the <code>.begin</code>/<code>.loop</code>
+in the above function. Notice that when expanded, <code>n</code> is in fact visible in the next iteration.
+It’s truly the case that expanding a <code>.begin</code>/<code>.loop</code> never changes its meaning.</p>
+</blockquote>
+<p>Together with <code>.begin</code>/<code>.loop</code> being usable deep in expressions, local variable retention is also
+very useful in avoiding the need for helper functions.</p>
+<p>Let’s again switch to Haskell, and take a look at this list reversing function:</p>
+<pre><code class="language-haskell">reverse list = reverseHelper [] list
+
+reverseHelper acc []     = acc
+reverseHelper acc (x:xs) = reverseHelper (x:acc) xs
+</code></pre>
+<p>This function uses a state: <code>acc</code>, the accumulator. It prepends a new item to it in every iteration,
+eventually reversing the whole list. In Haskell, this requires a helper recursive function.</p>
+<p>In Par, it doesn’t!</p>
+<pre><code class="language-par">dec Reverse : [type a] [List&lt;Int&gt;] List&lt;Int&gt;
+def Reverse = [type a] [list]
+  let acc: List&lt;a&gt; = .end!
+  in list.begin.case {
+    .end!       =&gt; acc,
+    .item(x) xs =&gt; let acc = .item(x) acc in xs.loop,
+  }
+
+def TestReverse = Reverse(type Int)(*(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
+</code></pre>
+<p>And there we go! All we had to do was to re-assign <code>acc</code> with the new value, and continue with <code>xs.loop</code>.</p>
+<h3 id="the-escape-hatch-from-totality-unfounded"><a class="header" href="#the-escape-hatch-from-totality-unfounded">The escape-hatch from totality: <code>.unfounded</code></a></h3>
+<p>If the Par’s type checker refuses to accept your recursive algorithm despite you being certain it’s
+total — meaning it resolves on all inputs — it’s possible to disable the totality checking by
+replacing <code>.begin</code> with <code>.unfounded</code>.</p>
+<p>Par’s totality checking is currently not powerful enough for some algorithms, especially divide
+and conquer, and it’s also lacking when decomposing recursive algorithms into multiple functions.
+In such cases, using <code>.unfounded</code> is okay. We do, however, aim to make the type system stronger,
+and eventually remove <code>.unfounded</code>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../types/forall.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../types/choice.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../types/forall.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../types/choice.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Glossary - Par Documentation</title>
+        <title>Receiving, Where It Shines - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,21 +12,21 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon.svg">
-        <link rel="shortcut icon" href="favicon.png">
-        <link rel="stylesheet" href="css/variables.css">
-        <link rel="stylesheet" href="css/general.css">
-        <link rel="stylesheet" href="css/chrome.css">
-        <link rel="stylesheet" href="css/print.css" media="print">
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
-        <link rel="stylesheet" href="fonts/fonts.css">
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -35,11 +35,11 @@
 
         <!-- Provide site root to javascript -->
         <script>
-            var path_to_root = "";
+            var path_to_root = "../../";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc.js"></script>
+        <script src="../../toc.js"></script>
     </head>
     <body>
     <div id="body-container">
@@ -91,7 +91,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -125,13 +125,13 @@
                     <h1 class="menu-title">Par Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/glossary.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/processes/commands/receiving_where_it_shines.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,16 +160,107 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="glossary"><a class="header" href="#glossary">Glossary</a></h1>
+                        <h1 id="receiving-where-it-shines"><a class="header" href="#receiving-where-it-shines">Receiving, Where It Shines</a></h1>
+<p>The previous section showed the <code>value[variable]</code> receive command — but it didn’t feel essential.
+Let’s now explore a use-case where this command really shines: polling values from an
+infinite sequence.</p>
+<p>You may remember the <code>Sequence&lt;a&gt;</code> type from earlier. Here’s the definition again:</p>
+<pre><code class="language-par">type Sequence&lt;a&gt; = iterative choice {
+  .close =&gt; !,
+  .next =&gt; (a) self,
+}
+</code></pre>
+<p>A <code>Sequence</code> can generate an unbounded number of values, one by one, and eventually be closed.</p>
+<h2 id="a-fibonacci-sequence-as-a-value"><a class="header" href="#a-fibonacci-sequence-as-a-value">A Fibonacci sequence, as a value</a></h2>
+<p>Let’s start by building a sequence of Fibonacci numbers.</p>
+<pre><code class="language-par">dec Fibonacci : Sequence&lt;Nat&gt;
+def Fibonacci =
+  let (a) b = (0) 1
+  in begin case {
+    .close =&gt; !
+    .next =&gt;
+      let (a) b = (b) Nat.Add(a, b)
+      in (a) loop
+  }
+</code></pre>
+<p>The internal state of the sequence is a pair <code>(a) b</code>. On each <code>.next</code>, we emit <code>a</code> and update
+the pair. This is a clean and elegant use of corecursive iteration, as we’ve covered it in the
+section on <a href="../types/iterative.html">iterative types</a>.</p>
+<p>So far so good — but how do we use this value?</p>
+<h2 id="goal-print-the-first-30-fibonacci-numbers"><a class="header" href="#goal-print-the-first-30-fibonacci-numbers">Goal: print the first 30 Fibonacci numbers</a></h2>
+<p>Let’s say we want to print the first 30 Fibonacci numbers to the terminal.</p>
+<p>That means:</p>
+<ol>
+<li>Repeating an action 30 times,</li>
+<li>Receiving a number from the sequence each time,</li>
+<li>Converting it to a string,</li>
+<li>Sending it to the output.</li>
+</ol>
+<p>We’ll need a way to loop <strong>exactly 30 times.</strong> But there’s a catch: In Par,
+<strong>looping is only possible on recursive types.</strong> There’s no built-in recursion on <code>Nat</code>, so we need
+to convert the number 30 into a <a href="../types/recursive.html">recursive</a>.</p>
+<p>Good news: there’s a built-in helper for that! It’s called <code>Nat.Repeat</code>, here’s its type:</p>
+<pre><code class="language-par">dec Nat.Repeat : [Nat] recursive either {
+  .end!,
+  .step self,
+}
+</code></pre>
+<p>Calling <code>Nat.Repeat(30)</code> gives us a recursive value that can be stepped through exactly 30 times.
+Precisely what we need.</p>
+<p>Now for the second part: printing.</p>
+<h2 id="console-output"><a class="header" href="#console-output"><code>Console</code> output</a></h2>
+<p>Par comes with a built-in definition for working with standard output:</p>
+<pre><code class="language-par">def Console.Open : Console
+</code></pre>
+<p>The <code>Console</code> type itself is defined like this:</p>
+<pre><code class="language-par">type Console = iterative choice {
+  .close =&gt; !,
+  .print(String) =&gt; self,
+}
+</code></pre>
+<p>You can think of it as a “sink” object that receives strings and sends them to the terminal.
+Much like <code>String.Builder</code>, but the output appears directly in your console.</p>
+<p>Let’s tie it all together!</p>
+<pre><code class="language-par">def Program: ! = do {
+  let console = Console.Open
+  let fib = Fibonacci
+
+  Nat.Repeat(30).begin.case {
+    .end! =&gt; {}
+    .step remaining =&gt; {
+      fib.next[n]
+      console.print(Int.ToString(n))
+      remaining.loop
+    }
+  }
+
+  fib.close
+  console.close
+} in !
+</code></pre>
+<p>Here’s what’s happening:</p>
+<ul>
+<li><code>Nat.Repeat(30)</code> becomes the subject of the <code>.begin</code> and <code>.case</code> commands.</li>
+<li>In each <code>.step</code>, we receive a number from the <code>fib</code> sequence using the <code>fib.next[n]</code> command.</li>
+<li>We convert it to a string using <code>Int.ToString(n)</code> and print it to the console.</li>
+<li>Then we <code>loop</code>.</li>
+</ul>
+<p>The <code>fib.next[n]</code> line is where <em>receive</em> command truly shines. It receives the payload
+of the <code>.next</code> branch — a number — and updates <code>fib</code> to the rest of the sequence. Note, that
+it’s a combination of two commands: a <em>selection</em> and a <em>receive</em>.</p>
+<p>Once done, we close both the sequence and the console. We must, they are linear.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="notation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../../processes/commands/looping_and_branching.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
+                            <a rel="next prefetch" href="../../processes/chan_expression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -177,10 +268,13 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="notation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../../processes/commands/looping_and_branching.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
+                    <a rel="next prefetch" href="../../processes/chan_expression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
             </nav>
 
         </div>
@@ -193,13 +287,13 @@
         </script>
 
 
-        <script src="elasticlunr.min.js"></script>
-        <script src="mark.min.js"></script>
-        <script src="searcher.js"></script>
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
 
-        <script src="clipboard.min.js"></script>
-        <script src="highlight.js"></script>
-        <script src="book.js"></script>
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
 
         <!-- Custom JS scripts -->
 

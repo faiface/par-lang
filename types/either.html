@@ -1,0 +1,372 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Either - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types/either.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="either"><a class="header" href="#either">Either</a></h1>
+<p><em>Either types</em> are the well-known <a href="https://en.wikipedia.org/wiki/Tagged_union">sum types</a>,
+otherwise known as <em>tagged unions</em>.</p>
+<p>They defined a finite number of variants, each with a different name and a payload. A value of
+an either type is one of its variants.</p>
+<pre><code class="language-par">type StringOrNumber = either {
+  .string String,
+  .number Int,
+}
+
+def Str: StringOrNumber = .string "Hello!"
+def Num: StringOrNumber = .number 42,
+</code></pre>
+<p>An either type is spelled with the keyword <code>either</code>, followed by curly braces enclosing a
+comma-separated list of variants.</p>
+<p>Each variant has a lower-case name prefixed by a period and followed by a single, obligatory
+payload type:</p>
+<pre><code class="language-par">either {
+  .variant1 Payload1,
+  .variant2 Payload2,
+  .variant3 Payload3,
+}
+</code></pre>
+<p>Since each payload must be a single type, <a href="./unit.html">units</a>, <a href="./pair.html">pairs</a>, and other types
+are used to define composite payloads. For example:</p>
+<pre><code class="language-par">type MaybeBoth&lt;a, b&gt; = either {
+  .neither!,
+  .left a,
+  .right b,
+  .both(a, b)!,
+}
+</code></pre>
+<blockquote>
+<p>Either types are frequently used together with <a href="./recursive.html"><em>recursive</em></a> types to define finite
+tree-like structures.</p>
+<pre><code class="language-par">type BinaryTree&lt;a&gt; = recursive either {
+  .empty!,
+  .node(a, self, self)!,
+}
+</code></pre>
+<p>The pre-defined <code>List&lt;a&gt;</code> type is a combination of <code>recursive</code> and <code>either</code>:</p>
+<pre><code class="language-par">type List&lt;a&gt; = recursive either {
+  .end!,
+  .item(a) self,
+}
+</code></pre>
+</blockquote>
+<h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
+<p>Values of <em>either types</em> are constructed starting with <code>.name</code> — the name of one of the variants in
+the type — followed by an expression of the corresponding payload type.</p>
+<p>Here are some examples of constructions for an either type that demonstrates many possible payloads:</p>
+<pre><code class="language-par">type Varied = either {
+  .unit!,                        // payload is `!`
+  .string String,                // payload is `String`
+  .number Int,                   // payload is `Int`
+  .pair(Int) String,             // payload is `(Int) String`
+  .symmetricPair(Int, String)!,  // payload is `(Int, String)!`
+  .nested either {               // payload is another either type
+    .left!,
+    .right!,
+  },
+  .nested2(String) either {      // payload is a pair of `String` and another either
+    .left!,
+    .right!,
+  }
+}
+
+def Example1: Varied = .unit!
+def Example2: Varied = .string "Hello!"
+def Example3: Varied = .number 42
+def Example4: Varied = .pair(42) "Hello!"
+def Example5: Varied = .symmetricPair(42, "Hello!")!
+def Example6: Varied = .nested.left!
+def Example7: Varied = .nested.right!
+def Example8: Varied = .nested2("Hello!").left!
+def Example9: Varied = .nested2("Hello!").right!
+</code></pre>
+<p><a href="./pair.html">Pairs</a> are frequently used in payloads of either types, both in their symmetric and sequential
+styles. The sequential style makes chaining either types with attached payloads very natural, like
+in the <code>.nested2</code> variant.</p>
+<h2 id="destruction"><a class="header" href="#destruction">Destruction</a></h2>
+<p>Values of <em>either types</em> can be deconstructed using <code>.case</code> expressions, similar to pattern-matching in
+other languages.</p>
+<p>A <code>.case</code> expression starts with the value to be destructed, followed by <code>.case</code>, and a list of
+comma-separated branches enclosed in curly braces, one per each variant.</p>
+<pre><code class="language-par">value.case {
+  // branches
+}
+</code></pre>
+<p>Each branch consists of the name of its variant, a <em>pattern</em> to assign the payload to, then a <code>=&gt;</code>
+followed by an expression computing the result for that branch. All branches must evaluate to the
+same type.</p>
+<pre><code class="language-par">// branch
+.name pattern =&gt; expression,
+</code></pre>
+<p>The patterns to assign the payloads are the same as can appear on the left side of
+<code>let</code> assignments:</p>
+<ul>
+<li><code>variable</code> matches the whole value.</li>
+<li><code>!</code> matches <a href="./unit.html">units</a>.</li>
+<li><code>(pattern1, ...) patternN</code> matches <a href="./pair.html">pairs</a>.</li>
+</ul>
+<p>For a small example, we analyze the <code>Str</code> and <code>Num</code> values of the <code>StringOrNumber</code> type from above:</p>
+<pre><code class="language-par">// evaluates to "Hello!"
+def ResultForStr = Str.case {
+  .string s =&gt; s,
+  .number n =&gt; Int.ToString(n),
+}
+
+// evaluates to "42"
+def ResultForNum = Num.case {
+  .string s =&gt; s,
+  .number n =&gt; Int.ToString(n),
+}
+</code></pre>
+<p>For a comprehensive example, here’s a big <a href="./function.html">function</a> converting the above <code>Varied</code> type
+to a <code>String</code>:</p>
+<pre><code class="language-par">dec VariedToString : [Varied] String
+def VariedToString = [varied] varied.case {
+  .unit! =&gt; ".unit!",
+
+  .string s =&gt; String.Builder.add(".string ").add(String.Quote(s)).build,
+
+  .number n =&gt; String.Builder.add(".number ").add(Int.ToString(n)).build,
+
+  .pair(n) s =&gt;
+    String.Builder
+      .add(".pair(")
+      .add(Int.ToString(n))
+      .add(") ")
+      .add(String.Quote(s))
+      .build,
+
+  .symmetricPair(n, s)! =&gt;
+    String.Builder
+      .add(".symmetricPair(")
+      .add(Int.ToString(n))
+      .add(", ")
+      .add(String.Quote(s))
+      .add(")!")
+      .build,
+
+  .nested inside =&gt; String.Builder.add(".nested").add(inside.case {
+    .left! =&gt; ".left!",
+    .right! =&gt; ".right!",
+  }).build,
+
+  .nested2(s) inside =&gt;
+    String.Builder
+      .add(".nested2(")
+      .add(String.Quote(s))
+      .add(")")
+      .add(inside.case {
+        .left! =&gt; ".left!",
+        .right! =&gt; ".right!",
+      }).build,
+}
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../types/unit.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../types/pair.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../types/unit.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../types/pair.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

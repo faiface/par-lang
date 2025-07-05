@@ -161,102 +161,28 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p>Par (<span style="font-family: Noto Sans">⅋</span>) is a concurrent programming language bringing the expressive power of linear logic into practice.</p>
-<p>This reference contains not only the complete grammar and specification of Par but also an extensive collection of examples, explanations and best practices.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Par is a multi-layer language with an intermediate representation in itself.</p>
-<p>A simple program like</p>
-<pre><code class="language-par">type HW = either { .hello_world! }
-
-def main: HW = .hello_world!
-</code></pre>
-<p>is compiled to a program fully written in <em>process syntax</em>:</p>
-<pre><code class="language-par"><span class="boring">type HW = either { .hello_world! }
-</span><span class="boring">
-</span>def main: HW = chan user {
-  user.hello_world
-  user!
-}
-</code></pre>
-<p>Par is centered around concurrency and session typing, all in the framework of linear logic.
-What does that mean?</p>
-<ul>
-<li>Types are <em>linear</em>, i.e. a value must be used exactly once.
-You might know the type system of Rust, where a value must be used at most once.</li>
-<li>Ultimately, everything in Par is a <em>channel</em>.
-<ul>
-<li>A list sends every item in order and then closes</li>
-<li>A function receives its argument and becomes the result</li>
-<li>An infinite stream can be signaled to either yield the next item or close</li>
-</ul>
-</li>
-<li>Channels communicate with each other by
-<ul>
-<li>sending signals (the names with a dot in front)</li>
-<li>sending values</li>
-<li>closing each other</li>
-</ul>
-</li>
-<li>Everything has a dual in Par: A value can be created by destroying its dual (see <a href="expressions.html#channel-expressions">channel expressions</a>)</li>
-<li>This can all be abstracted away in <a href="expressions.html">expressions</a> and <a href="types.html">types</a> or be exposed as <a href="statements.html">statements</a> in <em>process syntax</em>.</li>
-</ul>
-<p>Putting all of this together, Par manages to be a functional language while also allowing imperative-style code and mutability.</p>
-<p>For example, a mutable stack can be implemented like this (<a href="types.html#choice-types">explanation</a>):</p>
-<pre><code class="language-par"><span class="boring">type Bool = either { .true!, .false! }
-</span><span class="boring">type List&lt;T&gt; = recursive either { .empty!, .item(T) self }
-</span><span class="boring">type Option&lt;T&gt; = either { .none!, .some T }
-</span><span class="boring">
-</span>type Stack&lt;Unwrap, T&gt; = iterative {
-  .push(T) =&gt; self
-  .pop =&gt; (Option&lt;T&gt;) self
-  .unwrap =&gt; Unwrap
-}
-
-dec list_stack : [type T] [List&lt;T&gt;] Stack&lt;List&lt;T&gt;, T&gt;
-def list_stack = [type T] [list] begin {
-  .push(x) =&gt; let list: List&lt;T&gt; = .item(x) list in loop
-  .pop =&gt; list {
-    .empty! =&gt; (.none!) let list: List&lt;T&gt; = .empty! in loop,
-    .item(head) tail =&gt; (.some head) let list = tail in loop
-  }
-  .unwrap =&gt; list
-}
-
-def main = do {
-  let list: List&lt;Bool&gt; = .empty!
-  let stack = list_stack(type Bool)(list)
-  // stack currently represents an empty list
-
-  // the following operations mutate stack
-  stack.push(.true!)
-  // stack now represents a singleton of .true!
-  stack.push(.false!)
-  // stack now represents a two-element list
-} in stack
-</code></pre>
-<p>Running this in the <a href="#getting-started">playground</a> you can push and pop elements, or inspect the underlying data using unwrap.</p>
-<p>For a complete tutorial, see the <a href="#resources">Readme</a></p>
-<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
-<p>To use Par, clone the repository</p>
-<pre><code class="language-sh">$ git clone https://github.com/faiface/par-lang.git
-</code></pre>
-<p>and run the app</p>
-<pre><code class="language-sh">$ cd par-lang
-$ cargo run
-</code></pre>
-<p>Note: If you don’t have Rust and Cargo installed, <a href="https://doc.rust-lang.org/cargo/getting-started/installation.html">do that first</a></p>
-<p>This will launch the Par playground.
-Some example code is already written for you.
-Just press <kbd>Compile</kbd> and <kbd>Run</kbd> to run any definition from the program on the left.</p>
-<h2 id="community"><a class="header" href="#community">Community</a></h2>
-<p>To ask questions or discuss ideas, join our <a href="https://discord.gg/8KsypefW99">Discord</a>.</p>
+<p><strong>Par</strong> is affectionatelly named after the most bemusing connective of
+<a href="https://en.wikipedia.org/wiki/Linear_logic">linear logic</a>: ⅋, pronounced <em>“par”</em>.
+That’s because Par is based directly on (classical) linear logic, as an experiment to
+see where this paradigm can take us.</p>
+<p><a href="https://en.wikipedia.org/wiki/Jean-Yves_Girard">Jean-Yves Girard</a> — the author of linear logic,
+and <a href="https://en.wikipedia.org/wiki/System_F">System F</a>, among other things — wrote on the page 3
+of his <a href="https://www.sciencedirect.com/science/article/pii/0304397587900454">first paper on linear logic</a>:</p>
+<blockquote>
+<p>The new connectives of linear logic have obvious meanings in terms of
+parallel computation, especially the multiplicatives.</p>
+</blockquote>
+<p>This was in 1987. In hindsight, it wasn’t that obvious. What’s obvious is that it <em>is there</em>
+— the parallel computation, that is. What isn’t obvious at all is how to turn it into a practical
+programming language.</p>
+<p>TODO</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
 
-                            <a rel="next prefetch" href="lexical.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="getting_started.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -267,7 +193,7 @@ Just press <kbd>Compile</kbd> and <kbd>Run</kbd> to run any definition from the 
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
 
-                    <a rel="next prefetch" href="lexical.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="getting_started.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

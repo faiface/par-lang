@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Par Documentation</title>
+        <title>Forall - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,21 +12,21 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon.svg">
-        <link rel="shortcut icon" href="favicon.png">
-        <link rel="stylesheet" href="css/variables.css">
-        <link rel="stylesheet" href="css/general.css">
-        <link rel="stylesheet" href="css/chrome.css">
-        <link rel="stylesheet" href="css/print.css" media="print">
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
-        <link rel="stylesheet" href="fonts/fonts.css">
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -35,11 +35,11 @@
 
         <!-- Provide site root to javascript -->
         <script>
-            var path_to_root = "";
+            var path_to_root = "../";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc.js"></script>
+        <script src="../toc.js"></script>
     </head>
     <body>
     <div id="body-container">
@@ -91,7 +91,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -125,13 +125,13 @@
                     <h1 class="menu-title">Par Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/introduction.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types/forall.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,29 +160,91 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p><strong>Par</strong> is affectionatelly named after the most bemusing connective of
-<a href="https://en.wikipedia.org/wiki/Linear_logic">linear logic</a>: ⅋, pronounced <em>“par”</em>.
-That’s because Par is based directly on (classical) linear logic, as an experiment to
-see where this paradigm can take us.</p>
-<p><a href="https://en.wikipedia.org/wiki/Jean-Yves_Girard">Jean-Yves Girard</a> — the author of linear logic,
-and <a href="https://en.wikipedia.org/wiki/System_F">System F</a>, among other things — wrote on the page 3
-of his <a href="https://www.sciencedirect.com/science/article/pii/0304397587900454">first paper on linear logic</a>:</p>
+                        <h1 id="forall"><a class="header" href="#forall">Forall</a></h1>
+<p>What about <em>generic</em> functions? Or generic values?</p>
+<p>We already know about <a href="../structure/definitions_and_declarations.html">generic types</a>. For example, here’s
+a typical optional type, as present in many languages:</p>
+<pre><code class="language-par">type Option&lt;a&gt; = either {
+  .none!,
+  .some a,
+}
+</code></pre>
+<p>In Par, generic type definitions use the familiar angle bracket syntax. The parameters to those,
+such as <code>a</code> for <code>Option&lt;a&gt;</code> may be replaced with anything, such as <code>Option&lt;Int&gt;</code>. The resulting type is,
+however, always concrete.</p>
+<p>Now consider these two definitions:</p>
+<pre><code class="language-par">def None: Option&lt;String&gt; = .none!
+
+dec Swap : [(String, Int)!] (Int, String)!
+def Swap = [pair]
+  let (first, second)! = pair
+  in (second, first)!
+</code></pre>
+<p>Both are defined in terms of concrete types, but don’t use them: <code>.none!</code> is a valid value for
+any <code>Option&lt;a&gt;</code>, and swapping a pair works regardless of its content.</p>
+<p>To make these work with anything, we employ <em>forall</em> types!</p>
+<p>In Par, <strong><em>forall</em> types:</strong></p>
+<ul>
+<li><strong>Don’t use angle brackets.</strong> Instead they are functions taking types.</li>
+<li><strong>Are not inferred.</strong> Calling a generic function requires specifying the types.</li>
+<li><strong>Are first-class!</strong> It’s possible to store and pass generic values around, without them losing
+their genericity.</li>
+</ul>
+<p>A forall type consists of two parts: a lower-case type variable enclosed in square brackets, and
+prefixed with the keyword <code>type</code>, and the result type, which uses this type variable.</p>
+<pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
+
+dec Swap : [type a] [type b] [(a, b)!] (b, a)!
+</code></pre>
+<p>After erasing the previous concrete definitions for <code>None</code>, these will be their generic types. As we can
+see, these look just like functions, but taking types!</p>
+<p>If the result of a forall type is another forall types — like with <code>Swap</code> — we can use syntax sugar to
+put them both in one pair of square brackets:</p>
+<pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
+</code></pre>
+<p>This looks better. The two ways are, however, completely equivalent.</p>
+<p>Just like functions, foralls are <a href="TODO"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
+copied, only destructed by calling.</p>
+<h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
+<p>Values of forall types are constructed the same way as functions, except the argument is a type
+variable and prefixed with the keyword <code>type</code>.</p>
+<p>Completing the definitions above:</p>
+<pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
+def None = [type a] .none!
+
+dec Swap : [type a, b] [(a, b)!] (b, a)!
+def Swap = [type a, b] [pair]
+  let (first, second)! = pair
+  in (second, first)!
+</code></pre>
 <blockquote>
-<p>The new connectives of linear logic have obvious meanings in terms of
-parallel computation, especially the multiplicatives.</p>
+<p>A common complaint at this point is:
+<strong>Why do I have to write <code>[type a, b]</code> in both the declaration, and the definition?</strong> After all,
+it doesn’t seem like they’re used in the definition. However, they are! What’s the type of <code>first</code>?
+It’s <code>a</code>. And <code>second</code>? It’s <code>b</code>. If you called them <code>[type kek, dek]</code>, they would be <code>kek</code> and <code>dek</code>.
+Par’s type checker never makes type names up.</p>
+<p>Additionally, if you do end up needing to use those type variables — for example, to call another
+generic function — they will be right at hand.</p>
 </blockquote>
-<p>This was in 1987. In hindsight, it wasn’t that obvious. What’s obvious is that it <em>is there</em>
-— the parallel computation, that is. What isn’t obvious at all is how to turn it into a practical
-programming language.</p>
-<p>TODO</p>
+<h2 id="destruction"><a class="header" href="#destruction">Destruction</a></h2>
+<p>Using a <em>forall</em> value looks the same as calling a function, except the argument is a concrete type,
+prefixed with the keyword <code>type</code>.</p>
+<pre><code class="language-par">def NoneInt = None(type Int)  // type inferred as `Option&lt;Int&gt;`
+
+def Pair    = ("Hello!", 42)!
+def Swapped = Swap(type String, Int)(Pair)
+//          = (42, "Hello!")!
+</code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../types/function.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
 
-                            <a rel="next prefetch" href="getting_started.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../types/recursive.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -192,8 +254,11 @@ programming language.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../types/function.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
 
-                    <a rel="next prefetch" href="getting_started.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../types/recursive.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
@@ -208,13 +273,13 @@ programming language.</p>
         </script>
 
 
-        <script src="elasticlunr.min.js"></script>
-        <script src="mark.min.js"></script>
-        <script src="searcher.js"></script>
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
 
-        <script src="clipboard.min.js"></script>
-        <script src="highlight.js"></script>
-        <script src="book.js"></script>
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
 
         <!-- Custom JS scripts -->
 

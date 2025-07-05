@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Notation - Par Documentation</title>
+        <title>Selecting &amp; Sending - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,21 +12,21 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon.svg">
-        <link rel="shortcut icon" href="favicon.png">
-        <link rel="stylesheet" href="css/variables.css">
-        <link rel="stylesheet" href="css/general.css">
-        <link rel="stylesheet" href="css/chrome.css">
-        <link rel="stylesheet" href="css/print.css" media="print">
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
-        <link rel="stylesheet" href="fonts/fonts.css">
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -35,11 +35,11 @@
 
         <!-- Provide site root to javascript -->
         <script>
-            var path_to_root = "";
+            var path_to_root = "../../";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc.js"></script>
+        <script src="../../toc.js"></script>
     </head>
     <body>
     <div id="body-container">
@@ -91,7 +91,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -125,13 +125,13 @@
                     <h1 class="menu-title">Par Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/notation.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/processes/commands/selecting_and_sending.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,53 +160,119 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="notation"><a class="header" href="#notation">Notation</a></h1>
-<h2 id="grammar"><a class="header" href="#grammar">Grammar</a></h2>
-<p>The grammar of Par is declared in <em>Lexer</em> and <em>Syntax</em> blocks. It uses the following notation:</p>
-<ul>
-<li>
-<p>Sequences of capital letters like DIGIT represent lexer tokens</p>
-</li>
-<li>
-<p>Italic names in CamelCase like <em>Item</em> represent parser nonterminals</p>
-</li>
-<li>
-<p>Character sequences in monospace like <code>type</code> represent literals</p>
-</li>
-<li>
-<p>Characters may be represented using escape sequences, like \n</p>
-</li>
-<li>
-<ul>
-<li>x<sup>?</sup> means x, zero or once</li>
-<li>x<sup>*</sup> means x, zero or more</li>
-<li>x<sup>+</sup> means x, once or more</li>
-<li>x<sup>a..b</sup> means at least a and at most b of x</li>
-</ul>
-</li>
-<li>
-<p>x | y means either x or y</p>
-</li>
-<li>
-<p>[ and ] group characters together, like [<code>x</code> <code>X</code>] or [<code>a</code>-<code>z</code>]</p>
-</li>
-<li>
-<p>character sequences (and groups of them) can be negated by ~, like ~\n</p>
-</li>
-<li>
-<p>( and ) group arbitrary rules for precedence</p>
-</li>
-</ul>
+                        <h1 id="selecting--sending"><a class="header" href="#selecting--sending">Selecting &amp; Sending</a></h1>
+<p>The built-in <code>String.Builder</code> type is defined this way:</p>
+<pre><code class="language-par">type String.Builder = iterative choice {
+  .add(String) =&gt; self,
+  .build =&gt; String,
+}
+</code></pre>
+<p>It’s basically an object, in an OOP-fashion, with two methods: <code>.add</code> and <code>.build</code>. At the top
+level, it’s an <a href="../types/iterative.html">iterative</a> <a href="../types/choice.html">choice</a>: an object that
+can be repeatedly interacted with.</p>
+<p>We construct an empty <code>String.Builder</code> using the built-in definition of the same name:</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+</code></pre>
+<h2 id="selection"><a class="header" href="#selection">Selection</a></h2>
+<p>Now, we have a local variable <code>builder</code> of the type <code>String.Builder</code>.</p>
+<p>When learning about <a href="../types/iterative.html">iterative</a> types, we learned that we can treat them
+as their underlying body. For <code>String.Builder</code>, it’s a <strong>choice type,</strong> and the command for those is
+the <strong>selection command.</strong></p>
+<p>All commands start with their subject. Here it’s the <code>builder</code> variable. The selection command
+itself then looks the same as the usual <a href="../types/choice.html#destruction">destruction of a choice</a>.</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+  builder.add        // selection command
+</code></pre>
+<p>That’s it! Now, here’s the crucial bit: after selection, <code>builder</code> <strong>changes its type</strong> to the type
+of the selected branch. Here’s the one we selected:</p>
+<pre><code class="language-par">  .add(String) =&gt; self,
+</code></pre>
+<p>The argument on the left side of <code>=&gt;</code> is just a syntax sugar for a <a href="../types/function.html">function</a>.
+De-sugared, it is:</p>
+<pre><code class="language-par">  .add =&gt; [String] self,
+</code></pre>
+<p>Therefore, the type of <code>builder</code> after this <code>builder.add</code> command becomes a function:</p>
+<pre><code class="language-par">builder: [String] iterative choice {
+  .add(String) =&gt; self,
+  .build =&gt; String,
+}
+</code></pre>
+<blockquote>
+<p>The <code>self</code> in the original branch got replaced by its corresponding <code>iterative</code> — in
+this case, the original <code>String.Builder</code>.</p>
+</blockquote>
+<h2 id="sending"><a class="header" href="#sending">Sending</a></h2>
+<p>For a <strong>function type,</strong> we have the <strong>send command.</strong> It’s just like a function call — but
+as a command, it doesn’t have a result. Instead, it turns the subject itself to the result.</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+  builder.add        // selection command
+  builder("Hello")   // send command
+</code></pre>
+<blockquote>
+<p>You may have noticed, that the <strong>selection</strong> and <strong>send</strong> commands behave the same as a
+combination of a regular destruction and re-assignment of the variable. In code:</p>
+<pre><code class="language-par">  let builder = builder.add
+  let builder = builder("Hello")
+</code></pre>
+<p>For these two, the behavior matches perfectly! It’s a good way to build intuition about what
+these commands mean. However, this simple translation stops working as we get into the <em><code>.case</code></em>
+and <em>receive</em> commands.</p>
+</blockquote>
+<p>After sending the string, <code>builder</code> turns back into the original <code>String.Builder</code>, so we can
+keep adding more content to it.</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+  builder.add        // selection command
+  builder("Hello")   // send command
+  builder.add        // selection command
+  builder(", ")      // send command
+  builder.add        // selection command
+  builder("World")   // send command
+  builder.add        // selection command
+  builder("!")       // send command
+</code></pre>
+<h2 id="chaining-commands"><a class="header" href="#chaining-commands">Chaining commands</a></h2>
+<p>This is rather noisy, but we can improve it! Multiple consecutive <strong>commands on the same subject,</strong>
+can be <strong>chained</strong> together, without repeating the subject.</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+  builder.add("Hello")
+  builder.add(", ")
+  builder.add("World")
+  builder.add("!")
+</code></pre>
+<p>Or even:</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+  builder
+    .add("Hello")
+    .add(", ")
+    .add("World")
+    .add("!")
+</code></pre>
+<p>I like the first variant better, though.</p>
+<p>To complete the <code>do</code> expression, let’s just return the constructed string:</p>
+<pre><code class="language-par">def LetsBuildStrings = do {
+  let builder = String.Builder
+  builder.add("Hello")
+  builder.add(", ")
+  builder.add("World")
+  builder.add("!")
+} in builder.build  // = "Hello, world!"
+</code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="appendix.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../../processes/commands.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="glossary.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../../processes/commands/looping_and_branching.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -216,11 +282,11 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="appendix.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../../processes/commands.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="glossary.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../../processes/commands/looping_and_branching.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
@@ -235,13 +301,13 @@
         </script>
 
 
-        <script src="elasticlunr.min.js"></script>
-        <script src="mark.min.js"></script>
-        <script src="searcher.js"></script>
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
 
-        <script src="clipboard.min.js"></script>
-        <script src="highlight.js"></script>
-        <script src="book.js"></script>
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
 
         <!-- Custom JS scripts -->
 

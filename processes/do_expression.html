@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Source Files - Par Documentation</title>
+        <title>The do Expression - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,21 +12,21 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon.svg">
-        <link rel="shortcut icon" href="favicon.png">
-        <link rel="stylesheet" href="css/variables.css">
-        <link rel="stylesheet" href="css/general.css">
-        <link rel="stylesheet" href="css/chrome.css">
-        <link rel="stylesheet" href="css/print.css" media="print">
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
-        <link rel="stylesheet" href="fonts/fonts.css">
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -35,11 +35,11 @@
 
         <!-- Provide site root to javascript -->
         <script>
-            var path_to_root = "";
+            var path_to_root = "../";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc.js"></script>
+        <script src="../toc.js"></script>
     </head>
     <body>
     <div id="body-container">
@@ -91,7 +91,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -125,13 +125,13 @@
                     <h1 class="menu-title">Par Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/source-files.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/processes/do_expression.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,41 +160,43 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="source-files"><a class="header" href="#source-files">Source Files</a></h1>
-<blockquote>
-<p><strong><sup>Syntax</sup></strong><br />
-<em>ParFile</em> :<br />
-      <a href="items.html"><em>Item</em></a><sup>*</sup></p>
-</blockquote>
-<p>This rule is the entry point for every file written in Par.</p>
-<p>Currently, every Par program consists entierely of <a href="items.html">items</a>:</p>
-<ul>
-<li>
-<p>Type definitions</p>
-<pre><code class="language-par">type TypeName = SomeType
+                        <h1 id="the-do-expression"><a class="header" href="#the-do-expression">The <code>do</code> Expression</a></h1>
+<p>Most of the time, it’s not desirable to use <em>process syntax</em> for the whole program. Instead, it’s usually best to
+just insert some commands where appropriate. That’s what the <code>do</code> expression in all about. In real Par programs,
+<strong>most of the explicit commands will be found in <code>do</code> expressions.</strong> And, since we’re already familiar with
+<em>expression syntax</em>, <code>do</code> expressions are a good place to start adding commands to otherwise expression-based programs.</p>
+<p>A <code>do</code> expression starts with the keyword <code>do</code>, then a sequence of commands (without separators) enclosed in
+curly braces, followed by the keyword <code>in</code>, and finally the resulting expression.</p>
+<p>It executes the commands first, then evaluates to the expression after <code>in</code>.</p>
+<pre><code class="language-par">def MyName: String = do { } in "Michal"
 </code></pre>
-</li>
-<li>
-<p>Value definitions and declarations</p>
-<pre><code class="language-par">// type and value together
-def name: Type = value
+<p>The above <code>do</code> expression contains no commands, so its result is simply <code>"Michal"</code>.</p>
+<h2 id="the-let-statement"><a class="header" href="#the-let-statement">The <code>let</code> Statement</a></h2>
+<p>Before getting onto actual commands — those that manipulate channels — there is one non-command that can occur in
+a process: the <code>let</code> statement. Just like the <a href="../structure/let_expressions.html"><code>let</code>/<code>in</code> expression</a>, it assigns
+a variable. The only difference is: the <code>let</code> statement doesn’t contain the <code>in</code> keyword. And, since it’s a process,
+there can be more of them one after another.</p>
+<pre><code class="language-par">dec DisplayPlusEquation : [Nat, Nat] String
+def DisplayPlusEquation = [a, b] do {
+  let c = Nat.Add(a, b)
+  let a = Int.ToString(a)
+  let b = Int.ToString(b)
+  let c = Int.ToString(c)
+} in String.Builder.add(a).add("+").add(b).add("=").add(c).build
 
-// separate type declaration
-dec name : Type
-def name = value
+def Test = DisplayPlusEquation(3, 4)  // = "3+4=7"
 </code></pre>
-</li>
-</ul>
+<p>This is, in fact, the <strong>idiomatic way to assign multiple variables in an expression.</strong></p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="lexical.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../process_syntax.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="items.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../processes/commands.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -204,11 +206,11 @@ def name = value
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="lexical.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../process_syntax.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="items.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../processes/commands.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
@@ -223,13 +225,13 @@ def name = value
         </script>
 
 
-        <script src="elasticlunr.min.js"></script>
-        <script src="mark.min.js"></script>
-        <script src="searcher.js"></script>
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
 
-        <script src="clipboard.min.js"></script>
-        <script src="highlight.js"></script>
-        <script src="book.js"></script>
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
 
         <!-- Custom JS scripts -->
 

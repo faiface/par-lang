@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Lexical Structure - Par Documentation</title>
+        <title>Types &amp; Their Expressions - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/lexical.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types_and_expressions.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,103 +160,60 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="lexical-structure"><a class="header" href="#lexical-structure">Lexical Structure</a></h1>
-<h2 id="comments"><a class="header" href="#comments">Comments</a></h2>
-<blockquote>
-<p><strong><sup>Lexer</sup></strong><br />
-LINE_COMMENT :<br />
-      <code>//</code> (~\n)<sup>*</sup></p>
-<p>BLOCK_COMMENT :<br />
-      <code>/*</code> (BLOCK_COMMENT | ~<code>*/</code>)<sup>*</sup> <code>*/</code></p>
-</blockquote>
-<p>Comments have no effect on the program.</p>
-<pre><code class="language-par">// This is a line comment
-
-/*
- * And this is a multiline (block) comment.
- * The stars on the left are purely for aesthetics
- */
-</code></pre>
-<h2 id="names"><a class="header" href="#names">Names</a></h2>
-<blockquote>
-<p><strong><sup>Lexer</sup></strong><br />
-ID :<br />
-      (ID_START ID_CONT<sup>*</sup>)<sub><em>Expect <a href="#keywords">keywords</a></em></sub></p>
-<p>ID_START :<br />
-      [<code>a</code>-<code>z</code> <code>A</code>-<code>Z</code>]</p>
-<p>ID_CONT :<br />
-      [<code>_</code> <code>a</code>-<code>z</code> <code>A</code>-<code>Z</code> <code>0</code>-<code>9</code>]</p>
-</blockquote>
-<blockquote>
-<p><strong><sup>Syntax</sup></strong><br />
-<em>ID_List</em> :<br />
-      ID (<code>,</code> ID)<sup>*</sup> <code>,</code><sup>?</sup></p>
-</blockquote>
-<p>Some valid identifiers are:</p>
+                        <h1 id="types--their-expressions"><a class="header" href="#types--their-expressions">Types &amp; Their Expressions</a></h1>
+<p>Types in Par serve two seemingly incompatible purposes at the same time:</p>
 <ul>
-<li><code>snake_case</code></li>
-<li><code>PascalCase</code></li>
-<li><code>letters123</code></li>
+<li>Objects of every-day programming, like functions and pairs.</li>
+<li><a href="https://en.wikipedia.org/wiki/Session_type">Session-typed</a> communication channels.</li>
 </ul>
-<p>Some invalid identifiers are:</p>
+<p>In the concurrent framework of linear logic, these are one and the same. But to make this
+connection harmonious and ergonomic, some unusual choices have to be made in the design of
+the basic building blocks.</p>
+<p><strong>Types in Par are sequential.</strong> The basic building blocks — pairs, functions, eithers (sums),
+and choices (co-sums) — all read as <strong>first this, then that.</strong></p>
+<p>Let’s take pairs. In many programming language, <code>(A, B)</code> is the type of a pair of <code>A</code> and <code>B</code>.
+This approach is not sequential: both types assume equal position.</p>
+<p>In Par, the pair type is instead <code>(A) B</code>. The second type being outside of the parentheses is
+essential. It allows us to sequentially continue the type without the burden of nesting.</p>
+<p>Compare</p>
 <ul>
-<li><code>chan</code>, a keyword</li>
-<li><code>3D</code>, starts with a number</li>
-<li><code>kebab-case</code>, same as <code>kebab - case</code></li>
+<li><code>(A, B)</code></li>
+<li><code>(A, (B, C))</code></li>
+<li><code>(A, (B, (C, D)))</code></li>
 </ul>
-<h2 id="keywords"><a class="header" href="#keywords">Keywords</a></h2>
-<div class="table-wrapper"><table><thead><tr><th>Keyword</th><th>Usage</th></tr></thead><tbody>
-<tr><td><code>type</code></td><td><a href="items.html#type-definitions">Define a type</a>, Existentials, Universals</td></tr>
-<tr><td><code>dec</code></td><td><a href="items.html#definitions">Declare</a> a value</td></tr>
-<tr><td><code>def</code></td><td><a href="items.html#definitions">Define</a> a value</td></tr>
-<tr><td><code>chan</code></td><td><a href="expressions.html#channel-expressions">Channel expressions</a>, <a href="types.html#channel-types">Dualize types</a></td></tr>
-<tr><td><code>let</code></td><td>Let <a href="expressions.html#let-expressions">expressions</a> and <a href="statements.html#let-statements">statements</a></td></tr>
-<tr><td><code>do</code></td><td><a href="expressions.html#do-expressions">Do expressions</a></td></tr>
-<tr><td><code>in</code></td><td><a href="expressions.html#let-expressions">Let expressions</a>, <a href="expressions.html#do-expressions">Do expressions</a></td></tr>
-<tr><td><code>begin</code>, <code>loop</code></td><td><a href="./expressions/construction.html#iterative-constructions">Iterative constructions</a>, Recursive destruction (<a href="./expressions/application.html#recursive-destructions">expression</a> or <a href="./statements/commands.html#recursive-commands">statement</a>)</td></tr>
-<tr><td><code>either</code></td><td><a href="types.html#either-types">Either types</a></td></tr>
-<tr><td><code>recursive</code></td><td><a href="types.html#recursive-types">Recursive types</a></td></tr>
-<tr><td><code>iterative</code></td><td><a href="types.html#iterative-types">Iterative types</a></td></tr>
-<tr><td><code>self</code></td><td><a href="types.html#recursive-types">Recursive</a> and <a href="types.html#iterative-types">iterative</a> types</td></tr>
-<tr><td><code>unfounded</code></td><td>Escape totality checker in recursive <a href="./expressions/application.html#recursive-destructions">expressions</a> and <a href="./statements/commands.html#recursive-commands">statements</a></td></tr>
-</tbody></table>
-</div>
-<h2 id="punctuation"><a class="header" href="#punctuation">Punctuation</a></h2>
-<div class="table-wrapper"><table><thead><tr><th>Symbol</th><th>Usage</th></tr></thead><tbody>
-<tr><td><code>=</code></td><td>Definitions (<a href="items.html#definitions">values</a> and <a href="items.html#type-definitions">types</a>), Let <a href="expressions.html#let-expressions">expressions</a> and <a href="statements.html#let-statements">statements</a></td></tr>
-<tr><td><code>:</code></td><td><a href="types.html">Type annotations</a>, Value <a href="items.html#definitions">declarations</a>, <a href="./statements/commands.html#recursive-commands">Loop labels</a></td></tr>
-<tr><td><code>,</code></td><td>Various enumerations</td></tr>
-<tr><td><code>!</code></td><td>Unit <a href="./types.html#the-unit-type">type</a>, <a href="./expressions/construction.html#the-unit-expression">expression</a>, <a href="./patterns.html#the-unit-pattern">pattern</a>, <a href="./statements/commands.html#the-break-command">Break command</a></td></tr>
-<tr><td><code>?</code></td><td><a href="./types.html#the-bottom-type">Bottom type</a>, <a href="./statements/commands.html#the-continue-command">Continue command</a></td></tr>
-<tr><td><code>.</code></td><td>Labels of either or choice types, used in various places</td></tr>
-<tr><td><code>&lt;&gt;</code></td><td><a href="./statements/commands.html#link-commands">Link commands</a></td></tr>
-<tr><td><code>&lt;</code></td><td>Type <a href="items.html">parameters</a> and <a href="types.html">arguments</a></td></tr>
-<tr><td><code>&gt;</code></td><td>Type <a href="items.html">parameters</a> and <a href="types.html">arguments</a></td></tr>
-<tr><td><code>=&gt;</code></td><td>Choice <a href="./types.html#choice-types">types</a> and <a href="./expressions/construction.html#choice-constructions">constructions</a>, Match <a href="./expressions/application.html#match-expressions">expressions</a> and <a href="./statements/commands.html#match-commands">commands</a></td></tr>
-<tr><td><code>(</code> … <code>)</code></td><td>Pairs, function application</td></tr>
-<tr><td><code>[</code> … <code>]</code></td><td>Functions, pair destruction</td></tr>
-<tr><td><code>{</code> … <code>}</code></td><td>Either and choice types, processes</td></tr>
-</tbody></table>
-</div>
-<h2 id="whitespace"><a class="header" href="#whitespace">Whitespace</a></h2>
-<p>Whitespace in Par serves merely the purpose of separating tokens.
-Whitespace characters are:</p>
+<p>against</p>
 <ul>
-<li>The whitespace <code>' '</code></li>
-<li>Tabs <code>'\t'</code>, <code>'\v'</code></li>
-<li>Newline <code>'\n'</code></li>
-<li>Carriage return <code>'\r'</code></li>
+<li><code>(A) B</code></li>
+<li><code>(A) (B) C</code></li>
+<li><code>(A) (B) (C) D</code></li>
 </ul>
+<p>Of course, most languages that provide <code>(A, B)</code> pairs also support triples <code>(A, B, C)</code>, and
+quadruples <code>(A, B, C, D)</code>, so let’s mix it up!</p>
+<p>The usual syntax for function types is <code>A -&gt; B</code>. That is sequential, but in Par we have a syntax
+that plays more nicely with the pairs: <code>[A] B</code>. Now compare</p>
+<ul>
+<li><code>(A, B -&gt; (C, D -&gt; E))</code></li>
+</ul>
+<p>versus</p>
+<ul>
+<li><code>(A) [B] (C) [D] E</code></li>
+</ul>
+<p>We can read it as: <em>first give <code>A</code>, then take <code>B</code>, then give <code>C</code>, then take <code>D</code>, and finally give <code>E</code>.</em></p>
+<p>This is starting to look a lot like session types! An alternative reading of the type could be:
+<em>first send <code>A</code>, then receive <code>B</code>, then send <code>C</code>, then receive <code>D</code>, and finally proceed as <code>E</code>.</em></p>
+<p>And that, in a nutshell, is how Par unifies every-day types with session types.</p>
+<p><strong>This chapter covers the every-day aspect of types in Par.</strong> For the session types aspect, check
+out <a href="./processes.html">Processes</a>.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="big_table.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="source-files.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="types/unit.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -266,11 +223,11 @@ Whitespace characters are:</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="big_table.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="source-files.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="types/unit.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

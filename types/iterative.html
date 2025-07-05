@@ -1,0 +1,398 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Iterative - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types/iterative.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="iterative"><a class="header" href="#iterative">Iterative</a></h1>
+<p>We already covered one kind of self-referential types: <a href="./recursive.html"><em>recursive types</em></a>. Now we cover
+the other kind: <em>iterative types</em>. They are also known as
+<a href="https://en.wikipedia.org/wiki/Coinduction"><em>coinductive</em></a>, or corecursive types, because they enable
+<a href="https://en.wikipedia.org/wiki/Corecursion"><em>corecursion</em></a>.</p>
+<p>In a nutshell:</p>
+<ul>
+<li>Values of <strong>recursive types</strong> <em>are</em> something repeated <em>some</em> number of times.</li>
+<li>Values of <strong>iterative types</strong> <em>can</em> repeat something <em>any</em> number of times.</li>
+</ul>
+<p>Recursive types tell you how many times you need to step through them to reach the end. That’s what
+<code>.begin</code>/<code>.loop</code> does. If there is a <code>self</code>, you can always <code>.loop</code> through it, and proceed with the
+recursion until you reach the end.</p>
+<p>But iterative types let you tell <em>them</em> how many times you want to repeat them. They have the ability
+to unfold as many times as you like. It’s up to you, the consumer, to proceed.</p>
+<p>So, let’s take a look at the <strong>iterative types.</strong></p>
+<p>An iterative type starts with the keyword <code>iterative</code> followed by a body that may contain any number
+of occurrences of <code>self</code>. Notice that the pattern is the same as with <a href="./recursive.html">recursive types</a>.</p>
+<p>The prototypical iterative type — and a good example to study — is an infinite sequence.</p>
+<pre><code class="language-par">type Sequence&lt;a&gt; = iterative choice {
+    .close =&gt; !,
+    .next =&gt; (a) self,
+}
+</code></pre>
+<blockquote>
+<p><strong>If there are nested <code>iterative</code> (or <a href="./recursive.html"><code>recursive</code></a>) types, it may be necessary to
+distinguish between them.</strong> For that, we can attach <strong>labels</strong> to <code>iterative</code> and <code>self</code>. That’s
+done with a slash: <code>iterative/label</code>, <code>self/label</code>. Any lower-case identifier can be used for the
+label.</p>
+</blockquote>
+<p>Iterative types are <strong>always linear,</strong> regardless of what’s in their bodies. As such, they can’t be
+dropped, nor copied.</p>
+<p>Notice, that we included a <code>.close</code> branch on the inner <a href="./choice.html">choice</a>. Since <code>Sequence&lt;a&gt;</code> is
+a linear type, there would be no way to get rid of it if it only contained the <code>.next</code> branch.</p>
+<p>Just like <a href="./recursive.html">recursive types</a>, iterative types can be equated with their <em>expansions</em>:</p>
+<ol>
+<li>The original definition:
+<pre><code class="language-par">type Sequence&lt;a&gt; = iterative choice {
+  .close =&gt; !,
+  .next =&gt; (a) self,
+}
+</code></pre>
+</li>
+<li>The first expansion:
+<pre><code class="language-par">type Sequence&lt;a&gt; = choice {
+  .close =&gt; !,
+  .next =&gt; (a) iterative choice {
+    .close =&gt; !,
+    .next =&gt; (a) self,
+  },
+}
+</code></pre>
+</li>
+<li>The second expansion:
+<pre><code class="language-par">type Sequence&lt;a&gt; = choice {
+  .close =&gt; !,
+  .next =&gt; (a) choice {
+    .close =&gt; !,
+    .next =&gt; (a) iterative choice {
+      .close =&gt; !,
+      .next =&gt; (a) self,
+    },
+  },
+}
+</code></pre>
+</li>
+<li>And so on…</li>
+</ol>
+<p>So, if both <a href="./recursive.html">recursive</a> and iterative types can be equated with their expansions,
+<strong>what’s the difference?</strong> The difference lies in their construction and destruction:</p>
+<ul>
+<li><strong>Recursive types</strong> are <strong>constructed step by step</strong> and <strong>destructed by loops</strong>.</li>
+<li>But, <strong>iterative types</strong> are <strong>constructed by loops</strong> and <strong>destructed step by step</strong>.</li>
+</ul>
+<p>Let’s see what that means!</p>
+<h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
+<p>Values of iterative types are constructed using standalone <code>begin</code>/<code>loop</code> expressions. They start with
+<code>begin</code>, followed by an expression of the body type. Inside this expression, use a standlone <code>loop</code>
+in the <code>self</code> places of the body type to go back to the corresponding <code>begin</code>.</p>
+<blockquote>
+<p>Just like with <a href="./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>, it’s possible to use labels to
+distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begin</code>/<code>.loop</code>) uses. Just use a slash:
+<code>begin/label</code> and <code>loop/label</code>.</p>
+</blockquote>
+<p>Here’s a simple <code>Sequence&lt;Int&gt;</code> that produces the number <code>7</code> forever:</p>
+<pre><code class="language-par">dec SevenForever : Sequence&lt;Int&gt;
+def SevenForever = begin case {
+  .close =&gt; !,
+  .next  =&gt; (7) loop,
+}
+</code></pre>
+<p>The <code>.next</code> branch produces a pair, as per the sequence’s body type, with the second element being
+the new version of the sequence. Here we use <code>loop</code> to accomplish that corecursively, looping back
+to the <code>begin</code>.</p>
+<p>The corecursive meaning of <code>begin</code>/<code>loop</code> can again be understood by seeing its expansions:</p>
+<ol>
+<li>The original code:
+<pre><code class="language-par">def SevenForever = begin case {
+  .close =&gt; !,
+  .next  =&gt; (7) loop,
+}
+</code></pre>
+</li>
+<li>The first expansion:
+<pre><code class="language-par">def SevenForever = case {
+  .close =&gt; !,
+  .next  =&gt; (7) begin case {
+    .close =&gt; !,
+    .next  =&gt; (7) loop,
+  },
+}
+</code></pre>
+</li>
+<li>The second expansion:
+<pre><code class="language-par">def SevenForever = case {
+  .close =&gt; !,
+  .next  =&gt; (7) case {
+    .close =&gt; !,
+    .next  =&gt; (7) begin case {
+      .close =&gt; !,
+      .next  =&gt; (7) loop,
+    },
+  },
+}
+</code></pre>
+</li>
+<li>And so on…</li>
+</ol>
+<p><strong>Retention of local variables</strong> works the same as in <a href="./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>.
+With iterative types, we can use it to carry and <strong>update the internal state</strong> of the iterative object.</p>
+<p>For example, here’s an infinite sequence of fibonacci numbers:</p>
+<pre><code class="language-par">def Fibonacci: Sequence&lt;Nat&gt; =
+  let (a, b)! = (0, 1)!
+  in begin case {
+    .close =&gt; !,
+    .next =&gt;
+      let (a, b)! = (b, Nat.Add(a, b))!
+      in (a) loop
+  }
+</code></pre>
+<p>This is very useful. In most programming languages, constructing a similar <code>Fibonacci</code> object would
+require defining a <code>class</code> or a <code>struct</code> describing the internal state, and then updating it in
+methods. In Par, iterative objects can be constructed using anonymous expressions, with no need
+of specifying their internal state by a standalone type: <strong>the internal state is just local variables.</strong></p>
+<p>In the <code>Fibonacci</code>’s case, the internal state is non-linear. That’s why we’re able to return a bare unit
+in the <code>.close</code> branch: <code>a</code> and <code>b</code> get dropped automatically.</p>
+<p>Let’s take a look at a case where the internal state is linear! Suppose we need a function that takes
+an arbitrary sequence of integers, and increments its items by <code>1</code>, producing a new sequence.</p>
+<pre><code class="language-par">dec Increment : [Sequence&lt;Int&gt;] Sequence&lt;Int&gt;
+def Increment = [seq] begin case {
+  .close =&gt; let ! = seq.close in !,
+  .next =&gt;
+    let (x) seq = seq.next
+    in (Int.Add(x, 1)) loop
+}
+
+def FibonacciPlusOne = Increment(Fibonacci)
+</code></pre>
+<p>In this case, we need to explictly close the input <code>seq</code> in the <code>.close</code> branch. It’s linear, so
+we can’t just drop it.</p>
+<h3 id="the-escape-hatch-from-totality-unfounded"><a class="header" href="#the-escape-hatch-from-totality-unfounded">The escape-hatch from totality: <code>unfounded</code></a></h3>
+<p>Just like with <a href="./recursive.html#the-escape-hatch-from-totality-unfounded">recursive destruction</a>,
+it may happen that your iterative construction is total — meaning it never enters an infinite,
+unproductive loop — yet not accepted by Par’s type checker. In such cases, it’s possible to
+disable Par’s totality checking by replacing <code>begin</code> with <code>unfounded</code>.</p>
+<h2 id="destruction"><a class="header" href="#destruction">Destruction</a></h2>
+<p>Iterative types don’t have any special syntax for destruction. Instead, we just operate on their bodies
+directly, as if they were expanded.</p>
+<p>For example, here’s a function to take the first element from a sequence and close it:</p>
+<pre><code class="language-par">def Head = [type a] [seq: Sequence&lt;a&gt;]
+  let (x) seq = seq.next
+  in let ! = seq.close
+  in x
+</code></pre>
+<p>Using <a href="./recursive.html">recursion</a>, we can destruct an iterative type many times. Here’s a function to
+take the first N elements of a sequence and return them in a list:</p>
+<pre><code class="language-par">dec Take : [type a] [Nat, Sequence&lt;a&gt;] List&lt;a&gt;
+def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
+  .end! =&gt; let ! = seq.close in .end!,
+  .step remaining =&gt;
+    let (x) seq = seq.next
+    in .item(x) remaining.loop
+}
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../types/choice.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../types/exists.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../types/choice.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../types/exists.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

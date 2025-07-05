@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Statements - Par Documentation</title>
+        <title>The Process Syntax - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/statements.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/process_syntax.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,74 +160,120 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="statements"><a class="header" href="#statements">Statements</a></h1>
-<p>Statements are used in <strong>process syntax</strong> to</p>
+                        <h1 id="the-process-syntax"><a class="header" href="#the-process-syntax">The Process Syntax</a></h1>
+<p>So far, <em>Par</em> seems clearly a functional language. Yes, it has linear types, and some unusual
+features, like <a href="./types/choice.html">choices</a>, and <code>begin</code>/<code>loop</code> for
+<a href="./types/recursive.html">recursive</a> and <a href="./types/iterative.html">iterative</a> types, instead of the
+usual recursion by name. But, it’s still clearly a functional language.</p>
+<p>However, it is not! <strong>At its core, Par is a <em>process language!</em></strong> While functional languages
+are ultimately based on <a href="https://en.wikipedia.org/wiki/Lambda_calculus"><em>λ-calculus</em></a>, Par is
+based on <em>CP</em>, a process language similar to <a href="https://en.wikipedia.org/wiki/%CE%A0-calculus"><em>π-calculus</em></a>.
+Process languages are not based on expressions. Instead, they work with concurrent processes,
+channels, and operations on them, like sending, and receiving. <em>CP</em> was formulated by
+<a href="https://en.wikipedia.org/wiki/Philip_Wadler">Phil Wadler</a>, an influential computer scientist,
+in his wonderful paper called <a href="https://www.pure.ed.ac.uk/ws/portalfiles/portal/18383989/Wadler_2012_Propositions_as_Sessions.pdf"><em>“Propositions as Sessions”</em></a>. It was not intended to become a basis
+for a practical programming language; <em>GV</em> — a functional language in the same paper — was supposed
+to take that role. However, I saw much more potential in <em>CP</em>, and decided to turn it into
+a practical language.</p>
+<p>How is it then that Par managed to look perfectly functional until now? Turns out,
+<strong>all of the <em>construction</em> and <em>destruction</em> syntax described in <a href="./types.html"><em>Types &amp; Their Expressions</em></a> can actually be considered a syntax sugar over the fundamental process syntax of Par</strong>.</p>
+<p>While most of the Par code you’ll be writing will use <em>expression syntax</em>, the full power of the
+language rests in the <em>process syntax</em>. There are things Par can express, which simply are not
+expressible using the constructs we learned thus far.</p>
+<h2 id="what-even-is-a-process-language"><a class="header" href="#what-even-is-a-process-language">What Even Is a Process Language?</a></h2>
+<p>The most famous process language is undoubtedly <a href="https://en.wikipedia.org/wiki/%CE%A0-calculus"><em>π-calculus</em></a>. In general, a process
+language consists of:</p>
 <ul>
-<li>destruct values: <a href="./statements/commands.html"><em>Command</em></a></li>
-<li>bind values: <a href="#let-statements"><em>LetStatement</em></a></li>
+<li><strong>Processes.</strong> These are independent units of control flow, that execute concurrently, and interact by communication.</li>
+<li><strong>Channels.</strong> That’s where communication happens. Two processes that hold opposite ends of the same channel can use it
+to exchange information, or even other channels.</li>
+<li><strong>Commands.</strong> Processes run by executing commands, those are their code. A command says what interaction to perform on a channel:
+what to send, what to receive.</li>
 </ul>
-<p>Process syntax is a series of statements, where all are nonterminating. In a <code>channel</code> expression the last one will be terminating, making it an exception.</p>
-<p>Process syntax is introduced by the <em>Proces</em> Rule:</p>
-<blockquote>
-<p><strong><sup>Syntax</sup></strong><br />
-<em>Process</em> : (<em>Statement</em> (<code>;</code><sup>?</sup> <em>Statement</em>) (<code>;</code><sup>?</sup> <em>TerminatingStatement</em>)<sup>?</sup>)<sup>?</sup></p>
-<p><em>Statement</em> :<br />
-      <a href="./statements/commands.html"><em>Command</em></a> <br />
-   | <a href="#let-statements"><em>LetStatement</em></a></p>
-<p><em>TerminatingStatement</em> :<br />
-      <a href="./statements/commands.html"><em>TerminatingCommand</em></a></p>
-</blockquote>
-<p>It is used in the following places:</p>
-<ul>
-<li>
-<p><a href="./expressions.html#do-expressions">do expressions</a>:</p>
-<pre><code class="language-par">let x = do { process } in value
+<p>From among these, we have already encountered one in Par: <em>channels</em>. That’s because aside from
+<a href="./structure/strings_and_numbers.html">primitives</a>, <strong>all values in Par are channels.</strong> Yes,
+<a href="./types/function.html">functions</a>, <a href="./types/pair.html">pairs</a>, <a href="./types/choice.html">choices</a>, all of them. It will become much
+clearer as we understand this process syntax.</p>
+<p>Processes and commands have been more hidden, so far. They were always there, but not in a plain sight! Any expression, be
+it a construction, or a destruction, compiled to processes composed of commands.</p>
+<p>In fact, you can see it for yourself! Let’s take any Par program, say <code>examples/HelloWorld.par</code>.</p>
+<pre><code class="language-par">def Program = Console.Open
+  .print("Hello, world!")
+  .close
 </code></pre>
-<p>The process here may not use terminating statements.</p>
-</li>
-<li>
-<p><a href="expressions.html#channel-expressions">channel expressions</a>:</p>
-<pre><code class="language-par">let x = chan dual { process }
-</code></pre>
-<p>The process here must use a terminating statement. It constructs <code>x</code> by destructing its dual, <code>dual</code>.</p>
-</li>
-</ul>
-<h2 id="let-statements"><a class="header" href="#let-statements">Let Statements</a></h2>
-<blockquote>
-<p><strong><sup>Syntax</sup></strong><br />
-<em>LetStatement</em> :<br />
-      <code>let</code> <a href="patterns.html"><em>Pattern</em></a> <code>=</code> <a href="expressions.html"><em>Expression</em></a></p>
-</blockquote>
-<p>Let statements are used to create values in processes. They are the only constructive statements, as commands always destruct.</p>
-<p>In <code>do</code> expressions, they are used to bind the values used in the value after <code>in</code>:</p>
-<pre><code class="language-par">let true_and_false = do {
-  let x: Bool = .true!
-  let y: Bool = .false!
-} in (x, y)!
-</code></pre>
-<p>In <code>chan</code> expressions, they can be used to construct a value that is then linked with a value of dual type:</p>
-<pre><code class="language-par">def just_true = chan return: chan Bool {
-  // constructing the return value
-  let b: Bool = .true!
-  // linking it
-  return &lt;&gt; b
-}
-// is equivalent to
-def just_true = chan return: chan Bool {
-  // destructing the result
-  return.true!
+<p>Open it in the playground, press <strong>Compile</strong>, then enable the <strong>✔️ Show compiled</strong> checkbox:</p>
+<p><img src="./images/process_syntax_1.png" alt="Hello World compiled to process syntax" /></p>
+<p>What you see on the right is the same program rewritten using the most bare-bones process syntax that Par offers.
+Aside from the <code>#</code>-signs in front of some variables (Par uses them for internally generated variables to avoid
+name clashes), this is a valid Par program. If we remove those, we get this:</p>
+<pre><code class="language-par">def Program = chan result {
+  let object = Console.Open
+  object.print
+  object("Hello, world!")
+  object.close
+  result &lt;&gt; object
 }
 </code></pre>
+<p>Copy-paste it into the playground and run it! It’s the same program.</p>
+<h2 id="isnt-the-expression-syntax-enough-why-complicate-things"><a class="header" href="#isnt-the-expression-syntax-enough-why-complicate-things">Isn’t the expression syntax enough? Why complicate things?</a></h2>
+<p>First of all, it is in fact not enough. Not all Par programs are expressible using pure expression syntax, that we’ve learned
+fully thus far.</p>
+<p>But even more importantly, <strong>process syntax can make your programs much nicer.</strong> It’s not a hammer to be used all the time!
+Instead, it’s a feature that has to be carefully combined with expression syntax and used when appropriate. Par offers syntax
+features to <strong>seamlessly switch between expressions and processes,</strong> so that you can always apply that which fits best, granularly.</p>
+<p>Sprinkles of process syntax tend to be a particularly good fit when dealing with <a href="./types/choice.html">choices</a> and
+<a href="./types/iterative.html">iteratives</a>. Take this function that zips two infinite sequences:</p>
+<pre><code class="language-par">type Sequence&lt;a&gt; = iterative choice {
+  .close =&gt; !,
+  .next =&gt; (a) self,
+}
+
+dec Zip : [type a, b] [Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
+def Zip = [type a, b] [seq1, seq2] begin case {
+  .close =&gt;
+    let ! = seq1.close in
+    let ! = seq2.close in !,
+
+  .next =&gt;
+    let (x) seq1 = seq1.next in
+    let (y) seq2 = seq2.next in
+    ((x, y)!) loop,
+}
+</code></pre>
+<p>It takes two sequences, one of <code>a</code>s and one of <code>b</code>s, and produces a new sequence of pairs <code>(a, b)!</code>. When asked to close, it
+closes the two underlying sequences as well — it must, they are linear. When asked for the next item, it polls both sequences
+for their respective items and yields a pair of that.</p>
+<p>It works, and is understandable. But, it can be even better, when we apply some process syntax!</p>
+<pre><code class="language-par">dec Zip : [type a, b] [Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
+def Zip = [type a, b] [seq1, seq2] begin case {
+  .close =&gt; do {
+    seq1.close
+    seq2.close
+  } in !,
+
+  .next =&gt; do {
+    seq1.next[x]
+    seq2.next[y]
+  } in ((x, y)!) loop,
+}
+</code></pre>
+<p>It might not look better on the first sight, due to unfamiliarity. But notice, this version is much less cluttered. Instead
+of explicitly re-assigning <code>seq1</code> and <code>seq2</code>, we simply command them to give us their items. They automatically update in-place.</p>
+<p>Here’s where <a href="https://en.wikipedia.org/wiki/Session_type"><strong>session types</strong></a> come in. We now treat <code>seq1</code> as a channel. First,
+we notify it of our intention with the <code>.next</code> signal. Then, we receive an item and save it to a variable with <code>[x]</code>. The
+resemblance to the <a href="./types/function.html#construction">construction syntax of functions</a> is not a coincidence!</p>
+<p><strong>Now, let’s learn what this process syntax is all about!</strong> We’ll start by gradually enriching our programs with some commands,
+all the way to unlocking the full semantics of Par by exploiting <strong>duality.</strong></p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="patterns.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="types/continuation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="statements/commands.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="processes/do_expression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -237,11 +283,11 @@ def just_true = chan return: chan Bool {
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="patterns.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="types/continuation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="statements/commands.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="processes/do_expression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Par Documentation</title>
+        <title>Basic Program Structure - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/introduction.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/basic_program_structure.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,29 +160,39 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p><strong>Par</strong> is affectionatelly named after the most bemusing connective of
-<a href="https://en.wikipedia.org/wiki/Linear_logic">linear logic</a>: ⅋, pronounced <em>“par”</em>.
-That’s because Par is based directly on (classical) linear logic, as an experiment to
-see where this paradigm can take us.</p>
-<p><a href="https://en.wikipedia.org/wiki/Jean-Yves_Girard">Jean-Yves Girard</a> — the author of linear logic,
-and <a href="https://en.wikipedia.org/wiki/System_F">System F</a>, among other things — wrote on the page 3
-of his <a href="https://www.sciencedirect.com/science/article/pii/0304397587900454">first paper on linear logic</a>:</p>
-<blockquote>
-<p>The new connectives of linear logic have obvious meanings in terms of
-parallel computation, especially the multiplicatives.</p>
-</blockquote>
-<p>This was in 1987. In hindsight, it wasn’t that obvious. What’s obvious is that it <em>is there</em>
-— the parallel computation, that is. What isn’t obvious at all is how to turn it into a practical
-programming language.</p>
-<p>TODO</p>
+                        <h1 id="basic-program-structure"><a class="header" href="#basic-program-structure">Basic Program Structure</a></h1>
+<p>For now, <em>Par</em> lacks a proper module system. Each program is contained in one file, with built-in
+names imported automatically.</p>
+<p>These built-in names are scoped in modules — for example, <code>Int.Add</code> is a function called <code>Add</code> in the
+<code>Int</code> module — but there is no way to define custom modules. All we can do is define types and values,
+and then run them, interactively!</p>
+<p>Before we start defining our own types and values, the built-in definitions already give us something
+to play with.</p>
+<p>Let’s open the playground!</p>
+<pre><code>$ par-lang playground
+</code></pre>
+<p>Press <strong>Compile</strong>, then hit the <strong>Run</strong> button:</p>
+<p><img src="./images/basic_structure_1.png" alt="Run on an empty program" /></p>
+<p>All the built-in names are there. Let’s run <code>Int.Add</code>:</p>
+<p><img src="./images/basic_structure_2.png" alt="Run Int.Add" /></p>
+<p>An <strong>automatic UI</strong> shows up, telling us to input two numbers. After confirming both inputs,
+we get a result:</p>
+<p><img src="./images/basic_structure_3.png" alt="Int.Add result" /></p>
+<p>The playground features an <em>automatic</em> UI. Nobody made a specific interaface for this <code>Int.Add</code> function.
+Instead, the UI that shows up is based purely on its type — here, a function from two integers to an
+integer result.</p>
+<p>Go ahead, and play with any built-in definition! Then, when you turn the page, we’re going to talk about
+creating our own.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="getting_started.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
 
-                            <a rel="next prefetch" href="getting_started.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="structure/definitions_and_declarations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -192,8 +202,11 @@ programming language.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="getting_started.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
 
-                    <a rel="next prefetch" href="getting_started.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="structure/definitions_and_declarations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
