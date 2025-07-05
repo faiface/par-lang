@@ -1,6 +1,6 @@
 # Basic Program Structure
 
-For now, _Par_ lacks a proper module system. Each program is contained in one file, with [built-in](TODO)
+For now, _Par_ lacks a proper module system. Each program is contained in one file, with built-in
 names imported automatically.
 
 These built-in names are scoped in modules — for example, `Int.Add` is a function called `Add` in the

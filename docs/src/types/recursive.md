@@ -209,7 +209,6 @@ type Option<a> = either {
   .some a,
 }
 
-//TODO: forall on data types
 dec Head : [List<String>] Option<String>
 def Head = [list] list.case {
   .end!      => .none!,

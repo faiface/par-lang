@@ -94,7 +94,7 @@ def IntToString: CancellableFunction<Int, String> = case {
 }
 ```
 
-Unlike [patterns](TODO) in `.case` branches of [_either_ types](./either.md), branches in `case`
+Unlike patterns in `.case` branches of [_either_ types](./either.md), branches in `case`
 expressions of choice types don't have a payload to bind: they produce a result. However, we can
 still bind function arguments on the left side of the arrow.
 

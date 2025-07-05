@@ -22,7 +22,7 @@ While global names can be used throughout the program, there is an _important re
 
 This apparently mad restriction has important motivations, and innovative remedies.
 
-**The motivation** is Par's ambitious stride towards **[totality](TODO)** — which means preventing
+**The motivation** is Par's ambitious stride towards **totality** — which means preventing
 infinite loops.
 
 Unrestricted recursion is a source of infinite loops, and while that can be partially
@@ -38,7 +38,7 @@ Naive recursion on the term level (like in functions) is replaced by a powerful,
 - _[Recursive](../types/recursive.md) reduction._ Analyzing lists, trees, or even files.
 - _[Iterative](../types/iterative.md) construction_. Those are objects that can be interacted
   with repeatedly.
-- _Imperative-looking loops_ in [process syntax](TODO).
+- _Imperative-looking loops_ in [process syntax](../process_syntax.md).
 
 Naive recursion in types is replaced by
 **anonymous [recursive](../types/recursive.md) and [iterative](../types/iterative.md) (corecursive) types.**
@@ -52,9 +52,9 @@ followed by an upper-case name, an `=` sign, and an expression computing the val
 def MyNumber = 7
 ```
 
-In this case, Par is able to infer the type of `MyNumber` as [`Nat`](TODO) (a natural number), so no
-type annotation is needed. Often, a type annotation is needed, or wanted. In those cases, we can add
-it using a colon after the name:
+In this case, Par is able to infer the type of `MyNumber` as [`Nat`](./strings_and_numbers.md#nat)
+(a natural number), so no type annotation is needed. Often, a type annotation is needed, or wanted.
+In those cases, we can add it using a colon after the name:
 
 ```par
 def MyName: String = "Michal"

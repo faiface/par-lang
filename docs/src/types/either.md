@@ -123,7 +123,7 @@ same type.
 .name pattern => expression,
 ```
 
-The [patterns](TODO) to assign the payloads are the same as can appear on the left side of
+The patterns to assign the payloads are the same as can appear on the left side of
 `let` assignments:
 - `variable` matches the whole value.
 - `!` matches [units](./unit.md).

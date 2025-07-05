@@ -32,7 +32,7 @@ def Unit = !  // infers `Unit` to be of type `!`
 
 ## Destruction
 
-Being a [`Data`](TODO) type, variables of type `!` can be left unused.
+Being a [data](TODO) type, variables of type `!` can be left unused.
 
 If `!` is a part of a larger type, it may be needed to assign it as a part of a pattern. For this
 purpose, the pattern `!` will destruct a `!` value without assigning it to a variable.

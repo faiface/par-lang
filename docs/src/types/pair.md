@@ -70,8 +70,8 @@ def Names: List<String> = .item("Alice").item("Bob").item("Cyril").end!
 
 ## Destruction
 
-Pairs are deconstructed in [patterns](TODO) on assignments. Those can appear in:
-- [`let`-expressions](TODO)
+Pairs are deconstructed in patterns on assignments. Those can appear in:
+- [`let`-expressions](../structure/let_expressions.md)
 - [function](./function.md) arguments
 - [`case`](./choice.md)/[`.case`](./either.md) branches
 

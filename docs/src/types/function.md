@@ -2,7 +2,7 @@
 
 A function transforms an argument into a result. The syntax for function types is designed to work well
 with the rest of the type system, and resembles the syntax for [pairs](./pair.md), because the two are
-[dual](TODO) to one another.
+[dual](../processes/duality.md) to one another.
 
 A function type consists of two types — the argument, and the result — the former enclosed in square
 brackets.
@@ -47,7 +47,7 @@ purpose of _Par_ is to explore where this new paradigm arising from linear types
 > - [Choice](./choice.md) types.
 > - [Iterative](./iterative.md) types.
 > - [Forall](./forall.md) types (generics).
-> - [`do`-expressions](TODO).
+> - [`do`-expressions](../processes/do_expression.md).
 > 
 > Or play with it regardless.
 > 
@@ -79,7 +79,7 @@ purpose of _Par_ is to explore where this new paradigm arising from linear types
 
 ## Construction
 
-Function values [match](TODO) their argument inside square brackets, followed by an expression computing
+Function values bind their argument inside square brackets, followed by an expression computing
 the result.
 
 ```par
@@ -98,7 +98,7 @@ def Concat = [left, right]
   String.Builder.add(left).add(right).build
 ```
 
-[Patterns](TODO) for deconstructing [pairs](./pair.md) and [units](./unit.md) can be used inside the
+Patterns for deconstructing [pairs](./pair.md) and [units](./unit.md) can be used inside the
 square brackets:
 
 ```par
