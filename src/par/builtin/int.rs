@@ -7,11 +7,8 @@ use crate::{
     },
 };
 use arcstr::{literal, Substr};
-use num_bigint::{BigInt, ParseBigIntError};
-use std::collections::BTreeMap;
+use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
-use winnow::binary::Endianness::Big;
-use winnow::token::literal;
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
@@ -232,7 +229,7 @@ async fn int_from_string(mut handle: Handle) {
             handle.signal(literal!("ok"));
             handle.provide_int(num);
         }
-        Err(err) => {
+        Err(_) => {
             handle.signal(literal!("err"));
             handle.break_();
         }

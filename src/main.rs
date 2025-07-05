@@ -33,7 +33,7 @@ fn main() {
             Command::new("run")
                 .about("Run a Par file in the playground")
                 .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
-                .arg(arg!([function] "The function to run").default_value("main")),
+                .arg(arg!([definition] "The definition to run").default_value("main")),
         )
         .subcommand(
             Command::new("lsp").about("Start the Par language server for editor integration"),
@@ -47,8 +47,8 @@ fn main() {
         }
         Some(("run", args)) => {
             let file = args.get_one::<PathBuf>("file").unwrap().clone();
-            let function = args.get_one::<String>("function").unwrap().clone();
-            run_function(file, function);
+            let definition = args.get_one::<String>("definition").unwrap().clone();
+            run_definition(file, definition);
         }
         Some(("lsp", _)) => run_language_server(),
         _ => unreachable!(),
@@ -71,7 +71,7 @@ fn run_playground(file: Option<PathBuf>) {
     .expect("egui crashed");
 }
 
-fn run_function(file: PathBuf, function: String) {
+fn run_definition(file: PathBuf, definition: String) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
         let Ok(code) = File::open(file).and_then(|mut file| {
@@ -99,18 +99,18 @@ fn run_function(file: PathBuf, function: String) {
 
         let program = checked.program;
 
-        let Some((name, _definition)) = program
+        let Some((name, _)) = program
             .definitions
             .iter()
-            .find(|(name, definition)| name.primary == function)
+            .find(|(name, _)| name.primary == definition)
             .clone()
         else {
-            println!("{}: {}", "Function not found".bright_red(), function);
+            println!("{}: {}", "Definition not found".bright_red(), definition);
             return;
         };
 
         let Some(ic_compiled) = checked.ic_compiled else {
-            println!("{}: {}", "IC compilation failed".bright_red(), function);
+            println!("{}: {}", "IC compilation failed".bright_red(), definition);
             return;
         };
 
@@ -119,8 +119,8 @@ fn run_function(file: PathBuf, function: String) {
         let Type::Break(_) = ty else {
             println!(
                 "{}: {}",
-                "Function is not a Break function".bright_red(),
-                function
+                "Definition does not have the unit (!) type".bright_red(),
+                definition
             );
             return;
         };
@@ -131,11 +131,10 @@ fn run_function(file: PathBuf, function: String) {
 
         let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
 
-        // let ctx = ui.ctx().clone();
         let spawner = Arc::new(TokioSpawn::new());
         let readback_future = spawner
             .spawn_with_handle(async move {
-                let mut handle =
+                let handle =
                     TypedHandle::from_wrapper(program.type_defs.clone(), net_wrapper, tree);
                 loop {
                     match handle.readback().await {
@@ -143,7 +142,7 @@ fn run_function(file: PathBuf, function: String) {
                             break;
                         }
                         _ => {
-                            panic!("Unexpected readback from a break function.");
+                            panic!("Unexpected readback from a unit definition.");
                         }
                     }
                 }
@@ -153,85 +152,6 @@ fn run_function(file: PathBuf, function: String) {
         readback_future.await;
         reducer_future.await;
     });
-}
-
-// todo: this does not work
-fn run_playground_function(_file: PathBuf, _function: String) {
-    /*let Ok(code) = File::open(file).and_then(|mut file| {
-        use std::io::Read;
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
-        Ok(buf)
-    }) else {
-        println!("{}", "Could not read file".bright_red());
-        return;
-    };
-
-    let mut interact: Option<playground::Interact> = None;
-
-    let Ok(compiled) = stacker::grow(32 * 1024 * 1024, || Compiled::from_string(&code)) else {
-        println!("Compilation failed");
-        return;
-    };
-    let compiled_code = code.into();
-    let program = compiled.program.clone();
-    let Some(definition) = program
-        .definitions
-        .iter()
-        .find(|definition| match &definition.name {
-            Internal::Original(name) => name.string == function,
-            _ => false,
-        })
-        .cloned()
-    else {
-        println!("{}: {}", "Function not found".bright_red(), function);
-        return;
-    };
-
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    runtime.block_on(async {
-        let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
-            ..Default::default()
-        };
-
-        eframe::run_simple_native(
-            "⅋layground - Run",
-            options,
-            move |ctx, _frame| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    let name = definition.name.to_string();
-                    if ui.button(&name).clicked() {
-                        if let Some(int) = interact.take() {
-                            int.handle.lock().expect("lock failed").cancel();
-                        }
-                        interact = Some(playground::Interact {
-                            code: Arc::clone(&compiled_code),
-                            handle: Handle::start_expression(
-                                Arc::new({
-                                    let ctx = ui.ctx().clone();
-                                    move || ctx.request_repaint()
-                                }),
-                                Context::new(
-                                    Arc::new(TokioSpawn),
-                                    Arc::new(
-                                        program
-                                            .definitions
-                                            .iter()
-                                            .map(|Definition { name, expression, .. }| (name.clone(), expression.clone()))
-                                            .collect(),
-                                    ),
-                                ),
-                                &definition.expression,
-                            ),
-                        });
-                    }
-                });
-            }
-            // 417, 339, 508
-        )
-            .expect("egui crashed");
-    })*/
 }
 
 fn run_language_server() {

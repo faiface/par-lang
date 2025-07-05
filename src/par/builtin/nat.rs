@@ -219,7 +219,7 @@ async fn nat_from_string(mut handle: Handle) {
     let string = handle.receive().string().await;
     match string.as_str().parse::<BigInt>() {
         Ok(num) => {
-            if(num >= BigInt::ZERO) {
+            if num >= BigInt::ZERO {
                 handle.signal(literal!("ok"));
                 handle.provide_nat(num);
             } else {
@@ -227,7 +227,7 @@ async fn nat_from_string(mut handle: Handle) {
                 handle.break_();
             }
         }
-        Err(err) => {
+        Err(_) => {
             handle.signal(literal!("err"));
             handle.break_();
         }

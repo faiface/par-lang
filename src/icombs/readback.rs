@@ -34,7 +34,7 @@ pub(crate) mod private {
     impl NetWrapper {
         pub(crate) fn new(
             net: Arc<Mutex<Net>>,
-            mut notify: mpsc::UnboundedSender<ReducerMessage>,
+            notify: mpsc::UnboundedSender<ReducerMessage>,
             handle_count: Arc<AtomicUsize>,
         ) -> Self {
             handle_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
