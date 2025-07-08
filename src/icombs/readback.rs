@@ -141,6 +141,19 @@ impl Handle {
             .spawn(Box::pin(f(self)));
     }
 
+    pub fn provide_box<Fun, Fut>(self, f: Fun)
+    where
+        Fun: 'static + Send + Sync + Fn(Handle) -> Fut,
+        Fut: 'static + Send + Future<Output = ()>,
+    {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(
+            Tree::ExternalBox(Arc::new(move |handle| Box::pin(f(handle)))),
+            self.tree.unwrap(),
+        );
+        locked.notify_reducer();
+    }
+
     pub async fn nat(self) -> BigInt {
         let rx = {
             let (tx, rx) = oneshot::channel();

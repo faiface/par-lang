@@ -137,6 +137,10 @@ impl Type {
         )
     }
 
+    pub fn box_(t: Self) -> Self {
+        Self::Box(Span::None, Box::new(t))
+    }
+
     pub fn pair(t: Self, u: Self) -> Self {
         Self::Pair(Span::None, Box::new(t), Box::new(u))
     }

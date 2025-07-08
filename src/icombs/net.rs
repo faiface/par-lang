@@ -55,6 +55,7 @@ pub enum Tree {
     CharRequest(oneshot::Sender<char>),
 
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
+    ExternalBox(Arc<dyn Send + Sync + Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>>),
 }
 
 impl Tree {
@@ -85,7 +86,8 @@ impl Tree {
             | Self::IntRequest(_)
             | Self::StringRequest(_)
             | Self::CharRequest(_)
-            | Self::External(_) => {}
+            | Self::External(_)
+            | Self::ExternalBox(_) => {}
         }
     }
 }
@@ -117,6 +119,7 @@ impl core::fmt::Debug for Tree {
             Self::StringRequest(_) => f.debug_tuple("StringRequest").field(&"<channel>").finish(),
             Self::CharRequest(_) => f.debug_tuple("CharRequest").field(&"<channel>").finish(),
             Self::External(_) => f.debug_tuple("External").field(&"<function>").finish(),
+            Self::ExternalBox(_) => f.debug_tuple("ExternalBox").field(&"<closure>").finish(),
         }
     }
 }
@@ -138,6 +141,7 @@ impl Clone for Tree {
             Self::StringRequest(_) => panic!("cannot clone Tree::StringRequest"),
             Self::CharRequest(_) => panic!("cannot clone Tree::CharRequest"),
             Self::External(f) => Self::External(*f),
+            Self::ExternalBox(f) => Self::ExternalBox(Arc::clone(f)),
         }
     }
 }
@@ -215,6 +219,22 @@ struct Reducer {
     spawner: Arc<dyn Spawn + Send + Sync>,
     notify: mpsc::UnboundedSender<ReducerMessage>,
     handle_count: Arc<AtomicUsize>,
+}
+
+impl Reducer {
+    fn spawn_external(
+        &self,
+        f: impl Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+        tree: Tree,
+    ) {
+        if let Some(net) = self.net.upgrade() {
+            let notify = self.notify.clone();
+            let handle_count = self.handle_count.clone();
+            let handle = Handle::new(net, notify, handle_count, tree);
+            let future = f(handle);
+            self.spawner.spawn(future).expect("spawn failed");
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -420,18 +440,20 @@ impl Net {
                 self.rewrites.resp += 1;
             }
             (External(f), a) | (a, External(f)) => match &self.reducer {
-                Some(reducer) => {
-                    if let Some(net) = reducer.net.upgrade() {
-                        let notify = reducer.notify.clone();
-                        let handle_count = reducer.handle_count.clone();
-                        let handle = Handle::new(net, notify, handle_count, a);
-                        let future = f(handle);
-                        reducer.spawner.spawn(future).expect("spawn failed");
-                    }
-                }
-                None => {
-                    self.waiting_for_reducer.push((External(f), a));
-                }
+                Some(reducer) => reducer.spawn_external(f, a),
+                None => self.waiting_for_reducer.push((External(f), a)),
+            },
+            (ExternalBox(_), Era) | (Era, ExternalBox(_)) => {
+                self.rewrites.era += 1;
+            }
+            (ExternalBox(f), Dup(a, b)) | (Dup(a, b), ExternalBox(f)) => {
+                self.link(*a, ExternalBox(Arc::clone(&f)));
+                self.link(*b, ExternalBox(f));
+                self.rewrites.commute += 1;
+            }
+            (ExternalBox(f), a) | (a, ExternalBox(f)) => match &self.reducer {
+                Some(reducer) => reducer.spawn_external(f.as_ref(), a),
+                None => self.waiting_for_reducer.push((ExternalBox(f), a)),
             },
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }
@@ -539,7 +561,8 @@ impl Net {
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
             | Tree::CharRequest(_)
-            | Tree::External(_) => {}
+            | Tree::External(_)
+            | Tree::ExternalBox(_) => {}
         }
     }
 
@@ -650,6 +673,7 @@ impl Net {
             Tree::CharRequest(_) => format!("<char request>"),
 
             Tree::External(_) => format!("<external>"),
+            Tree::ExternalBox(_) => format!("<external box>"),
         }
     }
 
@@ -691,7 +715,8 @@ impl Net {
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
             | Tree::CharRequest(_)
-            | Tree::External(_) => {}
+            | Tree::External(_)
+            | Tree::ExternalBox(_) => {}
         }
     }
 
@@ -770,6 +795,7 @@ impl Net {
             Tree::StringRequest(_) => vec![],
             Tree::CharRequest(_) => vec![],
             Tree::External(_) => vec![],
+            Tree::ExternalBox(_) => vec![],
         }
     }
 }
