@@ -74,14 +74,14 @@ def Reverse = [type t] [list] chan yield {
     .empty!       => yield,
     // The list starts with an item `x`.
     .item(x) rest => do {
-      // Traverse into the rest of the list first.            
+      // Traverse into the rest of the list first.
       let yield = rest.loop
-      // After that, produce `x` on the reversed list.          
-      yield.item(x)                  
+      // After that, produce `x` on the reversed list.
+      yield.item(x)
     } in yield // Finally, give back the generator handle.
   }
   // At the very end, signal the end of the list.
-  yield.empty!                       
+  yield.empty!
 }
 ```
 
@@ -154,7 +154,7 @@ bring its expressive power into practice, by interpreting linear logic as _sessi
 
 In fact, the language itself is based on a little process language, called _CP_, from a paper called
 [_"Propositions as Sessions"_](https://www.pure.ed.ac.uk/ws/portalfiles/portal/18383989/Wadler_2012_Propositions_as_Sessions.pdf)
-by the famous Phil `Wadler`.
+by the famous Phil Wadler.
 
 While programming in Par feels just like a programming language, even if an unusual one, its programs
 still correspond one-to-one with linear logic proofs.
