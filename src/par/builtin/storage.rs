@@ -1,8 +1,8 @@
-use std::{fs::Metadata, future::Future, path::PathBuf, sync::Arc};
+use std::{ffi::OsStr, fs::Metadata, path::PathBuf, sync::Arc};
 
 use arcstr::{literal, Substr};
 use num_bigint::BigInt;
-use tokio::fs::{self, File, ReadDir};
+use tokio::fs;
 
 use crate::{
     icombs::readback::Handle,
@@ -18,10 +18,17 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
         type_defs: vec![],
         declarations: vec![],
         definitions: vec![Definition::external(
-            "Open",
+            "Get",
             Type::function(
-                Type::name(None, "Path", vec![]),
-                Type::name(None, "OpenResult", vec![]),
+                Type::string(),
+                Type::name(
+                    None,
+                    "Result",
+                    vec![Type::either(vec![
+                        ("file", Type::name(None, "FileInfo", vec![])),
+                        ("dir", Type::name(None, "DirInfo", vec![])),
+                    ])],
+                ),
             ),
             |handle| Box::pin(storage_open(handle)),
         )],
@@ -30,114 +37,134 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 
 async fn storage_open(mut handle: Handle) {
     let path = PathBuf::from(handle.receive().string().await.as_str());
-    let meta = match fs::metadata(&path).await {
-        Ok(meta) => meta,
-        Err(error) => {
+    let metadata = match fs::metadata(path.clone()).await {
+        Ok(metadata) => metadata,
+        Err(err) => {
             handle.signal(literal!("err"));
-            return handle.provide_string(Substr::from(error.to_string()));
+            handle.provide_string(Substr::from(err.to_string()));
+            return;
         }
     };
-    handle_open_result(path, meta, handle).await
-}
-
-fn handle_open_result(
-    path: PathBuf,
-    meta: Metadata,
-    mut handle: Handle,
-) -> impl Send + Future<Output = ()> {
-    async move {
-        let path = fs::canonicalize(&path).await.unwrap_or(path);
-
-        if meta.is_file() {
-            let file = match File::open(&path).await {
-                Ok(file) => file,
-                Err(error) => {
-                    handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(error.to_string()));
-                }
-            };
-            handle.signal(literal!("file"));
-            return handle_file_info(
-                Substr::from(path.to_string_lossy()),
-                BigInt::from(meta.len()),
-                file,
-                handle,
-            )
-            .await;
-        }
-
-        if meta.is_dir() {
-            let dir = match fs::read_dir(&path).await {
-                Ok(dir) => dir,
-                Err(error) => {
-                    handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(error.to_string()));
-                }
-            };
-            handle.signal(literal!("directory"));
-            return handle_directory_info(Substr::from(path.to_string_lossy()), dir, handle).await;
-        }
-
+    if metadata.is_file() {
+        handle.signal(literal!("ok"));
+        handle.signal(literal!("file"));
+        provide_file_info(
+            handle,
+            FileInfo {
+                path: Arc::new(path),
+                metadata,
+            },
+        );
+    } else if metadata.is_dir() {
+        handle.signal(literal!("ok"));
+        handle.signal(literal!("dir"));
+        provide_dir_info(
+            handle,
+            DirInfo {
+                path: Arc::new(path),
+            },
+        );
+    } else {
         handle.signal(literal!("err"));
-        handle.provide_string(Substr::from("unsupported storage item type"));
+        handle.provide_string(Substr::from("unsupported file type"));
     }
 }
 
-async fn handle_file_info(path: Substr, size: BigInt, _file: File, mut handle: Handle) {
-    loop {
-        match handle.case().await.as_str() {
-            "close" => {
-                return;
+#[derive(Clone)]
+struct DirInfo {
+    path: Arc<PathBuf>,
+}
+
+#[derive(Clone)]
+struct FileInfo {
+    path: Arc<PathBuf>,
+    metadata: Metadata,
+}
+
+fn provide_path_info(handle: Handle, path: Arc<PathBuf>) {
+    let path = path.clone().canonicalize().map(Arc::new).unwrap_or(path);
+    handle.provide_box(move |mut handle| {
+        let path = Arc::clone(&path);
+        async move {
+            match handle.case().await.as_str() {
+                "name" => handle.provide_string(Substr::from(
+                    path.file_name()
+                        .map(OsStr::to_string_lossy)
+                        .unwrap_or(std::borrow::Cow::Borrowed("")),
+                )),
+                "absolute" => handle.provide_string(Substr::from(path.to_string_lossy())),
+                _ => unreachable!(),
             }
-            "getPath" => {
-                handle.send().provide_string(path.clone());
-            }
-            "getSize" => {
-                handle.send().provide_nat(size.clone());
-            }
-            "readUTF8" => {
-                todo!("implement")
-            }
-            _ => unreachable!(),
         }
-    }
+    })
 }
 
-async fn handle_directory_info(path: Substr, mut dir: ReadDir, mut handle: Handle) {
-    loop {
-        match handle.case().await.as_str() {
-            "close" => {
-                handle.break_();
-                return;
-            }
-            "getPath" => {
-                handle.send().provide_string(path.clone());
-            }
-            "list" => {
-                while let Ok(Some(entry)) = dir.next_entry().await {
-                    let Ok(meta) = entry.metadata().await else {
-                        continue;
-                    };
+fn provide_dir_info(handle: Handle, info: DirInfo) {
+    handle.provide_box(move |mut handle| {
+        let info = info.clone();
+        async move {
+            match handle.case().await.as_str() {
+                "path" => provide_path_info(handle, info.path),
 
-                    handle.signal(literal!("item"));
-                    handle.send().concurrently(|mut handle| async move {
-                        let path = Substr::from(entry.path().to_string_lossy());
-                        handle.send().provide_string(path);
-                        match handle.case().await.as_str() {
-                            "open" => handle_open_result(entry.path(), meta, handle).await,
-                            "skip" => {
-                                handle.break_();
-                                return;
-                            }
-                            _ => unreachable!(),
+                "list" => {
+                    let mut dir = match fs::read_dir(info.path.as_ref()).await {
+                        Ok(dir) => dir,
+                        Err(err) => {
+                            handle.signal(literal!("err"));
+                            handle.provide_string(Substr::from(err.to_string()));
+                            return;
                         }
-                    });
+                    };
+                    handle.signal(literal!("ok"));
+                    while let Ok(Some(entry)) = dir.next_entry().await {
+                        if let Ok(metadata) = entry.metadata().await {
+                            if metadata.is_file() {
+                                handle.signal(literal!("item"));
+                                handle.send().concurrently(|mut handle| async move {
+                                    handle.signal(literal!("file"));
+                                    provide_file_info(
+                                        handle,
+                                        FileInfo {
+                                            path: Arc::new(entry.path()),
+                                            metadata,
+                                        },
+                                    )
+                                })
+                            } else if metadata.is_dir() {
+                                handle.signal(literal!("item"));
+                                handle.send().concurrently(|mut handle| async move {
+                                    handle.signal(literal!("dir"));
+                                    provide_dir_info(
+                                        handle,
+                                        DirInfo {
+                                            path: Arc::new(entry.path()),
+                                        },
+                                    )
+                                });
+                            }
+                        }
+                    }
+                    handle.signal(literal!("end"));
+                    handle.break_();
                 }
-                handle.signal(literal!("end"));
-                handle.break_();
-                return;
+
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
         }
-    }
+    })
+}
+
+fn provide_file_info(handle: Handle, info: FileInfo) {
+    handle.provide_box(move |mut handle| {
+        let info = info.clone();
+        async move {
+            match handle.case().await.as_str() {
+                "path" => provide_path_info(handle, info.path),
+
+                "size" => handle.provide_nat(BigInt::from(info.metadata.len())),
+
+                _ => unreachable!(),
+            }
+        }
+    })
 }

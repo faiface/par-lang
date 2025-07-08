@@ -1,28 +1,23 @@
-type Error = String.String
-type Path  = String.String
-
-type OpenResult = either {
-  .error Error,
-  .file FileInfo,
-  .directory DirectoryInfo,
+type Result<a> = either {
+  .ok a,
+  .err String.String,
 }
 
-type FileInfo = iterative choice {
-  .close => !,
-  .getPath => (Path) self,
-  .getSize => (Nat.Nat) self,
-  .readUTF8 => String.Reader<Error>,
+type PathInfo = box choice {
+  .name => String.String,
+  .absolute => String.String,
 }
 
-type DirectoryInfo = recursive/tree iterative/inspect choice {
-  .close => !,
-  .getPath => (Path) self/inspect,
-  .list => List.List<(Path) choice {
-    .skip => !,
-    .open => either {
-      .error Error,
-      .file FileInfo,
-      .directory self/tree,
-    },
-  }>,
+type FileInfo = box choice {
+  .path => PathInfo,
+  .size => Nat.Nat,
+  //.readUTF8 => Result<String.Reader<Result<!>>>,
+}
+
+type DirInfo = recursive box choice {
+  .path => PathInfo,
+  .list => Result<List.List<either {
+    .file FileInfo,
+    .dir self,
+  }>>,
 }
