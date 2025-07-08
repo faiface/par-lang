@@ -143,7 +143,7 @@ def ForeverTrue: Stream<either { .true!, .false! }> = begin {
 
 _\*There is an escape hatch. Some algorithms, especially divide-and-conquer, are difficult or impossible
 to implement using easy-to-check well-founded strategies. For those, `unfounded begin` turns this check
-off. Vast majority of code doesn't need to opt-out of totality checking, it naturaly fits its requirements.
+off. Vast majority of code doesn't need to opt-out of totality checking, it naturally fits its requirements.
 Those few parts that need to opt-out are clearly marked with `unfounded`. They are the only places
 that can potentially cause infinite loops._
 
@@ -154,7 +154,7 @@ bring its expressive power into practice, by interpreting linear logic as _sessi
 
 In fact, the language itself is based on a little process language, called _CP_, from a paper called
 [_"Propositions as Sessions"_](https://www.pure.ed.ac.uk/ws/portalfiles/portal/18383989/Wadler_2012_Propositions_as_Sessions.pdf)
-by the famous Phil Wadler.
+by the famous Phil `Wadler`.
 
 While programming in Par feels just like a programming language, even if an unusual one, its programs
 still correspond one-to-one with linear logic proofs.

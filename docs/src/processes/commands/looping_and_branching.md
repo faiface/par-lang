@@ -71,7 +71,7 @@ There's no pattern. That's because in process syntax, binding the payload of an
 [either](../types/either.md) is optional. Normally, **the subject itself becomes the payload.**
 However, it is possible to match the payload fully, if desired.
 
-So, inside the `.item` branch, strings now has the type `(String) List<String>` — it’s a pair, and
+So, inside the `.item` branch, `strings` now has the type `(String) List<String>` — it’s a pair, and
 we want to peel off its first part, to add it to the string builder.
 
 There's **one last important detail,** and that's concerning **control flow.** If a `.case`

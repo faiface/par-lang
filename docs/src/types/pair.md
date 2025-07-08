@@ -1,7 +1,7 @@
 # Pair
 
 A pair is two independent values packed into one. The only thing that differentiates pairs in Par,
-compared to other language, is their sequential syntax. While unusual, it makes pairs applicable
+compared to other languages, is their sequential syntax. While unusual, it makes pairs applicable
 to a much wider set of use-cases.
 
 A pair type consists of two types, the first enclosed in round parentheses.
@@ -25,7 +25,7 @@ type SymmetricPair = (String, Int)!
 ```
 
 Pairs in their sequential style are frequently used in combination with other types to insert values
-into bigger structures. The pre-defined `List<a>` type uses a pair for its `.item` variant:
+into bigger structures. The predefined `List<a>` type uses a pair for its `.item` variant:
 
 ```par
 type List<a> = recursive either {

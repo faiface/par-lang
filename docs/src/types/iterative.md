@@ -38,7 +38,7 @@ type Sequence<a> = iterative choice {
 Iterative types are **always linear,** regardless of what's in their bodies. As such, they can't be
 dropped, nor copied.
 
-Notice, that we included a `.close` branch on the inner [choice](./choice.md). Since `Sequence<a>` is
+Notice that we included a `.close` branch on the inner [choice](./choice.md). Since `Sequence<a>` is
 a linear type, there would be no way to get rid of it if it only contained the `.next` branch.
 
 Just like [recursive types](./recursive.md), iterative types can be equated with their _expansions_:
@@ -85,7 +85,7 @@ Let's see what that means!
 ## Construction
 
 Values of iterative types are constructed using standalone `begin`/`loop` expressions. They start with
-`begin`, followed by an expression of the body type. Inside this expression, use a standlone `loop`
+`begin`, followed by an expression of the body type. Inside this expression, use a standalone `loop`
 in the `self` places of the body type to go back to the corresponding `begin`.
 
 > Just like with [recursive's](./recursive.md) `.begin`/`.loop`, it's possible to use labels to
@@ -179,7 +179,7 @@ def Increment = [seq] begin case {
 def FibonacciPlusOne = Increment(Fibonacci)
 ```
 
-In this case, we need to explictly close the input `seq` in the `.close` branch. It's linear, so
+In this case, we need to explicitly close the input `seq` in the `.close` branch. It's linear, so
 we can't just drop it.
 
 ### The escape-hatch from totality: `unfounded`

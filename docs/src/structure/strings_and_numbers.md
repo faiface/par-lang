@@ -6,11 +6,11 @@ the _primitives._
 At the moment, Par has four primitive types:
 - **`Int`** — Integers, positive and negative whole numbers, arbitrary size.
 - **`Nat`** — Natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
-- **`String`** — UTF-8 encoded sequencee of Unicode characters.
+- **`String`** — UTF-8 encoded sequence of Unicode characters.
 - **`Char`** — Singular Unicode characters.
 
 > There's a **significant distinction** between _primitives_ and all other types in Par.
-> 
+>
 > The thing is, Par has a fully structural type system. All custom type definitions are just
 > aliases — there is no way to create opaque types. _(But, encapsulation is perfectly possible.)_
 >
@@ -37,7 +37,7 @@ Primitives are manipulated using magical built-in functions.
    ```
    Par knows the type of `Int.String`, so it will infer it for `Examine` as well.
 2. Press **Compile.**
-3. Move the cursor the the definition. The playground will display the type on the right,
+3. Move the cursor to the the definition. The playground will display the type on the right,
    in green.
    ![Displayed type of a built-in function](../images/strings_and_numbers_2.png)
 

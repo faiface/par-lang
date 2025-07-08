@@ -10,7 +10,7 @@ Unit is frequently used as an end-marker for other types. All composite types â€
 [eithers](./either.md), and [choices](./choice.md) â€” have an obligatory _"and then"_ part. The unit type
 does the job for the case of _"and then nothing"_.
 
-For example, the pre-defined `List<a>` type has this definition:
+For example, the predefined `List<a>` type has this definition:
 
 ```par
 type List<a> = recursive either {

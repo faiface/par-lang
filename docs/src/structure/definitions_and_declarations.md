@@ -4,13 +4,13 @@ At the top level, a _Par_ file consists of **definitions**, **declarations**, an
 
 These define **global names** that can be used throughout the file, an unlimited number of times.
 
-> Because of Par's linear type system, local variables may be required to use _exactly once._ That is
+> Because of Par's linear type system, local variables may be required to be used _exactly once._ That is
 > if they have a linear type. Global definitions can be used any number of times regardless of their
 > type.
 
 Par has a simple naming rule:
 - **Global names start with an upper-case letter.** That is global types, functions, and so on.
-- **Local names start with lower-case letter, or `_`.** That includes local variables, function
+- **Local names start with a lower-case letter, or `_`.** That includes local variables, function
   parameters, and type variables in generic functions.
 
 While global names can be used throughout the program, there is an _important restriction!_
@@ -30,7 +30,7 @@ remedied by totality checkers, such as in [Agda](https://en.wikipedia.org/wiki/A
 Par chooses a different approach. That is outlawing unrestricted recursion, and instead relying on more
 _principled_ ways to achieve cyclic behavior, including what's usually achieved by mutual recursion.
 
-**The remedies** come in form of these more principled ways. Fortunately, they don't just replace the
+**The remedies** come the the form of these more principled ways. Fortunately, they don't just replace the
 familiar recursion by clunkier mechanisms, they bring their own perks.
 
 Naive recursion on the term level (like in functions) is replaced by a powerful,
