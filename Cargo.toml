@@ -9,7 +9,7 @@ futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
 eframe = { version = "0.31", features = ["default", "__screenshot"] }
 egui_code_editor = "0.2.12"
 indexmap = "2.7.0"
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
 stacker = "0.1.19"
 rfd = "0.15.2"
 winnow = { version = "0.7.4", features = [

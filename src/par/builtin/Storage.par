@@ -11,8 +11,10 @@ type PathInfo = box choice {
 type FileInfo = box choice {
   .path => PathInfo,
   .size => Nat.Nat,
-  //.readUTF8 => Result<String.Reader<Result<!>>>,
+  .readUTF8 => Result<Reader>,
 }
+
+type Reader = String.Reader<Result<String.String>, Result<!>>
 
 type DirInfo = recursive box choice {
   .path => PathInfo,

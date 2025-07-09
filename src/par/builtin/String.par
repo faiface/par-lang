@@ -3,9 +3,9 @@ type Builder = iterative choice {
   .build => String,
 }
 
-type Reader<e> = recursive iterative/attempt choice {
+type Reader<r, e> = recursive iterative/attempt choice {
   .close => !,
-  .remainder => String,
+  .remainder => r,
   .char => either {
     .end e,
     .char(Char.Char) self,

@@ -1,12 +1,16 @@
-use std::{ffi::OsStr, fs::Metadata, path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, ffi::OsStr, fs::Metadata, path::PathBuf, sync::Arc};
 
 use arcstr::{literal, Substr};
 use num_bigint::BigInt;
-use tokio::fs;
+use tokio::{
+    fs::{self, File},
+    io::{self, AsyncReadExt},
+};
 
 use crate::{
     icombs::readback::Handle,
     par::{
+        builtin::string::{Machine, Pattern},
         process,
         program::{Definition, Module},
         types::Type,
@@ -66,7 +70,7 @@ async fn storage_open(mut handle: Handle) {
         );
     } else {
         handle.signal(literal!("err"));
-        handle.provide_string(Substr::from("unsupported file type"));
+        handle.provide_string(Substr::from("Unsupported file type"));
     }
 }
 
@@ -163,8 +167,282 @@ fn provide_file_info(handle: Handle, info: FileInfo) {
 
                 "size" => handle.provide_nat(BigInt::from(info.metadata.len())),
 
+                "readUTF8" => match File::open(info.path.as_ref()).await {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        provide_string_reader(handle, file).await;
+                    }
+
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+
                 _ => unreachable!(),
             }
         }
     })
+}
+
+async fn provide_string_reader(mut handle: Handle, file: File) {
+    let mut remainder = FileRemainder {
+        file,
+        buffer: VecDeque::new(),
+    };
+
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                handle.break_();
+                return;
+            }
+
+            "char" => match remainder.char_indices().next().await {
+                Ok(Some((_, ch))) => {
+                    handle.signal(literal!("char"));
+                    handle.send().provide_char(ch);
+                    remainder.pop(ch.len_utf8());
+                }
+                Ok(None) => {
+                    handle.signal(literal!("end"));
+                    handle.signal(literal!("ok"));
+                    handle.break_();
+                    return;
+                }
+                Err(err) => {
+                    handle.signal(literal!("end"));
+                    handle.signal(literal!("err"));
+                    handle.provide_string(Substr::from(err.to_string()));
+                    return;
+                }
+            },
+
+            "match" => {
+                let prefix = Pattern::readback(handle.receive()).await;
+                let suffix = Pattern::readback(handle.receive()).await;
+                match remainder.char_indices().next().await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("ok"));
+                        handle.break_();
+                        return;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                        return;
+                    }
+                }
+
+                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+
+                let mut best_match = None;
+                let mut char_indices = remainder.char_indices();
+                loop {
+                    let (pos, ch) = match char_indices.next().await {
+                        Ok(Some((pos, ch))) => (pos, ch),
+                        Ok(None) => break,
+                        Err(err) => {
+                            handle.signal(literal!("end"));
+                            handle.signal(literal!("err"));
+                            handle.provide_string(Substr::from(err.to_string()));
+                            return;
+                        }
+                    };
+                    match (m.leftmost_feasible_split(pos), best_match) {
+                        (Some(fi), Some((bi, _))) if fi > bi => break,
+                        (None, _) => break,
+                        _ => {}
+                    }
+                    m.advance(pos, ch);
+                    match (m.leftmost_accepting_split(), best_match) {
+                        (Some(ai), Some((bi, _))) if ai <= bi => {
+                            best_match = Some((ai, pos + ch.len_utf8()))
+                        }
+                        (Some(ai), None) => best_match = Some((ai, pos + ch.len_utf8())),
+                        _ => {}
+                    }
+                }
+
+                match best_match {
+                    Some((i, j)) => {
+                        handle.signal(literal!("match"));
+                        let matched = remainder.pop(j);
+                        handle.send().provide_string(matched.substr(..i));
+                        handle.send().provide_string(matched.substr(i..));
+                    }
+                    None => {
+                        handle.signal(literal!("fail"));
+                    }
+                }
+            }
+            "matchEnd" => {
+                let prefix = Pattern::readback(handle.receive()).await;
+                let suffix = Pattern::readback(handle.receive()).await;
+                match remainder.char_indices().next().await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("ok"));
+                        handle.break_();
+                        return;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                        return;
+                    }
+                }
+
+                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+
+                let mut char_indices = remainder.char_indices();
+                loop {
+                    let (pos, ch) = match char_indices.next().await {
+                        Ok(Some((pos, ch))) => (pos, ch),
+                        Ok(None) => break,
+                        Err(err) => {
+                            handle.signal(literal!("end"));
+                            handle.signal(literal!("err"));
+                            handle.provide_string(Substr::from(err.to_string()));
+                            return;
+                        }
+                    };
+                    if m.accepts() == None {
+                        break;
+                    }
+                    m.advance(pos, ch);
+                }
+
+                match m.leftmost_accepting_split() {
+                    Some(i) => {
+                        let left = remainder.pop(i);
+                        let right = match remainder.all().await {
+                            Ok(string) => string,
+                            Err(err) => {
+                                handle.signal(literal!("end"));
+                                handle.signal(literal!("err"));
+                                handle.provide_string(Substr::from(err.to_string()));
+                                return;
+                            }
+                        };
+                        handle.signal(literal!("match"));
+                        handle.send().provide_string(left);
+                        handle.send().provide_string(right);
+                        handle.break_();
+                        return;
+                    }
+                    None => {
+                        handle.signal(literal!("fail"));
+                    }
+                }
+            }
+            "remainder" => {
+                match remainder.all().await {
+                    Ok(string) => {
+                        handle.signal(literal!("ok"));
+                        handle.provide_string(string);
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+                return;
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+struct FileRemainder {
+    file: File,
+    buffer: VecDeque<u8>,
+}
+
+impl FileRemainder {
+    fn char_indices(&mut self) -> FileRemainderChars<'_> {
+        FileRemainderChars {
+            bytes: FileRemainderBytes {
+                remainder: self,
+                index: 0,
+                tmp: [0; 256],
+            },
+            tmp: Vec::with_capacity(4),
+        }
+    }
+
+    fn pop(&mut self, n: usize) -> Substr {
+        let popped = self.buffer.drain(..n).collect::<Vec<u8>>();
+        let popped = String::from_utf8_lossy(&popped[..]);
+        Substr::from(popped)
+    }
+
+    async fn all(&mut self) -> io::Result<Substr> {
+        let mut string = String::new();
+        let mut char_indices = self.char_indices();
+        while let Some((_, ch)) = char_indices.next().await? {
+            string.push(ch);
+        }
+        Ok(Substr::from(string))
+    }
+}
+
+struct FileRemainderBytes<'a> {
+    remainder: &'a mut FileRemainder,
+    index: usize,
+    tmp: [u8; 256],
+}
+
+impl<'a> FileRemainderBytes<'a> {
+    async fn next(&mut self) -> io::Result<Option<u8>> {
+        if let Some(b) = self.remainder.buffer.get(self.index) {
+            self.index += 1;
+            return Ok(Some(*b));
+        }
+        let n = self.remainder.file.read(&mut self.tmp[..]).await?;
+        if n == 0 {
+            return Ok(None);
+        }
+        self.remainder.buffer.extend(&self.tmp[..n]);
+        let b = self.remainder.buffer.get(self.index).unwrap();
+        self.index += 1;
+        Ok(Some(*b))
+    }
+}
+
+struct FileRemainderChars<'a> {
+    bytes: FileRemainderBytes<'a>,
+    tmp: Vec<u8>,
+}
+
+impl<'a> FileRemainderChars<'a> {
+    async fn next(&mut self) -> io::Result<Option<(usize, char)>> {
+        loop {
+            while self.tmp.len() < 4 {
+                match self.bytes.next().await? {
+                    Some(b) => self.tmp.push(b),
+                    None => break,
+                }
+            }
+            if self.tmp.is_empty() {
+                return Ok(None);
+            }
+            let pos = self.bytes.index - self.tmp.len();
+            for len in 1..=self.tmp.len() {
+                if let Ok(s) = std::str::from_utf8(&self.tmp[..len]) {
+                    if let Some(c) = s.chars().next() {
+                        self.tmp.drain(..len);
+                        return Ok(Some((pos, c)));
+                    }
+                }
+            }
+            self.tmp.remove(0);
+            return Ok(Some((pos, char::REPLACEMENT_CHARACTER)));
+        }
+    }
 }

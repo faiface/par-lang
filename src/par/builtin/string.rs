@@ -30,7 +30,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 "Reader",
                 Type::function(
                     Type::string(),
-                    Type::name(None, "Reader", vec![Type::break_()]),
+                    Type::name(None, "Reader", vec![Type::string(), Type::break_()]),
                 ),
                 |handle| Box::pin(string_reader(handle)),
             ),
@@ -61,7 +61,6 @@ async fn string_quote(mut handle: Handle) {
 
 async fn string_reader(mut handle: Handle) {
     let mut remainder = handle.receive().string().await;
-
     loop {
         match handle.case().await.as_str() {
             "close" => {
@@ -161,7 +160,7 @@ async fn string_reader(mut handle: Handle) {
 }
 
 #[derive(Debug, Clone)]
-enum Pattern {
+pub(crate) enum Pattern {
     Nil,
     All,
     Empty,
@@ -177,7 +176,7 @@ enum Pattern {
 }
 
 impl Pattern {
-    async fn readback(mut handle: Handle) -> Box<Self> {
+    pub(crate) async fn readback(mut handle: Handle) -> Box<Self> {
         match handle.case().await.as_str() {
             "and" => {
                 // .and List<self>
@@ -250,26 +249,26 @@ impl Pattern {
 }
 
 #[derive(Debug)]
-struct Machine {
+pub(crate) struct Machine {
     pattern: Box<Pattern>,
     inner: MachineInner,
 }
 
 impl Machine {
-    fn start(pattern: Box<Pattern>) -> Self {
+    pub(crate) fn start(pattern: Box<Pattern>) -> Self {
         let inner = MachineInner::start(&pattern, 0);
         Self { pattern, inner }
     }
 
-    fn accepts(&self) -> Option<bool> {
+    pub(crate) fn accepts(&self) -> Option<bool> {
         self.inner.accepts(&self.pattern)
     }
 
-    fn advance(&mut self, pos: usize, ch: char) {
+    pub(crate) fn advance(&mut self, pos: usize, ch: char) {
         self.inner.advance(&self.pattern, pos, ch);
     }
 
-    fn leftmost_accepting_split(&self) -> Option<usize> {
+    pub(crate) fn leftmost_accepting_split(&self) -> Option<usize> {
         let Pattern::Concat(_, p2) = self.pattern.as_ref() else {
             return None;
         };
@@ -282,7 +281,7 @@ impl Machine {
             .min()
     }
 
-    fn leftmost_feasible_split(&self, pos: usize) -> Option<usize> {
+    pub(crate) fn leftmost_feasible_split(&self, pos: usize) -> Option<usize> {
         let State::Concat(_, heap) = &self.inner.state else {
             return None;
         };
