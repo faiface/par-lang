@@ -1,7 +1,4 @@
-type Result<a> = either {
-  .ok a,
-  .err String.String,
-}
+type Error = String.String
 
 type PathInfo = box choice {
   .name => String.String,
@@ -11,15 +8,13 @@ type PathInfo = box choice {
 type FileInfo = box choice {
   .path => PathInfo,
   .size => Nat.Nat,
-  .readUTF8 => Result<Reader>,
+  .readUTF8 => Result.Result<String.Reader<Error>, Error>,
 }
-
-type Reader = String.Reader<Result<String.String>, Result<!>>
 
 type DirInfo = recursive box choice {
   .path => PathInfo,
-  .list => Result<List.List<either {
+  .list => Result.Result<List.List<either {
     .file FileInfo,
     .dir self,
-  }>>,
+  }>, Error>,
 }

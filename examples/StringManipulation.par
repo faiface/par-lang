@@ -10,12 +10,12 @@ def TestSplit = Split("  Some   more words .", .whitespace!)
 def Trim = [s: String, c: Char.Class] chan ret {
   let r = String.Reader(s)
   r.match(.empty!, .repeat.one c).case {
-    .end! => { ret <> "" }
+    .end _ => { ret <> "" }
     .fail => {}
     .match(_, _) => {}
   }
   r.matchEnd(.repeat.one.any!, .repeat.one c).case {
-    .end! => { ret <> "" }
+    .end _ => { ret <> "" }
     .fail => {
       r.close
       ret <> ""
@@ -31,16 +31,17 @@ dec Find : [String, String.Pattern] either {
   .some(String, String, String)!,
 }
 def Find = [s, p] String.Reader(s).match(.repeat.one.any!, p).case {
-  .end! => .none!,
+  .end _ => .none!,
   .fail r => do { r.close } in .none!,
-  .match(before, found) r => .some(before, found, r.remainder)!
+  .match(before, found) r =>
+    .some(before, found, Result.Always(type String)(r.remainder))!
 }
 
 dec Split : [String, Char.Class] List<String>
 def Split = [s, c] chan yield {
   let r = String.Reader(s)
   r.begin.match(.repeat.one c, .repeat1.non c).case {
-    .end! => { yield.end! }
+    .end _ => { yield.end! }
     .fail => {
        r.close
        yield.end!

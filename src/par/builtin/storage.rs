@@ -26,12 +26,15 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             Type::function(
                 Type::string(),
                 Type::name(
-                    None,
+                    Some("Result"),
                     "Result",
-                    vec![Type::either(vec![
-                        ("file", Type::name(None, "FileInfo", vec![])),
-                        ("dir", Type::name(None, "DirInfo", vec![])),
-                    ])],
+                    vec![
+                        Type::either(vec![
+                            ("file", Type::name(None, "FileInfo", vec![])),
+                            ("dir", Type::name(None, "DirInfo", vec![])),
+                        ]),
+                        Type::name(None, "Error", vec![]),
+                    ],
                 ),
             ),
             |handle| Box::pin(storage_open(handle)),

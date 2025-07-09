@@ -1,0 +1,10 @@
+type Result<a, e> = either {
+  .ok a,
+  .err e,
+}
+
+dec Always : [type a] [Result<a, either {}>] a
+def Always = [type a] [result] result.case {
+  .ok value => value,
+  .err impossible => impossible.case {},
+}

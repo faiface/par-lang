@@ -3,20 +3,20 @@ type Builder = iterative choice {
   .build => String,
 }
 
-type Reader<r, e> = recursive iterative/attempt choice {
+type Reader<e> = recursive iterative/attempt choice {
   .close => !,
-  .remainder => r,
+  .remainder => Result.Result<String.String, e>,
   .char => either {
-    .end e,
+    .end Result.Result<!, e>,
     .char(Char.Char) self,
   },
   .match(Pattern, Pattern) => either {
-    .end e,
+    .end Result.Result<!, e>,
     .fail self/attempt,
     .match(String, String) self,
   },
   .matchEnd(Pattern, Pattern) => either {
-    .end e,
+    .end Result.Result<!, e>,
     .fail self/attempt,
     .match(String, String)!,
   },

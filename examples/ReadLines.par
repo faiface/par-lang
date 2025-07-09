@@ -1,6 +1,6 @@
 def Nl: String.Pattern = .or*(.str "\n", .str "\r\n")
 
-dec Lines : [Storage.Reader] List<String>
+dec Lines : [String.Reader<Storage.Error>] List<String>
 def Lines = [reader] chan yield {
   reader.begin.match(.repeat.one.any!, Nl).case {
     .end _ => {
@@ -22,7 +22,7 @@ def Lines = [reader] chan yield {
   }
 }
 
-dec ReadLines : [String] Storage.Result<List<String>>
+dec ReadLines : [String] Result<List<String>, Storage.Error>
 def ReadLines = [path] Storage.Get(path).case {
   .ok item => item.case {
     .file f => f.readUTF8.case {

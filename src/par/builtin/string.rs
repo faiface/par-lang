@@ -30,7 +30,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 "Reader",
                 Type::function(
                     Type::string(),
-                    Type::name(None, "Reader", vec![Type::string(), Type::break_()]),
+                    Type::name(None, "Reader", vec![Type::either(vec![])]),
                 ),
                 |handle| Box::pin(string_reader(handle)),
             ),
@@ -75,6 +75,7 @@ async fn string_reader(mut handle: Handle) {
                 }
                 None => {
                     handle.signal(literal!("end"));
+                    handle.signal(literal!("ok"));
                     handle.break_();
                     return;
                 }
@@ -84,6 +85,7 @@ async fn string_reader(mut handle: Handle) {
                 let suffix = Pattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
                     handle.signal(literal!("end"));
+                    handle.signal(literal!("ok"));
                     handle.break_();
                     return;
                 }
@@ -124,6 +126,7 @@ async fn string_reader(mut handle: Handle) {
                 let suffix = Pattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
                     handle.signal(literal!("end"));
+                    handle.signal(literal!("ok"));
                     handle.break_();
                     return;
                 }

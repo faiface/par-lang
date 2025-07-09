@@ -17,6 +17,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         Module::parse_and_compile(include_str!("./builtin/Bool.par")).unwrap(),
     );
     module.import(
+        "Result",
+        Module::parse_and_compile(include_str!("./builtin/Result.par")).unwrap(),
+    );
+    module.import(
         "List",
         Module::parse_and_compile(include_str!("./builtin/List.par")).unwrap(),
     );
