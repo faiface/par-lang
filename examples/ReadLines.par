@@ -1,0 +1,35 @@
+def Nl: String.Pattern = .or*(.str "\n", .str "\r\n")
+
+dec Lines : [Storage.Reader] List<String>
+def Lines = [reader] chan yield {
+  reader.begin.match(.repeat.one.any!, Nl).case {
+    .end _ => {
+      yield.end!
+    }
+    .fail => {
+      reader.remainder.case {
+        .ok s => {
+          yield.item(s)
+        }
+        .err _ => {}
+      }
+      yield.end!
+    }
+    .match(line, _) => {
+      yield.item(line)
+      reader.loop
+    }
+  }
+}
+
+dec ReadLines : [String] Storage.Result<List<String>>
+def ReadLines = [path] Storage.Get(path).case {
+  .ok item => item.case {
+    .file f => f.readUTF8.case {
+      .ok r => .ok Lines(r),
+      .err e => .err e,
+    },
+    .dir _ => .err "Unstupported file type",
+  }
+  .err e => .err e,
+}
