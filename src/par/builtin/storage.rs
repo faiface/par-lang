@@ -282,6 +282,7 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                     }
                 }
             }
+
             "matchEnd" => {
                 let prefix = Pattern::readback(handle.receive()).await;
                 let suffix = Pattern::readback(handle.receive()).await;
