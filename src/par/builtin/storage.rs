@@ -29,11 +29,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     Some("Result"),
                     "Result",
                     vec![
+                        Type::name(None, "Error", vec![]),
                         Type::either(vec![
                             ("file", Type::name(None, "FileInfo", vec![])),
                             ("dir", Type::name(None, "DirInfo", vec![])),
                         ]),
-                        Type::name(None, "Error", vec![]),
                     ],
                 ),
             ),

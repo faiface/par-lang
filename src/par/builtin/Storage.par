@@ -8,13 +8,13 @@ type PathInfo = box choice {
 type FileInfo = box choice {
   .path => PathInfo,
   .size => Nat.Nat,
-  .readUTF8 => Result.Result<String.Reader<Error>, Error>,
+  .readUTF8 => Result.Result<Error, String.Reader<Error>>,
 }
 
 type DirInfo = recursive box choice {
   .path => PathInfo,
-  .list => Result.Result<List.List<either {
+  .list => Result.Result<Error, List.List<either {
     .file FileInfo,
     .dir self,
-  }>, Error>,
+  }>>,
 }

@@ -22,7 +22,7 @@ def Lines = [reader] chan yield {
   }
 }
 
-dec ReadLines : [String] Result<List<String>, Storage.Error>
+dec ReadLines : [String] Result<Storage.Error, List<String>>
 def ReadLines = [path] Storage.Get(path).case {
   .ok item => item.case {
     .file f => f.readUTF8.case {

@@ -1,9 +1,9 @@
-type Result<a, e> = either {
+type Result<e, a> = either {
   .ok a,
   .err e,
 }
 
-dec Always : [type a] [Result<a, either {}>] a
+dec Always : [type a] [Result<either {}, a>] a
 def Always = [type a] [result] result.case {
   .ok value => value,
   .err impossible => impossible.case {},
