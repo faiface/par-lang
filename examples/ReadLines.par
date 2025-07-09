@@ -3,14 +3,10 @@ def Nl: String.Pattern = .or*(.str "\n", .str "\r\n")
 dec Lines : [String.Reader<Storage.Error>] List<String>
 def Lines = [reader] chan yield {
   reader.begin.match(.repeat.one.any!, Nl).case {
-    .end _ => {
-      yield.end!
-    }
+    .end _ => { yield.end! }
     .fail => {
       reader.remainder.case {
-        .ok s => {
-          yield.item(s)
-        }
+        .ok s => { yield.item(s) }
         .err _ => {}
       }
       yield.end!
