@@ -154,6 +154,7 @@ async fn string_reader(mut handle: Handle) {
                 }
             }
             "remainder" => {
+                handle.signal(literal!("ok"));
                 handle.provide_string(remainder);
                 return;
             }
