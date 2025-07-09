@@ -25,7 +25,7 @@ def ReadLines = [path] Storage.Get(path).case {
       .ok r => .ok Lines(r),
       .err e => .err e,
     },
-    .dir _ => .err "Unstupported file type",
+    .dir _ => .err "Unsupported file type",
   }
   .err e => .err e,
 }
