@@ -3,9 +3,8 @@
 We've now seen the `chan` expression in action, using the obtained channel to return early
 in its process. But that only scratches the surface!
 
-The channel obtained is actually a lot more than a return handle. It's a **dual,** a direct
-access to the **consumer** of the whole `chan` expression. It can be interacted with
-sequentially, constructing a value step-by-step.
+The channel you obtain isn't just a return handle — it's a **direct connection to the consumer** of the result.
+It can be interacted with sequentially, constructing a value step-by-step.
 
 The title of this section, _"construction by destruction",_ is very apt! What we're about to
 learn here is exactly analogous to the famous trick in mathematics: _a proof by contradiction._
@@ -104,9 +103,9 @@ it's defined structurally:
 
 </table>
 
-> Don't get scared by the `F<...>` in self-referential types and generics. It's just a way to
+> Don’t worry if the `F<...>` in recursive and generic types looks intimidating. It's just a way to
 > formalize that after flipping from `recursive` to `iterative` (and similarly in the other cases),
-> we proceed to dualize the body.
+> we continue dualizing the body.”.
 
 Looking at the table, here's what we can see:
 - [Units](../types/unit.md) are dual to [continuations](../types/continuation.md).
@@ -145,9 +144,8 @@ this dual type provides a good way to communicate with them.
 Notice the `?` in the `.end` branch. That's a **continuation.** There is no expression syntax for
 this type, but finally, we're going to learn how to handle it in processes!
 
-Now, let's remember that in the `chan` expression, the channel obtained inside its process
-has the dual type of the overall result of the expression. Let's use this to construct a list
-step-by-step.
+Remember: in a `chan`, the channel you obtain inside the block always has the **dual type** of the expression’s
+final result. Let's use this to construct a list step-by-step.
 
 ```par
 def SmallList: List<Int> = chan yield {
@@ -164,11 +162,8 @@ def SmallList: List<Int> = chan yield {
 This is just a usual handling of an [iterative](../types/iterative.md)
 [choice](../types/choice.md), except for the last line.
 
-Selecting the `.end` branch turns the `yield` channel into a `?`. When a channel has type `?`,
-it means **you're done** — nothing more is expected of you, and in fact, nothing more is
-allowed for you. **You have to finish.**
-
-The only command available for `?` is called **break.** It's spelled `!`, that's the last line:
+Selecting the `.end` branch transforms the `yield` channel into a `?` — the continuation type. At that point,
+the protocol is over, and only one command is valid: **a break.** It's spelled `!`, that's the last line:
 
 ```par
   yield!  // break here
@@ -216,7 +211,7 @@ It makes a bunch of concepts we've already covered come together.
 - We loop through the outer list of lists using `.begin/outer` and `.loop/outer`.
 - If it’s `.end!`, we finish: `yield.end!`.
 - If it’s `.item(list)`, we then begin looping through the inner list.
-  - We don't manually bind the remainder of the list, the communication simply continues on
+  - We don't manually bind the remainder of the list — the communication simply continues on
     the original variable: `lists`.
   - The nested `.begin`/`.loop` shines here; no helper functions needed.
 - In the inner loop:
@@ -224,7 +219,7 @@ It makes a bunch of concepts we've already covered come together.
   - If it’s `.item(value)`, we yield it to the consumer with `yield.item(value)`, then loop again.
     Re-binding of the rest of the list is not needed here, either.
 
-And so we see, duality combined with the `chan` expressions gives us a lot of expressivity.
-Constructing lists generator-style is just one of the use-cases. Whenever it feels more
-appropriate to _become a value_ instead of constructing it out of parts, `chan` and duality
-come to the task!
+Duality combined with the `chan` expressions gives us a lot of expressivity.\
+Constructing lists generator-style is just one of the use-cases.\
+Whenever it feels more appropriate to _become a value_ instead of constructing it from parts, `chan` and
+duality come to the task!

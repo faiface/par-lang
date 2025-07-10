@@ -38,8 +38,9 @@ In Par, **_forall_ types:**
 - **Are first-class!** It's possible to store and pass generic values around, without them losing
   their genericity.
 
-A forall type consists of two parts: a lower-case type variable enclosed in square brackets, and
-prefixed with the keyword `type`, and the result type, which uses this type variable.
+A forall type **consists of two parts:**
+- A lower-case type variable enclosed in square brackets, and prefixed with the keyword `type`.
+- The result type, which uses this type variable.
 
 ```par
 dec None : [type a] Option<a>
