@@ -167,7 +167,7 @@
 <p>Unit is frequently used as an end-marker for other types. All composite types — such as <a href="./pair.html">pairs</a>,
 <a href="./either.html">eithers</a>, and <a href="./choice.html">choices</a> — have an obligatory <em>“and then”</em> part. The unit type
 does the job for the case of <em>“and then nothing”</em>.</p>
-<p>For example, the pre-defined <code>List&lt;a&gt;</code> type has this definition:</p>
+<p>For example, the predefined <code>List&lt;a&gt;</code> type has this definition:</p>
 <pre><code class="language-par">type List&lt;a&gt; = recursive either {
   .end!,
   .item(a) self,

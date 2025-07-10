@@ -210,7 +210,7 @@ corecursion, which Par supports with its <a href="./iterative.html">iterative</a
 def __main__():
     start_server(WebServer())
 </code></pre>
-<p>A small re-structuring goes a long way here. <a href="./iterative.html">Iterative</a> types in Par enable
+<p>A small restructuring goes a long way here. <a href="./iterative.html">Iterative</a> types in Par enable
 precisely this pattern, but with the ergonomics of the infinite loop version.</p>
 </blockquote>
 <p>A recursive type starts with the keyword <code>recursive</code> followed by a body that may contain any number
@@ -306,7 +306,7 @@ def SmallTree: Tree = .node(
 <p>Already constructed recursive values can be used in the <code>self</code>-places of new ones:</p>
 <pre><code class="language-par">def BiggerTree: Tree = .node(SmallTree, SmallTree)!
 </code></pre>
-<p><strong>Lists</strong> are a frequently used recursive type, and so are pre-defined as:</p>
+<p><strong>Lists</strong> are a frequently used recursive type, and so are predefined as:</p>
 <pre><code class="language-par">type List&lt;a&gt; = recursive either {
   .end!,
   .item(a) self,
@@ -364,7 +364,7 @@ def SumList = [list]
   .item(x) xs =&gt;
 </code></pre>
 If the list is empty, the result is <code>0</code>. Otherwise, we need to add the number <code>x</code>
-<pre><code class="language-par">                 Int.Add(x, 
+<pre><code class="language-par">                 Int.Add(x,
 </code></pre>
 to the sum of the rest of the list: <code>xs</code>.</li>
 <li>Since <code>xs</code> is a <em>descendant</em> of the original <code>list</code> that we applied the <code>.begin</code> to, and is again a
@@ -451,7 +451,7 @@ increment. In Haskell, that’s achieved by explicitly passing it to the recursi
 def IncBy = [list, n] list.begin.case {
   .end!       =&gt; .end!,
   .item(x) xs =&gt; .item(Int.Add(x, n)) xs.loop,
-} 
+}
 </code></pre>
 <p>Notice, that <code>xs.loop</code> makes no mention of <code>n</code>, the increment. Yet, <code>n</code> is available throughout the
 recursion, because it is automatically passed around.</p>

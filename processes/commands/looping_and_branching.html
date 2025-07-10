@@ -208,7 +208,7 @@ not return something.</p>
 There’s no pattern. That’s because in process syntax, binding the payload of an
 <a href="../types/either.html">either</a> is optional. Normally, <strong>the subject itself becomes the payload.</strong>
 However, it is possible to match the payload fully, if desired.</p>
-<p>So, inside the <code>.item</code> branch, strings now has the type <code>(String) List&lt;String&gt;</code> — it’s a pair, and
+<p>So, inside the <code>.item</code> branch, <code>strings</code> now has the type <code>(String) List&lt;String&gt;</code> — it’s a pair, and
 we want to peel off its first part, to add it to the string builder.</p>
 <p>There’s <strong>one last important detail,</strong> and that’s concerning <strong>control flow.</strong> If a <code>.case</code>
 branch process does not end (we’ll learn about ending processes in the section about

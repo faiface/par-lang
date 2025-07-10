@@ -200,7 +200,7 @@ tree-like structures.</p>
   .node(a, self, self)!,
 }
 </code></pre>
-<p>The pre-defined <code>List&lt;a&gt;</code> type is a combination of <code>recursive</code> and <code>either</code>:</p>
+<p>The predefined <code>List&lt;a&gt;</code> type is a combination of <code>recursive</code> and <code>either</code>:</p>
 <pre><code class="language-par">type List&lt;a&gt; = recursive either {
   .end!,
   .item(a) self,
@@ -208,7 +208,7 @@ tree-like structures.</p>
 </code></pre>
 </blockquote>
 <h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
-<p>Values of <em>either types</em> are constructed starting with <code>.name</code> — the name of one of the variants in
+<p>Values of <em>either</em> types are constructed starting with <code>.name</code> — the name of one of the variants in
 the type — followed by an expression of the corresponding payload type.</p>
 <p>Here are some examples of constructions for an either type that demonstrates many possible payloads:</p>
 <pre><code class="language-par">type Varied = either {

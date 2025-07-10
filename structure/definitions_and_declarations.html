@@ -164,14 +164,14 @@
 <p>At the top level, a <em>Par</em> file consists of <strong>definitions</strong>, <strong>declarations</strong>, and <strong>type definitions</strong>.</p>
 <p>These define <strong>global names</strong> that can be used throughout the file, an unlimited number of times.</p>
 <blockquote>
-<p>Because of Par’s linear type system, local variables may be required to use <em>exactly once.</em> That is
+<p>Because of Par’s linear type system, local variables may be required to be used <em>exactly once.</em> That is
 if they have a linear type. Global definitions can be used any number of times regardless of their
 type.</p>
 </blockquote>
 <p>Par has a simple naming rule:</p>
 <ul>
 <li><strong>Global names start with an upper-case letter.</strong> That is global types, functions, and so on.</li>
-<li><strong>Local names start with lower-case letter, or <code>_</code>.</strong> That includes local variables, function
+<li><strong>Local names start with a lower-case letter, or <code>_</code>.</strong> That includes local variables, function
 parameters, and type variables in generic functions.</li>
 </ul>
 <p>While global names can be used throughout the program, there is an <em>important restriction!</em></p>
@@ -187,7 +187,7 @@ infinite loops.</p>
 remedied by totality checkers, such as in <a href="https://en.wikipedia.org/wiki/Agda_(programming_language)">Agda</a>,
 Par chooses a different approach. That is outlawing unrestricted recursion, and instead relying on more
 <em>principled</em> ways to achieve cyclic behavior, including what’s usually achieved by mutual recursion.</p>
-<p><strong>The remedies</strong> come in form of these more principled ways. Fortunately, they don’t just replace the
+<p><strong>The remedies</strong> come in the form of these more principled ways. Fortunately, they don’t just replace the
 familiar recursion by clunkier mechanisms, they bring their own perks.</p>
 <p>Naive recursion on the term level (like in functions) is replaced by a powerful,
 <strong>universal looping mechanism, called <code>begin</code>/<code>loop</code>.</strong> It’s a single tool usable for:</p>

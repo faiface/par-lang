@@ -192,7 +192,7 @@ label.</p>
 </blockquote>
 <p>Iterative types are <strong>always linear,</strong> regardless of what’s in their bodies. As such, they can’t be
 dropped, nor copied.</p>
-<p>Notice, that we included a <code>.close</code> branch on the inner <a href="./choice.html">choice</a>. Since <code>Sequence&lt;a&gt;</code> is
+<p>Notice that we included a <code>.close</code> branch on the inner <a href="./choice.html">choice</a>. Since <code>Sequence&lt;a&gt;</code> is
 a linear type, there would be no way to get rid of it if it only contained the <code>.next</code> branch.</p>
 <p>Just like <a href="./recursive.html">recursive types</a>, iterative types can be equated with their <em>expansions</em>:</p>
 <ol>
@@ -237,7 +237,7 @@ a linear type, there would be no way to get rid of it if it only contained the <
 <p>Let’s see what that means!</p>
 <h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
 <p>Values of iterative types are constructed using standalone <code>begin</code>/<code>loop</code> expressions. They start with
-<code>begin</code>, followed by an expression of the body type. Inside this expression, use a standlone <code>loop</code>
+<code>begin</code>, followed by an expression of the body type. Inside this expression, use a standalone <code>loop</code>
 in the <code>self</code> places of the body type to go back to the corresponding <code>begin</code>.</p>
 <blockquote>
 <p>Just like with <a href="./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>, it’s possible to use labels to
@@ -318,7 +318,7 @@ def Increment = [seq] begin case {
 
 def FibonacciPlusOne = Increment(Fibonacci)
 </code></pre>
-<p>In this case, we need to explictly close the input <code>seq</code> in the <code>.close</code> branch. It’s linear, so
+<p>In this case, we need to explicitly close the input <code>seq</code> in the <code>.close</code> branch. It’s linear, so
 we can’t just drop it.</p>
 <h3 id="the-escape-hatch-from-totality-unfounded"><a class="header" href="#the-escape-hatch-from-totality-unfounded">The escape-hatch from totality: <code>unfounded</code></a></h3>
 <p>Just like with <a href="./recursive.html#the-escape-hatch-from-totality-unfounded">recursive destruction</a>,

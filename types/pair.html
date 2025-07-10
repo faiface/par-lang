@@ -162,7 +162,7 @@
                     <main>
                         <h1 id="pair"><a class="header" href="#pair">Pair</a></h1>
 <p>A pair is two independent values packed into one. The only thing that differentiates pairs in Par,
-compared to other language, is their sequential syntax. While unusual, it makes pairs applicable
+compared to other languages, is their sequential syntax. While unusual, it makes pairs applicable
 to a much wider set of use-cases.</p>
 <p>A pair type consists of two types, the first enclosed in round parentheses.</p>
 <pre><code class="language-par">type Pair = (String) Int
@@ -176,7 +176,7 @@ type Triple2 = (String, Int) String
 <pre><code class="language-par">type SymmetricPair = (String, Int)!
 </code></pre>
 <p>Pairs in their sequential style are frequently used in combination with other types to insert values
-into bigger structures. The pre-defined <code>List&lt;a&gt;</code> type uses a pair for its <code>.item</code> variant:</p>
+into bigger structures. The predefined <code>List&lt;a&gt;</code> type uses a pair for its <code>.item</code> variant:</p>
 <pre><code class="language-par">type List&lt;a&gt; = recursive either {
   .end!,
   .item(a) self,
