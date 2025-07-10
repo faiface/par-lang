@@ -8,7 +8,7 @@
 //!
 //! The [`net`] module contains definitions common to all modules, and the implementation for the current runtime
 //!
-//! The [`compiler`] module compiles Par definitions inta interaction combinator trees.
+//! The [`compiler`] module compiles Par definitions into interaction combinator trees.
 //! The definition must be in process syntax (desugared), and type-annotated.
 //!
 //! The [`readback`] module exposes an async API to progressively read back normal-form interaction combinator nets

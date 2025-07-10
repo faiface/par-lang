@@ -50,15 +50,15 @@ In general, **cyclic dependencies between global definitions are disallowed.** I
 > class WebServer:
 >     def close(self):
 >         pass
-> 
+>
 >     def handle(req):
 >         handle_request(req)
-> 
+>
 > def __main__():
 >     start_server(WebServer())
 > ```
 >
-> A small re-structuring goes a long way here. [Iterative](./iterative.md) types in Par enable
+> A small restructuring goes a long way here. [Iterative](./iterative.md) types in Par enable
 > precisely this pattern, but with the ergonomics of the infinite loop version.
 
 A recursive type starts with the keyword `recursive` followed by a body that may contain any number
@@ -169,7 +169,7 @@ Already constructed recursive values can be used in the `self`-places of new one
 def BiggerTree: Tree = .node(SmallTree, SmallTree)!
 ```
 
-**Lists** are a frequently used recursive type, and so are pre-defined as:
+**Lists** are a frequently used recursive type, and so are predefined as:
 
 ```par
 type List<a> = recursive either {
@@ -227,7 +227,7 @@ Let's see it in practice. Suppose we want to add up a list of integers.
 0. We obtain a value (`list`) of a recursive type (`List<Int>`):
    ```par
    dec SumList : [List<Int>] Int
-   
+
    def SumList = [list]
    ```
 1. We apply `.begin` to it:
@@ -242,7 +242,7 @@ Let's see it in practice. Suppose we want to add up a list of integers.
    ```
    If the list is empty, the result is `0`. Otherwise, we need to add the number `x`
    ```par
-                    Int.Add(x, 
+                    Int.Add(x,
    ```
    to the sum of the rest of the list: `xs`.
 4. Since `xs` is a _descendant_ of the original `list` that we applied the `.begin` to, and is again a
@@ -345,7 +345,7 @@ dec IncBy : [List<Int>, Int] List<Int>
 def IncBy = [list, n] list.begin.case {
   .end!       => .end!,
   .item(x) xs => .item(Int.Add(x, n)) xs.loop,
-} 
+}
 ```
 
 Notice, that `xs.loop` makes no mention of `n`, the increment. Yet, `n` is available throughout the

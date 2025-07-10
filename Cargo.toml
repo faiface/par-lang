@@ -29,3 +29,6 @@ arcstr = "1.2.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
 tokio-util = "0.7.15"
+
+[package.metadata.spellcheck]
+config = ".config/spellcheck.toml"

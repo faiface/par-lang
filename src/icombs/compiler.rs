@@ -270,7 +270,7 @@ impl Compiler {
         Ok(Tree::Package(id).with_type(typ))
     }
 
-    /// Optimize away erasure underneath auxiliary ports of dup and con nodes where it is safe to do so.
+    /// Optimize away erasure underneath auxiliary ports of DUP and CON nodes where it is safe to do so.
     ///
     /// Expects vars to be already have been substituted.
     fn apply_safe_rules(&mut self, tree: Tree) -> Tree {

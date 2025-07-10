@@ -1,7 +1,7 @@
 # The `do` Expression
 
 Most of the time, it's not desirable to use _process syntax_ for the whole program. Instead, it's usually best to
-just insert some commands where appropriate. That's what the `do` expression in all about. In real Par programs,
+just insert some commands where appropriate. That's what the `do` expression is all about. In real Par programs,
 **most of the explicit commands will be found in `do` expressions.** And, since we're already familiar with
 _expression syntax_, `do` expressions are a good place to start adding commands to otherwise expression-based programs.
 

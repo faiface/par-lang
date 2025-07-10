@@ -74,14 +74,14 @@ def Reverse = [type t] [list] chan yield {
     .empty!       => yield,
     // The list starts with an item `x`.
     .item(x) rest => do {
-      // Traverse into the rest of the list first.            
+      // Traverse into the rest of the list first.
       let yield = rest.loop
-      // After that, produce `x` on the reversed list.          
-      yield.item(x)                  
+      // After that, produce `x` on the reversed list.
+      yield.item(x)
     } in yield // Finally, give back the generator handle.
   }
   // At the very end, signal the end of the list.
-  yield.empty!                       
+  yield.empty!
 }
 ```
 
@@ -143,7 +143,7 @@ def ForeverTrue: Stream<either { .true!, .false! }> = begin {
 
 _\*There is an escape hatch. Some algorithms, especially divide-and-conquer, are difficult or impossible
 to implement using easy-to-check well-founded strategies. For those, `unfounded begin` turns this check
-off. Vast majority of code doesn't need to opt-out of totality checking, it naturaly fits its requirements.
+off. Vast majority of code doesn't need to opt-out of totality checking, it naturally fits its requirements.
 Those few parts that need to opt-out are clearly marked with `unfounded`. They are the only places
 that can potentially cause infinite loops._
 
