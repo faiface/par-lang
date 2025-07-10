@@ -163,9 +163,8 @@
                         <h1 id="construction-by-destruction"><a class="header" href="#construction-by-destruction">Construction by Destruction</a></h1>
 <p>We’ve now seen the <code>chan</code> expression in action, using the obtained channel to return early
 in its process. But that only scratches the surface!</p>
-<p>The channel obtained is actually a lot more than a return handle. It’s a <strong>dual,</strong> a direct
-access to the <strong>consumer</strong> of the whole <code>chan</code> expression. It can be interacted with
-sequentially, constructing a value step-by-step.</p>
+<p>The channel you obtain isn’t just a return handle — it’s a <strong>direct connection to the consumer</strong> of the result.
+It can be interacted with sequentially, constructing a value step-by-step.</p>
 <p>The title of this section, <em>“construction by destruction”,</em> is very apt! What we’re about to
 learn here is exactly analogous to the famous trick in mathematics: <em>a proof by contradiction.</em>
 And, it’s just as powerful.</p>
@@ -268,9 +267,9 @@ it’s defined structurally:</p>
 </tr>
 </table>
 <blockquote>
-<p>Don’t get scared by the <code>F&lt;...&gt;</code> in self-referential types and generics. It’s just a way to
+<p>Don’t worry if the <code>F&lt;...&gt;</code> in recursive and generic types looks intimidating. It’s just a way to
 formalize that after flipping from <code>recursive</code> to <code>iterative</code> (and similarly in the other cases),
-we proceed to dualize the body.</p>
+we continue dualizing the body.”.</p>
 </blockquote>
 <p>Looking at the table, here’s what we can see:</p>
 <ul>
@@ -300,9 +299,8 @@ give items (via the <code>.item</code> branch), or signal the end. Whoever is co
 this dual type provides a good way to communicate with them.</p>
 <p>Notice the <code>?</code> in the <code>.end</code> branch. That’s a <strong>continuation.</strong> There is no expression syntax for
 this type, but finally, we’re going to learn how to handle it in processes!</p>
-<p>Now, let’s remember that in the <code>chan</code> expression, the channel obtained inside its process
-has the dual type of the overall result of the expression. Let’s use this to construct a list
-step-by-step.</p>
+<p>Remember: in a <code>chan</code>, the channel you obtain inside the block always has the <strong>dual type</strong> of the expression’s
+final result. Let’s use this to construct a list step-by-step.</p>
 <pre><code class="language-par">def SmallList: List&lt;Int&gt; = chan yield {
   yield.item(1)
   yield.item(2)
@@ -315,10 +313,8 @@ step-by-step.</p>
 </code></pre>
 <p>This is just a usual handling of an <a href="../types/iterative.html">iterative</a>
 <a href="../types/choice.html">choice</a>, except for the last line.</p>
-<p>Selecting the <code>.end</code> branch turns the <code>yield</code> channel into a <code>?</code>. When a channel has type <code>?</code>,
-it means <strong>you’re done</strong> — nothing more is expected of you, and in fact, nothing more is
-allowed for you. <strong>You have to finish.</strong></p>
-<p>The only command available for <code>?</code> is called <strong>break.</strong> It’s spelled <code>!</code>, that’s the last line:</p>
+<p>Selecting the <code>.end</code> branch transforms the <code>yield</code> channel into a <code>?</code> — the continuation type. At that point,
+the protocol is over, and only one command is valid: <strong>a break.</strong> It’s spelled <code>!</code>, that’s the last line:</p>
 <pre><code class="language-par">  yield!  // break here
 </code></pre>
 <p>Like <a href="./chan_expression.html#linking--the--command">linking</a>, it has to be the last command in
@@ -355,7 +351,7 @@ a nested list:</p>
 <li>If it’s <code>.end!</code>, we finish: <code>yield.end!</code>.</li>
 <li>If it’s <code>.item(list)</code>, we then begin looping through the inner list.
 <ul>
-<li>We don’t manually bind the remainder of the list, the communication simply continues on
+<li>We don’t manually bind the remainder of the list — the communication simply continues on
 the original variable: <code>lists</code>.</li>
 <li>The nested <code>.begin</code>/<code>.loop</code> shines here; no helper functions needed.</li>
 </ul>
@@ -368,10 +364,10 @@ Re-binding of the rest of the list is not needed here, either.</li>
 </ul>
 </li>
 </ul>
-<p>And so we see, duality combined with the <code>chan</code> expressions gives us a lot of expressivity.
-Constructing lists generator-style is just one of the use-cases. Whenever it feels more
-appropriate to <em>become a value</em> instead of constructing it out of parts, <code>chan</code> and duality
-come to the task!</p>
+<p>Duality combined with the <code>chan</code> expressions gives us a lot of expressivity.<br />
+Constructing lists generator-style is just one of the use-cases.<br />
+Whenever it feels more appropriate to <em>become a value</em> instead of constructing it from parts, <code>chan</code> and
+duality come to the task!</p>
 
                     </main>
 

@@ -190,8 +190,11 @@ any <code>Option&lt;a&gt;</code>, and swapping a pair works regardless of its co
 <li><strong>Are first-class!</strong> It’s possible to store and pass generic values around, without them losing
 their genericity.</li>
 </ul>
-<p>A forall type consists of two parts: a lower-case type variable enclosed in square brackets, and
-prefixed with the keyword <code>type</code>, and the result type, which uses this type variable.</p>
+<p>A forall type <strong>consists of two parts:</strong></p>
+<ul>
+<li>A lower-case type variable enclosed in square brackets, and prefixed with the keyword <code>type</code>.</li>
+<li>The result type, which uses this type variable.</li>
+</ul>
 <pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
 
 dec Swap : [type a] [type b] [(a, b)!] (b, a)!

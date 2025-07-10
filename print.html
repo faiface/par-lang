@@ -1182,8 +1182,11 @@ any <code>Option&lt;a&gt;</code>, and swapping a pair works regardless of its co
 <li><strong>Are first-class!</strong> It’s possible to store and pass generic values around, without them losing
 their genericity.</li>
 </ul>
-<p>A forall type consists of two parts: a lower-case type variable enclosed in square brackets, and
-prefixed with the keyword <code>type</code>, and the result type, which uses this type variable.</p>
+<p>A forall type <strong>consists of two parts:</strong></p>
+<ul>
+<li>A lower-case type variable enclosed in square brackets, and prefixed with the keyword <code>type</code>.</li>
+<li>The result type, which uses this type variable.</li>
+</ul>
 <pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
 
 dec Swap : [type a] [type b] [(a, b)!] (b, a)!
@@ -1848,6 +1851,142 @@ def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
 }
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="exists"><a class="header" href="#exists">Exists</a></h1>
+<p>An <em>exists type</em> lets a value <strong>hide a type inside itself</strong> — while exposing only what can be done
+with that type.</p>
+<p>They’re the dual of the parametric types: <a href="types/./forall.html"><em>forall</em></a>. A forall type <code>[type a] ...</code> says:
+<em>“You can give me any type <code>a</code>, and I’ll work with it.”</em> On the other hand, an <em>exists type</em> <code>(type a) ...</code>
+says: <em>“I have chosen some specific type <code>a</code>, but I’m not going to tell you what it is.”</em></p>
+<p>An exists type <strong>consists of two parts:</strong></p>
+<ul>
+<li>A lowercase type variable enclosed in round parentheses, prefixed with the keyword <code>type</code>.</li>
+<li>The payload type — a type that may use the hidden type variable.</li>
+</ul>
+<p>It’s similar to a <a href="types/./pair.html">pair</a>, but the first component is a type instead of a value.</p>
+<p>Here are two simple examples of existential types:</p>
+<pre><code class="language-par">type Any = (type a) a
+
+type DropMe = (type a) (a) choice {
+  .drop(a) =&gt; !,
+}
+</code></pre>
+<p>The first one is completely opaque — a value of <code>Any</code> gives you a value of the hidden type, but no
+operations to perform on it. That makes it useless, but it’s the simplest example of an exists type.</p>
+<p>The second one offers just one operation: dropping a value of that type.
+The second one gives us a pair: a value of the hidden type, plus a <a href="types/./choice.html">choice</a> with just one operation:
+dropping a value of that type.</p>
+<p>Let’s now see how existential types are used.</p>
+<h2 id="construction-8"><a class="header" href="#construction-8">Construction</a></h2>
+<p>To construct an existential value, you must pick a concrete type and provide a matching payload.</p>
+<p>The syntax is the same as for <a href="types/./pair.html">pairs</a>, with the addition of the <code>type</code> keyword.</p>
+<p>Here’s a value of type <code>Any</code>:</p>
+<pre><code class="language-par">def Hidden: Any = (type Int) 42
+</code></pre>
+<p>But since the type is hidden inside <code>Any</code>, with no operations provided, this value is completely useless —
+we can’t do anything with it. In fact, we can’t even get rid of it, if we were to instantiate it into a
+variable.</p>
+<p>Let’s now look at a slightly more interesting example:</p>
+<pre><code class="language-par">type DropMe = (type a) (a) choice {
+  .drop(a) =&gt; !,
+}
+</code></pre>
+<p>The payload here is a pair: a value of the hidden type, plus a <a href="types/./choice.html">choice</a> with just one operation:
+dropping a value of that type.</p>
+<p>Here’s how we can construct a value of <code>DropMe</code>:</p>
+<pre><code class="language-par">def Drop42: DropMe = (type Int) (42) choice {
+  .drop(n) =&gt; !,  // `n`, being an `Int`, is dropped by being unused
+}
+</code></pre>
+<h2 id="destruction-8"><a class="header" href="#destruction-8">Destruction</a></h2>
+<p>To use an existential value, you must <strong>unpack it</strong>. The syntax is the same as unpacking a pair,
+just with the type keyword.</p>
+<p>Here’s an example that unpacks and uses a <code>DropMe</code>:</p>
+<pre><code class="language-par">def UseDrop: ! =
+  let (type a) (x) dropper = Drop42
+  in dropper.drop(x)
+</code></pre>
+<p>The pattern <code>(type a) (x) dropper</code> means:</p>
+<ul>
+<li><code>a</code> becomes the name of the hidden type, a local type variable.</li>
+<li><code>x</code> is the stored value of type <code>a</code>.</li>
+<li><code>dropper</code> is the <a href="types/./choice.html">choice</a> with the <code>.drop</code> method.</li>
+</ul>
+<p>We can also unpack existentials <strong>in function parameters,</strong> using patterns. Here’s a function that takes
+a <code>DropMe</code> and drops its inner value:</p>
+<pre><code class="language-par">dec DropIt : [DropMe] !
+def DropIt = [(type a) (x) dropper] dropper.drop(x)
+</code></pre>
+<h2 id="a-real-example"><a class="header" href="#a-real-example">A Real Example</a></h2>
+<p><em>Exists</em> types become truly useful when combined with <a href="types/./box.html">box</a> types — allowing you to hide
+implementation details inside interfaces that can be passed around freely.</p>
+<p>Here’s a boxed interface for working with sets:</p>
+<pre><code class="language-par">type SetModule&lt;a&gt; = (type set) box choice {
+  .empty =&gt; box set,
+  .insert(a, box set) =&gt; box set,
+  .contains(a, box set) =&gt; Bool,
+}
+</code></pre>
+<p>This type hides the implementation type of the set.
+The interface is boxed, so it can be copied and discarded.
+The hidden type <code>set</code> is never revealed — only its operations are exposed.</p>
+<p>Let’s now implement an inefficient, but simple <code>SetModule</code> using lists and equality functions:</p>
+<pre><code class="language-par">type Eq&lt;a&gt; = box [a, a] Bool
+
+dec ListSet : [type a] [Eq&lt;box a&gt;] SetModule&lt;box a&gt;
+def ListSet = [type a] [eq] (type List&lt;box a&gt;) box case {
+  .empty =&gt; .end!,
+
+  .insert(x, set) =&gt; .item(x) set,
+
+  .contains(y, set) =&gt; set.begin.case {
+    .end! =&gt; .false!,
+    .item(x) xs =&gt; eq(x, y).case {
+      .true! =&gt; .true!,
+      .false! =&gt; xs.loop,
+    },
+  },
+}
+</code></pre>
+<p>This implementation of sets can only be constructed for non-linear types. That’s what <code>box a</code> ensures here.</p>
+<p>Note how we construct the existential:</p>
+<pre><code class="language-par">(type List&lt;box a&gt;) ...
+</code></pre>
+<p>The consumer of the <code>SetModule</code> doesn’t know that these sets are implemented as lists.</p>
+<p>Let’s now use that in a function:</p>
+<pre><code class="language-par">dec Deduplicate : [type a] [SetModule&lt;a&gt;, List&lt;box a&gt;] List&lt;box a&gt;
+def Deduplicate = [type a] [(type set) mSet, list]
+  let visited = mSet.empty
+  in list.begin.case {
+    .end! =&gt; .end!,
+    .item(x) xs =&gt; mSet.contains(x, visited).case {
+      .true! =&gt; xs.loop,
+      .false! =&gt;
+        let visited = mSet.insert(x, visited)
+        in .item(x) xs.loop,
+    }
+  }
+</code></pre>
+<p>This function deduplicates a list by tracking seen values using a hidden set implementation.
+It doesn’t know how the set works — just that it supports <code>.empty</code>, <code>.insert</code>, and <code>.contains</code>.</p>
+<p>Let’s test it!</p>
+<pre><code class="language-par">dec Map : [type a, b] [box [a] b, List&lt;a&gt;] List&lt;b&gt;
+def Map = [type a, b] [f, list] list.begin.case {
+  .end! =&gt; .end!,
+  .item(x) xs =&gt; .item(f(x)) xs.loop,
+}
+
+def IntListSet = ListSet(type Int)(box Int.Equals)
+
+def TestDedup =
+  Deduplicate(type Int)(IntListSet)
+    (Map(type Int, Int)(box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
+</code></pre>
+<p>This deduplicates a list of numbers modulo 7 — using:</p>
+<ul>
+<li><code>Map</code> to apply the modulo.</li>
+<li><code>ListSet</code> to get an abstract set implementation.</li>
+<li><code>Deduplicate</code> to do the filtering.</li>
+</ul>
+<p>All without exposing how the set is represented.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="continuation"><a class="header" href="#continuation">Continuation</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-process-syntax"><a class="header" href="#the-process-syntax">The Process Syntax</a></h1>
 <p>So far, <em>Par</em> seems clearly a functional language. Yes, it has linear types, and some unusual
@@ -2416,9 +2555,8 @@ build on the opposing channels!</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="construction-by-destruction"><a class="header" href="#construction-by-destruction">Construction by Destruction</a></h1>
 <p>We’ve now seen the <code>chan</code> expression in action, using the obtained channel to return early
 in its process. But that only scratches the surface!</p>
-<p>The channel obtained is actually a lot more than a return handle. It’s a <strong>dual,</strong> a direct
-access to the <strong>consumer</strong> of the whole <code>chan</code> expression. It can be interacted with
-sequentially, constructing a value step-by-step.</p>
+<p>The channel you obtain isn’t just a return handle — it’s a <strong>direct connection to the consumer</strong> of the result.
+It can be interacted with sequentially, constructing a value step-by-step.</p>
 <p>The title of this section, <em>“construction by destruction”,</em> is very apt! What we’re about to
 learn here is exactly analogous to the famous trick in mathematics: <em>a proof by contradiction.</em>
 And, it’s just as powerful.</p>
@@ -2521,9 +2659,9 @@ it’s defined structurally:</p>
 </tr>
 </table>
 <blockquote>
-<p>Don’t get scared by the <code>F&lt;...&gt;</code> in self-referential types and generics. It’s just a way to
+<p>Don’t worry if the <code>F&lt;...&gt;</code> in recursive and generic types looks intimidating. It’s just a way to
 formalize that after flipping from <code>recursive</code> to <code>iterative</code> (and similarly in the other cases),
-we proceed to dualize the body.</p>
+we continue dualizing the body.”.</p>
 </blockquote>
 <p>Looking at the table, here’s what we can see:</p>
 <ul>
@@ -2553,9 +2691,8 @@ give items (via the <code>.item</code> branch), or signal the end. Whoever is co
 this dual type provides a good way to communicate with them.</p>
 <p>Notice the <code>?</code> in the <code>.end</code> branch. That’s a <strong>continuation.</strong> There is no expression syntax for
 this type, but finally, we’re going to learn how to handle it in processes!</p>
-<p>Now, let’s remember that in the <code>chan</code> expression, the channel obtained inside its process
-has the dual type of the overall result of the expression. Let’s use this to construct a list
-step-by-step.</p>
+<p>Remember: in a <code>chan</code>, the channel you obtain inside the block always has the <strong>dual type</strong> of the expression’s
+final result. Let’s use this to construct a list step-by-step.</p>
 <pre><code class="language-par">def SmallList: List&lt;Int&gt; = chan yield {
   yield.item(1)
   yield.item(2)
@@ -2568,10 +2705,8 @@ step-by-step.</p>
 </code></pre>
 <p>This is just a usual handling of an <a href="processes/../types/iterative.html">iterative</a>
 <a href="processes/../types/choice.html">choice</a>, except for the last line.</p>
-<p>Selecting the <code>.end</code> branch turns the <code>yield</code> channel into a <code>?</code>. When a channel has type <code>?</code>,
-it means <strong>you’re done</strong> — nothing more is expected of you, and in fact, nothing more is
-allowed for you. <strong>You have to finish.</strong></p>
-<p>The only command available for <code>?</code> is called <strong>break.</strong> It’s spelled <code>!</code>, that’s the last line:</p>
+<p>Selecting the <code>.end</code> branch transforms the <code>yield</code> channel into a <code>?</code> — the continuation type. At that point,
+the protocol is over, and only one command is valid: <strong>a break.</strong> It’s spelled <code>!</code>, that’s the last line:</p>
 <pre><code class="language-par">  yield!  // break here
 </code></pre>
 <p>Like <a href="processes/./chan_expression.html#linking--the--command">linking</a>, it has to be the last command in
@@ -2608,7 +2743,7 @@ a nested list:</p>
 <li>If it’s <code>.end!</code>, we finish: <code>yield.end!</code>.</li>
 <li>If it’s <code>.item(list)</code>, we then begin looping through the inner list.
 <ul>
-<li>We don’t manually bind the remainder of the list, the communication simply continues on
+<li>We don’t manually bind the remainder of the list — the communication simply continues on
 the original variable: <code>lists</code>.</li>
 <li>The nested <code>.begin</code>/<code>.loop</code> shines here; no helper functions needed.</li>
 </ul>
@@ -2621,10 +2756,10 @@ Re-binding of the rest of the list is not needed here, either.</li>
 </ul>
 </li>
 </ul>
-<p>And so we see, duality combined with the <code>chan</code> expressions gives us a lot of expressivity.
-Constructing lists generator-style is just one of the use-cases. Whenever it feels more
-appropriate to <em>become a value</em> instead of constructing it out of parts, <code>chan</code> and duality
-come to the task!</p>
+<p>Duality combined with the <code>chan</code> expressions gives us a lot of expressivity.<br />
+Constructing lists generator-style is just one of the use-cases.<br />
+Whenever it feels more appropriate to <em>become a value</em> instead of constructing it from parts, <code>chan</code> and
+duality come to the task!</p>
 
                     </main>
 
