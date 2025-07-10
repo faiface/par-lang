@@ -30,7 +30,7 @@ remedied by totality checkers, such as in [Agda](https://en.wikipedia.org/wiki/A
 Par chooses a different approach. That is outlawing unrestricted recursion, and instead relying on more
 _principled_ ways to achieve cyclic behavior, including what's usually achieved by mutual recursion.
 
-**The remedies** come the the form of these more principled ways. Fortunately, they don't just replace the
+**The remedies** come in the form of these more principled ways. Fortunately, they don't just replace the
 familiar recursion by clunkier mechanisms, they bring their own perks.
 
 Naive recursion on the term level (like in functions) is replaced by a powerful,

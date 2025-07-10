@@ -37,7 +37,7 @@ Primitives are manipulated using magical built-in functions.
    ```
    Par knows the type of `Int.String`, so it will infer it for `Examine` as well.
 2. Press **Compile.**
-3. Move the cursor to the the definition. The playground will display the type on the right,
+3. Move the cursor to the definition. The playground will display the type on the right,
    in green.
    ![Displayed type of a built-in function](../images/strings_and_numbers_2.png)
 
