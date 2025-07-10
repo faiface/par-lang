@@ -27,7 +27,7 @@ The first one is completely opaque — a value of `Any` gives you a value of the
 operations to perform on it. That makes it useless, but it's the simplest example of an exists type.
 
 The second one offers just one operation: dropping a value of that type.
-The second one gives us a pair: a value of the hidden type, plus a [choice](./choice.md) with just one operation:
+It gives us a pair: a value of the hidden type, plus a [choice](./choice.md) with just one operation:
 dropping a value of that type.
 
 Let’s now see how existential types are used.
