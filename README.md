@@ -52,11 +52,11 @@ tackle a problem, there will likely be ways to express it.
 
 _(Dual types are on the same line.)_
 
-- [**Pairs**](https://faiface.github.io/par-lang/types.html#pair-types) (easily extensible to tuples), and [**functions**](https://faiface.github.io/par-lang/types.html#function-types) (naturally curried).
-- [**Eithers**](https://faiface.github.io/par-lang/types.html#either-types) (sum types), and [**choices**](https://faiface.github.io/par-lang/types.html#choice-types) (unusual, but powerful dispatchers).
-- [**Recursive**](https://faiface.github.io/par-lang/types.html#recursive-types) (finite), and [**iterative**](https://faiface.github.io/par-lang/types.html#iterative-types) (co-recursive, potentially infinite) types, with totality checking.
-- [**Universally,**](https://faiface.github.io/par-lang/types.html#universal-types) and [**existentially**](https://faiface.github.io/par-lang/types.html#existential-types) quantified generic functions and values.
-- [**Unit,**](https://faiface.github.io/par-lang/types.html#the-unit-type) and [**continuation.**](https://faiface.github.io/par-lang/types.html#the-bottom-type)
+- [**Pairs**](https://faiface.github.io/par-lang/types/pair.html) (easily extensible to tuples), and [**functions**](https://faiface.github.io/par-lang/types/function.html) (naturally curried).
+- [**Eithers**](https://faiface.github.io/par-lang/types/either.html) (sum types), and [**choices**](https://faiface.github.io/par-lang/types/choice.html) (unusual, but powerful dispatchers).
+- [**Recursive**](https://faiface.github.io/par-lang/types/recursive.html) (finite), and [**iterative**](https://faiface.github.io/par-lang/types/iterative.html) (co-recursive, potentially infinite) types, with totality checking.
+- [**Universally,**](https://faiface.github.io/par-lang/types/forall.html) and [**existentially**](https://faiface.github.io/par-lang/types/exists.html) quantified generic functions and values.
+- [**Unit,**](https://faiface.github.io/par-lang/types/unit.html) and [**continuation.**](https://faiface.github.io/par-lang/types/continuation.html)
 
 These **orthogonal concepts** combine to give rise to a rich world of types and semantics.
 
@@ -158,22 +158,6 @@ by the famous Phil Wadler.
 
 While programming in Par feels just like a programming language, even if an unusual one, its programs
 still correspond one-to-one with linear logic proofs.
-
-## 📝 To Do
-
-**Par is a fresh project in early stages of development.** While the foundations, including some apparently
-advanced features, are designed and implemented, some basic features are still missing.
-
-**Basic missing features:**
-
-- Strings and numbers
-- Replicable data types (automatically copied and dropped)
-- External I/O implementation
-
-There are also some **advanced missing features:**
-
-- Non-determinism
-- Traits / type classes
 
 # 🤝 Come help us!
 
