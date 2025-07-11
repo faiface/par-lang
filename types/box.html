@@ -229,6 +229,8 @@ Copying, closing, and chaining all become manual work.</p>
 <li>Data types (<code>Int</code>, <code>String</code>, <code>List&lt;Int&gt;</code>, etc.)</li>
 <li>Other <code>box</code> values.</li>
 </ul>
+<p>The word <em><strong>capture</strong></em> here refers to <em>using local variables</em> inside the expression that were
+<em>created outside of that expression.</em></p>
 <h2 id="a-better-map"><a class="header" href="#a-better-map">A better <code>Map</code></a></h2>
 <p>With <code>box</code>, we can rewrite the <code>Map</code> function much more cleanly:</p>
 <pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;

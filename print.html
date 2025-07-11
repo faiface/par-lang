@@ -1885,6 +1885,8 @@ Copying, closing, and chaining all become manual work.</p>
 <li>Data types (<code>Int</code>, <code>String</code>, <code>List&lt;Int&gt;</code>, etc.)</li>
 <li>Other <code>box</code> values.</li>
 </ul>
+<p>The word <em><strong>capture</strong></em> here refers to <em>using local variables</em> inside the expression that were
+<em>created outside of that expression.</em></p>
 <h2 id="a-better-map"><a class="header" href="#a-better-map">A better <code>Map</code></a></h2>
 <p>With <code>box</code>, we can rewrite the <code>Map</code> function much more cleanly:</p>
 <pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
@@ -2083,6 +2085,9 @@ def TestDedup =
 </ul>
 <p>All without exposing how the set is represented.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="continuation"><a class="header" href="#continuation">Continuation</a></h1>
+<p>The <em>continuation</em> type — spelled <code>?</code> — is the <a href="types/../processes/duality.html">dual</a> of <a href="types/./unit.html">unit</a>.
+It has <strong>no expression syntax</strong> whatsoever — it’s only usable in <a href="types/../process_syntax.html">processes</a>.
+Turn the page to learn all about that!</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-process-syntax"><a class="header" href="#the-process-syntax">The Process Syntax</a></h1>
 <p>So far, <em>Par</em> seems clearly a functional language. Yes, it has linear types, and some unusual
 features, like <a href="./types/choice.html">choices</a>, and <code>begin</code>/<code>loop</code> for
