@@ -112,11 +112,11 @@ def NumberStrings = Map(type Int, String)(
 ```
 
 No wrappers, no manual protocols. The boxed function can be used freely, because the `box` type makes
-it non-linear. This is what `box` was made for.
+it non-linear. This is exactly what `box` was made for.
 
 ## Subtyping
 
-Boxed types integrate directly into Par's subtyping.
+Boxed types fit naturally into Par's subtyping.
 
 **A `box T` can be used anywhere a `T` is expected.**
 
