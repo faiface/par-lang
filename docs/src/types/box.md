@@ -68,7 +68,7 @@ Copying, closing, and chaining all become manual work.
 
 ## Box types to the rescue
 
-Instead of encoding reusability into the type manually, Par lets you `box` any value.
+Instead of encoding reusability into the type manually, Par lets you `box` a value.
 
 A `box T` is a non-linear version of **any** type `T`. You can:
 
