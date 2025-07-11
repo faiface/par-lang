@@ -90,6 +90,9 @@ That includes:
 - Data types (`Int`, `String`, `List<Int>`, etc.)
 - Other `box` values.
 
+The word _**capture**_ here refers to _using local variables_ inside the expression that were
+_created outside of that expression._
+
 ## A better `Map`
 
 With `box`, we can rewrite the `Map` function much more cleanly:
