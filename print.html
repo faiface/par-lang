@@ -1900,9 +1900,9 @@ def Map = [type a, b] [list, f] list.begin.case {
 )
 </code></pre>
 <p>No wrappers, no manual protocols. The boxed function can be used freely, because the <code>box</code> type makes
-it non-linear. This is what <code>box</code> was made for.</p>
+it non-linear. This is exactly what <code>box</code> was made for.</p>
 <h2 id="subtyping"><a class="header" href="#subtyping">Subtyping</a></h2>
-<p>Boxed types integrate directly into Par’s subtyping.</p>
+<p>Boxed types fit naturally into Par’s subtyping.</p>
 <p><strong>A <code>box T</code> can be used anywhere a <code>T</code> is expected.</strong></p>
 <pre><code class="language-par">def BoxInt: box Int = 42       // OK: Int is non-linear
 def UseInt: Int = BoxInt       // OK: box Int can be used as Int
