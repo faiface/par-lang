@@ -17,6 +17,7 @@
   - [Recursive](./types/recursive.md)
   - [Choice](./types/choice.md)
   - [Iterative](./types/iterative.md)
+  - [Box](./types/box.md)
   - [Exists](./types/exists.md)
   - [Continuation](./types/continuation.md)
 - [The Process Syntax](./process_syntax.md)

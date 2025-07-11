@@ -40,42 +40,7 @@ def Illegal =
 [Linearity](TODO) brings a lot of expressivity that wouldn't be possible otherwise. After all, the main
 purpose of _Par_ is to explore where this new paradigm arising from linear types and duality can take us.
 
-> **Non-linear functions are a planned feature,** but in the meanwhile, the same can be achieved by a
-> combination of [iterative](./iterative.md) and [choice](./choice.md) types. Here's an example, utilizing
-> the full syntax of the language. If you're reading in this documentation in order, **come back here** after
-> reading up on:
-> - [Choice](./choice.md) types.
-> - [Iterative](./iterative.md) types.
-> - [Forall](./forall.md) types (generics).
-> - [`do`-expressions](../processes/do_expression.md).
-> 
-> Or play with it regardless.
-> 
-> ```par
-> type Mapper<a, b> = iterative choice {
->   .close    => !,
->   .apply(a) => (b) self,
-> }
-> 
-> dec MapList : [type a, b] [List<a>, Mapper<a, b>] List<b>
-> def MapList = [type a, b] [list, mapper] list.begin.case {
->   .end! => do {
->     mapper.close
->   } in .end!,
-> 
->   .item(x) xs => do {
->     mapper.apply(x)[y]
->   } in .item(y) xs.loop
-> }
-> 
-> // Strings = *("1", "2", "3", "4", "5")
-> def Strings =
->   let numbers: List<Int> = *(1, 2, 3, 4, 5)
->   in MapList(type Int, String)(numbers, begin case {
->     .close    => !,
->     .apply(n) => (Int.ToString(n)) loop,
->   })
-> ```
+> Non-linear functions are achieved using [box types](./box.md).
 
 ## Construction
 

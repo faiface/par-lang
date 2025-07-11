@@ -134,7 +134,7 @@ def ListSet = [type a] [eq] (type List<box a>) box case {
 
 This implementation of sets can only be constructed for non-linear types. That's what `box a` ensures here.
 
-Note how we construct the existential:
+We construct the existential by choosing `List<box a>` as the hidden type:
 
 ```par
 (type List<box a>) ...
@@ -145,7 +145,7 @@ The consumer of the `SetModule` doesn’t know that these sets are implemented a
 Let’s now use that in a function:
 
 ```par
-dec Deduplicate : [type a] [SetModule<a>, List<box a>] List<box a>
+dec Deduplicate : [type a] [SetModule<a>, List<box a>] List<a>
 def Deduplicate = [type a] [(type set) mSet, list]
   let visited = mSet.empty
   in list.begin.case {
