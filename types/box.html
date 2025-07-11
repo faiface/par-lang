@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Exists - Par Documentation</title>
+        <title>Box - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types/exists.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/types/box.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,153 +160,145 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="exists"><a class="header" href="#exists">Exists</a></h1>
-<p>An <em>exists type</em> lets a value <strong>hide a type inside itself</strong> — while exposing only what can be done
-with that type.</p>
-<p>They’re the dual of the parametric types: <a href="./forall.html"><em>forall</em></a>. A forall type <code>[type a] ...</code> says:
-<em>“You can give me any type <code>a</code>, and I’ll work with it.”</em> On the other hand, an <em>exists type</em> <code>(type a) ...</code>
-says: <em>“I have chosen some specific type <code>a</code>, but I’m not going to tell you what it is.”</em></p>
-<p>An exists type <strong>consists of two parts:</strong></p>
+                        <h1 id="box"><a class="header" href="#box">Box</a></h1>
+<p>Par has a <strong>linear type system.</strong> By default, values must be used <strong>exactly once.</strong></p>
+<p>But not all values need that kind of discipline. Sometimes, you want to:</p>
 <ul>
-<li>A lowercase type variable enclosed in round parentheses, prefixed with the keyword <code>type</code>.</li>
-<li>The payload type — a type that may use the hidden type variable.</li>
+<li>Pass a function around multiple times.</li>
+<li>Discard an unused value.</li>
+<li>Compose higher-order utilities freely.</li>
 </ul>
-<p>It’s similar to a <a href="./pair.html">pair</a>, but the first component is a type instead of a value.</p>
-<p>Here are two simple examples of existential types:</p>
-<pre><code class="language-par">type Any = (type a) a
-
-type DropMe = (type a) (a) choice {
-  .drop(a) =&gt; !,
-}
-</code></pre>
-<p>The first one is completely opaque — a value of <code>Any</code> gives you a value of the hidden type, but no
-operations to perform on it. That makes it useless, but it’s the simplest example of an exists type.</p>
-<p>The second one offers just one operation: dropping a value of that type.
-It gives us a pair: a value of the hidden type, plus a <a href="./choice.html">choice</a> with just one operation:
-dropping a value of that type.</p>
-<p>Let’s now see how existential types are used.</p>
-<h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
-<p>To construct an existential value, you must pick a concrete type and provide a matching payload.</p>
-<p>The syntax is the same as for <a href="./pair.html">pairs</a>, with the addition of the <code>type</code> keyword.</p>
-<p>Here’s a value of type <code>Any</code>:</p>
-<pre><code class="language-par">def Hidden: Any = (type Int) 42
-</code></pre>
-<p>But since the type is hidden inside <code>Any</code>, with no operations provided, this value is completely useless —
-we can’t do anything with it. In fact, we can’t even get rid of it, if we were to instantiate it into a
-variable.</p>
-<p>Let’s now look at a slightly more interesting example:</p>
-<pre><code class="language-par">type DropMe = (type a) (a) choice {
-  .drop(a) =&gt; !,
-}
-</code></pre>
-<p>The payload here is a pair: a value of the hidden type, plus a <a href="./choice.html">choice</a> with just one operation:
-dropping a value of that type.</p>
-<p>Here’s how we can construct a value of <code>DropMe</code>:</p>
-<pre><code class="language-par">def Drop42: DropMe = (type Int) (42) choice {
-  .drop(n) =&gt; !,  // `n`, being an `Int`, is dropped by being unused
-}
-</code></pre>
-<h2 id="destruction"><a class="header" href="#destruction">Destruction</a></h2>
-<p>To use an existential value, you must <strong>unpack it</strong>. The syntax is the same as unpacking a pair,
-just with the type keyword.</p>
-<p>Here’s an example that unpacks and uses a <code>DropMe</code>:</p>
-<pre><code class="language-par">def UseDrop: ! =
-  let (type a) (x) dropper = Drop42
-  in dropper.drop(x)
-</code></pre>
-<p>The pattern <code>(type a) (x) dropper</code> means:</p>
+<p>That’s where <strong>box types</strong> come in.</p>
+<h2 id="non-linear-types--even-without-box"><a class="header" href="#non-linear-types--even-without-box">Non-linear types — even without <code>box</code></a></h2>
+<p>Even without box types, some types in Par are already non-linear. These are the <strong>data types:</strong></p>
 <ul>
-<li><code>a</code> becomes the name of the hidden type, a local type variable.</li>
-<li><code>x</code> is the stored value of type <code>a</code>.</li>
-<li><code>dropper</code> is the <a href="./choice.html">choice</a> with the <code>.drop</code> method.</li>
+<li><a href="./unit.html">Unit</a></li>
+<li><a href="./either.html">Either</a></li>
+<li><a href="./pair.html">Pair</a></li>
+<li><a href="./recursive.html">Recursive</a></li>
+<li>All the <a href="../structure/strings_and_numbers.html">primitives</a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>.</li>
 </ul>
-<p>We can also unpack existentials <strong>in function parameters,</strong> using patterns. Here’s a function that takes
-a <code>DropMe</code> and drops its inner value:</p>
-<pre><code class="language-par">dec DropIt : [DropMe] !
-def DropIt = [(type a) (x) dropper] dropper.drop(x)
-</code></pre>
-<h2 id="a-real-example"><a class="header" href="#a-real-example">A Real Example</a></h2>
-<p><em>Exists</em> types become truly useful when combined with <a href="./box.html">box</a> types — allowing you to hide
-implementation details inside interfaces that can be passed around freely.</p>
-<p>Here’s a boxed interface for working with sets:</p>
-<pre><code class="language-par">type SetModule&lt;a&gt; = (type set) box choice {
-  .empty =&gt; box set,
-  .insert(a, box set) =&gt; box set,
-  .contains(a, box set) =&gt; Bool,
+<p>Any combination of these is always non-linear — they can be copied and discarded freely.</p>
+<p>But types that contain <a href="./function.html"><strong>functions,</strong></a> <a href="./choice.html"><strong>choices,</strong></a> and other non-data types
+are linear — no matter how deeply nested.</p>
+<p>Now, consider this: what if you want to <strong>apply a function to each element in a list?</strong></p>
+<p>A plain function in Par is linear — it can only be used once. So applying it repeatedly requires a workaround.</p>
+<h2 id="reusable-functions-the-hard-way"><a class="header" href="#reusable-functions-the-hard-way">Reusable functions, the hard way</a></h2>
+<p>Without <code>box</code>, we can build reusable functions by encoding a usage protocol manually:</p>
+<pre><code class="language-par">type Mapper&lt;a, b&gt; = iterative choice {
+  .close =&gt; !,
+  .apply(a) =&gt; (b) self,
 }
 </code></pre>
-<p>This type hides the implementation type of the set.
-The interface is boxed, so it can be copied and discarded.
-The hidden type <code>set</code> is never revealed — only its operations are exposed.</p>
-<p>Let’s now implement an inefficient, but simple <code>SetModule</code> using lists and equality functions:</p>
-<pre><code class="language-par">type Eq&lt;a&gt; = box [a, a] Bool
-
-dec ListSet : [type a] [Eq&lt;box a&gt;] SetModule&lt;box a&gt;
-def ListSet = [type a] [eq] (type List&lt;box a&gt;) box case {
-  .empty =&gt; .end!,
-
-  .insert(x, set) =&gt; .item(x) set,
-
-  .contains(y, set) =&gt; set.begin.case {
-    .end! =&gt; .false!,
-    .item(x) xs =&gt; eq(x, y).case {
-      .true! =&gt; .true!,
-      .false! =&gt; xs.loop,
-    },
-  },
+<p>This protocol gives us:</p>
+<ul>
+<li><code>.apply</code> to use the function.</li>
+<li><code>.close</code> to clean up.</li>
+</ul>
+<p>Here’s a <code>Map</code> function that uses it:</p>
+<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
+def Map = [type a, b] [list, mapper] list.begin.case {
+  .end! =&gt; let ! = mapper.close in .end!,
+  .item(x) xs =&gt; let (x1) mapper = mapper.apply(x) in .item(x1) xs.loop,
 }
 </code></pre>
-<p>This implementation of sets can only be constructed for non-linear types. That’s what <code>box a</code> ensures here.</p>
-<p>We construct the existential by choosing <code>List&lt;box a&gt;</code> as the hidden type:</p>
-<pre><code class="language-par">(type List&lt;box a&gt;) ...
+<p>And using it:</p>
+<pre><code class="language-par">def NumberStrings = Map(type Int, String)(Int.Range(1, 100), begin case {
+  .close =&gt; !,
+  .apply(n) =&gt; (Int.ToString(n)) loop,
+})
 </code></pre>
-<p>The consumer of the <code>SetModule</code> doesn’t know that these sets are implemented as lists.</p>
-<p>Let’s now use that in a function:</p>
-<pre><code class="language-par">dec Deduplicate : [type a] [SetModule&lt;a&gt;, List&lt;box a&gt;] List&lt;a&gt;
-def Deduplicate = [type a] [(type set) mSet, list]
-  let visited = mSet.empty
-  in list.begin.case {
-    .end! =&gt; .end!,
-    .item(x) xs =&gt; mSet.contains(x, visited).case {
-      .true! =&gt; xs.loop,
-      .false! =&gt;
-        let visited = mSet.insert(x, visited)
-        in .item(x) xs.loop,
-    }
-  }
+<p>This works — but it’s verbose.</p>
+<p>Every reusable function needs to be manually encoded with a protocol like <code>Mapper</code>.
+Copying, closing, and chaining all become manual work.</p>
+<h2 id="box-types-to-the-rescue"><a class="header" href="#box-types-to-the-rescue">Box types to the rescue</a></h2>
+<p>Instead of encoding reusability into the type manually, Par lets you <code>box</code> any value.</p>
+<p>A <code>box T</code> is a non-linear version of <strong>any</strong> type <code>T</code>. You can:</p>
+<ul>
+<li><strong>Copy</strong> a <code>box T</code>.</li>
+<li><strong>Drop</strong> a <code>box T</code>.</li>
+<li>Pass it around freely.</li>
+</ul>
+<p>You can construct boxed values using:</p>
+<pre><code class="language-par">box &lt;expression&gt;
 </code></pre>
-<p>This function deduplicates a list by tracking seen values using a hidden set implementation.
-It doesn’t know how the set works — just that it supports <code>.empty</code>, <code>.insert</code>, and <code>.contains</code>.</p>
-<p>Let’s test it!</p>
-<pre><code class="language-par">dec Map : [type a, b] [box [a] b, List&lt;a&gt;] List&lt;b&gt;
-def Map = [type a, b] [f, list] list.begin.case {
+<p>This constructs a value of type <code>box T</code>, where <code>T</code> is the type of the expression.</p>
+<p>The only rule is: <strong>You can only capture non-linear variables in a <code>box</code> expression.</strong></p>
+<p>That includes:</p>
+<ul>
+<li>Data types (<code>Int</code>, <code>String</code>, <code>List&lt;Int&gt;</code>, etc.)</li>
+<li>Other <code>box</code> values.</li>
+</ul>
+<h2 id="a-better-map"><a class="header" href="#a-better-map">A better <code>Map</code></a></h2>
+<p>With <code>box</code>, we can rewrite the <code>Map</code> function much more cleanly:</p>
+<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
+def Map = [type a, b] [list, f] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; .item(f(x)) xs.loop,
 }
-
-def IntListSet = ListSet(type Int)(box Int.Equals)
-
-def TestDedup =
-  Deduplicate(type Int)(IntListSet)
-    (Map(type Int, Int)(box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
 </code></pre>
-<p>This deduplicates a list of numbers modulo 7 — using:</p>
+<p>Let’s try it out:</p>
+<pre><code class="language-par">def NumberStrings = Map(type Int, String)(
+  Int.Range(1, 100),
+  box Int.ToString,
+)
+</code></pre>
+<p>No wrappers, no manual protocols. The boxed function can be used freely, because the <code>box</code> type makes
+it non-linear. This is what <code>box</code> was made for.</p>
+<h2 id="subtyping"><a class="header" href="#subtyping">Subtyping</a></h2>
+<p>Boxed types integrate directly into Par’s subtyping.</p>
+<p><strong>A <code>box T</code> can be used anywhere a <code>T</code> is expected.</strong></p>
+<pre><code class="language-par">def BoxInt: box Int = 42       // OK: Int is non-linear
+def UseInt: Int = BoxInt       // OK: box Int can be used as Int
+</code></pre>
+<p>And <strong>if <code>T</code> is already non-linear, then <code>T</code> can be used anywhere a <code>box T</code> is expected.</strong></p>
+<pre><code class="language-par">def Boxes: List&lt;box Int&gt; = *(1, 2, 3)
+def Ints: List&lt;Int&gt; = Boxes
+</code></pre>
+<p><strong>For non-linear types, <code>T</code> and <code>box T</code> are effectively interchangeable.</strong></p>
+<h2 id="another-example-filtering-a-list"><a class="header" href="#another-example-filtering-a-list">Another example: Filtering a list</a></h2>
+<p>Let’s write a function that filters a list using a boxed predicate.</p>
+<pre><code class="language-par">dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
+
+def Filter = [type a] [list, predicate] list.begin.case {
+  .end! =&gt; .end!,
+  .item(x) xs =&gt; predicate(x).case {
+    .true! =&gt; .item(x) xs.loop,
+    .false! =&gt; xs.loop,
+  }
+}
+</code></pre>
+<p>Note the types:</p>
 <ul>
-<li><code>Map</code> to apply the modulo.</li>
-<li><code>ListSet</code> to get an abstract set implementation.</li>
-<li><code>Deduplicate</code> to do the filtering.</li>
+<li>We accept a list of <code>box a</code>, because elements might be discarded.</li>
+<li>But we return a <code>List&lt;a&gt;</code> — not a <code>List&lt;box a&gt;</code>.</li>
 </ul>
-<p>All without exposing how the set is represented.</p>
+<p>Let’s try it out:</p>
+<pre><code class="language-par">def Evens = Filter(type Int)(
+  Int.Range(1, 100),
+  box [n] Int.Equals(0, Int.Mod(n, 2)),
+)
+</code></pre>
+<p>Here:</p>
+<ul>
+<li><code>Int.Range(1, 100)</code> gives a <code>List&lt;Int&gt;</code>, which is valid because <code>Int</code> can be used as a <code>box Int</code>.</li>
+<li>The result is inferred as <code>List&lt;Int&gt;</code>, not <code>List&lt;box Int&gt;</code>.</li>
+</ul>
+<p>This avoids bloating the result type with redundant boxes — keeping things clear.</p>
+<p>And if we were filtering a list of boxed values already?</p>
+<pre><code class="language-par">Filter(type box T)(listOfBoxT, predicate)
+</code></pre>
+<p>That works too. Thanks to subtyping, everything lines up as you’d expect.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../types/box.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../types/iterative.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../types/continuation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../types/exists.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -316,11 +308,11 @@ def TestDedup =
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../types/box.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../types/iterative.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../types/continuation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../types/exists.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

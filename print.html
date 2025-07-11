@@ -1055,41 +1055,7 @@ def Illegal =
 <p><a href="types/TODO">Linearity</a> brings a lot of expressivity that wouldn’t be possible otherwise. After all, the main
 purpose of <em>Par</em> is to explore where this new paradigm arising from linear types and duality can take us.</p>
 <blockquote>
-<p><strong>Non-linear functions are a planned feature,</strong> but in the meanwhile, the same can be achieved by a
-combination of <a href="types/./iterative.html">iterative</a> and <a href="types/./choice.html">choice</a> types. Here’s an example, utilizing
-the full syntax of the language. If you’re reading in this documentation in order, <strong>come back here</strong> after
-reading up on:</p>
-<ul>
-<li><a href="types/./choice.html">Choice</a> types.</li>
-<li><a href="types/./iterative.html">Iterative</a> types.</li>
-<li><a href="types/./forall.html">Forall</a> types (generics).</li>
-<li><a href="types/../processes/do_expression.html"><code>do</code>-expressions</a>.</li>
-</ul>
-<p>Or play with it regardless.</p>
-<pre><code class="language-par">type Mapper&lt;a, b&gt; = iterative choice {
-  .close    =&gt; !,
-  .apply(a) =&gt; (b) self,
-}
-
-dec MapList : [type a, b] [List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
-def MapList = [type a, b] [list, mapper] list.begin.case {
-  .end! =&gt; do {
-    mapper.close
-  } in .end!,
-
-  .item(x) xs =&gt; do {
-    mapper.apply(x)[y]
-  } in .item(y) xs.loop
-}
-
-// Strings = *("1", "2", "3", "4", "5")
-def Strings =
-  let numbers: List&lt;Int&gt; = *(1, 2, 3, 4, 5)
-  in MapList(type Int, String)(numbers, begin case {
-    .close    =&gt; !,
-    .apply(n) =&gt; (Int.ToString(n)) loop,
-  })
-</code></pre>
+<p>Non-linear functions are achieved using <a href="types/./box.html">box types</a>.</p>
 </blockquote>
 <h2 id="construction-3"><a class="header" href="#construction-3">Construction</a></h2>
 <p>Function values bind their argument inside square brackets, followed by an expression computing
@@ -1850,6 +1816,135 @@ def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
     in .item(x) remaining.loop
 }
 </code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="box"><a class="header" href="#box">Box</a></h1>
+<p>Par has a <strong>linear type system.</strong> By default, values must be used <strong>exactly once.</strong></p>
+<p>But not all values need that kind of discipline. Sometimes, you want to:</p>
+<ul>
+<li>Pass a function around multiple times.</li>
+<li>Discard an unused value.</li>
+<li>Compose higher-order utilities freely.</li>
+</ul>
+<p>That’s where <strong>box types</strong> come in.</p>
+<h2 id="non-linear-types--even-without-box"><a class="header" href="#non-linear-types--even-without-box">Non-linear types — even without <code>box</code></a></h2>
+<p>Even without box types, some types in Par are already non-linear. These are the <strong>data types:</strong></p>
+<ul>
+<li><a href="types/./unit.html">Unit</a></li>
+<li><a href="types/./either.html">Either</a></li>
+<li><a href="types/./pair.html">Pair</a></li>
+<li><a href="types/./recursive.html">Recursive</a></li>
+<li>All the <a href="types/../structure/strings_and_numbers.html">primitives</a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>.</li>
+</ul>
+<p>Any combination of these is always non-linear — they can be copied and discarded freely.</p>
+<p>But types that contain <a href="types/./function.html"><strong>functions,</strong></a> <a href="types/./choice.html"><strong>choices,</strong></a> and other non-data types
+are linear — no matter how deeply nested.</p>
+<p>Now, consider this: what if you want to <strong>apply a function to each element in a list?</strong></p>
+<p>A plain function in Par is linear — it can only be used once. So applying it repeatedly requires a workaround.</p>
+<h2 id="reusable-functions-the-hard-way"><a class="header" href="#reusable-functions-the-hard-way">Reusable functions, the hard way</a></h2>
+<p>Without <code>box</code>, we can build reusable functions by encoding a usage protocol manually:</p>
+<pre><code class="language-par">type Mapper&lt;a, b&gt; = iterative choice {
+  .close =&gt; !,
+  .apply(a) =&gt; (b) self,
+}
+</code></pre>
+<p>This protocol gives us:</p>
+<ul>
+<li><code>.apply</code> to use the function.</li>
+<li><code>.close</code> to clean up.</li>
+</ul>
+<p>Here’s a <code>Map</code> function that uses it:</p>
+<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
+def Map = [type a, b] [list, mapper] list.begin.case {
+  .end! =&gt; let ! = mapper.close in .end!,
+  .item(x) xs =&gt; let (x1) mapper = mapper.apply(x) in .item(x1) xs.loop,
+}
+</code></pre>
+<p>And using it:</p>
+<pre><code class="language-par">def NumberStrings = Map(type Int, String)(Int.Range(1, 100), begin case {
+  .close =&gt; !,
+  .apply(n) =&gt; (Int.ToString(n)) loop,
+})
+</code></pre>
+<p>This works — but it’s verbose.</p>
+<p>Every reusable function needs to be manually encoded with a protocol like <code>Mapper</code>.
+Copying, closing, and chaining all become manual work.</p>
+<h2 id="box-types-to-the-rescue"><a class="header" href="#box-types-to-the-rescue">Box types to the rescue</a></h2>
+<p>Instead of encoding reusability into the type manually, Par lets you <code>box</code> any value.</p>
+<p>A <code>box T</code> is a non-linear version of <strong>any</strong> type <code>T</code>. You can:</p>
+<ul>
+<li><strong>Copy</strong> a <code>box T</code>.</li>
+<li><strong>Drop</strong> a <code>box T</code>.</li>
+<li>Pass it around freely.</li>
+</ul>
+<p>You can construct boxed values using:</p>
+<pre><code class="language-par">box &lt;expression&gt;
+</code></pre>
+<p>This constructs a value of type <code>box T</code>, where <code>T</code> is the type of the expression.</p>
+<p>The only rule is: <strong>You can only capture non-linear variables in a <code>box</code> expression.</strong></p>
+<p>That includes:</p>
+<ul>
+<li>Data types (<code>Int</code>, <code>String</code>, <code>List&lt;Int&gt;</code>, etc.)</li>
+<li>Other <code>box</code> values.</li>
+</ul>
+<h2 id="a-better-map"><a class="header" href="#a-better-map">A better <code>Map</code></a></h2>
+<p>With <code>box</code>, we can rewrite the <code>Map</code> function much more cleanly:</p>
+<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
+def Map = [type a, b] [list, f] list.begin.case {
+  .end! =&gt; .end!,
+  .item(x) xs =&gt; .item(f(x)) xs.loop,
+}
+</code></pre>
+<p>Let’s try it out:</p>
+<pre><code class="language-par">def NumberStrings = Map(type Int, String)(
+  Int.Range(1, 100),
+  box Int.ToString,
+)
+</code></pre>
+<p>No wrappers, no manual protocols. The boxed function can be used freely, because the <code>box</code> type makes
+it non-linear. This is what <code>box</code> was made for.</p>
+<h2 id="subtyping"><a class="header" href="#subtyping">Subtyping</a></h2>
+<p>Boxed types integrate directly into Par’s subtyping.</p>
+<p><strong>A <code>box T</code> can be used anywhere a <code>T</code> is expected.</strong></p>
+<pre><code class="language-par">def BoxInt: box Int = 42       // OK: Int is non-linear
+def UseInt: Int = BoxInt       // OK: box Int can be used as Int
+</code></pre>
+<p>And <strong>if <code>T</code> is already non-linear, then <code>T</code> can be used anywhere a <code>box T</code> is expected.</strong></p>
+<pre><code class="language-par">def Boxes: List&lt;box Int&gt; = *(1, 2, 3)
+def Ints: List&lt;Int&gt; = Boxes
+</code></pre>
+<p><strong>For non-linear types, <code>T</code> and <code>box T</code> are effectively interchangeable.</strong></p>
+<h2 id="another-example-filtering-a-list"><a class="header" href="#another-example-filtering-a-list">Another example: Filtering a list</a></h2>
+<p>Let’s write a function that filters a list using a boxed predicate.</p>
+<pre><code class="language-par">dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
+
+def Filter = [type a] [list, predicate] list.begin.case {
+  .end! =&gt; .end!,
+  .item(x) xs =&gt; predicate(x).case {
+    .true! =&gt; .item(x) xs.loop,
+    .false! =&gt; xs.loop,
+  }
+}
+</code></pre>
+<p>Note the types:</p>
+<ul>
+<li>We accept a list of <code>box a</code>, because elements might be discarded.</li>
+<li>But we return a <code>List&lt;a&gt;</code> — not a <code>List&lt;box a&gt;</code>.</li>
+</ul>
+<p>Let’s try it out:</p>
+<pre><code class="language-par">def Evens = Filter(type Int)(
+  Int.Range(1, 100),
+  box [n] Int.Equals(0, Int.Mod(n, 2)),
+)
+</code></pre>
+<p>Here:</p>
+<ul>
+<li><code>Int.Range(1, 100)</code> gives a <code>List&lt;Int&gt;</code>, which is valid because <code>Int</code> can be used as a <code>box Int</code>.</li>
+<li>The result is inferred as <code>List&lt;Int&gt;</code>, not <code>List&lt;box Int&gt;</code>.</li>
+</ul>
+<p>This avoids bloating the result type with redundant boxes — keeping things clear.</p>
+<p>And if we were filtering a list of boxed values already?</p>
+<pre><code class="language-par">Filter(type box T)(listOfBoxT, predicate)
+</code></pre>
+<p>That works too. Thanks to subtyping, everything lines up as you’d expect.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="exists"><a class="header" href="#exists">Exists</a></h1>
 <p>An <em>exists type</em> lets a value <strong>hide a type inside itself</strong> — while exposing only what can be done
 with that type.</p>
@@ -1947,12 +2042,12 @@ def ListSet = [type a] [eq] (type List&lt;box a&gt;) box case {
 }
 </code></pre>
 <p>This implementation of sets can only be constructed for non-linear types. That’s what <code>box a</code> ensures here.</p>
-<p>Note how we construct the existential:</p>
+<p>We construct the existential by choosing <code>List&lt;box a&gt;</code> as the hidden type:</p>
 <pre><code class="language-par">(type List&lt;box a&gt;) ...
 </code></pre>
 <p>The consumer of the <code>SetModule</code> doesn’t know that these sets are implemented as lists.</p>
 <p>Let’s now use that in a function:</p>
-<pre><code class="language-par">dec Deduplicate : [type a] [SetModule&lt;a&gt;, List&lt;box a&gt;] List&lt;box a&gt;
+<pre><code class="language-par">dec Deduplicate : [type a] [SetModule&lt;a&gt;, List&lt;box a&gt;] List&lt;a&gt;
 def Deduplicate = [type a] [(type set) mSet, list]
   let visited = mSet.empty
   in list.begin.case {

@@ -190,41 +190,7 @@ def Illegal =
 <p><a href="TODO">Linearity</a> brings a lot of expressivity that wouldn’t be possible otherwise. After all, the main
 purpose of <em>Par</em> is to explore where this new paradigm arising from linear types and duality can take us.</p>
 <blockquote>
-<p><strong>Non-linear functions are a planned feature,</strong> but in the meanwhile, the same can be achieved by a
-combination of <a href="./iterative.html">iterative</a> and <a href="./choice.html">choice</a> types. Here’s an example, utilizing
-the full syntax of the language. If you’re reading in this documentation in order, <strong>come back here</strong> after
-reading up on:</p>
-<ul>
-<li><a href="./choice.html">Choice</a> types.</li>
-<li><a href="./iterative.html">Iterative</a> types.</li>
-<li><a href="./forall.html">Forall</a> types (generics).</li>
-<li><a href="../processes/do_expression.html"><code>do</code>-expressions</a>.</li>
-</ul>
-<p>Or play with it regardless.</p>
-<pre><code class="language-par">type Mapper&lt;a, b&gt; = iterative choice {
-  .close    =&gt; !,
-  .apply(a) =&gt; (b) self,
-}
-
-dec MapList : [type a, b] [List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
-def MapList = [type a, b] [list, mapper] list.begin.case {
-  .end! =&gt; do {
-    mapper.close
-  } in .end!,
-
-  .item(x) xs =&gt; do {
-    mapper.apply(x)[y]
-  } in .item(y) xs.loop
-}
-
-// Strings = *("1", "2", "3", "4", "5")
-def Strings =
-  let numbers: List&lt;Int&gt; = *(1, 2, 3, 4, 5)
-  in MapList(type Int, String)(numbers, begin case {
-    .close    =&gt; !,
-    .apply(n) =&gt; (Int.ToString(n)) loop,
-  })
-</code></pre>
+<p>Non-linear functions are achieved using <a href="./box.html">box types</a>.</p>
 </blockquote>
 <h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
 <p>Function values bind their argument inside square brackets, followed by an expression computing
