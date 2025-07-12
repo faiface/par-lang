@@ -166,7 +166,7 @@
 <li>Objects of every-day programming, like functions and pairs.</li>
 <li><a href="https://en.wikipedia.org/wiki/Session_type">Session-typed</a> communication channels.</li>
 </ul>
-<p>In the concurrent framework of linear logic, these are one and the same. But to make this
+<p>In the world of linear logic, these are the same thing. But to make this
 connection harmonious and ergonomic, some unusual choices have to be made in the design of
 the basic building blocks.</p>
 <p><strong>Types in Par are sequential.</strong> The basic building blocks — pairs, functions, eithers (sums),
@@ -175,18 +175,7 @@ and choices (co-sums) — all read as <strong>first this, then that.</strong></p
 This approach is not sequential: both types assume equal position.</p>
 <p>In Par, the pair type is instead <code>(A) B</code>. The second type being outside of the parentheses is
 essential. It allows us to sequentially continue the type without the burden of nesting.</p>
-<p>Compare</p>
-<ul>
-<li><code>(A, B)</code></li>
-<li><code>(A, (B, C))</code></li>
-<li><code>(A, (B, (C, D)))</code></li>
-</ul>
-<p>against</p>
-<ul>
-<li><code>(A) B</code></li>
-<li><code>(A) (B) C</code></li>
-<li><code>(A) (B) (C) D</code></li>
-</ul>
+<p>Compare <code>(A, (B, (C, D)))</code> against <code>(A) (B) (C) D</code>.</p>
 <p>Of course, most languages that provide <code>(A, B)</code> pairs also support triples <code>(A, B, C)</code>, and
 quadruples <code>(A, B, C, D)</code>, so let’s mix it up!</p>
 <p>The usual syntax for function types is <code>A -&gt; B</code>. That is sequential, but in Par we have a syntax
@@ -204,6 +193,52 @@ that plays more nicely with the pairs: <code>[A] B</code>. Now compare</p>
 <p>And that, in a nutshell, is how Par unifies every-day types with session types.</p>
 <p><strong>This chapter covers the every-day aspect of types in Par.</strong> For the session types aspect, check
 out <a href="./processes.html">Processes</a>.</p>
+<h2 id="linearity"><a class="header" href="#linearity">Linearity</a></h2>
+<p>Par is based on <a href="https://en.wikipedia.org/wiki/Linear_logic">linear logic</a>, and with that comes a
+<strong>linear type system.</strong> That means: <strong>some values must be used exactly once.</strong></p>
+<p>These are called <strong>linear values.</strong> You can’t copy them, and you can’t throw them away.
+They must be consumed, <strong>exactly once</strong> — in a way their type allows.</p>
+<p>This might sound limiting, but it opens the door to something powerful.</p>
+<p>When a value must be used — and can only be used once — it becomes possible to <strong>model communication.</strong>
+Think about a channel that expects you to send a message. If you don’t send one — or send
+two — things fall apart.</p>
+<p>With linearity, Par gives you channels where that simply can’t happen.</p>
+<p>That’s the foundation of <a href="https://en.wikipedia.org/wiki/Session_type">session types</a>,
+and Par supports them at its core.</p>
+<p>But not every type needs that kind of strictness. Some values should be copyable, droppable,
+and passed around freely.</p>
+<p>So Par distinguishes between:</p>
+<ul>
+<li><strong>Linear types,</strong> which must be used exactly once.</li>
+<li><strong>Non-linear types,</strong> which can be used any number of times — including zero.</li>
+</ul>
+<p>Let’s look at what falls into each category.</p>
+<h3 id="which-types-are-non-linear"><a class="header" href="#which-types-are-non-linear">Which types are non-linear?</a></h3>
+<p>These are:</p>
+<ul>
+<li>All <a href="./structure/strings_and_numbers.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code></li>
+<li><a href="./types/unit.html"><strong>Unit</strong></a></li>
+<li><a href="./types/either.html"><strong>Either</strong></a></li>
+<li><a href="./types/pair.html"><strong>Pair</strong></a></li>
+<li><a href="./types/recursive.html"><strong>Recursive</strong></a></li>
+<li><a href="./types/box.html"><strong>Box</strong></a></li>
+<li><a href="./types/exists.html"><strong>Exists</strong></a>, only if the body is non-linear — which is rare, since the
+type variable it introduces is itself linear</li>
+<li>Any type <strong>composed entirely</strong> of non-linear parts</li>
+</ul>
+<h3 id="which-types-are-linear"><a class="header" href="#which-types-are-linear">Which types are linear?</a></h3>
+<p>All the rest:</p>
+<ul>
+<li><a href="./types/function.html"><strong>Function</strong></a></li>
+<li><a href="./types/choice.html"><strong>Choice</strong></a></li>
+<li><a href="./types/iterative.html"><strong>Iterative</strong></a></li>
+<li><a href="./types/exists.html"><strong>Exists</strong></a>, <strong>in most cases,</strong> because they introduce a linear type variable</li>
+<li><a href="./types/forall.html"><strong>Forall</strong></a></li>
+<li><a href="./types/continuation.html"><strong>Continuation</strong></a></li>
+<li>Any type that <strong>contains</strong> a linear component, even deeply</li>
+</ul>
+<p>If a type has a linear piece <strong>anywhere inside it,</strong> it becomes linear — unless that part is
+wrapped in a <a href="./types/box.html">box</a>.</p>
 
                     </main>
 

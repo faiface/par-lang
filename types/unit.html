@@ -180,7 +180,7 @@ end of the list, the payload is empty, and so it’s <code>!</code>.</p>
 <pre><code class="language-par">def Unit = !  // infers `Unit` to be of type `!`
 </code></pre>
 <h2 id="destruction"><a class="header" href="#destruction">Destruction</a></h2>
-<p>Being a <a href="TODO">data</a> type, variables of type <code>!</code> can be left unused.</p>
+<p>Being a <a href="../types_and_expressions.html#linearity">non-linear</a> type, variables of type <code>!</code> can be left unused.</p>
 <p>If <code>!</code> is a part of a larger type, it may be needed to assign it as a part of a pattern. For this
 purpose, the pattern <code>!</code> will destruct a <code>!</code> value without assigning it to a variable.</p>
 <pre><code class="language-par">def TestUnitDestruction = do {
