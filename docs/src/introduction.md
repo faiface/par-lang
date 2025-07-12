@@ -29,11 +29,15 @@ As a consequence, **concurrent communication** is as transparent and composable 
 Together with Par's imposition of a tree-like communication structure — **ruling out deadlocks** — a new
 promising way of building concurrent applications arises.
 
-But, Par isn't just a concurrent language. In fact, real-world applications of Par's concurrency are still
-very **limited,** due to a **lack of non-determinism,** and **poor I/O libraries.** That's because Par is
-**very new,** but we're working hard to bring both of these to a better state.
+But, Par isn't just a concurrent language.
 
-Yet, Par is still interesting for other reasons. **Classical linear logic is a beast,** and a powerful one
+> In fact, real-world applications of Par's concurrency are still
+> very limited, due to a lack of non-determinism, and poor I/O libraries. That's because Par is
+> **very new,** but we're working hard to bring both of these to a better state.
+> 
+> Yet, Par is still interesting for other reasons.
+
+Classical linear logic is a beast, and a powerful one
 at that. Par absorbs all this power into its own expressivity. With **duality,** **session types,** and a rich
 set of concepts all mapping to logical connectives, multiple paradigms emerge naturally:
 
