@@ -44,6 +44,8 @@ Open an example in the interactive playground, and **play with any function.**
 
 # ✨ Features
 
+![Annotated Code Example](./screenshots/annotated_code_example.png)
+
 ## 🧩 Expressive
 
 **Duality** gives two sides to every concept, leading to rich composability. Whichever angle you take to
@@ -60,8 +62,6 @@ _(Dual types are on the same line.)_
 
 These **orthogonal concepts** combine to give rise to a rich world of types and semantics.
 
-![Annotated Code Example](./screenshots/annotated_code_example.png)
-
 ## 🔗 Concurrent
 
 **Automatically parallel execution.** Everything that can run in parallel, runs in parallel. Thanks to its
@@ -76,22 +76,6 @@ basis for the famous [HVM](https://github.com/HigherOrderCO/HVM), and the
 finite-state machines, and make sure these are upheld in code. Par needs no special library for these.
 Linear types _are_ session types, at least in their full version, which embraces duality.
 
-This (session) type fully describes the behavior of a player of rock-paper-scissors:
-
-```
-type Player = iterative :game {
-  .stop => !                         // Games are over.
-  .play_round => iterative :round {  // Start a new round.
-    .stop_round => self :game,       // End current round prematurely.
-    .play_move => (Move) {           // Pick your next move.
-      .win  => self :game,           // You won! The round is over.
-      .lose => self :game,           // You lost! The round is over.
-      .draw => self :round,          // It's a draw. The round goes on.
-    }
-  }
-}
-```
-
 ## 🛡️ Total*
 
 **No crashes.** Runtime exceptions are not supported, except for running out of memory.
@@ -103,20 +87,6 @@ type Player = iterative :game {
 **Iterative (corecursive) types** are distinguished from **recursive types**, and enable constructing
 potentially unbounded objects, such as infinite sequences, with no danger of infinite loops, or a need
 to opt-out of totality.
-
-```
-// An iterative type. Constructed by `begin`/`loop`, and destructed step-by-step.
-type Stream<t> = iterative {
-  .close => !                        // Close this stream, and destroy its internal resources.
-  .next => (t) self                  // Produce an item, then ask me what I want next.
-}
-
-// An infinite sequence of `.true!` values.
-def ForeverTrue: Stream<either { .true!, .false! }> = begin {
-  .close => !                        // No resources to destroy, we just end.
-  .next => (.true!) loop             // We produce a `.true!`, and repeat the protocol.
-}
-```
 
 _\*There is an escape hatch. Some algorithms, especially divide-and-conquer, are difficult or impossible
 to implement using easy-to-check well-founded strategies. For those, `unfounded begin` turns this check
