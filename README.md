@@ -60,30 +60,7 @@ _(Dual types are on the same line.)_
 
 These **orthogonal concepts** combine to give rise to a rich world of types and semantics.
 
-Some features that require special syntax in other languages fall naturally out of the basic building
-blocks above. For example, constructing a list using the _generator syntax_, like `yield` in Python,
-is possible by operating on the _dual_ of a list:
-
-```
-dec Reverse : [type t] [List<t>] List<t>
-
-// We construct the reversed list by destructing its dual: `chan List<T>`.
-def Reverse = [type t] [list] chan yield {
-  let yield: dual List<t> = list.begin.case {
-    // The list is empty, give back the generator handle.
-    .empty!       => yield,
-    // The list starts with an item `x`.
-    .item(x) rest => do {
-      // Traverse into the rest of the list first.
-      let yield = rest.loop
-      // After that, produce `x` on the reversed list.
-      yield.item(x)
-    } in yield // Finally, give back the generator handle.
-  }
-  // At the very end, signal the end of the list.
-  yield.empty!
-}
-```
+![Annotated Code Example](./screenshots/annotated_code_example.png)
 
 ## 🔗 Concurrent
 
