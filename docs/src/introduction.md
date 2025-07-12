@@ -1,6 +1,6 @@
 # Introduction
 
-**Par** is affectionatelly named after the most bemusing connective of
+**Par** is affectionately named after the most bemusing connective of
 [linear logic](https://en.wikipedia.org/wiki/Linear_logic): ⅋, pronounced _"par"_.
 That's because Par is based directly on (classical) linear logic, as an experiment to
 see where this paradigm can take us.
