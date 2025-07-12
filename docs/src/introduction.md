@@ -19,7 +19,7 @@ Par is an attempt to take that idea seriously — to turn linear logic into a pr
 ## Why _Par_?
 
 Based on linear logic, Par has a **linear type system.** That's close to what you know from Rust:
-linear values have a single owner, and are moved instead of copied.
+linear values have a single owner and are moved instead of copied.
 But unlike in Rust, linear values **cannot be dropped.** Instead, they have to be consumed according to their type.
 
 This unlocks something special: channels that may only be consumed by sending.
