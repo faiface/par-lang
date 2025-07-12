@@ -46,7 +46,7 @@ multiple paradigms emerge naturally:
 - A **unique object-oriented style,** where interfaces are just types and implementations are just values.
 - An **implicit concurrency,** where execution is non-blocking by default.
 
-Multi-paradigmn language often burden its users with multiple ways to solve the same problem.
+Multi-paradigm language often burden its users with multiple ways to solve the same problem.
 
 But, somewhat surprisingly, we found that in Par, **any single problem tends to have a single best solution.**
 That solution may be functional, object-oriented, a mix of those, or something else entirely.
@@ -78,6 +78,10 @@ That means:
 - **No exceptions or panics.**
 - **No deadlocks.** Par imposes a structure where deadlocks are impossible to express.
 - **No accidental non-termination.** By default, recursion and corecursion are checked to prevent infinite loops.
+
+> No infinite loops? How do I write a web server or an event loop? Don't worry, that's not infinite loops,
+> that's what we call _corecursion._ It's covered thoroughly by [iterative](./types/iterative.md) types
+> with totality ensuring they always advance to their next step.
 
 At the moment, the system isn't powerful enough to capture some more complex algorithms, so there's an
 escape hatch. But, the eventual goal is to get rid of it.
