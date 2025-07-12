@@ -38,8 +38,9 @@ But, Par isn't just a concurrent language.
 > Yet, Par is still interesting for other reasons.
 
 Classical linear logic is a beast, and a powerful one
-at that. Par absorbs all this power into its own expressivity. With **duality,** **session types,** and a rich
-set of concepts all mapping to logical connectives, multiple paradigms emerge naturally:
+at that. Par absorbs all this power into its own expressivity. With [**duality,**](./processes/duality.md)
+**session types,** and a rich set of concepts all mapping to logical connectives,
+multiple paradigms emerge naturally:
 
 - **Functional programming** with side-effects via linear handles.
 - A **unique object-oriented style,** where interfaces are just types and implementations are just values.
