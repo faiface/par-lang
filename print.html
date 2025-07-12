@@ -174,7 +174,7 @@ parallel computation, especially the multiplicatives.</p>
 <p>Par is an attempt to take that idea seriously — to turn linear logic into a practical programming language.</p>
 <h2 id="why-par"><a class="header" href="#why-par">Why <em>Par</em>?</a></h2>
 <p>Based on linear logic, Par has a <strong>linear type system.</strong> That’s close to what you know from Rust:
-linear values have a single owner, and are moved instead of copied.
+linear values have a single owner and are moved instead of copied.
 But unlike in Rust, linear values <strong>cannot be dropped.</strong> Instead, they have to be consumed according to their type.</p>
 <p>This unlocks something special: channels that may only be consumed by sending.
 Now the receiver has a new guarantee — it no longer has to consider the sender forgetting to communicate.</p>
