@@ -11,36 +11,9 @@
   my Rust crate with the same name: **[Par](https://github.com/faiface/par).** It's a full implementation
   of **session types,** including non-deterministic handling of many clients.
 
-![Screenshot](screenshots/rock_paper_scissors.png)
-
 ## 🚀 Get started with the [Language Reference](https://faiface.github.io/par-lang/introduction.html)
 
-It contains **a full guide** of the language and its type system.
-
-**A live-stream tutorial** on a slightly out-dated version of Par is also up on [YouTube.](https://youtu.be/UX-p1bq-hkU?si=cHD4bzFIHjAiGg81)
-
-**To run the playground:**
-
-1. Install [Rust and Cargo](https://rustup.rs).
-2. `git clone https://github.com/faiface/par-lang.git`
-3. `cd par-lang`
-4. `cargo run playground`
-
-### [VSCode extension](https://marketplace.visualstudio.com/items/?itemName=par-lang.par-vscode) & Language Server Protocol
-
-Install the VSCode extension to get syntax highlighting, and a rudimentary LSP support.
-
-[Find the extension here.](https://marketplace.visualstudio.com/items/?itemName=par-lang.par-vscode)
-
-To enable LSP:
-
-1. Build a Par language executable with `cargo build --release`.
-2. Find its path in `./target/release/par-lang`.
-3. Set the extension's setting `par.path` to this path.
-
 ## 💡 [Examples](examples/)
-
-Open an example in the interactive playground, and **play with any function.**
 
 # ✨ Features
 
