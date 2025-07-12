@@ -82,3 +82,8 @@ still correspond one-to-one with linear logic proofs.
 
 There's still so much to be done! If this project speaks to you, join us on
 [Discord](https://discord.gg/8KsypefW99).
+
+# 🫶 Support the project!
+
+Par is currently funded by motivation alone. Only your support can make it viable long-term.
+[Consider sponsoring.](https://github.com/sponsors/faiface)
