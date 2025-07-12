@@ -11,9 +11,9 @@
   my Rust crate with the same name: **[Par](https://github.com/faiface/par).** It's a full implementation
   of **session types,** including non-deterministic handling of many clients.
 
-## 🚀 Get started with the [Language Reference](https://faiface.github.io/par-lang/introduction.html)
+## 🚀 Get started with the [Documentation](https://faiface.github.io/par-lang/introduction.html)
 
-## 💡 [Examples](examples/)
+## 💡 Check out [Examples](examples/)
 
 # ✨ Features
 
