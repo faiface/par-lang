@@ -37,11 +37,10 @@ These **orthogonal concepts** combine to give rise to a rich world of types and 
 
 ## 🔗 Concurrent
 
-**Automatically parallel execution.** Everything that can run in parallel, runs in parallel. Thanks to its
-semantics based on linear logic, Par programs are easily executed in parallel. Sequential execution is only
-enforced by data dependencies.
+**Automatically concurrent execution.** Everything that can run concurrently, does! Sequential execution is
+only enforced by data dependencies. It's as if everything was `async`, but nothing needs `await`.
 
-Par even compiles to [interaction combinators](https://core.ac.uk/download/pdf/81113716.pdf), which is the
+Par compiles to [interaction combinators](https://core.ac.uk/download/pdf/81113716.pdf), which is the
 basis for the famous [HVM](https://github.com/HigherOrderCO/HVM), and the
 [Bend](https://github.com/HigherOrderCO/Bend) programming language.
 
