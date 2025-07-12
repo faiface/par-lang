@@ -16,75 +16,57 @@ This was in 1987. In hindsight, it wasn't that obvious.
 
 Par is an attempt to take that idea seriously — to turn linear logic into a practical programming language.
 
-## Not eager. Not lazy. _Concurrent._
+## Why _Par_?
 
-In Par, evaluation starts as soon as a value is defined. But you don’t wait for it to finish —
-evaluation happens **concurrently.**
+Based on linear logic, Par has a **linear type system.** That's close to what you know from Rust:
+linear values have a single owner, and are moved instead of copied.
+But unlike in Rust, linear values **cannot be dropped.** Instead, they have to be consumed according to
+shape of their type.
 
-It’s a bit like a world where everything is `async`, and nothing ever needs an `await`. Even functions
-start evaluating as soon as they're constructed — before they even receive an argument.
+This unlocks something special: channels that may only be consumed by sending.
+Now the receiver has a new guarantee — it no longer has to consider the sender forgetting to communicate.
 
-This model avoids blocking entirely — except when **choosing a branch.** That’s the only time things pause.
-Want laziness? Wrap a value in a [choice](./types/choice.md). It won't evaluate until the choice is
-selected. That’s all it takes.
+As a consequence, **concurrent communication** is as transparent and composable in Par as calling functions.
+Together with Par's imposition of a tree-like communication structure — **ruling out deadlocks** — a new
+promising way of building concurrent applications arises.
 
-This gives you precise control over evaluation — where needed, and never more.
-**Evaluation order is part of the type system.** It’s explicit, safe, and plays well with concurrency.
+But, Par isn't just a concurrent language. In fact, real-world applications of Par's concurrency are still
+very **limited,** due to a **lack of non-determinism,** and **poor I/O libraries.** That's because Par is
+**very new,** but we're working hard to bring both of these to a better state.
 
-## Types that describe behavior
+Yet, Par is still interesting for other reasons. **Classical linear logic is a beast,** and a powerful one
+at that. Par absorbs all this power into its own expressivity. With **duality,** **session types,** and a rich
+set of concepts all mapping to logical connectives, multiple paradigms emerge naturally:
 
-Par’s types don’t just describe what values are — they describe what values do.
+- **Functional programming** with side-effects via linear handles.
+- A **unique object-oriented style,** where interfaces are just types and implementations are just values.
+- An **implicit concurrency,** where execution is non-blocking by default.
 
-- A [function](./types/function.md) tells you what input is needed and what comes next.
-- An [iterative](./types/iterative.md) value is like an object you can interact with repeatedly.
-- A [choice](./types/choice.md) offers structured operations;
-  an [either](./types/either.md) demands case analysis.
-- A [box](./types/box.md) marks values as reusable and discardable.
-- A [recursive](./types/recursive.md) type unfolds until it ends.
-- And more...
+Multi-paradigmn language often burden its users with multiple ways to solve the same problem.
 
-In fact, Par's types are [session types](https://en.wikipedia.org/wiki/Session_type). They let you express
-entire communication protocols — values that unfold in well-typed steps, over time.
+But, somewhat surprisingly, we found that in Par, **any single problem tends to have a single best solution.**
+That solution may be functional, object-oriented, a mix of those, or something else entirely.
 
-That makes Par’s type system unusually powerful: It models **interaction,** not just data.
+Whichever one it is, it always puts a new puzzle into something there underneath: **the _Par_ way.**
 
-## Paradigms emerging from first principles
+## Orthogonality goes _wide,_ not deep
 
-Par is naturally good in functional programming, but it doesn't end there. Other paradigms emerge out of the
-underlying linear logic foundation.
-
-One does it in a rather unique way: **object-oriented programming.**
-
-An [`iterative choice`](./types/iterative.md) type behaves like an interface:
-a collection of named operations, available repeatedly. To “implement” one, you just construct a value
-that behaves accordingly — no classes, inheritance, or ceremony.
-
-**Dynamic dispatch** is first-class, via [choice](./types/choice.md) types. You dispatch directly on values,
-not on subclasses. This makes behavior easy to model and easy to pass around.
-
-Values become objects, just by what they can do.
-
-## Orthogonality goes wide, not deep
-
-Par doesn’t have dependent types. It doesn’t have metaprogramming, higher-order kinds, or macro systems.
-
+Par doesn’t have dependent types, metaprogramming, higher-order kinds, or a macro system.
 Instead of going deeper into complexity, **Par goes wider.**
 
-Its design focuses on small, composable ideas. For Par, it's not that important to have a small _number_
-of features. What's important is that each feature is small, and covers something no other feature does.
+Its design focuses on small, composable ideas. For Par, it's not that important to have a _small number_
+of features. What's important is that _each feature is small,_ and covers something no other feature does.
 
 Most of those ideas are taken directly from classical linear logic.
-Every type corresponds to a logical connective. Even recursion and polymorphism are built from first principles
-— not bolted on.
+Every type corresponds to a logical connective. Even recursion! This has two consequences:
 
-And in doing so, it makes room for multiple paradigms to emerge:
-- Functional programming with side-effects via linear handles.
-- A unique object-oriented style, where interfaces are just types and implementations are just values.
-- A concurrent foundation, where execution is implicit and non-blocking by default.
+- **Everything fits together.** Almost any combination of features has a meaningful use.
+- **Everything is a little different.** For better or worse, Par is one of its kind.
 
-All of this comes from the same source: the logic underneath.
+The former is great. The latter means Par might feel like learning programming all over again.
+Will that be worthwhile? We're going to have to find out.
 
-## An ambitious stride towards totality
+## An ambitious stride towards _totality_
 
 As if session types and concurrency weren't enough, Par also aims to be **total.**
 
