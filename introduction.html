@@ -174,56 +174,45 @@ parallel computation, especially the multiplicatives.</p>
 </blockquote>
 <p>This was in 1987. In hindsight, it wasn’t that obvious.</p>
 <p>Par is an attempt to take that idea seriously — to turn linear logic into a practical programming language.</p>
-<h2 id="not-eager-not-lazy-concurrent"><a class="header" href="#not-eager-not-lazy-concurrent">Not eager. Not lazy. <em>Concurrent.</em></a></h2>
-<p>In Par, evaluation starts as soon as a value is defined. But you don’t wait for it to finish —
-evaluation happens <strong>concurrently.</strong></p>
-<p>It’s a bit like a world where everything is <code>async</code>, and nothing ever needs an <code>await</code>. Even functions
-start evaluating as soon as they’re constructed — before they even receive an argument.</p>
-<p>This model avoids blocking entirely — except when <strong>choosing a branch.</strong> That’s the only time things pause.
-Want laziness? Wrap a value in a <a href="./types/choice.html">choice</a>. It won’t evaluate until the choice is
-selected. That’s all it takes.</p>
-<p>This gives you precise control over evaluation — where needed, and never more.
-<strong>Evaluation order is part of the type system.</strong> It’s explicit, safe, and plays well with concurrency.</p>
-<h2 id="types-that-describe-behavior"><a class="header" href="#types-that-describe-behavior">Types that describe behavior</a></h2>
-<p>Par’s types don’t just describe what values are — they describe what values do.</p>
+<h2 id="why-par"><a class="header" href="#why-par">Why <em>Par</em>?</a></h2>
+<p>Based on linear logic, Par has a <strong>linear type system.</strong> That’s close to what you know from Rust:
+linear values have a single owner, and are moved instead of copied.
+But unlike in Rust, linear values <strong>cannot be dropped.</strong> Instead, they have to be consumed according to
+shape of their type.</p>
+<p>This unlocks something special: channels that may only be consumed by sending.
+Now the receiver has a new guarantee — it no longer has to consider the sender forgetting to communicate.</p>
+<p>As a consequence, <strong>concurrent communication</strong> is as transparent and composable in Par as calling functions.
+Together with Par’s imposition of a tree-like communication structure — <strong>ruling out deadlocks</strong> — a new
+promising way of building concurrent applications arises.</p>
+<p>But, Par isn’t just a concurrent language. In fact, real-world applications of Par’s concurrency are still
+very <strong>limited,</strong> due to a <strong>lack of non-determinism,</strong> and <strong>poor I/O libraries.</strong> That’s because Par is
+<strong>very new,</strong> but we’re working hard to bring both of these to a better state.</p>
+<p>Yet, Par is still interesting for other reasons. <strong>Classical linear logic is a beast,</strong> and a powerful one
+at that. Par absorbs all this power into its own expressivity. With <strong>duality,</strong> <strong>session types,</strong> and a rich
+set of concepts all mapping to logical connectives, multiple paradigms emerge naturally:</p>
 <ul>
-<li>A <a href="./types/function.html">function</a> tells you what input is needed and what comes next.</li>
-<li>An <a href="./types/iterative.html">iterative</a> value is like an object you can interact with repeatedly.</li>
-<li>A <a href="./types/choice.html">choice</a> offers structured operations;
-an <a href="./types/either.html">either</a> demands case analysis.</li>
-<li>A <a href="./types/box.html">box</a> marks values as reusable and discardable.</li>
-<li>A <a href="./types/recursive.html">recursive</a> type unfolds until it ends.</li>
-<li>And more…</li>
+<li><strong>Functional programming</strong> with side-effects via linear handles.</li>
+<li>A <strong>unique object-oriented style,</strong> where interfaces are just types and implementations are just values.</li>
+<li>An <strong>implicit concurrency,</strong> where execution is non-blocking by default.</li>
 </ul>
-<p>In fact, Par’s types are <a href="https://en.wikipedia.org/wiki/Session_type">session types</a>. They let you express
-entire communication protocols — values that unfold in well-typed steps, over time.</p>
-<p>That makes Par’s type system unusually powerful: It models <strong>interaction,</strong> not just data.</p>
-<h2 id="paradigms-emerging-from-first-principles"><a class="header" href="#paradigms-emerging-from-first-principles">Paradigms emerging from first principles</a></h2>
-<p>Par is naturally good in functional programming, but it doesn’t end there. Other paradigms emerge out of the
-underlying linear logic foundation.</p>
-<p>One does it in a rather unique way: <strong>object-oriented programming.</strong></p>
-<p>An <a href="./types/iterative.html"><code>iterative choice</code></a> type behaves like an interface:
-a collection of named operations, available repeatedly. To “implement” one, you just construct a value
-that behaves accordingly — no classes, inheritance, or ceremony.</p>
-<p><strong>Dynamic dispatch</strong> is first-class, via <a href="./types/choice.html">choice</a> types. You dispatch directly on values,
-not on subclasses. This makes behavior easy to model and easy to pass around.</p>
-<p>Values become objects, just by what they can do.</p>
-<h2 id="orthogonality-goes-wide-not-deep"><a class="header" href="#orthogonality-goes-wide-not-deep">Orthogonality goes wide, not deep</a></h2>
-<p>Par doesn’t have dependent types. It doesn’t have metaprogramming, higher-order kinds, or macro systems.</p>
-<p>Instead of going deeper into complexity, <strong>Par goes wider.</strong></p>
-<p>Its design focuses on small, composable ideas. For Par, it’s not that important to have a small <em>number</em>
-of features. What’s important is that each feature is small, and covers something no other feature does.</p>
+<p>Multi-paradigmn language often burden its users with multiple ways to solve the same problem.</p>
+<p>But, somewhat surprisingly, we found that in Par, <strong>any single problem tends to have a single best solution.</strong>
+That solution may be functional, object-oriented, a mix of those, or something else entirely.</p>
+<p>Whichever one it is, it always puts a new puzzle into something there underneath: <strong>the <em>Par</em> way.</strong></p>
+<h2 id="orthogonality-goes-wide-not-deep"><a class="header" href="#orthogonality-goes-wide-not-deep">Orthogonality goes <em>wide,</em> not deep</a></h2>
+<p>Par doesn’t have dependent types, metaprogramming, higher-order kinds, or a macro system.
+Instead of going deeper into complexity, <strong>Par goes wider.</strong></p>
+<p>Its design focuses on small, composable ideas. For Par, it’s not that important to have a <em>small number</em>
+of features. What’s important is that <em>each feature is small,</em> and covers something no other feature does.</p>
 <p>Most of those ideas are taken directly from classical linear logic.
-Every type corresponds to a logical connective. Even recursion and polymorphism are built from first principles
-— not bolted on.</p>
-<p>And in doing so, it makes room for multiple paradigms to emerge:</p>
+Every type corresponds to a logical connective. Even recursion! This has two consequences:</p>
 <ul>
-<li>Functional programming with side-effects via linear handles.</li>
-<li>A unique object-oriented style, where interfaces are just types and implementations are just values.</li>
-<li>A concurrent foundation, where execution is implicit and non-blocking by default.</li>
+<li><strong>Everything fits together.</strong> Almost any combination of features has a meaningful use.</li>
+<li><strong>Everything is a little different.</strong> For better or worse, Par is one of its kind.</li>
 </ul>
-<p>All of this comes from the same source: the logic underneath.</p>
-<h2 id="an-ambitious-stride-towards-totality"><a class="header" href="#an-ambitious-stride-towards-totality">An ambitious stride towards totality</a></h2>
+<p>The former is great. The latter means Par might feel like learning programming all over again.
+Will that be worthwhile? We’re going to have to find out.</p>
+<h2 id="an-ambitious-stride-towards-totality"><a class="header" href="#an-ambitious-stride-towards-totality">An ambitious stride towards <em>totality</em></a></h2>
 <p>As if session types and concurrency weren’t enough, Par also aims to be <strong>total.</strong></p>
 <p>That means:</p>
 <ul>
