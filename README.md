@@ -61,7 +61,7 @@ potentially unbounded objects, such as infinite sequences, with no danger of inf
 to opt-out of totality.
 
 _\*There is an escape hatch. Some algorithms, especially divide-and-conquer, are difficult or impossible
-to implement using easy-to-check well-founded strategies. For those, `unfounded begin` turns this check
+to implement using easy-to-check well-founded strategies. For those, `unfounded` turns this check
 off. Vast majority of code doesn't need to opt-out of totality checking, it naturally fits its requirements.
 Those few parts that need to opt-out are clearly marked with `unfounded`. They are the only places
 that can potentially cause infinite loops._
