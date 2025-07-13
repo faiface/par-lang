@@ -651,3 +651,33 @@ fn green() -> egui::Color32 {
 fn blue() -> egui::Color32 {
     egui::Color32::from_hex("#118ab2").unwrap()
 }
+
+#[cfg(test)]
+mod playground_test {
+    use super::*;
+
+    #[test]
+    fn test_issue_44() {
+        let code = r#"
+def Pair = [type _] [(x)y] (x) y
+"#;
+
+        let result = std::panic::catch_unwind(|| {
+            stacker::grow(32 * 1024 * 1024, || Compiled::from_string(code))
+        });
+
+        match result {
+            Ok(Ok(_)) => {
+                // unexpected
+                println!("compiled successfully");
+            }
+            Ok(Err(err)) => {
+                // ideal
+                println!("{:?}", err);
+            }
+            Err(_) => {
+                println!("compiler panicked");
+            }
+        }
+    }
+}
