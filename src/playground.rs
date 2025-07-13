@@ -668,15 +668,36 @@ def Pair = [type _] [(x)y] (x) y
 
         match result {
             Ok(Ok(_)) => {
-                // unexpected
-                println!("compiled successfully");
+                panic!("Expected compilation to fail, but it succeeded");
             }
             Ok(Err(err)) => {
-                // ideal
-                println!("{:?}", err);
+                // Check that we get the expected error type
+                match err {
+                    Error::Type(type_err) => {
+                        let error_msg = format!("{:?}", type_err.to_report(Arc::from(code)));
+
+                        assert!(
+                            error_msg.contains("Type annotation required for pattern matching")
+                                || error_msg.contains("pattern matching"),
+                            "Error message should mention pattern matching, got: {}",
+                            error_msg
+                        );
+
+                        assert!(
+                            error_msg.contains("Consider adding a type annotation"),
+                            "Error should contain help text about adding type annotations"
+                        );
+
+                        assert!(
+                            !error_msg.contains("Type of parameter `#match0`"),
+                            "Error should not expose internal variable names like #match0"
+                        );
+                    }
+                    _ => panic!("Expected TypeError, got {:?}", err),
+                }
             }
             Err(_) => {
-                println!("compiler panicked");
+                panic!("Compiler panicked unexpectedly");
             }
         }
     }
