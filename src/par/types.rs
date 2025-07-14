@@ -3246,7 +3246,8 @@ impl TypeError {
             Self::ParameterTypeMustBeKnown(span, param) => {
                 let labels = labels_from_span(code, span);
 
-                // check if this is an internal pattern matching variable
+                // filter out internal pattern matching variables
+                // issue #44: https://github.com/faiface/par-lang/issues/44
                 if param.is_match() {
                     miette::miette!(
                         labels = labels,

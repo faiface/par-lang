@@ -84,6 +84,7 @@ impl LocalName {
         }
     }
 
+    /// Check if this is an internal pattern matching variable.
     pub fn is_match(&self) -> bool {
         self.string.starts_with("#match")
     }
