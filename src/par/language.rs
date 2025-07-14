@@ -83,6 +83,10 @@ impl LocalName {
             string: literal!("#invalid"),
         }
     }
+
+    pub fn is_match(&self) -> bool {
+        self.string.starts_with("#match")
+    }
 }
 
 #[derive(Clone, Debug)]

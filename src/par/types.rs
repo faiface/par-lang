@@ -3247,7 +3247,7 @@ impl TypeError {
                 let labels = labels_from_span(code, span);
 
                 // check if this is an internal pattern matching variable
-                if param.string.starts_with("#match") {
+                if param.is_match() {
                     miette::miette!(
                         labels = labels,
                         help = "Consider adding a type annotation to the pattern, e.g., [(x : Type)y]",
