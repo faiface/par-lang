@@ -36,7 +36,7 @@ pub struct Playground {
     show_compiled: bool,
     show_ic: bool,
     element: Option<Arc<Mutex<Element>>>,
-    cursor_pos: (usize, usize),
+    //cursor_pos: (usize, usize),
     theme_mode: ThemeMode,
     rt: tokio::runtime::Runtime,
     cancel_token: Option<CancellationToken>,
@@ -193,7 +193,7 @@ impl Playground {
             show_compiled: false,
             show_ic: false,
             element: None,
-            cursor_pos: (0, 0),
+            //cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -311,7 +311,7 @@ impl eframe::App for Playground {
 
                         ui.separator();
 
-                        let cursor = CodeEditor::default()
+                        /*let cursor =*/ CodeEditor::default()
                             .id_source("code")
                             .with_syntax(par_syntax())
                             .with_rows(32)
@@ -319,12 +319,12 @@ impl eframe::App for Playground {
                             .with_theme(self.get_theme(ui))
                             .with_numlines(true)
                             .show(ui, &mut self.code)
-                            .cursor_range;
+                            //.cursor_range;
 
-                        if let Some(cursor) = cursor {
+                        /*if let Some(cursor) = cursor {
                             self.cursor_pos =
                                 (cursor.primary.rcursor.row, cursor.primary.rcursor.column);
-                        }
+                        }*/
                     });
                 });
 
@@ -493,7 +493,7 @@ impl Playground {
                         pretty, checked, ..
                     })) = &mut self.compiled
                     {
-                        if let Ok(checked) = checked {
+                        /*if let Ok(checked) = checked {
                             if let Some(NameWithType(_, typ)) = checked
                                 .type_on_hover
                                 .query(self.cursor_pos.0, self.cursor_pos.1)
@@ -504,7 +504,7 @@ impl Playground {
                                     ui.label(RichText::new(buf).code().color(green()));
                                 });
                             }
-                        }
+                        }*/
 
                         if self.show_compiled {
                             CodeEditor::default()
