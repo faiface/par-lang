@@ -36,7 +36,7 @@ pub struct Playground {
     show_compiled: bool,
     show_ic: bool,
     element: Option<Arc<Mutex<Element>>>,
-    //cursor_pos: (usize, usize),
+    cursor_pos: (usize, usize),
     theme_mode: ThemeMode,
     rt: tokio::runtime::Runtime,
     cancel_token: Option<CancellationToken>,
@@ -193,7 +193,7 @@ impl Playground {
             show_compiled: false,
             show_ic: false,
             element: None,
-            //cursor_pos: (0, 0),
+            cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -247,52 +247,48 @@ impl eframe::App for Playground {
 
                             ui.add_space(5.0);
 
-                            egui::menu::menu_custom_button(
-                                ui,
-                                egui::Button::new(egui::RichText::new("File").strong()),
-                                |ui| {
-                                    if ui.button(egui::RichText::new("Open...").strong()).clicked()
-                                    {
-                                        self.open_file();
-                                        ui.close_menu();
-                                    }
+                            egui::containers::menu::MenuButton::from_button(egui::Button::new(
+                                egui::RichText::new("File").strong(),
+                            ))
+                            .ui(ui, |ui| {
+                                if ui.button(egui::RichText::new("Open...").strong()).clicked() {
+                                    self.open_file();
+                                    ui.close();
+                                }
 
-                                    if let Some(path) = self.file_path.clone() {
-                                        if ui.button(egui::RichText::new("Save").strong()).clicked()
-                                        {
-                                            self.save_file(&path);
-                                            ui.close_menu();
-                                        }
+                                if let Some(path) = self.file_path.clone() {
+                                    if ui.button(egui::RichText::new("Save").strong()).clicked() {
+                                        self.save_file(&path);
+                                        ui.close();
                                     }
+                                }
 
-                                    if ui
-                                        .button(egui::RichText::new("Save as...").strong())
-                                        .clicked()
-                                    {
-                                        self.save_file_as();
-                                        ui.close_menu();
-                                    }
-                                },
-                            );
+                                if ui
+                                    .button(egui::RichText::new("Save as...").strong())
+                                    .clicked()
+                                {
+                                    self.save_file_as();
+                                    ui.close();
+                                }
+                            });
 
                             ui.add_space(5.0);
 
                             // create dropdown menu for theme mode selection
-                            egui::menu::menu_custom_button(
-                                ui,
-                                egui::Button::new(egui::RichText::new("Theme").strong()),
-                                |ui| {
-                                    for &mode in ThemeMode::all() {
-                                        if ui
-                                            .radio(self.theme_mode == mode, mode.display_name())
-                                            .clicked()
-                                        {
-                                            self.theme_mode = mode;
-                                            ui.close_menu();
-                                        }
+                            egui::containers::menu::MenuButton::from_button(egui::Button::new(
+                                egui::RichText::new("Theme").strong(),
+                            ))
+                            .ui(ui, |ui| {
+                                for &mode in ThemeMode::all() {
+                                    if ui
+                                        .radio(self.theme_mode == mode, mode.display_name())
+                                        .clicked()
+                                    {
+                                        self.theme_mode = mode;
+                                        ui.close();
                                     }
-                                },
-                            );
+                                }
+                            });
 
                             ui.add_space(5.0);
 
@@ -311,7 +307,7 @@ impl eframe::App for Playground {
 
                         ui.separator();
 
-                        /*let cursor =*/ CodeEditor::default()
+                        let cursor = CodeEditor::default()
                             .id_source("code")
                             .with_syntax(par_syntax())
                             .with_rows(32)
@@ -319,18 +315,30 @@ impl eframe::App for Playground {
                             .with_theme(self.get_theme(ui))
                             .with_numlines(true)
                             .show(ui, &mut self.code)
-                            //.cursor_range;
+                            .cursor_range;
 
-                        /*if let Some(cursor) = cursor {
-                            self.cursor_pos =
-                                (cursor.primary.rcursor.row, cursor.primary.rcursor.column);
-                        }*/
+                        if let Some(cursor) = cursor {
+                            self.cursor_pos = row_and_column(&self.code, cursor.primary.index);
+                        }
                     });
                 });
 
             self.show_interaction(ui);
         });
     }
+}
+
+fn row_and_column(source: &str, index: usize) -> (usize, usize) {
+    let (mut row, mut col) = (1, 0);
+    for c in source.chars().take(index) {
+        if c == '\n' {
+            row += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (row, col)
 }
 
 impl Playground {
@@ -452,27 +460,26 @@ impl Playground {
 
                     if let Ok(checked) = checked {
                         if let Some(ic_compiled) = checked.ic_compiled.as_ref() {
-                            egui::menu::menu_custom_button(
-                                ui,
+                            egui::containers::menu::MenuButton::from_button(
                                 egui::Button::new(
                                     egui::RichText::new("Run")
                                         .strong()
                                         .color(egui::Color32::BLACK),
                                 )
                                 .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
-                                |ui| {
-                                    egui::ScrollArea::vertical().show(ui, |ui| {
-                                        Self::readback(
-                                            self.rt.handle().clone(),
-                                            &mut self.cancel_token,
-                                            &mut self.element,
-                                            ui,
-                                            checked.program.clone(),
-                                            ic_compiled,
-                                        );
-                                    })
-                                },
-                            );
+                            )
+                            .ui(ui, |ui| {
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    Self::readback(
+                                        self.rt.handle().clone(),
+                                        &mut self.cancel_token,
+                                        &mut self.element,
+                                        ui,
+                                        checked.program.clone(),
+                                        ic_compiled,
+                                    );
+                                })
+                            });
                         }
                     }
                 }
@@ -493,18 +500,19 @@ impl Playground {
                         pretty, checked, ..
                     })) = &mut self.compiled
                     {
-                        /*if let Ok(checked) = checked {
+                        if let Ok(checked) = checked {
                             if let Some(NameWithType(_, typ)) = checked
                                 .type_on_hover
                                 .query(self.cursor_pos.0, self.cursor_pos.1)
                             {
+                                println!("???");
                                 ui.horizontal(|ui| {
                                     let mut buf = String::new();
                                     typ.pretty(&mut buf, 0).unwrap();
                                     ui.label(RichText::new(buf).code().color(green()));
                                 });
                             }
-                        }*/
+                        }
 
                         if self.show_compiled {
                             CodeEditor::default()
