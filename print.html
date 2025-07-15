@@ -763,6 +763,212 @@ let num = value
 <td><em>Shown on the left</em></td>
 </tr>
 </table>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="built-in-definitions"><a class="header" href="#built-in-definitions">Built-In Definitions</a></h1>
+<pre><code class="language-par">/// Nat
+
+dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Mul   : [Nat, Nat] Nat
+dec Nat.Div   : [Nat, Nat] Nat
+dec Nat.Mod   : [Nat, Nat] Nat
+dec Nat.Min   : [Nat, Nat] Nat
+dec Nat.Max   : [Nat, Int] Nat
+dec Nat.Clamp : [Int] [Nat, Nat] Nat
+
+dec Nat.Equals  : [Nat, Nat] Bool
+dec Nat.Compare : [Nat, Nat] Ordering
+
+dec Nat.Repeat : [Nat] recursive either {
+  .end!,
+  .step self,
+}
+
+dec Nat.Range : [Nat, Nat] List&lt;Nat&gt;
+
+dec Nat.ToString : [Nat] String
+
+dec Nat.FromString : [String] either {
+  .ok Nat,
+  .err!,
+}
+
+/// Int
+
+dec Int.Add   : [Int, Int] Int
+dec Int.Sub   : [Int, Int] Int
+dec Int.Mul   : [Int, Int] Int
+dec Int.Div   : [Int, Int] Int
+dec Int.Mod   : [Int, Nat] Nat
+dec Int.Min   : [Int, Int] Int
+dec Int.Max   : [Int, Int] Int
+dec Int.Abs   : [Int] Nat
+dec Int.Clamp : [Int] [Int, Int] Int
+
+dec Int.Equals  : [Int, Int] Bool
+dec Int.Compare : [Int, Int] Ordering
+
+dec Int.Range : [Int, Int] List&lt;Int&gt;
+
+dec Int.ToString : [Int] String
+
+dec Int.FromString : [String] either {
+  .ok Int,
+  .err!,
+}
+
+/// Bool
+
+type Bool = either {
+  .false!,
+  .true!,
+}
+
+/// Result
+
+type Result&lt;e, a&gt; = either {
+  .ok a,
+  .err e,
+}
+
+dec Result.Always : [type a] [Result&lt;either {}, a&gt;] a
+def Result.Always = [type a] [result] result.case {
+  .ok value =&gt; value,
+  .err impossible =&gt; impossible.case {},
+}
+
+/// List
+
+type List&lt;a&gt; = recursive either {
+  .end!,
+  .item(a) self,
+}
+
+type List.Builder&lt;a&gt; = iterative choice {
+  .add(a) =&gt; self,
+  .build =&gt; List&lt;a&gt;,
+}
+
+dec List.Builder : [type a] List.Builder&lt;a&gt;
+def List.Builder = [type a]
+  let append: [List&lt;a&gt;] List&lt;a&gt; = [xs] xs
+  in begin case {
+    .add(x) =&gt;
+      let append: [List&lt;a&gt;] List&lt;a&gt;
+        = [xs] append(.item(x) xs)
+      in loop,
+    .build =&gt; append(.end!),
+  }
+
+/// Ordering
+
+type Ordering = either {
+  .less!,
+  .equal!,
+  .greater!,
+}
+
+/// Char
+
+type Char.Class = either {
+  .any!,
+  .char Char,
+  .whitespace!,
+  .ascii either {
+    .any!,
+    .alpha!,
+    .alphanum!,
+    .digit!,
+  },
+}
+
+dec Char.Equals : [Char, Char] Bool
+dec Char.Code   : [Char] Nat
+dec Char.Is     : [Char, Char.Class] Bool
+
+/// String
+
+type String.Builder = iterative choice {
+  .add(String) =&gt; self,
+  .build =&gt; String,
+}
+
+type String.Reader&lt;e&gt; = recursive iterative/attempt choice {
+  .close =&gt; !,
+  .remainder =&gt; Result&lt;e, String&gt;,
+  .char =&gt; either {
+    .end Result&lt;e, !&gt;,
+    .char(Char) self,
+  },
+  .match(String.Pattern, String.Pattern) =&gt; either {
+    .end Result&lt;e, !&gt;,
+    .fail self/attempt,
+    .match(String, String) self,
+  },
+  .matchEnd(String.Pattern, String.Pattern) =&gt; either {
+    .end Result&lt;e, !&gt;,
+    .fail self/attempt,
+    .match(String, String)!,
+  },
+}
+
+type String.Pattern = recursive either {
+  .empty!,
+  .str String,
+  .one Char.Class,
+  .non Char.Class,
+  .length Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List&lt;self&gt;,
+  .and List&lt;self&gt;,
+  .or List&lt;self&gt;,
+}
+
+dec String.Builder : String.Builder
+dec String.Reader  : [String] String.Reader&lt;either {}&gt;
+
+dec String.Quote : [String] String
+
+/// Console
+
+type Console = iterative choice {
+  .close =&gt; !,
+  .print(String) =&gt; self,
+}
+
+dec Console.Open : Console
+
+/// Storage
+
+type Storage.Error = String
+
+type Storage.PathInfo = box choice {
+  .name =&gt; String,
+  .absolute =&gt; String,
+}
+
+type Storage.FileInfo = box choice {
+  .path =&gt; Storage.PathInfo,
+  .size =&gt; Nat.Nat,
+  .readUTF8 =&gt; Result&lt;Storage.Error, String.Reader&lt;Storage.Error&gt;&gt;,
+}
+
+type Storage.DirInfo = recursive box choice {
+  .path =&gt; Storage.PathInfo,
+  .list =&gt; Result&lt;Storage.Error, List&lt;either {
+    .file Storage.FileInfo,
+    .dir self,
+  }&gt;&gt;,
+}
+
+dec Storage.Get : [String] Result&lt;Storage.Error, either {
+  .file Storage.FileInfo,
+  .dir Storage.DirInfo,
+}&gt;
+
+/// Debug
+
+dec Debug.Log : [String] !
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="types--their-expressions"><a class="header" href="#types--their-expressions">Types &amp; Their Expressions</a></h1>
 <p>Types in Par serve two seemingly incompatible purposes at the same time:</p>
 <ul>

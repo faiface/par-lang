@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>The Big Table - Par Documentation</title>
+        <title>Built-In Definitions - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/big_table.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/builtin.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,187 +160,222 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="the-big-table"><a class="header" href="#the-big-table">The Big Table</a></h1>
-<h2 id="expression-syntax"><a class="header" href="#expression-syntax">Expression syntax</a></h2>
-<table>
-<tr>
-<td><strong>Type</strong></td>
-<td><strong>Construction</strong></td>
-<td><strong>Destruction</strong></td>
-</tr>
-<tr>
-<td><pre><code class="language-par">type Unit = !
-</code></pre></td>
-<td><pre><code class="language-par">let value = !
-</code></pre></td>
-<td><pre><code class="language-par">let ! = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Either = either {
-  .left String,
-  .right Int,
+                        <h1 id="built-in-definitions"><a class="header" href="#built-in-definitions">Built-In Definitions</a></h1>
+<pre><code class="language-par">/// Nat
+
+dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Mul   : [Nat, Nat] Nat
+dec Nat.Div   : [Nat, Nat] Nat
+dec Nat.Mod   : [Nat, Nat] Nat
+dec Nat.Min   : [Nat, Nat] Nat
+dec Nat.Max   : [Nat, Int] Nat
+dec Nat.Clamp : [Int] [Nat, Nat] Nat
+
+dec Nat.Equals  : [Nat, Nat] Bool
+dec Nat.Compare : [Nat, Nat] Ordering
+
+dec Nat.Repeat : [Nat] recursive either {
+  .end!,
+  .step self,
 }
-</code></pre></td>
-<td><pre><code class="language-par">let value: Either = .left "Hello!"
-</code></pre></td>
-<td><pre><code class="language-par">let result = value.case {
-  .left str => String.Length(str),
-  .right num => Int.Mul(num, 5),
+
+dec Nat.Range : [Nat, Nat] List&lt;Nat&gt;
+
+dec Nat.ToString : [Nat] String
+
+dec Nat.FromString : [String] either {
+  .ok Nat,
+  .err!,
 }
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Pair = (String) Int
-</code></pre></td>
-<td><pre><code class="language-par">let value = ("Hello!") 42
-</code></pre></td>
-<td><pre><code class="language-par">let (str) num = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Function = [Int] String
-</code></pre></td>
-<td><pre><code class="language-par">let value = [num: Int] Int.ToString(num)
-</code></pre></td>
-<td><pre><code class="language-par">let str = value(42)
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Choice = choice {
-  .left => String,
-  .right => Int,
+
+/// Int
+
+dec Int.Add   : [Int, Int] Int
+dec Int.Sub   : [Int, Int] Int
+dec Int.Mul   : [Int, Int] Int
+dec Int.Div   : [Int, Int] Int
+dec Int.Mod   : [Int, Nat] Nat
+dec Int.Min   : [Int, Int] Int
+dec Int.Max   : [Int, Int] Int
+dec Int.Abs   : [Int] Nat
+dec Int.Clamp : [Int] [Int, Int] Int
+
+dec Int.Equals  : [Int, Int] Bool
+dec Int.Compare : [Int, Int] Ordering
+
+dec Int.Range : [Int, Int] List&lt;Int&gt;
+
+dec Int.ToString : [Int] String
+
+dec Int.FromString : [String] either {
+  .ok Int,
+  .err!,
 }
-</code></pre></td>
-<td><pre><code class="language-par">let value: Choice = case {
-  .left => "Hello!",
-  .right => 42,
+
+/// Bool
+
+type Bool = either {
+  .false!,
+  .true!,
 }
-</code></pre></td>
-<td><pre><code class="language-par">let num = value.right
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Continuation = ?
-</code></pre></td>
-<td><em>No expression syntax</em></td>
-<td><em>No expression syntax</em></td>
-</tr>
-</table>
-<h2 id="process-syntax"><a class="header" href="#process-syntax">Process syntax</a></h2>
-<table>
-<tr>
-<td><strong>Type</strong></td>
-<td><strong>Construction</strong></td>
-<td><strong>Destruction</strong></td>
-</tr>
-<tr>
-<td><pre><code class="language-par">type Unit = !
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c!
+
+/// Result
+
+type Result&lt;e, a&gt; = either {
+  .ok a,
+  .err e,
 }
-</code></pre></td>
-<td><pre><code class="language-par">value?
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Either = either {
-  .left String,
-  .right Int,
+
+dec Result.Always : [type a] [Result&lt;either {}, a&gt;] a
+def Result.Always = [type a] [result] result.case {
+  .ok value =&gt; value,
+  .err impossible =&gt; impossible.case {},
 }
-</code></pre></td>
-<td><pre><code class="language-par">let value: Either = chan c {
-  c.left
-  c <> "Hello!"
+
+/// List
+
+type List&lt;a&gt; = recursive either {
+  .end!,
+  .item(a) self,
 }
-</code></pre></td>
-<td><pre><code class="language-par">value.case {
-  .left => {
-    let result = String.Length(value)
+
+type List.Builder&lt;a&gt; = iterative choice {
+  .add(a) =&gt; self,
+  .build =&gt; List&lt;a&gt;,
+}
+
+dec List.Builder : [type a] List.Builder&lt;a&gt;
+def List.Builder = [type a]
+  let append: [List&lt;a&gt;] List&lt;a&gt; = [xs] xs
+  in begin case {
+    .add(x) =&gt;
+      let append: [List&lt;a&gt;] List&lt;a&gt;
+        = [xs] append(.item(x) xs)
+      in loop,
+    .build =&gt; append(.end!),
   }
-  .right => {
-    let result = Int.Mul(value, 5)
-  }
+
+/// Ordering
+
+type Ordering = either {
+  .less!,
+  .equal!,
+  .greater!,
 }
-// `result` is in scope here
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Pair = (String) Int
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c("Hello!")
-  c <> 42
+
+/// Char
+
+type Char.Class = either {
+  .any!,
+  .char Char,
+  .whitespace!,
+  .ascii either {
+    .any!,
+    .alpha!,
+    .alphanum!,
+    .digit!,
+  },
 }
-</code></pre></td>
-<td><pre><code class="language-par">value[str]
-let num = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Function = [Int] String
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c[num: Int]
-  c <> Int.ToString(num)
+
+dec Char.Equals : [Char, Char] Bool
+dec Char.Code   : [Char] Nat
+dec Char.Is     : [Char, Char.Class] Bool
+
+/// String
+
+type String.Builder = iterative choice {
+  .add(String) =&gt; self,
+  .build =&gt; String,
 }
-</code></pre></td>
-<td><pre><code class="language-par">value(42)
-let result = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Choice = choice {
-  .left => String,
-  .right => Int,
+
+type String.Reader&lt;e&gt; = recursive iterative/attempt choice {
+  .close =&gt; !,
+  .remainder =&gt; Result&lt;e, String&gt;,
+  .char =&gt; either {
+    .end Result&lt;e, !&gt;,
+    .char(Char) self,
+  },
+  .match(String.Pattern, String.Pattern) =&gt; either {
+    .end Result&lt;e, !&gt;,
+    .fail self/attempt,
+    .match(String, String) self,
+  },
+  .matchEnd(String.Pattern, String.Pattern) =&gt; either {
+    .end Result&lt;e, !&gt;,
+    .fail self/attempt,
+    .match(String, String)!,
+  },
 }
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c.case {
-    .left  => { c <> "Hello!" }
-    .right => { c <> 42 }
-  }
+
+type String.Pattern = recursive either {
+  .empty!,
+  .str String,
+  .one Char.Class,
+  .non Char.Class,
+  .length Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List&lt;self&gt;,
+  .and List&lt;self&gt;,
+  .or List&lt;self&gt;,
 }
-</code></pre></td>
-<td><pre><code class="language-par">value.right
-let num = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Continuation = ?
-</code></pre></td>
-<td><pre><code class="language-par">let outer: ! = chan break {
-  let value: ? = chan c {
-    c?     // construction
-    break!
-  }
-  value!   // destruction
+
+dec String.Builder : String.Builder
+dec String.Reader  : [String] String.Reader&lt;either {}&gt;
+
+dec String.Quote : [String] String
+
+/// Console
+
+type Console = iterative choice {
+  .close =&gt; !,
+  .print(String) =&gt; self,
 }
-</code></pre></td>
-<td><em>Shown on the left</em></td>
-</tr>
-</table>
+
+dec Console.Open : Console
+
+/// Storage
+
+type Storage.Error = String
+
+type Storage.PathInfo = box choice {
+  .name =&gt; String,
+  .absolute =&gt; String,
+}
+
+type Storage.FileInfo = box choice {
+  .path =&gt; Storage.PathInfo,
+  .size =&gt; Nat.Nat,
+  .readUTF8 =&gt; Result&lt;Storage.Error, String.Reader&lt;Storage.Error&gt;&gt;,
+}
+
+type Storage.DirInfo = recursive box choice {
+  .path =&gt; Storage.PathInfo,
+  .list =&gt; Result&lt;Storage.Error, List&lt;either {
+    .file Storage.FileInfo,
+    .dir self,
+  }&gt;&gt;,
+}
+
+dec Storage.Get : [String] Result&lt;Storage.Error, either {
+  .file Storage.FileInfo,
+  .dir Storage.DirInfo,
+}&gt;
+
+/// Debug
+
+dec Debug.Log : [String] !
+</code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="structure/let_expressions.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="big_table.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="builtin.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="types_and_expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -350,11 +385,11 @@ let num = value
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="structure/let_expressions.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="big_table.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="builtin.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="types_and_expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
