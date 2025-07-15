@@ -1,4 +1,0 @@
-type Console = iterative choice {
-  .close => !,
-  .print(String.String) => self,
-}

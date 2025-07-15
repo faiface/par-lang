@@ -1,0 +1,133 @@
+/// Bool
+
+type Bool = either {
+  .false!,
+  .true!,
+}
+
+/// Result
+
+type Result<e, a> = either {
+  .ok a,
+  .err e,
+}
+
+dec Result.Always : [type a] [Result<either {}, a>] a
+def Result.Always = [type a] [result] result.case {
+  .ok value => value,
+  .err impossible => impossible.case {},
+}
+
+/// List
+
+type List<a> = recursive either {
+  .end!,
+  .item(a) self,
+}
+
+type List.Builder<a> = iterative choice {
+  .add(a) => self,
+  .build => List<a>,
+}
+
+dec List.Builder : [type a] List.Builder<a>
+def List.Builder = [type a]
+  let append: [List<a>] List<a> = [xs] xs
+  in begin case {
+    .add(x) =>
+      let append: [List<a>] List<a>
+        = [xs] append(.item(x) xs)
+      in loop,
+    .build => append(.end!),
+  }
+
+/// Ordering
+
+type Ordering = either {
+  .less!,
+  .equal!,
+  .greater!,
+}
+
+/// Char
+
+type Char.Class = either {
+  .any!,
+  .char Char,
+  .whitespace!,
+  .ascii either {
+    .any!,
+    .alpha!,
+    .alphanum!,
+    .digit!,
+  },
+}
+
+/// String
+
+type String.Builder = iterative choice {
+  .add(String) => self,
+  .build => String,
+}
+
+type String.Reader<e> = recursive iterative/attempt choice {
+  .close => !,
+  .remainder => Result<e, String>,
+  .char => either {
+    .end Result<e, !>,
+    .char(Char) self,
+  },
+  .match(String.Pattern, String.Pattern) => either {
+    .end Result<e, !>,
+    .fail self/attempt,
+    .match(String, String) self,
+  },
+  .matchEnd(String.Pattern, String.Pattern) => either {
+    .end Result<e, !>,
+    .fail self/attempt,
+    .match(String, String)!,
+  },
+}
+
+type String.Pattern = recursive either {
+  .empty!,
+  .str String,
+  .one Char.Class,
+  .non Char.Class,
+  .length Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List<self>,
+  .and List<self>,
+  .or List<self>,
+}
+
+/// Console
+
+type Console = iterative choice {
+  .close => !,
+  .print(String) => self,
+}
+
+/// Storage
+
+type Storage.Error = String
+
+type Storage.PathInfo = box choice {
+  .name => String,
+  .absolute => String,
+}
+
+type Storage.FileInfo = box choice {
+  .path => Storage.PathInfo,
+  .size => Nat.Nat,
+  .readUTF8 => Result<Storage.Error, String.Reader<Storage.Error>>,
+}
+
+type Storage.DirInfo = recursive box choice {
+  .path => Storage.PathInfo,
+  .list => Result<Storage.Error, List<either {
+    .file Storage.FileInfo,
+    .dir self,
+  }>>,
+}

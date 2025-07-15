@@ -1,4 +1,0 @@
-type Bool = either {
-  .false!,
-  .true!,
-}
