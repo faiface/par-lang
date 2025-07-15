@@ -1,3 +1,54 @@
+/// Nat
+
+dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Mul   : [Nat, Nat] Nat
+dec Nat.Div   : [Nat, Nat] Nat
+dec Nat.Mod   : [Nat, Nat] Nat
+dec Nat.Min   : [Nat, Nat] Nat
+dec Nat.Max   : [Nat, Int] Nat
+dec Nat.Clamp : [Int] [Nat, Nat] Nat
+
+dec Nat.Equals  : [Nat, Nat] Bool
+dec Nat.Compare : [Nat, Nat] Ordering
+
+dec Nat.Repeat : [Nat] recursive either {
+  .end!,
+  .step self,
+}
+
+dec Nat.Range : [Nat, Nat] List<Nat>
+
+dec Nat.ToString : [Nat] String
+
+dec Nat.FromString : [String] either {
+  .ok Nat,
+  .err!,
+}
+
+/// Int
+
+dec Int.Add   : [Int, Int] Int
+dec Int.Sub   : [Int, Int] Int
+dec Int.Mul   : [Int, Int] Int
+dec Int.Div   : [Int, Int] Int
+dec Int.Mod   : [Int, Nat] Nat
+dec Int.Min   : [Int, Int] Int
+dec Int.Max   : [Int, Int] Int
+dec Int.Abs   : [Int] Nat
+dec Int.Clamp : [Int] [Int, Int] Int
+
+dec Int.Equals  : [Int, Int] Bool
+dec Int.Compare : [Int, Int] Ordering
+
+dec Int.Range : [Int, Int] List<Int>
+
+dec Int.ToString : [Int] String
+
+dec Int.FromString : [String] either {
+  .ok Int,
+  .err!,
+}
+
 /// Bool
 
 type Bool = either {
@@ -63,6 +114,10 @@ type Char.Class = either {
   },
 }
 
+dec Char.Equals : [Char, Char] Bool
+dec Char.Code   : [Char] Nat
+dec Char.Is     : [Char, Char.Class] Bool
+
 /// String
 
 type String.Builder = iterative choice {
@@ -102,12 +157,19 @@ type String.Pattern = recursive either {
   .or List<self>,
 }
 
+dec String.Builder : String.Builder
+dec String.Reader  : [String] String.Reader<either {}>
+
+dec String.Quote : [String] String
+
 /// Console
 
 type Console = iterative choice {
   .close => !,
   .print(String) => self,
 }
+
+dec Console.Open : Console
 
 /// Storage
 
@@ -131,3 +193,12 @@ type Storage.DirInfo = recursive box choice {
     .dir self,
   }>>,
 }
+
+dec Storage.Get : [String] Result<Storage.Error, either {
+  .file Storage.FileInfo,
+  .dir Storage.DirInfo,
+}>
+
+/// Debug
+
+dec Debug.Log : [String] !

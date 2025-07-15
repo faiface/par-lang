@@ -50,6 +50,9 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(Type::int(), Type::function(Type::int(), Type::int())),
                 |handle| Box::pin(int_max(handle)),
             ),
+            Definition::external("Abs", Type::function(Type::int(), Type::nat()), |handle| {
+                Box::pin(int_abs(handle))
+            }),
             Definition::external(
                 "Clamp",
                 Type::function(
@@ -58,9 +61,6 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(int_clamp(handle)),
             ),
-            Definition::external("Abs", Type::function(Type::int(), Type::nat()), |handle| {
-                Box::pin(int_abs(handle))
-            }),
             Definition::external(
                 "Equals",
                 Type::function(
