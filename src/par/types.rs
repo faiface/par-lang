@@ -3245,11 +3245,22 @@ impl TypeError {
             }
             Self::ParameterTypeMustBeKnown(span, param) => {
                 let labels = labels_from_span(code, span);
-                miette::miette!(
-                    labels = labels,
-                    "Type of parameter `{}` must be known.",
-                    param,
-                )
+
+                // filter out internal pattern matching variables
+                // issue #44: https://github.com/faiface/par-lang/issues/44
+                if param.is_match() {
+                    miette::miette!(
+                        labels = labels,
+                        help = "Consider adding a type annotation to the pattern, e.g., [(x : Type)y]",
+                        "Type annotation required for pattern matching"
+                    )
+                } else {
+                    miette::miette!(
+                        labels = labels,
+                        "Type of parameter `{}` must be known.",
+                        param,
+                    )
+                }
             }
             Self::CannotAssignFromTo(span, from_type, to_type) => {
                 let labels = labels_from_span(code, span);
