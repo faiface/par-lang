@@ -366,6 +366,7 @@ impl Playground {
             .save_file()
         {
             self.save_file(&path);
+            self.file_path = Some(path);
         }
     }
 
