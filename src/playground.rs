@@ -500,7 +500,8 @@ impl Playground {
                         pretty, checked, ..
                     })) = &mut self.compiled
                     {
-                        if let Ok(checked) = checked {
+                        //FIXME
+                        /*if let Ok(checked) = checked {
                             if let Some(NameWithType(_, typ)) = checked
                                 .type_on_hover
                                 .query(self.cursor_pos.0, self.cursor_pos.1)
@@ -512,7 +513,7 @@ impl Playground {
                                     ui.label(RichText::new(buf).code().color(green()));
                                 });
                             }
-                        }
+                        }*/
 
                         if self.show_compiled {
                             CodeEditor::default()
