@@ -330,6 +330,7 @@ dec String.Quote : [String] String
 type Console = iterative choice {
   .close =&gt; !,
   .print(String) =&gt; self,
+  .prompt(String) =&gt; (Result&lt;!, String&gt;) self,
 }
 
 dec Console.Open : Console
