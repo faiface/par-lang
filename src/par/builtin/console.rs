@@ -42,10 +42,11 @@ async fn console_open(mut handle: Handle) {
                 let prompt = handle.receive().string().await;
                 print!("{}", prompt);
                 let _ = stdout().flush();
+                let mut buf = String::new();
+                let result = stdin().read_line(&mut buf);
 
-                handle.send().concurrently(|mut handle| async {
-                    let mut buf = String::new();
-                    match stdin().read_line(&mut buf) {
+                handle.send().concurrently(|mut handle| async move {
+                    match result {
                         Ok(_) => {
                             let string = Substr::from(buf.trim_end_matches(&['\n', '\r']));
                             handle.signal(literal!("ok"));
