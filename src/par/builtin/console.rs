@@ -1,4 +1,9 @@
-use std::sync::Arc;
+use std::{
+    io::{stdin, stdout, Write},
+    sync::Arc,
+};
+
+use arcstr::{literal, Substr};
 
 use crate::{
     icombs::readback::Handle,
@@ -28,8 +33,30 @@ async fn console_open(mut handle: Handle) {
                 handle.break_();
                 break;
             }
+
             "print" => {
                 println!("{}", handle.receive().string().await);
+            }
+
+            "prompt" => {
+                let prompt = handle.receive().string().await;
+                print!("{}", prompt);
+                let _ = stdout().flush();
+
+                handle.send().concurrently(|mut handle| async {
+                    let mut buf = String::new();
+                    match stdin().read_line(&mut buf) {
+                        Ok(_) => {
+                            let string = Substr::from(buf.trim_end_matches(&['\n', '\r']));
+                            handle.signal(literal!("ok"));
+                            handle.provide_string(string);
+                        }
+                        Err(_) => {
+                            handle.signal(literal!("err"));
+                            handle.break_();
+                        }
+                    }
+                });
             }
             _ => unreachable!(),
         }
