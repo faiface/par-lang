@@ -202,10 +202,10 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
             }
 
             "char" => match remainder.char_indices().next().await {
-                Ok(Some((_, ch))) => {
+                Ok(Some((_, len, ch))) => {
                     handle.signal(literal!("char"));
                     handle.send().provide_char(ch);
-                    remainder.pop(ch.len_utf8());
+                    remainder.pop(len);
                 }
                 Ok(None) => {
                     handle.signal(literal!("end"));
@@ -245,8 +245,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                 let mut best_match = None;
                 let mut char_indices = remainder.char_indices();
                 loop {
-                    let (pos, ch) = match char_indices.next().await {
-                        Ok(Some((pos, ch))) => (pos, ch),
+                    let (pos, len, ch) = match char_indices.next().await {
+                        Ok(Some((pos, len, ch))) => (pos, len, ch),
                         Ok(None) => break,
                         Err(err) => {
                             handle.signal(literal!("end"));
@@ -260,12 +260,10 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                         (None, _) => break,
                         _ => {}
                     }
-                    m.advance(pos, ch);
+                    m.advance(pos, len, ch);
                     match (m.leftmost_accepting_split(), best_match) {
-                        (Some(ai), Some((bi, _))) if ai <= bi => {
-                            best_match = Some((ai, pos + ch.len_utf8()))
-                        }
-                        (Some(ai), None) => best_match = Some((ai, pos + ch.len_utf8())),
+                        (Some(ai), Some((bi, _))) if ai <= bi => best_match = Some((ai, pos + len)),
+                        (Some(ai), None) => best_match = Some((ai, pos + len)),
                         _ => {}
                     }
                 }
@@ -273,9 +271,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                 match best_match {
                     Some((i, j)) => {
                         handle.signal(literal!("match"));
-                        let matched = remainder.pop(j);
-                        handle.send().provide_string(matched.substr(..i));
-                        handle.send().provide_string(matched.substr(i..));
+                        handle.send().provide_string(remainder.pop(i));
+                        handle.send().provide_string(remainder.pop(j - i));
                     }
                     None => {
                         handle.signal(literal!("fail"));
@@ -306,8 +303,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
 
                 let mut char_indices = remainder.char_indices();
                 loop {
-                    let (pos, ch) = match char_indices.next().await {
-                        Ok(Some((pos, ch))) => (pos, ch),
+                    let (pos, len, ch) = match char_indices.next().await {
+                        Ok(Some((pos, len, ch))) => (pos, len, ch),
                         Ok(None) => break,
                         Err(err) => {
                             handle.signal(literal!("end"));
@@ -319,7 +316,7 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                     if m.accepts() == None {
                         break;
                     }
-                    m.advance(pos, ch);
+                    m.advance(pos, len, ch);
                 }
 
                 match m.leftmost_accepting_split() {
@@ -389,7 +386,7 @@ impl FileRemainder {
     async fn all(&mut self) -> io::Result<Substr> {
         let mut string = String::new();
         let mut char_indices = self.char_indices();
-        while let Some((_, ch)) = char_indices.next().await? {
+        while let Some((_, _, ch)) = char_indices.next().await? {
             string.push(ch);
         }
         Ok(Substr::from(string))
@@ -425,7 +422,7 @@ struct FileRemainderChars<'a> {
 }
 
 impl<'a> FileRemainderChars<'a> {
-    async fn next(&mut self) -> io::Result<Option<(usize, char)>> {
+    async fn next(&mut self) -> io::Result<Option<(usize, usize, char)>> {
         loop {
             while self.tmp.len() < 4 {
                 match self.bytes.next().await? {
@@ -441,12 +438,12 @@ impl<'a> FileRemainderChars<'a> {
                 if let Ok(s) = std::str::from_utf8(&self.tmp[..len]) {
                     if let Some(c) = s.chars().next() {
                         self.tmp.drain(..len);
-                        return Ok(Some((pos, c)));
+                        return Ok(Some((pos, len, c)));
                     }
                 }
             }
             self.tmp.remove(0);
-            return Ok(Some((pos, char::REPLACEMENT_CHARACTER)));
+            return Ok(Some((pos, 1, char::REPLACEMENT_CHARACTER)));
         }
     }
 }

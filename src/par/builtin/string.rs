@@ -99,7 +99,7 @@ async fn string_reader(mut handle: Handle) {
                         (None, _) => break,
                         _ => {}
                     }
-                    m.advance(pos, ch);
+                    m.advance(pos, ch.len_utf8(), ch);
                     match (m.leftmost_accepting_split(), best_match) {
                         (Some(ai), Some((bi, _))) if ai <= bi => {
                             best_match = Some((ai, pos + ch.len_utf8()))
@@ -137,7 +137,7 @@ async fn string_reader(mut handle: Handle) {
                     if m.accepts() == None {
                         break;
                     }
-                    m.advance(pos, ch);
+                    m.advance(pos, ch.len_utf8(), ch);
                 }
 
                 match m.leftmost_accepting_split() {
@@ -268,8 +268,8 @@ impl Machine {
         self.inner.accepts(&self.pattern)
     }
 
-    pub(crate) fn advance(&mut self, pos: usize, ch: char) {
-        self.inner.advance(&self.pattern, pos, ch);
+    pub(crate) fn advance(&mut self, pos: usize, len: usize, ch: char) {
+        self.inner.advance(&self.pattern, pos, len, ch);
     }
 
     pub(crate) fn leftmost_accepting_split(&self) -> Option<usize> {
@@ -381,7 +381,7 @@ impl MachineInner {
         }
     }
 
-    fn advance(&mut self, pattern: &Pattern, pos: usize, ch: char) {
+    fn advance(&mut self, pattern: &Pattern, pos: usize, len: usize, ch: char) {
         match (pattern, &mut self.state) {
             (_, State::Halt) => {}
 
@@ -421,13 +421,13 @@ impl MachineInner {
             }
 
             (Pattern::Concat(p1, p2), State::Concat(m1, heap)) => {
-                m1.advance(p1, pos, ch);
+                m1.advance(p1, pos, len, ch);
                 for m2 in heap.iter_mut() {
-                    m2.advance(p2, pos, ch);
+                    m2.advance(p2, pos, len, ch);
                 }
                 heap.retain(|m2| m2.state != State::Halt);
                 if m1.accepts(p1) == Some(true) {
-                    heap.push(Self::start(p2, pos + ch.len_utf8()));
+                    heap.push(Self::start(p2, pos + len));
                 }
                 heap.sort_by_key(|m| m.start);
                 heap.sort();
@@ -438,16 +438,16 @@ impl MachineInner {
             }
 
             (Pattern::And(p1, p2), State::Pair(m1, m2)) => {
-                m1.advance(p1, pos, ch);
-                m2.advance(p2, pos, ch);
+                m1.advance(p1, pos, len, ch);
+                m2.advance(p2, pos, len, ch);
                 if m1.state == State::Halt || m2.state == State::Halt {
                     self.state = State::Halt;
                 }
             }
 
             (Pattern::Or(p1, p2), State::Pair(m1, m2)) => {
-                m1.advance(p1, pos, ch);
-                m2.advance(p2, pos, ch);
+                m1.advance(p1, pos, len, ch);
+                m2.advance(p2, pos, len, ch);
                 if m1.state == State::Halt && m2.state == State::Halt {
                     self.state = State::Halt;
                 }
@@ -455,7 +455,7 @@ impl MachineInner {
 
             (Pattern::Repeat(p), State::Init) => {
                 let mut m = Self::start(p, pos);
-                m.advance(p, pos, ch);
+                m.advance(p, pos, len, ch);
                 self.state = State::Heap(vec![m])
             }
             (Pattern::Repeat(p) | Pattern::Repeat1(p), State::Heap(heap)) => {
@@ -463,7 +463,7 @@ impl MachineInner {
                     heap.push(Self::start(p, pos));
                 }
                 for m in heap.iter_mut() {
-                    m.advance(p, pos, ch);
+                    m.advance(p, pos, len, ch);
                 }
                 heap.retain(|m| m.state != State::Halt);
                 heap.sort_by_key(|m| m.start);
