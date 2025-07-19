@@ -7,6 +7,7 @@ use colored::Colorize;
 use eframe::egui;
 use futures::task::SpawnExt;
 use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -55,13 +56,33 @@ fn main() {
     }
 }
 
+/// String to save on crash. Used by the playground to avoid losing everything on panic.
+static CRASH_STR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 fn run_playground(file: Option<PathBuf>) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
         ..Default::default()
     };
 
+    // Set hook for pretty-printer on error.
     par::parse::set_miette_hook();
+    // Add hook to try printing current playground contents to stderr on error.
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let mut stderr = std::io::stderr().lock();
+        if let Ok(crash_str) = CRASH_STR.lock() {
+            if let Some(crash_str) = &*crash_str {
+                // Ignore the error. We are already panicking.
+                let _ = write!(
+                    stderr,
+                    "Panic in progress. This is a bug, please file an issue containing your code:\n```par\n{}\n```",
+                    crash_str
+                );
+            }
+        }
+        hook(info)
+    }));
 
     eframe::run_native(
         "⅋layground",

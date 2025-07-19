@@ -212,6 +212,11 @@ impl Playground {
 
 impl eframe::App for Playground {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Try to backup current playground code contents in case of panic.
+        if let Ok(e) = &mut crate::CRASH_STR.try_lock() {
+            **e = Some(self.code.clone());
+        }
+
         // Set overall UI style based on theme mode
         let system_dark = ctx
             .input(|ri| ri.raw.system_theme.map(|t| t == egui::Theme::Dark))
