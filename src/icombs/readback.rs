@@ -302,6 +302,13 @@ impl Handle {
         locked.link(Tree::Era, self.tree.unwrap());
         locked.notify_reducer();
     }
+
+    pub fn link(self, handle: Handle) {
+        let net = self.net.clone();
+        let mut locked = net.lock().expect("lock failed");
+        locked.link(handle.tree.unwrap(), self.tree.unwrap());
+        locked.notify_reducer();
+    }
 }
 
 impl TypedHandle {
