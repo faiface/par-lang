@@ -4,17 +4,27 @@ use crate::playground::Compiled;
 use crate::spawn::TokioSpawn;
 use colored::Colorize;
 use futures::task::SpawnExt;
+use scopeguard::defer;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+#[derive(Debug)]
+enum TestStatus {
+    Passed,
+    Failed(String),
+    CompileError(String),
+    TypeError,
+    ReadError,
+    NotFound,
+}
 
 #[derive(Debug)]
 struct TestResult {
     name: String,
-    passed: bool,
-    duration: std::time::Duration,
-    error: Option<String>,
+    duration: Duration,
+    status: TestStatus,
 }
 
 pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
@@ -43,7 +53,10 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
         print_test_results(&test_file, &results);
 
         total_tests += results.len();
-        passed_tests += results.iter().filter(|r| r.passed).count();
+        passed_tests += results
+            .iter()
+            .filter(|r| matches!(r.status, TestStatus::Passed))
+            .count();
     }
 
     let duration = start_time.elapsed();
@@ -75,14 +88,12 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let Ok(code) = fs::read_to_string(file) else {
         results.push(TestResult {
             name: file.to_string_lossy().to_string(),
-            passed: false,
-            duration: std::time::Duration::ZERO,
-            error: Some("Could not read file".to_string()),
+            duration: Duration::ZERO,
+            status: TestStatus::ReadError,
         });
         return results;
     };
 
-    // Import builtin modules including Test module
     let code_with_imports = code.clone();
 
     let compiled = match stacker::grow(32 * 1024 * 1024, || {
@@ -92,12 +103,11 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         Err(err) => {
             results.push(TestResult {
                 name: file.to_string_lossy().to_string(),
-                passed: false,
-                duration: std::time::Duration::ZERO,
-                error: Some(format!(
-                    "Compilation failed: {}",
+                duration: Duration::ZERO,
+                status: TestStatus::CompileError(
                     err.display(Arc::from(code_with_imports.as_str()))
-                )),
+                        .to_string(),
+                ),
             });
             return results;
         }
@@ -106,9 +116,8 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let Ok(checked) = compiled.checked else {
         results.push(TestResult {
             name: file.to_string_lossy().to_string(),
-            passed: false,
-            duration: std::time::Duration::ZERO,
-            error: Some("Type check failed".to_string()),
+            duration: Duration::ZERO,
+            status: TestStatus::TypeError,
         });
         return results;
     };
@@ -116,7 +125,6 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let program = checked.program;
     let ic_compiled = checked.ic_compiled.unwrap();
 
-    // Find all test definitions
     for (name, _) in &program.definitions {
         // Look for definitions that start with Test (case-sensitive)
         if name.primary.starts_with("Test") && name.primary != "Test" {
@@ -140,26 +148,25 @@ fn run_single_test(
     test_name: String,
 ) -> TestResult {
     let start = Instant::now();
-
-    // set up a panic hook to intercept test assertion failures
     let panic_info = Arc::new(Mutex::new(None));
     let panic_info_clone = Arc::clone(&panic_info);
 
     let original_hook = std::panic::take_hook();
+    defer! {
+        std::panic::set_hook(original_hook);
+    }
     std::panic::set_hook(Box::new(move |info| {
         if let Some(s) = info.payload().downcast_ref::<String>() {
             if s.contains("Test assertion failed") {
                 *panic_info_clone.lock().unwrap() = Some(s.clone());
-                return; // don't call the original hook for test failures
+                return;
             }
         } else if let Some(s) = info.payload().downcast_ref::<&str>() {
             if s.contains("Test assertion failed") {
                 *panic_info_clone.lock().unwrap() = Some(s.to_string());
-                return; // don't call the original hook for test failures
+                return;
             }
         }
-        // can't call original hook due to move.
-        // just print to stderr
         eprintln!("{}", info);
     }));
 
@@ -170,14 +177,13 @@ fn run_single_test(
             .iter()
             .find(|(n, _)| n.primary == test_name)
             .map(|(n, _)| n)
-            .unwrap();
+            .ok_or_else(|| "Definition not found")?;
 
-        let ty = ic_compiled.get_type_of(name).unwrap();
+        let ty = ic_compiled.get_type_of(name).ok_or("Type not found")?;
 
-        // TODO: For PoC, we expect tests to return TestResult type
-        // just check if it runs without error for now
         let mut net = ic_compiled.create_net();
-        let child_net = ic_compiled.get_with_name(name).unwrap();
+        let child_net = ic_compiled.get_with_name(name).ok_or("Net not found")?;
+
         let tree = net.inject_net(child_net).with_type(ty.clone());
 
         let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
@@ -187,10 +193,9 @@ fn run_single_test(
         let readback_result = spawner
             .spawn_with_handle(async move {
                 let handle = TypedHandle::from_wrapper(type_defs, net_wrapper, tree);
-
                 handle.readback().await
             })
-            .unwrap()
+            .map_err(|_| "Spawn failed")?
             .await;
 
         reducer_future.await;
@@ -201,21 +206,20 @@ fn run_single_test(
         }
     });
 
-    std::panic::set_hook(original_hook);
-
     let duration = start.elapsed();
-
     let final_result = if let Some(panic_msg) = panic_info.lock().unwrap().take() {
-        Err(panic_msg)
+        TestStatus::Failed(panic_msg)
     } else {
-        result
+        match result {
+            Ok(()) => TestStatus::Passed,
+            Err(msg) => TestStatus::Failed(msg),
+        }
     };
 
     TestResult {
         name: test_name,
-        passed: final_result.is_ok(),
         duration,
-        error: final_result.err(),
+        status: final_result,
     }
 }
 
@@ -226,17 +230,21 @@ fn print_test_results(file: &Path, results: &[TestResult]) {
     let file_name = file.file_name().unwrap().to_string_lossy();
     println!("{} {}", PASSED.green(), file_name.bright_white());
 
+    // TODO: consider to use Cow when we need to structure the output more
     for result in results {
-        let icon = if result.passed {
-            PASSED.green()
-        } else {
-            FAILED.red()
+        let (icon, error_str): (colored::ColoredString, Option<String>) = match &result.status {
+            TestStatus::Passed => (PASSED.green(), None),
+            TestStatus::Failed(msg) => (FAILED.red(), Some(msg.clone())),
+            TestStatus::CompileError(msg) => (FAILED.red(), Some(msg.clone())),
+            TestStatus::TypeError => (FAILED.red(), Some("Type check failed".to_string())),
+            TestStatus::ReadError => (FAILED.red(), Some("File read error".to_string())),
+            TestStatus::NotFound => (FAILED.red(), Some("Test definition not found".to_string())),
         };
-        let duration = format!("({:.3}s)", result.duration.as_secs_f32()).dimmed();
 
+        let duration = format!("({:.3}s)", result.duration.as_secs_f32()).dimmed();
         println!("  {} {} {}", icon, result.name, duration);
 
-        if let Some(error) = &result.error {
+        if let Some(error) = error_str {
             println!("    {}", error.red());
         }
     }
@@ -271,55 +279,70 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn test_result_creation() {
+    fn test_result_passed() {
         let result = TestResult {
-            name: "test_example".to_string(),
-            passed: true,
-            duration: Duration::from_millis(100),
-            error: None,
+            name: "test_passed".to_string(),
+            duration: Duration::from_millis(123),
+            status: TestStatus::Passed,
         };
 
-        assert_eq!(result.name, "test_example");
-        assert!(result.passed);
-        assert_eq!(result.duration.as_millis(), 100);
-        assert!(result.error.is_none());
+        assert_eq!(result.name, "test_passed");
+        assert!(matches!(result.status, TestStatus::Passed));
+        assert_eq!(result.duration.as_millis(), 123);
     }
 
     #[test]
-    fn test_failed_result() {
+    fn test_result_failed_with_message() {
         let result = TestResult {
             name: "test_failed".to_string(),
-            passed: false,
             duration: Duration::from_millis(50),
-            error: Some("Assertion failed".to_string()),
+            status: TestStatus::Failed("Assertion failed".to_string()),
         };
 
-        assert!(!result.passed);
-        assert_eq!(result.error.as_ref().unwrap(), "Assertion failed");
+        match result.status {
+            TestStatus::Failed(msg) => {
+                assert_eq!(msg, "Assertion failed");
+            }
+            _ => panic!("Expected TestStatus::Failed"),
+        }
     }
 
     #[test]
-    fn test_find_test_files_empty() {
-        // When no test directory exists, should return empty vec
-        let files = find_test_files();
-        // This might not be empty if tests directory exists, but that's okay
-        assert!(
-            files.is_empty()
-                || files
-                    .iter()
-                    .all(|f| f.extension().map(|e| e == "par").unwrap_or(false))
-        );
+    fn test_compile_error_status() {
+        let result = TestResult {
+            name: "compile_error".to_string(),
+            duration: Duration::ZERO,
+            status: TestStatus::CompileError("Syntax error".to_string()),
+        };
+
+        match result.status {
+            TestStatus::CompileError(msg) => {
+                assert_eq!(msg, "Syntax error");
+            }
+            _ => panic!("Expected TestStatus::CompileError"),
+        }
+    }
+
+    #[test]
+    fn test_type_error_status() {
+        let result = TestResult {
+            name: "type_error".to_string(),
+            duration: Duration::ZERO,
+            status: TestStatus::TypeError,
+        };
+
+        assert!(matches!(result.status, TestStatus::TypeError));
     }
 
     #[test]
     fn test_print_summary_all_passed() {
-        // This test just ensures the function doesn't panic
-        print_summary(5, 5, Duration::from_secs(1));
+        // Smoke test: should not panic
+        print_summary(3, 3, Duration::from_secs(1));
     }
 
     #[test]
     fn test_print_summary_some_failed() {
-        // This test just ensures the function doesn't panic
-        print_summary(5, 3, Duration::from_millis(500));
+        // Smoke test: should not panic
+        print_summary(5, 2, Duration::from_millis(500));
     }
 }
