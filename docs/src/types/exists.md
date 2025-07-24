@@ -62,7 +62,7 @@ dropping a value of that type.
 Here’s how we can construct a value of `DropMe`:
 
 ```par
-def Drop42: DropMe = (type Int) (42) choice {
+def Drop42: DropMe = (type Int) (42) case {
   .drop(n) => !,  // `n`, being an `Int`, is dropped by being unused
 }
 ```
