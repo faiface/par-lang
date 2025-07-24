@@ -6,7 +6,7 @@ use colored::Colorize;
 use futures::task::SpawnExt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -141,6 +141,28 @@ fn run_single_test(
 ) -> TestResult {
     let start = Instant::now();
 
+    // set up a panic hook to intercept test assertion failures
+    let panic_info = Arc::new(Mutex::new(None));
+    let panic_info_clone = Arc::clone(&panic_info);
+
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(s) = info.payload().downcast_ref::<String>() {
+            if s.contains("Test assertion failed") {
+                *panic_info_clone.lock().unwrap() = Some(s.clone());
+                return; // don't call the original hook for test failures
+            }
+        } else if let Some(s) = info.payload().downcast_ref::<&str>() {
+            if s.contains("Test assertion failed") {
+                *panic_info_clone.lock().unwrap() = Some(s.to_string());
+                return; // don't call the original hook for test failures
+            }
+        }
+        // can't call original hook due to move.
+        // just print to stderr
+        eprintln!("{}", info);
+    }));
+
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let result = runtime.block_on(async {
         let name = program
@@ -152,8 +174,8 @@ fn run_single_test(
 
         let ty = ic_compiled.get_type_of(name).unwrap();
 
-        // For PoC, we expect tests to return TestResult type
-        // For now, we'll just check if it runs without error
+        // TODO: For PoC, we expect tests to return TestResult type
+        // just check if it runs without error for now
         let mut net = ic_compiled.create_net();
         let child_net = ic_compiled.get_with_name(name).unwrap();
         let tree = net.inject_net(child_net).with_type(ty.clone());
@@ -179,25 +201,36 @@ fn run_single_test(
         }
     });
 
+    std::panic::set_hook(original_hook);
+
     let duration = start.elapsed();
+
+    let final_result = if let Some(panic_msg) = panic_info.lock().unwrap().take() {
+        Err(panic_msg)
+    } else {
+        result
+    };
 
     TestResult {
         name: test_name,
-        passed: result.is_ok(),
+        passed: final_result.is_ok(),
         duration,
-        error: result.err(),
+        error: final_result.err(),
     }
 }
 
+const PASSED: &str = "✓";
+const FAILED: &str = "✗";
+
 fn print_test_results(file: &Path, results: &[TestResult]) {
     let file_name = file.file_name().unwrap().to_string_lossy();
-    println!("{} {}", "✓".green(), file_name.bright_white());
+    println!("{} {}", PASSED.green(), file_name.bright_white());
 
     for result in results {
         let icon = if result.passed {
-            "✓".green()
+            PASSED.green()
         } else {
-            "✗".red()
+            FAILED.red()
         };
         let duration = format!("({:.3}s)", result.duration.as_secs_f32()).dimmed();
 

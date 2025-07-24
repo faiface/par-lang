@@ -24,6 +24,21 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     }
 }
 
-async fn test_assert(_handle: Handle) {
-    todo!("test_assert not implemented yet");
+async fn test_assert(mut handle: Handle) {
+    // receive the boolean value from the handle first
+    let mut bool_handle = handle.receive();
+
+    match bool_handle.case().await.as_str() {
+        "false" => {
+            handle.break_();
+            panic!("Test assertion failed");
+        }
+        "true" => {
+            handle.break_();
+        }
+        variant => panic!(
+            "Test.Assert expected Bool, got unexpected variant: {}",
+            variant
+        ),
+    }
 }

@@ -1,0 +1,34 @@
+// Example demonstrating Par test framework usage
+
+// Simple addition function
+def Add: [Nat, Nat] Nat = [a, b]
+  Nat.Add(a, b)
+
+// Multiplication function  
+def Mul: [Nat, Nat] Nat = [a, b]
+  Nat.Mul(a, b)
+
+// Tests - any definition starting with "Test" will be run by `par-lang test`
+
+// Test that addition is commutative
+def TestAddCommutative: ! = 
+  Test.Assert(Nat.Equals(Add(2, 3), Add(3, 2)))
+
+// Test addition identity
+def TestAddIdentity: ! = 
+  Test.Assert(Nat.Equals(Add(5, 0), 5))
+
+// Test multiplication
+def TestMultiplication: ! = 
+  Test.Assert(Nat.Equals(Mul(3, 4), 12))
+
+// This test should fail when Test.Assert properly reads Bool
+def TestFailingExample: ! = 
+  Test.Assert(Nat.Equals(1, 2))
+
+// Main program (not run during testing)
+def Program: ! = Console.Open
+  .print("This is the main program")
+  .print("Run with: par-lang run TestExample.par")
+  .print("Test with: par-lang test TestExample.par")
+  .close
