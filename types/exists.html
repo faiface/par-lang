@@ -202,7 +202,7 @@ variable.</p>
 <p>The payload here is a pair: a value of the hidden type, plus a <a href="./choice.html">choice</a> with just one operation:
 dropping a value of that type.</p>
 <p>Here’s how we can construct a value of <code>DropMe</code>:</p>
-<pre><code class="language-par">def Drop42: DropMe = (type Int) (42) choice {
+<pre><code class="language-par">def Drop42: DropMe = (type Int) (42) case {
   .drop(n) =&gt; !,  // `n`, being an `Int`, is dropped by being unused
 }
 </code></pre>
