@@ -37,3 +37,27 @@ def Program: ! = do {
   fib.close
   console.close
 } in !
+
+def TestNthFibZero: ! =
+  Test.Assert(Nat.Equals(NthFib(0), 1))
+
+def TestNthFibOne: ! =
+  Test.Assert(Nat.Equals(NthFib(1), 1))
+
+def TestNthFibTwo: ! =
+  Test.Assert(Nat.Equals(NthFib(2), 2))
+
+def TestNthFibThree: ! =
+  Test.Assert(Nat.Equals(NthFib(3), 3))
+
+def TestNthFibFour: ! =
+  Test.Assert(Nat.Equals(NthFib(4), 5))
+
+def TestNthFibFive: ! =
+  Test.Assert(Nat.Equals(NthFib(5), 8))
+
+def TestNthFibSix: ! =
+  Test.Assert(Nat.Equals(NthFib(6), 13))
+
+def TestNthFibTen: ! =
+  Test.Assert(Nat.Equals(NthFib(10), 89))

@@ -1,0 +1,25 @@
+def Add: [Nat, Nat] Nat = [a, b]
+  Nat.Add(a, b)
+
+def Mul: [Nat, Nat] Nat = [a, b]
+  Nat.Mul(a, b)
+
+// Tests
+
+def TestAddCommutative: ! = 
+  Test.Assert(Nat.Equals(Add(2, 3), Add(3, 2)))
+
+def TestAddIdentity: ! = 
+  Test.Assert(Nat.Equals(Add(5, 0), 5))
+
+def TestMultiplication: ! = 
+  Test.Assert(Nat.Equals(Mul(3, 4), 12))
+
+def TestFailingExample: ! = 
+  Test.Assert(Nat.Equals(1, 2))
+
+def Program: ! = Console.Open
+  .print("This is the main program")
+  .print("Run with: par-lang run TestExample.par")
+  .print("Test with: par-lang test TestExample.par")
+  .close
