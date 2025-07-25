@@ -1,6 +1,7 @@
 pub mod char_;
 pub mod console;
 pub mod debug;
+pub mod future;
 pub mod int;
 pub mod list;
 pub mod nat;
@@ -23,4 +24,5 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import("Debug", debug::external_module());
     module.import("Console", console::external_module());
     module.import("Storage", storage::external_module());
+    module.import("Future", future::external_module());
 }

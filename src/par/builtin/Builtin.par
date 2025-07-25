@@ -203,3 +203,80 @@ dec Storage.Get : [String] Result<Storage.Error, either {
 /// Debug
 
 dec Debug.Log : [String] !
+
+
+/// Select
+
+type Promise<t> = iterative/promise choice {
+  .syn => either {
+    .syn_ack choice {
+      .ack => t,
+      .rst => self/promise
+    },
+  },
+  .swap => recursive/future either {
+    .syn choice {
+      .syn_ack => either {
+        .ack t,
+        .rst self/future
+      }
+    },
+  }
+}
+
+type Future<t> = recursive/future either {
+  .syn choice {
+    .syn_ack => either {
+      .ack t,
+      .rst self/future
+    }
+  },
+  .swap iterative/promise choice {
+    .syn => either {
+      .syn_ack choice {
+        .ack => t,
+        .rst => self/promise
+      },
+    },
+  }
+}
+
+dec Promise.ToFuture: [type t][Promise<t>]Future<t>
+def Promise.ToFuture = [type t][promise]promise.swap
+
+dec Future.Wrap: [type t][t]Future<t>
+def Future.Wrap = [type t][a]
+  .syn case {
+    .syn_ack => .ack a,
+  }
+
+dec Future.Await: [type a][Future<a>]a
+def Future.Await = [type a][a]
+  chan res {
+    a.begin.case {
+      .syn => {
+        a.syn_ack.case {
+          .ack => {
+            res <> a
+          },
+          .rst => {
+            a.loop
+          }
+        }
+      },
+      .swap => {
+        a.syn.case {
+          .syn_ack => {
+            res <> a.ack
+          }
+        }
+      }
+    }
+  }
+
+type Future.Select = [type a, b][Future<a>, Future<b>] either {
+  .left (a, Future<b>)!,
+  .right (Future<a>, b)!,
+}
+
+dec Future.Select: Future.Select
