@@ -2,25 +2,43 @@ use std::sync::Arc;
 
 use crate::{
     icombs::readback::Handle,
+    location::Span,
     par::{
+        language::GlobalName,
         process,
-        program::{Definition, Module},
+        program::{Definition, Module, TypeDef},
         types::Type,
     },
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
-        type_defs: vec![],
+        type_defs: vec![
+            TypeDef {
+                span: Span::None,
+                name: GlobalName::external(Some("Test"), "Test"),
+                params: vec![],
+                typ: Type::iterative_box_choice(vec![(
+                    "assert",
+                    Type::function(
+                        Type::string(),
+                        Type::function(Type::bool(), Type::self_(None)),
+                    ),
+                )]),
+            },
+        ],
         declarations: vec![],
-        definitions: vec![Definition::external(
-            "Assert",
-            Type::function(
-                Type::either(vec![("false", Type::break_()), ("true", Type::break_())]),
-                Type::break_(),
+        definitions: vec![
+            Definition::external(
+                "Assert",
+                Type::function(
+                    Type::either(vec![("false", Type::break_()), ("true", Type::break_())]),
+                    Type::break_(),
+                ),
+                |handle| Box::pin(test_assert(handle)),
             ),
-            |handle| Box::pin(test_assert(handle)),
-        )],
+            // TODO: add the Test provider function here
+        ],
     }
 }
 

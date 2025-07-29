@@ -226,6 +226,26 @@ impl Type {
             }),
         )
     }
+
+    pub fn bool() -> Self {
+        Self::either(vec![("false", Self::break_()), ("true", Self::break_())])
+    }
+
+    pub fn tuple(types: Vec<Self>) -> Self {
+        match types.len() {
+            0 => Self::break_(),
+            1 => types.into_iter().next().unwrap(),
+            _ => {
+                let mut result = types.into_iter().rev();
+                let last = result.next().unwrap();
+                result.fold(last, |acc, t| Self::pair(t, acc))
+            }
+        }
+    }
+
+    pub fn iterative_box_choice(branches: Vec<(&'static str, Self)>) -> Self {
+        Self::iterative(None, Self::box_(Self::choice(branches)))
+    }
 }
 
 #[derive(Clone, Debug)]
