@@ -1,23 +1,26 @@
-use crate::icombs::readback::{TypedHandle, TypedReadback};
-use crate::par::parse;
+use crate::icombs::{
+    readback::{TypedHandle, TypedReadback},
+    IcCompiled,
+};
+use crate::par::{language, parse, program, types};
 use crate::playground::Compiled;
 use crate::spawn::TokioSpawn;
+use crate::test_assertion::{create_assertion_channel, AssertionResult};
 use colored::Colorize;
 use futures::task::SpawnExt;
-use scopeguard::defer;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug)]
 enum TestStatus {
     Passed,
     Failed(String),
+    FailedWithAssertions(Vec<AssertionResult>),
     CompileError(String),
     TypeError,
     ReadError,
-    NotFound,
 }
 
 #[derive(Debug)]
@@ -148,28 +151,6 @@ fn run_single_test(
     test_name: String,
 ) -> TestResult {
     let start = Instant::now();
-    let panic_info = Arc::new(Mutex::new(None));
-    let panic_info_clone = Arc::clone(&panic_info);
-
-    let original_hook = std::panic::take_hook();
-    defer! {
-        std::panic::set_hook(original_hook);
-    }
-    std::panic::set_hook(Box::new(move |info| {
-        if let Some(s) = info.payload().downcast_ref::<String>() {
-            if s.contains("Test assertion failed") {
-                *panic_info_clone.lock().unwrap() = Some(s.clone());
-                return;
-            }
-        } else if let Some(s) = info.payload().downcast_ref::<&str>() {
-            if s.contains("Test assertion failed") {
-                *panic_info_clone.lock().unwrap() = Some(s.to_string());
-                return;
-            }
-        }
-        eprintln!("{}", info);
-    }));
-
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let result = runtime.block_on(async {
         let name = program
@@ -181,45 +162,84 @@ fn run_single_test(
 
         let ty = ic_compiled.get_type_of(name).ok_or("Type not found")?;
 
-        let mut net = ic_compiled.create_net();
-        let child_net = ic_compiled.get_with_name(name).ok_or("Net not found")?;
-
-        let tree = net.inject_net(child_net).with_type(ty.clone());
-
-        let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
-
-        let type_defs = program.type_defs.clone();
-        let spawner = Arc::new(TokioSpawn::new());
-        let readback_result = spawner
-            .spawn_with_handle(async move {
-                let handle = TypedHandle::from_wrapper(type_defs, net_wrapper, tree);
-                handle.readback().await
-            })
-            .map_err(|_| "Spawn failed")?
-            .await;
-
-        reducer_future.await;
-
-        match readback_result {
-            TypedReadback::Break => Ok(()),
-            _ => Err("Test did not return expected type".to_string()),
-        }
+        run_test_with_test_type(program, ic_compiled, name, &ty).await
     });
 
     let duration = start.elapsed();
-    let final_result = if let Some(panic_msg) = panic_info.lock().unwrap().take() {
-        TestStatus::Failed(panic_msg)
-    } else {
-        match result {
-            Ok(()) => TestStatus::Passed,
-            Err(msg) => TestStatus::Failed(msg),
-        }
+    let final_result = match result {
+        Ok(status) => status,
+        Err(msg) => TestStatus::Failed(msg),
     };
 
     TestResult {
         name: test_name,
         duration,
         status: final_result,
+    }
+}
+
+async fn run_test_with_test_type(
+    program: &crate::par::program::CheckedModule,
+    ic_compiled: &IcCompiled,
+    name: &crate::par::language::GlobalName,
+    ty: &crate::par::types::Type,
+) -> Result<TestStatus, String> {
+    let (sender, receiver) = create_assertion_channel();
+
+    let mut net = ic_compiled.create_net();
+    let child_net = ic_compiled.get_with_name(name).ok_or("Net not found")?;
+
+    let tree = net.inject_net(child_net).with_type(ty.clone());
+
+    let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
+
+    let type_defs = program.type_defs.clone();
+    let spawner = Arc::new(TokioSpawn::new());
+    let sender_clone = sender.clone();
+
+    // Spawn the test function execution
+    let test_future = spawner
+        .spawn_with_handle(async move {
+            let handle = TypedHandle::from_wrapper(type_defs, net_wrapper, tree);
+
+            // The test function expects [Test.Test] !
+            // We need to send a Test instance
+            let (test_handle, continue_handle) = handle.send();
+
+            // Convert TypedHandle to Handle and provide Test instance directly
+            let untyped_handle = test_handle.into_untyped();
+
+            // Provide the Test instance with the sender directly
+            use crate::par::builtin::test::provide_test;
+            provide_test(untyped_handle, sender_clone);
+
+            // Continue with the test execution
+            continue_handle.readback().await
+        })
+        .map_err(|_| "Spawn failed")?;
+
+    // collect results from the receiver
+    let mut results = Vec::new();
+    let readback_result = test_future.await;
+    reducer_future.await;
+
+    while let Ok(result) = receiver.try_recv() {
+        results.push(result);
+    }
+
+    match readback_result {
+        TypedReadback::Break => {
+            let failed_assertions: Vec<_> = results.iter().filter(|r| !r.passed).cloned().collect();
+
+            if failed_assertions.is_empty() && !results.is_empty() {
+                Ok(TestStatus::Passed)
+            } else if !failed_assertions.is_empty() {
+                Ok(TestStatus::FailedWithAssertions(failed_assertions))
+            } else {
+                Err("Test completed but no assertions were made".to_string())
+            }
+        }
+        _ => Err("Test did not return expected type".to_string()),
     }
 }
 
@@ -232,22 +252,49 @@ fn print_test_results(file: &Path, results: &[TestResult]) {
 
     // TODO: consider to use Cow when we need to structure the output more
     for result in results {
-        let (icon, error_str): (colored::ColoredString, Option<String>) = match &result.status {
+        let (icon, error_info): (colored::ColoredString, Option<ErrorInfo>) = match &result.status {
             TestStatus::Passed => (PASSED.green(), None),
-            TestStatus::Failed(msg) => (FAILED.red(), Some(msg.clone())),
-            TestStatus::CompileError(msg) => (FAILED.red(), Some(msg.clone())),
-            TestStatus::TypeError => (FAILED.red(), Some("Type check failed".to_string())),
-            TestStatus::ReadError => (FAILED.red(), Some("File read error".to_string())),
-            TestStatus::NotFound => (FAILED.red(), Some("Test definition not found".to_string())),
+            TestStatus::Failed(msg) => (FAILED.red(), Some(ErrorInfo::Message(msg.clone()))),
+            TestStatus::FailedWithAssertions(assertions) => (
+                FAILED.red(),
+                Some(ErrorInfo::Assertions(assertions.clone())),
+            ),
+            TestStatus::CompileError(msg) => (FAILED.red(), Some(ErrorInfo::Message(msg.clone()))),
+            TestStatus::TypeError => (
+                FAILED.red(),
+                Some(ErrorInfo::Message("Type check failed".to_string())),
+            ),
+            TestStatus::ReadError => (
+                FAILED.red(),
+                Some(ErrorInfo::Message("File read error".to_string())),
+            ),
         };
 
         let duration = format!("({:.3}s)", result.duration.as_secs_f32()).dimmed();
         println!("  {} {} {}", icon, result.name, duration);
 
-        if let Some(error) = error_str {
-            println!("    {}", error.red());
+        match error_info {
+            Some(ErrorInfo::Message(msg)) => {
+                println!("    {}", msg.red());
+            }
+            Some(ErrorInfo::Assertions(assertions)) => {
+                for assertion in assertions {
+                    println!(
+                        "    {} {}: {}",
+                        FAILED.red(),
+                        assertion.description,
+                        "assertion failed".red()
+                    );
+                }
+            }
+            None => {}
         }
     }
+}
+
+enum ErrorInfo {
+    Message(String),
+    Assertions(Vec<AssertionResult>),
 }
 
 fn print_summary(total: usize, passed: usize, duration: std::time::Duration) {
