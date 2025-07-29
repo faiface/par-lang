@@ -2315,16 +2315,24 @@ impl Context {
                 )
             }
 
-            Command::Signal(chosen, process) => {
-                let (process, then_type) = self.infer_process(process, subject)?;
+            Command::Signal(_chosen, _process) => {
+                return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                    span.clone(),
+                    subject.clone(),
+                ));
+                /*let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Signal(chosen.clone(), process),
-                    Type::Either(span.clone(), BTreeMap::from([(chosen.clone(), then_type)])),
-                )
+                    Type::Choice(span.clone(), BTreeMap::from([(chosen.clone(), then_type)])),
+                )*/
             }
 
-            Command::Case(branches, processes) => {
-                let original_context = self.clone();
+            Command::Case(_branches, _processes) => {
+                return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                    span.clone(),
+                    subject.clone(),
+                ));
+                /*let original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut branch_types = BTreeMap::new();
 
@@ -2338,7 +2346,7 @@ impl Context {
                 (
                     Command::Case(Arc::clone(branches), Box::from(typed_processes)),
                     Type::Either(span.clone(), branch_types),
-                )
+                )*/
             }
 
             Command::Break => {
