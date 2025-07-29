@@ -4,19 +4,21 @@ def Add: [Nat, Nat] Nat = [a, b]
 def Mul: [Nat, Nat] Nat = [a, b]
   Nat.Mul(a, b)
 
-// Tests
+def TestAddCommutative: [Test.Test] ! = [test] do {
+  test.assert("Add should be commutative", Nat.Equals(Add(2, 3), Add(3, 2)))
+} in !
 
-def TestAddCommutative: ! = 
-  Test.Assert(Nat.Equals(Add(2, 3), Add(3, 2)))
+def TestAddIdentity: [Test.Test] ! = [test] do {
+  test.assert("Adding 0 should return the original number", Nat.Equals(Add(5, 0), 5))
+} in !
 
-def TestAddIdentity: ! = 
-  Test.Assert(Nat.Equals(Add(5, 0), 5))
+def TestMultiplication: [Test.Test] ! = [test] do {
+  test.assert("3 * 4 should equal 12", Nat.Equals(Mul(3, 4), 12))
+} in !
 
-def TestMultiplication: ! = 
-  Test.Assert(Nat.Equals(Mul(3, 4), 12))
-
-def TestFailingExample: ! = 
-  Test.Assert(Nat.Equals(1, 2))
+def TestFailingExample: [Test.Test] ! = [test] do {
+  test.assert("This should fail: 1 equals 2", Nat.Equals(1, 2))
+} in !
 
 def Program: ! = Console.Open
   .print("This is the main program")
