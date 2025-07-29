@@ -17,6 +17,7 @@ mod par;
 mod playground;
 mod readback;
 mod spawn;
+mod test_assertion;
 mod test_runner;
 
 fn main() {
