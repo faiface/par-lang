@@ -97,6 +97,17 @@ pub struct TypedHandle {
     tree: TypedTree,
 }
 
+impl TypedHandle {
+    /// Convert [TypedHandle] to untyped Handle for use with external functions
+    /// This is needed for the test framework to inject Test instances
+    pub fn into_untyped(self) -> Handle {
+        Handle {
+            net: self.net,
+            tree: Some(self.tree.tree),
+        }
+    }
+}
+
 pub enum TypedReadback {
     Nat(BigInt),
     Int(BigInt),
@@ -665,5 +676,47 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
             } => Type::expand_iterative(&asc, &label, &body, &type_defs).unwrap(),
             typ => break typ,
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::icombs::compiler::TypedTree;
+    use crate::location::Span;
+    use crate::par::types::Type;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn test_typed_handle_into_untyped() {
+        // Create a mock TypedTree
+        let tree = Tree::Era;
+        let typed_tree = TypedTree {
+            tree: tree.clone(),
+            ty: Type::Break(Span::None),
+        };
+
+        // Create a mock Net using default constructor
+        let net = Net::default();
+        let net = Arc::new(Mutex::new(net));
+        let (tx, _rx) = mpsc::unbounded();
+        let handle_count = Arc::new(AtomicUsize::new(0));
+
+        // Create a NetWrapper
+        let net_wrapper = NetWrapper::new(net, tx, handle_count);
+
+        // Create TypedHandle
+        let typed_handle = TypedHandle {
+            type_defs: Default::default(),
+            net: net_wrapper.clone(),
+            tree: typed_tree,
+        };
+
+        // Convert to untyped Handle
+        let handle = typed_handle.into_untyped();
+
+        // Verify the conversion worked correctly
+        assert!(handle.tree.is_some());
+        assert!(matches!(handle.tree.unwrap(), Tree::Era));
     }
 }
