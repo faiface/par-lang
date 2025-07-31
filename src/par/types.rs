@@ -1953,6 +1953,9 @@ impl Context {
                     };
                     self.put(span, object.clone(), branch_type.clone())?;
                     let (process, inferred_in_branch) = analyze_process(self, process)?;
+                    if matches!(inferred_in_branch, Some(Type::Self_(_,_))) {
+                        inferred_type = None
+                    }
                     typed_processes.push(process);
 
                     match (inferred_type, inferred_in_branch) {
