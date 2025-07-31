@@ -34,7 +34,7 @@ fn main() {
             Command::new("run")
                 .about("Run a Par file in the playground")
                 .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
-                .arg(arg!([definition] "The definition to run").default_value("main")),
+                .arg(arg!([definition] "The definition to run").default_value("Main")),
         )
         .subcommand(
             Command::new("lsp").about("Start the Par language server for editor integration"),
