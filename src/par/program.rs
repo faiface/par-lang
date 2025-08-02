@@ -130,19 +130,15 @@ impl Module<Arc<process::Expression<()>>> {
         })
     }
 
-    pub fn import(&mut self, module_name: &str, module: Self) {
+    pub fn import(&mut self, module_name: Option<&str>, module: Self) {
         let mut module = module;
         module.qualify(module_name);
-        self.import_unqualified(module);
-    }
-
-    pub fn import_unqualified(&mut self, mut module: Self) {
         self.type_defs.append(&mut module.type_defs);
         self.declarations.append(&mut module.declarations);
         self.definitions.append(&mut module.definitions);
     }
 
-    fn qualify(&mut self, module: &str) {
+    fn qualify(&mut self, module: Option<&str>) {
         for TypeDef {
             span: _,
             name,

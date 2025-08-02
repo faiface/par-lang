@@ -2667,7 +2667,7 @@ impl Type {
         }
     }
 
-    pub fn qualify(&mut self, module: &str) {
+    pub fn qualify(&mut self, module: Option<&str>) {
         match self {
             Self::Primitive(span, _) | Self::DualPrimitive(span, _) => *span = Span::None,
             Self::Var(span, _) | Self::DualVar(span, _) => *span = Span::None,

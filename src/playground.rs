@@ -7,10 +7,9 @@ use std::{
     thread,
 };
 
-use eframe::egui::{self, Theme};
+use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
-use crate::spawn::TokioSpawn;
 use crate::{
     icombs::readback::TypedHandle,
     par::{
@@ -24,6 +23,7 @@ use crate::{
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
 use crate::{location::Span, par::program::CheckedModule};
+use crate::{par::program::NameWithType, spawn::TokioSpawn};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use tokio_util::sync::CancellationToken;
 
@@ -512,7 +512,6 @@ impl Playground {
                                 .type_on_hover
                                 .query(self.cursor_pos.0, self.cursor_pos.1)
                             {
-                                println!("???");
                                 ui.horizontal(|ui| {
                                     let mut buf = String::new();
                                     typ.pretty(&mut buf, 0).unwrap();
