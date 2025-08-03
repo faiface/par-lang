@@ -103,6 +103,8 @@ pub enum PrimitiveType {
     Int,
     String,
     Char,
+    Byte,
+    Bytes,
 }
 
 #[allow(unused)]
@@ -121,6 +123,14 @@ impl Type {
 
     pub fn char() -> Self {
         Self::Primitive(Span::None, PrimitiveType::Char)
+    }
+
+    pub fn byte() -> Self {
+        Self::Primitive(Span::None, PrimitiveType::Byte)
+    }
+
+    pub fn bytes() -> Self {
+        Self::Primitive(Span::None, PrimitiveType::Bytes)
     }
 
     pub fn name(module: Option<&'static str>, primary: &'static str, args: Vec<Self>) -> Self {
@@ -657,10 +667,17 @@ impl Type {
             (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
                 true
             }
+            (Self::Primitive(_, PrimitiveType::Byte), Self::Primitive(_, PrimitiveType::Bytes)) => {
+                true
+            }
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => p1 == p2,
             (
                 Self::DualPrimitive(_, PrimitiveType::Int),
                 Self::DualPrimitive(_, PrimitiveType::Nat),
+            ) => true,
+            (
+                Self::DualPrimitive(_, PrimitiveType::Bytes),
+                Self::DualPrimitive(_, PrimitiveType::Byte),
             ) => true,
             (Self::DualPrimitive(_, p1), Self::DualPrimitive(_, p2)) => p1 == p2,
 
@@ -2732,11 +2749,15 @@ impl Type {
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
             Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
+            Self::Primitive(_, PrimitiveType::Byte) => write!(f, "Byte"),
+            Self::Primitive(_, PrimitiveType::Bytes) => write!(f, "Bytes"),
 
             Self::DualPrimitive(_, PrimitiveType::Nat) => write!(f, "dual Nat"),
             Self::DualPrimitive(_, PrimitiveType::Int) => write!(f, "dual Int"),
             Self::DualPrimitive(_, PrimitiveType::String) => write!(f, "dual String"),
             Self::DualPrimitive(_, PrimitiveType::Char) => write!(f, "dual Char"),
+            Self::DualPrimitive(_, PrimitiveType::Byte) => write!(f, "dual Byte"),
+            Self::DualPrimitive(_, PrimitiveType::Bytes) => write!(f, "dual Bytes"),
 
             Self::Var(_, name) => write!(f, "{}", name),
             Self::DualVar(_, name) => write!(f, "dual {}", name),
@@ -2902,11 +2923,15 @@ impl Type {
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
             Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
+            Self::Primitive(_, PrimitiveType::Byte) => write!(f, "Byte"),
+            Self::Primitive(_, PrimitiveType::Bytes) => write!(f, "Bytes"),
 
             Self::DualPrimitive(_, PrimitiveType::Nat) => write!(f, "dual Nat"),
             Self::DualPrimitive(_, PrimitiveType::Int) => write!(f, "dual Int"),
             Self::DualPrimitive(_, PrimitiveType::String) => write!(f, "dual String"),
             Self::DualPrimitive(_, PrimitiveType::Char) => write!(f, "dual Char"),
+            Self::DualPrimitive(_, PrimitiveType::Byte) => write!(f, "dual Byte"),
+            Self::DualPrimitive(_, PrimitiveType::Bytes) => write!(f, "dual Bytes"),
 
             Self::Var(_, name) => write!(f, "{}", name),
             Self::DualVar(_, name) => write!(f, "dual {}", name),

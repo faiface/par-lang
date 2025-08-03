@@ -7,9 +7,10 @@ use std::{
     thread,
 };
 
-use eframe::egui::{self, RichText, Theme};
+use eframe::egui::{self, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
+use crate::spawn::TokioSpawn;
 use crate::{
     icombs::readback::TypedHandle,
     par::{
@@ -23,7 +24,6 @@ use crate::{
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
 use crate::{location::Span, par::program::CheckedModule};
-use crate::{par::program::NameWithType, spawn::TokioSpawn};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use tokio_util::sync::CancellationToken;
 

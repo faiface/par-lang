@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use arcstr::{ArcStr, Substr};
+use byteview::ByteView;
 use futures::channel::{mpsc, oneshot};
 use futures::future::RemoteHandle;
 use futures::task::{Spawn, SpawnExt};
@@ -53,6 +54,7 @@ pub enum Tree {
     IntRequest(oneshot::Sender<BigInt>),
     StringRequest(oneshot::Sender<Substr>),
     CharRequest(oneshot::Sender<char>),
+    BytesRequest(oneshot::Sender<ByteView>),
 
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
     ExternalBox(Arc<dyn Send + Sync + Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>>),
@@ -86,6 +88,7 @@ impl Tree {
             | Self::IntRequest(_)
             | Self::StringRequest(_)
             | Self::CharRequest(_)
+            | Self::BytesRequest(_)
             | Self::External(_)
             | Self::ExternalBox(_) => {}
         }
@@ -118,6 +121,7 @@ impl core::fmt::Debug for Tree {
             Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
             Self::StringRequest(_) => f.debug_tuple("StringRequest").field(&"<channel>").finish(),
             Self::CharRequest(_) => f.debug_tuple("CharRequest").field(&"<channel>").finish(),
+            Self::BytesRequest(_) => f.debug_tuple("BytesRequest").field(&"<channel>").finish(),
             Self::External(_) => f.debug_tuple("External").field(&"<function>").finish(),
             Self::ExternalBox(_) => f.debug_tuple("ExternalBox").field(&"<closure>").finish(),
         }
@@ -140,6 +144,7 @@ impl Clone for Tree {
             Self::IntRequest(_) => panic!("cannot clone Tree::IntRequest"),
             Self::StringRequest(_) => panic!("cannot clone Tree::StringRequest"),
             Self::CharRequest(_) => panic!("cannot clone Tree::CharRequest"),
+            Self::BytesRequest(_) => panic!("cannot clone Tree::BytesRequest"),
             Self::External(f) => Self::External(*f),
             Self::ExternalBox(f) => Self::ExternalBox(Arc::clone(f)),
         }
@@ -473,6 +478,10 @@ impl Net {
                 resp.send(c).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
+            (Primitive::Bytes(b), Tree::BytesRequest(resp)) => {
+                resp.send(b).expect("receiver dropped");
+                self.rewrites.resp += 1;
+            }
 
             (_, Tree::Era) => {
                 self.rewrites.era += 1;
@@ -561,6 +570,7 @@ impl Net {
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
             | Tree::CharRequest(_)
+            | Tree::BytesRequest(_)
             | Tree::External(_)
             | Tree::ExternalBox(_) => {}
         }
@@ -666,11 +676,13 @@ impl Net {
             Tree::Primitive(Primitive::Int(i)) => format!("{{{}}}", i),
             Tree::Primitive(Primitive::String(s)) => format!("{{{:?}}}", s),
             Tree::Primitive(Primitive::Char(c)) => format!("{{{:?}}}", c),
+            Tree::Primitive(Primitive::Bytes(b)) => format!("{{{:?}}}", b),
 
             Tree::SignalRequest(_) => format!("<signal request>"),
             Tree::IntRequest(_) => format!("<int request>"),
             Tree::StringRequest(_) => format!("<string request>"),
             Tree::CharRequest(_) => format!("<char request>"),
+            Tree::BytesRequest(_) => format!("<bytes request>"),
 
             Tree::External(_) => format!("<external>"),
             Tree::ExternalBox(_) => format!("<external box>"),
@@ -715,6 +727,7 @@ impl Net {
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
             | Tree::CharRequest(_)
+            | Tree::BytesRequest(_)
             | Tree::External(_)
             | Tree::ExternalBox(_) => {}
         }
@@ -794,6 +807,7 @@ impl Net {
             Tree::IntRequest(_) => vec![],
             Tree::StringRequest(_) => vec![],
             Tree::CharRequest(_) => vec![],
+            Tree::BytesRequest(_) => vec![],
             Tree::External(_) => vec![],
             Tree::ExternalBox(_) => vec![],
         }

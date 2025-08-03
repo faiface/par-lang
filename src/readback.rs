@@ -1,8 +1,12 @@
-use crate::icombs::{
-    readback::{TypedHandle, TypedReadback},
-    Net,
+use crate::{
+    icombs::{
+        readback::{TypedHandle, TypedReadback},
+        Net,
+    },
+    par::{parse::parse_bytes, primitive::Primitive},
 };
 use arcstr::{ArcStr, Substr};
+use byteview::ByteView;
 use core::fmt::Debug;
 use eframe::egui::{self, RichText, Ui};
 use futures::{
@@ -17,6 +21,8 @@ enum Request {
     Int(String, Box<dyn Send + FnOnce(BigInt)>),
     String(String, Box<dyn Send + FnOnce(Substr)>),
     Char(String, Box<dyn Send + FnOnce(char)>),
+    Byte(String, Box<dyn Send + FnOnce(u8)>),
+    Bytes(String, Box<dyn Send + FnOnce(ByteView)>),
     Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr)>),
 }
 
@@ -35,6 +41,10 @@ pub enum Event {
     StringRequest(Substr),
     Char(char),
     CharRequest(char),
+    Byte(u8),
+    ByteRequest(u8),
+    Bytes(ByteView),
+    BytesRequest(ByteView),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +70,10 @@ impl Event {
             Self::StringRequest(_) => Polarity::Negative,
             Self::Char(_) => Polarity::Positive,
             Self::CharRequest(_) => Polarity::Negative,
+            Self::Byte(_) => Polarity::Positive,
+            Self::ByteRequest(_) => Polarity::Negative,
+            Self::Bytes(_) => Polarity::Positive,
+            Self::BytesRequest(_) => Polarity::Negative,
         }
     }
 }
@@ -231,6 +245,57 @@ impl Element {
                                 }
                             }
 
+                            Request::Byte(mut input, callback) => {
+                                let input_byte = parse_bytes(&input)
+                                    .filter(|b| b.len() == 1)
+                                    .and_then(|b| b.get(0).copied());
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a single byte code 0-255..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_byte.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_byte.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let byte = input_byte.unwrap();
+                                    self.history.push(Event::ByteRequest(byte));
+                                    callback(byte);
+                                } else {
+                                    self.request = Some(Request::Byte(input, callback));
+                                }
+                            }
+
+                            Request::Bytes(mut input, callback) => {
+                                let input_bytes = parse_bytes(&input);
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input).hint_text(
+                                                "Type a sequence of byte codes 0-255...",
+                                            ),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_bytes.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_bytes.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let bytes = ByteView::from(input_bytes.unwrap());
+                                    self.history.push(Event::BytesRequest(bytes.clone()));
+                                    callback(bytes);
+                                } else {
+                                    self.request = Some(Request::Bytes(input, callback));
+                                }
+                            }
+
                             Request::Choice(signals, callback) => {
                                 let mut chosen = None;
                                 ui.vertical(|ui| {
@@ -312,6 +377,20 @@ impl Element {
                     Event::Char(s) | Event::CharRequest(s) => {
                         ui.label(RichText::from(format!("{:?}", s)).strong().code());
                     }
+                    Event::Byte(b) | Event::ByteRequest(b) => {
+                        ui.label(
+                            RichText::from(Primitive::Bytes(ByteView::new(&[*b])).pretty_string())
+                                .strong()
+                                .code(),
+                        );
+                    }
+                    Event::Bytes(b) | Event::BytesRequest(b) => {
+                        ui.label(
+                            RichText::from(Primitive::Bytes(b.clone()).pretty_string())
+                                .strong()
+                                .code(),
+                        );
+                    }
                 }
             }
 
@@ -383,6 +462,34 @@ async fn handle_coroutine(
             TypedReadback::CharRequest(callback) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.request = Some(Request::Char(String::new(), callback));
+                refresh();
+                break;
+            }
+
+            TypedReadback::Byte(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Byte(value));
+                refresh();
+                break;
+            }
+
+            TypedReadback::ByteRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Byte(String::new(), callback));
+                refresh();
+                break;
+            }
+
+            TypedReadback::Bytes(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Bytes(value));
+                refresh();
+                break;
+            }
+
+            TypedReadback::BytesRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Bytes(String::new(), callback));
                 refresh();
                 break;
             }

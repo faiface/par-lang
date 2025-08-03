@@ -1,3 +1,5 @@
+pub mod byte;
+pub mod bytes;
 pub mod char_;
 pub mod console;
 pub mod debug;
@@ -21,6 +23,8 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Int"), int::external_module());
     module.import(Some("Char"), char_::external_module());
     module.import(Some("String"), string::external_module());
+    module.import(Some("Byte"), byte::external_module());
+    module.import(Some("Bytes"), bytes::external_module());
     module.import(Some("Debug"), debug::external_module());
     module.import(Some("Console"), console::external_module());
     module.import(Some("Storage"), storage::external_module());

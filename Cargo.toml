@@ -26,6 +26,7 @@ serde = { version = "1.0.218", features = ["derive"] }
 clap = { version = "4.5.34", features = ["cargo"] }
 colored = "3.0.0"
 arcstr = "1.2.0"
+byteview = "0.7.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
 tokio-util = "0.7.15"
