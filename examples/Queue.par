@@ -22,9 +22,7 @@ def Queue.Empty = [type a] do {
   } in loop/push,
 
   .pop => front.begin/pop.case {
-    .end! => do {
-      let front = back.build
-    } in front.begin/pop.case {
+    .end! => back.build.begin/pop.case {
       .end! => .end!,
       .item(value) front => .item(value) case {
         .push => {do {
