@@ -1,4 +1,4 @@
-def TestQueue = Queue.Empty(type String)
+def PlayWithQueue = Queue.Empty(type String)
 
 type Queue<a> =
   iterative/push recursive/pop
@@ -10,6 +10,8 @@ type Queue<a> =
     }
   }
 
+// This implementation of the queue has time complexity O(1)
+// for both pushing and popping. Not amortized, O(1) every time.
 dec Queue.Empty : [type a] Queue<a>
 def Queue.Empty = [type a] do {
   let front: List<a> = .end!
