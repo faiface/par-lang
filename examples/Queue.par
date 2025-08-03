@@ -1,0 +1,40 @@
+def TestQueue = Queue.Empty(type String)
+
+type Queue<a> =
+  iterative/push recursive/pop
+  choice {
+    .push(a) => self/push,
+    .pop => either {
+      .end!,
+      .item(a) self/pop,
+    }
+  }
+
+dec Queue.Empty : [type a] Queue<a>
+def Queue.Empty = [type a] do {
+  let front: List<a> = .end!
+  let back = List.Builder(type a)
+} in begin/push case {
+  .push(value) => do {
+    back.add(value)
+  } in loop/push,
+
+  .pop => front.begin/pop.case {
+    .end! => do {
+      let front = back.build
+    } in front.begin/pop.case {
+      .end! => .end!,
+      .item(value) front => .item(value) case {
+        .push => {do {
+          let back = List.Builder(type a)
+        } in loop/push}.push,
+        .pop => front.loop/pop,
+      }
+    }
+
+    .item(value) front => .item(value) case {
+      .push => {loop/push}.push,
+      .pop => front.loop/pop,
+    }
+  }
+}
