@@ -24,12 +24,11 @@ def Queue.Empty = [type a] do {
   .pop => front.begin/pop.case {
     .end! => back.build.begin/pop.case {
       .end! => .end!,
-      .item(value) front => 
-        .item(value) case {
-      .push(value) => do {
-        let back = List.Builder(type a) 
-        back.add(value)
-      } in loop/push,
+      .item(value) front => .item(value) case {
+        .push(value) => do {
+          let back = List.Builder(type a) 
+          back.add(value)
+        } in loop/push,
         .pop => front.loop/pop,
       }
     }
