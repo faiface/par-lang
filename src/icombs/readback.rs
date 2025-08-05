@@ -120,6 +120,7 @@ pub enum TypedReadback {
 
     Break,
     Continue,
+    Unreadable { typ: Type, handle: TypedHandle },
 }
 
 impl Handle {
@@ -421,7 +422,12 @@ impl TypedHandle {
                 TypedReadback::Continue
             }
 
-            typ => panic!("Unsupported type for readback: {:?}", typ),
+            typ => {
+                TypedReadback::Unreadable {
+                    typ: typ.clone(),
+                    handle: self
+                }
+            },
         }
     }
 
@@ -755,11 +761,21 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                 body,
             } => Type::expand_recursive(&asc, &label, &body, &type_defs).unwrap(),
             Type::Iterative {
-                span: _,
+                span,
                 asc,
                 label,
                 body,
-            } => Type::expand_iterative(&asc, &label, &body, &type_defs).unwrap(),
+            } =>
+                if asc.is_empty() {
+                    Type::expand_iterative(&asc, &label, &body, &type_defs).unwrap()
+                } else {
+                    break Type::Iterative {
+                        span,
+                        asc,
+                        label,
+                        body,
+                    }
+                }
             typ => break typ,
         };
     }
