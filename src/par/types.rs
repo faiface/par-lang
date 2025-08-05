@@ -22,6 +22,8 @@ pub enum TypeError {
     DeclaredButNotDefined(Span, GlobalName),
     NoMatchingRecursiveOrIterative(Span),
     SelfUsedInNegativePosition(Span),
+    UnguardedRecursiveSelf(Span),
+    UnguardedIterativeSelf(Span),
     TypeNameNotDefined(Span, GlobalName),
     TypeVariableNotDefined(Span, LocalName),
     DependencyCycle(Span, Vec<GlobalName>),
@@ -291,7 +293,13 @@ impl TypeDefs {
             for param in params {
                 type_defs.vars.insert(param.clone());
             }
-            type_defs.validate_type(typ, &IndexSet::new(), &IndexSet::new())?;
+            type_defs.validate_type(
+                typ,
+                &IndexSet::new(),
+                &IndexSet::new(),
+                &IndexSet::new(),
+                &IndexSet::new(),
+            )?;
         }
 
         Ok(type_defs)
@@ -369,6 +377,8 @@ impl TypeDefs {
         typ: &Type,
         self_pos: &IndexSet<Option<LocalName>>,
         self_neg: &IndexSet<Option<LocalName>>,
+        unguarded_self_rec: &IndexSet<Option<LocalName>>,
+        unguarded_self_iter: &IndexSet<Option<LocalName>>,
     ) -> Result<(), TypeError> {
         Ok(match typ {
             Type::Primitive(_, _) | Type::DualPrimitive(_, _) => (),
@@ -385,33 +395,112 @@ impl TypeDefs {
             }
             Type::Name(span, name, args) => {
                 for arg in args {
-                    self.validate_type(arg, self_pos, self_neg)?;
+                    self.validate_type(
+                        arg,
+                        self_pos,
+                        self_neg,
+                        unguarded_self_rec,
+                        unguarded_self_iter,
+                    )?;
                 }
                 let t = self.get(span, name, args)?;
-                self.validate_type(&t, self_pos, self_neg)?;
+                self.validate_type(
+                    &t,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
             Type::DualName(span, name, args) => {
                 for arg in args {
-                    self.validate_type(arg, self_neg, self_pos)?;
+                    self.validate_type(
+                        arg,
+                        self_neg,
+                        self_pos,
+                        unguarded_self_rec,
+                        unguarded_self_iter,
+                    )?;
                 }
                 let t = self.get(span, name, args)?;
-                self.validate_type(&t, self_neg, self_pos)?;
+                self.validate_type(
+                    &t,
+                    self_neg,
+                    self_pos,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
 
-            Type::Box(_, body) => self.validate_type(body, self_pos, self_neg)?,
-            Type::DualBox(_, body) => self.validate_type(body, self_neg, self_pos)?,
+            Type::Box(_, body) => self.validate_type(
+                body,
+                self_pos,
+                self_neg,
+                unguarded_self_rec,
+                unguarded_self_iter,
+            )?,
+            Type::DualBox(_, body) => self.validate_type(
+                body,
+                self_neg,
+                self_pos,
+                unguarded_self_rec,
+                unguarded_self_iter,
+            )?,
 
             Type::Pair(_, t, u) => {
-                self.validate_type(t, self_pos, self_neg)?;
-                self.validate_type(u, self_pos, self_neg)?;
+                self.validate_type(
+                    t,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
+                self.validate_type(
+                    u,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
             Type::Function(_, t, u) => {
-                self.validate_type(t, self_neg, self_pos)?;
-                self.validate_type(u, self_pos, self_neg)?;
+                self.validate_type(
+                    t,
+                    self_neg,
+                    self_pos,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
+                self.validate_type(
+                    u,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
-            Type::Either(_, branches) | Type::Choice(_, branches) => {
+            Type::Either(_, branches) => {
+                let unguarded_self_rec = IndexSet::new();
                 for (_, t) in branches {
-                    self.validate_type(t, self_pos, self_neg)?;
+                    self.validate_type(
+                        t,
+                        self_pos,
+                        self_neg,
+                        &unguarded_self_rec,
+                        unguarded_self_iter,
+                    )?;
+                }
+            }
+            Type::Choice(_, branches) => {
+                let unguarded_self_iter = IndexSet::new();
+                for (_, t) in branches {
+                    self.validate_type(
+                        t,
+                        self_pos,
+                        self_neg,
+                        unguarded_self_rec,
+                        &unguarded_self_iter,
+                    )?;
                 }
             }
             Type::Break(_) | Type::Continue(_) => (),
@@ -420,7 +509,26 @@ impl TypeDefs {
                 let (mut self_pos, mut self_neg) = (self_pos.clone(), self_neg.clone());
                 self_pos.insert(label.clone());
                 self_neg.shift_remove(label);
-                self.validate_type(body, &self_pos, &self_neg)?;
+                let (mut unguarded_self_rec, mut unguarded_self_iter) =
+                    (unguarded_self_rec.clone(), unguarded_self_iter.clone());
+                match typ {
+                    Type::Recursive { .. } => {
+                        unguarded_self_rec.insert(label.clone());
+                        unguarded_self_iter.shift_remove(label);
+                    }
+                    Type::Iterative { .. } => {
+                        unguarded_self_iter.insert(label.clone());
+                        unguarded_self_rec.shift_remove(label);
+                    }
+                    _ => unreachable!(),
+                }
+                self.validate_type(
+                    body,
+                    &self_pos,
+                    &self_neg,
+                    &unguarded_self_rec,
+                    &unguarded_self_iter,
+                )?;
             }
             Type::Self_(span, label) => {
                 if self_neg.contains(label) {
@@ -428,6 +536,12 @@ impl TypeDefs {
                 }
                 if !self_pos.contains(label) {
                     return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
+                }
+                if unguarded_self_rec.contains(label) {
+                    return Err(TypeError::UnguardedRecursiveSelf(span.clone()));
+                }
+                if unguarded_self_iter.contains(label) {
+                    return Err(TypeError::UnguardedIterativeSelf(span.clone()));
                 }
             }
             Type::DualSelf(span, label) => {
@@ -442,7 +556,13 @@ impl TypeDefs {
             Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
                 let mut with_var = self.clone();
                 with_var.vars.insert(name.clone());
-                with_var.validate_type(body, self_pos, self_neg)?;
+                with_var.validate_type(
+                    body,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
         })
     }
@@ -1958,10 +2078,27 @@ impl Context {
 
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
             Some((_, declared_type)) => {
+                self.type_defs.validate_type(
+                    &declared_type,
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                )?;
                 let checked_def = self.check_expression(None, &unchecked_def, &declared_type)?;
                 (checked_def, declared_type)
             }
-            None => self.infer_expression(None, &unchecked_def)?,
+            None => {
+                let (expr, typ) = self.infer_expression(None, &unchecked_def)?;
+                self.type_defs.validate_type(
+                    &typ,
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                )?;
+                (expr, typ)
+            }
         };
 
         self.checked_definitions.write().unwrap().insert(
@@ -3576,6 +3713,20 @@ impl TypeError {
                     "This `self` is used in a negative position.\n\nNegative self-references are not allowed."
                 )
             }
+            Self::UnguardedRecursiveSelf(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This recursive's `self` is not guarded by an either.\n\nUnguarded self references are not allowed."
+                )
+            },
+            Self::UnguardedIterativeSelf(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This iterative's `self` is not guarded by a choice.\n\nUnguarded self references are not allowed."
+                )
+            }
             Self::TypeNameNotDefined(span, name) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "Type `{}` is not defined.", name)
@@ -3803,6 +3954,8 @@ impl TypeError {
             Self::DeclaredButNotDefined(span, _)
             | Self::NoMatchingRecursiveOrIterative(span)
             | Self::SelfUsedInNegativePosition(span)
+            | Self::UnguardedRecursiveSelf(span)
+            | Self::UnguardedIterativeSelf(span)
             | Self::TypeNameNotDefined(span, _)
             | Self::TypeVariableNotDefined(span, _)
             | Self::DependencyCycle(span, _)
