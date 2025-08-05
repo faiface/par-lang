@@ -42,7 +42,7 @@ pub enum TypeError {
     TypesCannotBeUnified(Type, Type),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] Option<LocalName>),
-    CannotUnrollAscendantIterative(Span, Option<LocalName>),
+    CannotUnrollAscendantIterative(Span, #[allow(unused)] Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),
     CannotUseLinearVariableInBox(Span, LocalName),
@@ -1114,7 +1114,7 @@ impl Type {
                 )?
             }
             (Self::Either(_, branches1), Self::Either(_, branches2)) => {
-                for ((branch, t1)) in branches1 {
+                for (branch, t1) in branches1 {
                     let Some(t2) = branches2.get(branch) else {
                         return Ok(false);
                     };
@@ -3932,7 +3932,7 @@ impl TypeError {
                     buf
                 }
             }
-            Self::CannotUnrollAscendantIterative(span, label) => {
+            Self::CannotUnrollAscendantIterative(span, _) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
                     labels = labels,

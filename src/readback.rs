@@ -45,6 +45,8 @@ pub enum Event {
     ByteRequest(u8),
     Bytes(ByteView),
     BytesRequest(ByteView),
+
+    #[allow(unused)]
     Unreadable {
         typ: String,
         handle: Arc<TypedHandle>,
@@ -395,9 +397,13 @@ impl Element {
                                 .strong()
                                 .code(),
                         );
-                    },
-                    Event::Unreadable {..} => {
-                        ui.label(RichText::from("Readback is not supported for this type").strong().code());
+                    }
+                    Event::Unreadable { .. } => {
+                        ui.label(
+                            RichText::from("Readback is not supported for this type")
+                                .strong()
+                                .code(),
+                        );
                     }
                 }
             }
@@ -565,13 +571,11 @@ async fn handle_coroutine(
             TypedReadback::Unreadable { typ, handle } => {
                 let mut lock = element.lock().expect("lock failed");
                 let mut str = String::new();
-                typ.pretty(&mut str, 2);
-                lock.history.push(
-                    Event::Unreadable {
-                        typ: str ,
-                        handle: Arc::new(handle),
-                    },
-                );
+                typ.pretty(&mut str, 2).unwrap();
+                lock.history.push(Event::Unreadable {
+                    typ: str,
+                    handle: Arc::new(handle),
+                });
                 refresh();
                 break;
             }

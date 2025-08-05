@@ -422,11 +422,9 @@ impl TypedHandle {
                 TypedReadback::Continue
             }
 
-            typ => {
-                TypedReadback::Unreadable {
-                    typ: typ.clone(),
-                    handle: self
-                }
+            typ => TypedReadback::Unreadable {
+                typ: typ.clone(),
+                handle: self,
             },
         }
     }
@@ -765,7 +763,7 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                 asc,
                 label,
                 body,
-            } =>
+            } => {
                 if asc.is_empty() {
                     Type::expand_iterative(&Span::None, &asc, &label, &body, &type_defs).unwrap()
                 } else {
@@ -774,8 +772,9 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                         asc,
                         label,
                         body,
-                    }
+                    };
                 }
+            }
             typ => break typ,
         };
     }
