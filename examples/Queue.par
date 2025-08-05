@@ -1,4 +1,4 @@
-def PlayWithQueue:Queue<String> = Queue.Empty(type String)
+def PlayWithQueue: Queue<String> = Queue.Empty(type String)
 
 type Queue<a> =
   iterative/push recursive/pop
@@ -25,7 +25,7 @@ def Queue.Empty = [type a] do {
     .end! => back.build.begin/pop.case {
       .end! => .end!,
       .item(value) front => 
-		.item(value) case {
+        .item(value) case {
       .push(value) => do {
         let back = List.Builder(type a) 
         back.add(value)
