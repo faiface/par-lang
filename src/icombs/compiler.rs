@@ -503,9 +503,9 @@ impl Compiler {
                 Type::expand_recursive(&asc, &label, &body, &self.type_defs).unwrap(),
             ),
             Type::Iterative {
-                asc, label, body, ..
+                 asc, label, body,..
             } => self.normalize_type(
-                Type::expand_iterative(&asc, &label, &body, &self.type_defs).unwrap(),
+                Type::expand_iterative(&Span::None, &asc, &label, &body, &self.type_defs).unwrap(),
             ),
             ty => ty,
         }

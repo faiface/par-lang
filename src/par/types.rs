@@ -40,6 +40,7 @@ pub enum TypeError {
     TypesCannotBeUnified(Type, Type),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] Option<LocalName>),
+    CannotUnrollAscendantIterative(Span, Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),
     CannotUseLinearVariableInBox(Span, LocalName),
@@ -1555,11 +1556,15 @@ impl Type {
     }
 
     pub fn expand_iterative(
+        span: &Span,
         asc: &IndexSet<Option<LocalName>>,
         label: &Option<LocalName>,
         body: &Self,
         type_defs: &TypeDefs,
     ) -> Result<Self, TypeError> {
+        if !asc.is_empty() {
+            return Err(TypeError::CannotUnrollAscendantIterative(span.clone(), label.clone()));
+        }
         body.clone()
             .expand_iterative_helper(asc, label, body, type_defs)
     }
@@ -2200,7 +2205,7 @@ impl Context {
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_iterative(top_asc, top_label, body, &self.type_defs)?,
+                    &Type::expand_iterative(span, top_asc, top_label, body, &self.type_defs)?,
                     command,
                     analyze_process,
                 );
@@ -3731,7 +3736,7 @@ impl TypeError {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
                     labels = labels,
-                    "This `loop` may diverge. Value does not descend from the corresponding `begin`.\n\nIf this is intended, use `unfounded begin`.",
+                    "This `loop` may diverge. Value does not descend from the corresponding `begin`.\n\nIf this is intended, use `unfounded`.",
                 )
             }
             Self::LoopVariableNotPreserved(span, name) => {
@@ -3773,6 +3778,14 @@ impl TypeError {
                     buf
                 }
             }
+            Self::CannotUnrollAscendantIterative(span, label) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This `loop` may diverge. Operating on the loop variable is not allowed.\n\nIf this is intended, use `unfounded`.",
+                )
+
+            }
         }.with_source_code(source_code)
     }
 }
@@ -3807,7 +3820,8 @@ impl TypeError {
             | Self::LoopVariableNotPreserved(span, _)
             | Self::LoopVariableChangedType(span, _, _, _)
             | Self::CannotUseLinearVariableInBox(span, _)
-            | Self::Telltypes(span, _) => (span.clone(), None),
+            | Self::Telltypes(span, _)
+            | Self::CannotUnrollAscendantIterative(span, _) => (span.clone(), None),
 
             Self::TypesCannotBeUnified(typ1, typ2) => (typ1.span(), Some(typ2.span())),
         }
