@@ -755,11 +755,11 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                 body,
             } => Type::expand_recursive(&asc, &label, &body, &type_defs).unwrap(),
             Type::Iterative {
-                span: _,
+                span: span,
                 asc,
                 label,
                 body,
-            } => Type::expand_iterative(&asc, &label, &body, &type_defs).unwrap(),
+            } => Type::expand_iterative(&Span::None, &asc, &label, &body, &type_defs).unwrap(),
             typ => break typ,
         };
     }
