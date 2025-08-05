@@ -1563,7 +1563,10 @@ impl Type {
         type_defs: &TypeDefs,
     ) -> Result<Self, TypeError> {
         if !asc.is_empty() {
-            return Err(TypeError::CannotUnrollAscendantIterative(span.clone(), label.clone()));
+            return Err(TypeError::CannotUnrollAscendantIterative(
+                span.clone(),
+                label.clone(),
+            ));
         }
         body.clone()
             .expand_iterative_helper(asc, label, body, type_defs)
