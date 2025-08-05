@@ -767,7 +767,7 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                 body,
             } =>
                 if asc.is_empty() {
-                    Type::expand_iterative(&asc, &label, &body, &type_defs).unwrap()
+                    Type::expand_iterative(&Span::None, &asc, &label, &body, &type_defs).unwrap()
                 } else {
                     break Type::Iterative {
                         span,
