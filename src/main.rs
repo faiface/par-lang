@@ -32,14 +32,23 @@ fn main() {
         )
         .subcommand(
             Command::new("run")
-                .about("Run a Par file in the playground")
+                .about("Run a Par file in the CLI")
                 .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
                 .arg(arg!([definition] "The definition to run").default_value("Main")),
         )
         .subcommand(
+            Command::new("check")
+                .about("Type check a Par file in the CLI")
+                .arg(
+                    arg!(<file> "The Par file(s) to check")
+                        .num_args(1..)
+                        .value_parser(value_parser!(PathBuf)),
+                ),
+        )
+        .subcommand(
             Command::new("lsp").about("Start the Par language server for editor integration"),
         )
-        .get_matches();
+        .get_matches_from(wild::args());
 
     match matches.subcommand() {
         Some(("playground", args)) => {
@@ -50,6 +59,13 @@ fn main() {
             let file = args.get_one::<PathBuf>("file").unwrap().clone();
             let definition = args.get_one::<String>("definition").unwrap().clone();
             run_definition(file, definition);
+        }
+        Some(("check", args)) => {
+            let files = args.get_many::<PathBuf>("file").unwrap().clone();
+            for file in files {
+                println!("Checking file: {}", file.display());
+                check(file.clone());
+            }
         }
         Some(("lsp", _)) => run_language_server(),
         _ => unreachable!(),
@@ -95,13 +111,13 @@ fn run_playground(file: Option<PathBuf>) {
 fn run_definition(file: PathBuf, definition: String) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
-        let Ok(code) = File::open(file).and_then(|mut file| {
+        let Ok(code) = File::open(&file).and_then(|mut file| {
             use std::io::Read;
             let mut buf = String::new();
             file.read_to_string(&mut buf)?;
             Ok(buf)
         }) else {
-            println!("{}", "Could not read file".bright_red());
+            println!("{} {}", "Could not read file:".bright_red(), file.display());
             return;
         };
 
@@ -173,6 +189,26 @@ fn run_definition(file: PathBuf, definition: String) {
         readback_future.await;
         reducer_future.await;
     });
+}
+
+fn check(file: PathBuf) {
+    let Ok(code) = File::open(&file).and_then(|mut file| {
+        use std::io::Read;
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)?;
+        Ok(buf)
+    }) else {
+        println!("{} {}", "Could not read file:".bright_red(), file.display());
+        return;
+    };
+
+    match stacker::grow(32 * 1024 * 1024, || Compiled::from_string(&code)) {
+        Ok(_compiled) => (),
+        Err(err) => {
+            println!("{}", err.display(Arc::from(code.as_str())).bright_red());
+            return;
+        }
+    };
 }
 
 fn run_language_server() {

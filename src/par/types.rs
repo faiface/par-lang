@@ -1,17 +1,18 @@
-use arcstr::ArcStr;
-use indexmap::{IndexMap, IndexSet};
-use std::{
-    collections::{BTreeMap, HashSet},
-    fmt::{self, Write},
-    sync::{Arc, RwLock},
-};
-
 use super::{
     language::{GlobalName, LocalName},
     process::{Captures, Command, Expression, Process},
 };
 use crate::location::{Span, Spanning};
+use arcstr::ArcStr;
+use indexmap::{IndexMap, IndexSet};
 use miette::LabeledSpan;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::{self, Write},
+    sync::{Arc, RwLock},
+};
 
 #[derive(Clone, Debug)]
 pub enum TypeError {
@@ -21,6 +22,8 @@ pub enum TypeError {
     DeclaredButNotDefined(Span, GlobalName),
     NoMatchingRecursiveOrIterative(Span),
     SelfUsedInNegativePosition(Span),
+    UnguardedRecursiveSelf(Span),
+    UnguardedIterativeSelf(Span),
     TypeNameNotDefined(Span, GlobalName),
     TypeVariableNotDefined(Span, LocalName),
     DependencyCycle(Span, Vec<GlobalName>),
@@ -39,6 +42,7 @@ pub enum TypeError {
     TypesCannotBeUnified(Type, Type),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] Option<LocalName>),
+    CannotUnrollAscendantIterative(Span, Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),
     CannotUseLinearVariableInBox(Span, LocalName),
@@ -289,7 +293,13 @@ impl TypeDefs {
             for param in params {
                 type_defs.vars.insert(param.clone());
             }
-            type_defs.validate_type(typ, &IndexSet::new(), &IndexSet::new())?;
+            type_defs.validate_type(
+                typ,
+                &IndexSet::new(),
+                &IndexSet::new(),
+                &IndexSet::new(),
+                &IndexSet::new(),
+            )?;
         }
 
         Ok(type_defs)
@@ -367,6 +377,8 @@ impl TypeDefs {
         typ: &Type,
         self_pos: &IndexSet<Option<LocalName>>,
         self_neg: &IndexSet<Option<LocalName>>,
+        unguarded_self_rec: &IndexSet<Option<LocalName>>,
+        unguarded_self_iter: &IndexSet<Option<LocalName>>,
     ) -> Result<(), TypeError> {
         Ok(match typ {
             Type::Primitive(_, _) | Type::DualPrimitive(_, _) => (),
@@ -383,33 +395,112 @@ impl TypeDefs {
             }
             Type::Name(span, name, args) => {
                 for arg in args {
-                    self.validate_type(arg, self_pos, self_neg)?;
+                    self.validate_type(
+                        arg,
+                        self_pos,
+                        self_neg,
+                        unguarded_self_rec,
+                        unguarded_self_iter,
+                    )?;
                 }
                 let t = self.get(span, name, args)?;
-                self.validate_type(&t, self_pos, self_neg)?;
+                self.validate_type(
+                    &t,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
             Type::DualName(span, name, args) => {
                 for arg in args {
-                    self.validate_type(arg, self_neg, self_pos)?;
+                    self.validate_type(
+                        arg,
+                        self_neg,
+                        self_pos,
+                        unguarded_self_rec,
+                        unguarded_self_iter,
+                    )?;
                 }
                 let t = self.get(span, name, args)?;
-                self.validate_type(&t, self_neg, self_pos)?;
+                self.validate_type(
+                    &t,
+                    self_neg,
+                    self_pos,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
 
-            Type::Box(_, body) => self.validate_type(body, self_pos, self_neg)?,
-            Type::DualBox(_, body) => self.validate_type(body, self_neg, self_pos)?,
+            Type::Box(_, body) => self.validate_type(
+                body,
+                self_pos,
+                self_neg,
+                unguarded_self_rec,
+                unguarded_self_iter,
+            )?,
+            Type::DualBox(_, body) => self.validate_type(
+                body,
+                self_neg,
+                self_pos,
+                unguarded_self_rec,
+                unguarded_self_iter,
+            )?,
 
             Type::Pair(_, t, u) => {
-                self.validate_type(t, self_pos, self_neg)?;
-                self.validate_type(u, self_pos, self_neg)?;
+                self.validate_type(
+                    t,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
+                self.validate_type(
+                    u,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
             Type::Function(_, t, u) => {
-                self.validate_type(t, self_neg, self_pos)?;
-                self.validate_type(u, self_pos, self_neg)?;
+                self.validate_type(
+                    t,
+                    self_neg,
+                    self_pos,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
+                self.validate_type(
+                    u,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
-            Type::Either(_, branches) | Type::Choice(_, branches) => {
+            Type::Either(_, branches) => {
+                let unguarded_self_rec = IndexSet::new();
                 for (_, t) in branches {
-                    self.validate_type(t, self_pos, self_neg)?;
+                    self.validate_type(
+                        t,
+                        self_pos,
+                        self_neg,
+                        &unguarded_self_rec,
+                        unguarded_self_iter,
+                    )?;
+                }
+            }
+            Type::Choice(_, branches) => {
+                let unguarded_self_iter = IndexSet::new();
+                for (_, t) in branches {
+                    self.validate_type(
+                        t,
+                        self_pos,
+                        self_neg,
+                        unguarded_self_rec,
+                        &unguarded_self_iter,
+                    )?;
                 }
             }
             Type::Break(_) | Type::Continue(_) => (),
@@ -418,7 +509,26 @@ impl TypeDefs {
                 let (mut self_pos, mut self_neg) = (self_pos.clone(), self_neg.clone());
                 self_pos.insert(label.clone());
                 self_neg.shift_remove(label);
-                self.validate_type(body, &self_pos, &self_neg)?;
+                let (mut unguarded_self_rec, mut unguarded_self_iter) =
+                    (unguarded_self_rec.clone(), unguarded_self_iter.clone());
+                match typ {
+                    Type::Recursive { .. } => {
+                        unguarded_self_rec.insert(label.clone());
+                        unguarded_self_iter.shift_remove(label);
+                    }
+                    Type::Iterative { .. } => {
+                        unguarded_self_iter.insert(label.clone());
+                        unguarded_self_rec.shift_remove(label);
+                    }
+                    _ => unreachable!(),
+                }
+                self.validate_type(
+                    body,
+                    &self_pos,
+                    &self_neg,
+                    &unguarded_self_rec,
+                    &unguarded_self_iter,
+                )?;
             }
             Type::Self_(span, label) => {
                 if self_neg.contains(label) {
@@ -426,6 +536,12 @@ impl TypeDefs {
                 }
                 if !self_pos.contains(label) {
                     return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
+                }
+                if unguarded_self_rec.contains(label) {
+                    return Err(TypeError::UnguardedRecursiveSelf(span.clone()));
+                }
+                if unguarded_self_iter.contains(label) {
+                    return Err(TypeError::UnguardedIterativeSelf(span.clone()));
                 }
             }
             Type::DualSelf(span, label) => {
@@ -440,7 +556,13 @@ impl TypeDefs {
             Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
                 let mut with_var = self.clone();
                 with_var.vars.insert(name.clone());
-                with_var.validate_type(body, self_pos, self_neg)?;
+                with_var.validate_type(
+                    body,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                )?;
             }
         })
     }
@@ -472,6 +594,32 @@ impl Spanning for Type {
         }
     }
 }
+
+#[derive(Debug)]
+enum FixPointType {
+    Recursive,
+    Iterative,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+enum Path {
+    Empty,
+    Node(usize, Rc<Path>),
+    NamedNode(LocalName, Rc<Path>),
+}
+
+impl Path {
+    fn add(&self, index: usize) -> Self {
+        Path::Node(index, Rc::new(self.clone()))
+    }
+
+    fn add_name(&self, name: LocalName) -> Self {
+        Path::NamedNode(name, Rc::new(self.clone()))
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LabelsMap(HashMap<Option<LocalName>, Rc<(Path, Type, FixPointType, LabelsMap)>>);
 
 impl Type {
     pub fn substitute(self, map: BTreeMap<&LocalName, &Type>) -> Result<Self, TypeError> {
@@ -647,7 +795,7 @@ impl Type {
         u: &Type,
         type_defs: &TypeDefs,
     ) -> Result<(), TypeError> {
-        if !self.is_assignable_to(u, type_defs, &HashSet::new())? {
+        if !self.is_assignable_to(u, type_defs)? {
             return Err(TypeError::CannotAssignFromTo(
                 span.clone(),
                 self.clone(),
@@ -657,13 +805,136 @@ impl Type {
         Ok(())
     }
 
-    fn is_assignable_to(
+    fn is_assignable_to(&self, other: &Self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
+        self.is_assignable_to_internal(
+            other,
+            type_defs,
+            Path::Empty,
+            Path::Empty,
+            &mut Default::default(),
+            LabelsMap(HashMap::new()),
+            LabelsMap(HashMap::new()),
+            HashSet::new(),
+        )
+    }
+
+    /**
+     This function checks if `self` <: `other`.
+
+      This algorithm is a generalization of the algorithm presented in `Subtyping recursive types (1993)`,
+      to support both least and greatest fixpoint types.
+
+      We believe it to be both complete and sound
+      with respect to their definition as an infinite union/intersection respectively.
+    */
+    fn is_assignable_to_internal(
         &self,
         other: &Self,
         type_defs: &TypeDefs,
-        ind: &HashSet<(Option<LocalName>, Option<LocalName>)>,
+        self_path: Path,
+        other_path: Path,
+        visited: &mut HashSet<(Path, Path)>,
+        mut self_labels: LabelsMap,
+        mut other_labels: LabelsMap,
+        mut cyclic_points: HashSet<(Path, Path)>,
     ) -> Result<bool, TypeError> {
         Ok(match (self, other) {
+            (Self::Self_(_, label1), Self::Self_(_, label2)) => {
+                let (self_path, self_type, self_fixpoint_type, self_labels) = self_labels
+                    .0
+                    .get(label1)
+                    .expect("Self label not found")
+                    .as_ref();
+                let (other_path, other_type, other_fixpoint_type, other_labels) = other_labels
+                    .0
+                    .get(label2)
+                    .expect("Other label not found")
+                    .as_ref();
+
+                if visited.contains(&(self_path.clone(), other_path.clone())) {
+                    if let (FixPointType::Recursive, _) | (_, FixPointType::Iterative) =
+                        (self_fixpoint_type, other_fixpoint_type)
+                    {
+                        return Ok(true);
+                    } else {
+                        if cyclic_points.contains(&(self_path.clone(), other_path.clone())) {
+                            return Ok(false);
+                        } else {
+                            cyclic_points.insert((self_path.clone(), other_path.clone()));
+                        }
+                    }
+                }
+                self_type.is_assignable_to_internal(
+                    &other_type,
+                    type_defs,
+                    self_path.clone(),
+                    other_path.clone(),
+                    visited,
+                    self_labels.clone(),
+                    other_labels.clone(),
+                    cyclic_points,
+                )?
+            }
+
+            (Self::Self_(_, label1), t2) => {
+                let (self_path, self_type, self_fixpoint_type, self_labels) = self_labels
+                    .0
+                    .get(label1)
+                    .expect("Self label not found")
+                    .as_ref();
+
+                if visited.contains(&(self_path.clone(), other_path.clone())) {
+                    if let FixPointType::Recursive = self_fixpoint_type {
+                        return Ok(true);
+                    } else {
+                        if cyclic_points.contains(&(self_path.clone(), other_path.clone())) {
+                            return Ok(false);
+                        } else {
+                            cyclic_points.insert((self_path.clone(), other_path.clone()));
+                        }
+                    }
+                }
+                self_type.is_assignable_to_internal(
+                    t2,
+                    type_defs,
+                    self_path.clone(),
+                    other_path.clone(),
+                    visited,
+                    self_labels.clone(),
+                    other_labels.clone(),
+                    cyclic_points,
+                )?
+            }
+
+            (t1, Self::Self_(_, label2)) => {
+                let (other_path, other_type, other_fixpoint_type, other_labels) = other_labels
+                    .0
+                    .get(label2)
+                    .expect("Other label not found")
+                    .as_ref();
+
+                if visited.contains(&(self_path.clone(), other_path.clone())) {
+                    if let FixPointType::Iterative = other_fixpoint_type {
+                        return Ok(true);
+                    } else {
+                        if cyclic_points.contains(&(self_path.clone(), other_path.clone())) {
+                            return Ok(false);
+                        } else {
+                            cyclic_points.insert((self_path.clone(), other_path.clone()));
+                        }
+                    }
+                }
+                t1.is_assignable_to_internal(
+                    &other_type,
+                    type_defs,
+                    self_path.clone(),
+                    other_path.clone(),
+                    visited,
+                    self_labels.clone(),
+                    other_labels.clone(),
+                    cyclic_points,
+                )?
+            }
             (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
                 true
             }
@@ -683,47 +954,180 @@ impl Type {
 
             (Self::Var(_, name1), Self::Var(_, name2)) => name1 == name2,
             (Self::DualVar(_, name1), Self::DualVar(_, name2)) => name1 == name2,
-            (Self::Name(span, name, args), t2) => type_defs
-                .get(span, name, args)?
-                .is_assignable_to(t2, type_defs, ind)?,
-            (t1, Self::Name(span, name, args)) => {
-                t1.is_assignable_to(&type_defs.get(span, name, args)?, type_defs, ind)?
+            (Self::Name(span, name, args), t2) => {
+                type_defs.get(span, name, args)?.is_assignable_to_internal(
+                    t2,
+                    type_defs,
+                    self_path,
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
+            (t1, Self::Name(span, name, args)) => t1.is_assignable_to_internal(
+                &type_defs.get(span, name, args)?,
+                type_defs,
+                self_path,
+                other_path,
+                visited,
+                self_labels,
+                other_labels,
+                cyclic_points,
+            )?,
             (Self::DualName(span, name, args), t2) => type_defs
                 .get_dual(span, name, args)?
-                .is_assignable_to(t2, type_defs, ind)?,
-            (t1, Self::DualName(span, name, args)) => {
-                t1.is_assignable_to(&type_defs.get_dual(span, name, args)?, type_defs, ind)?
-            }
+                .is_assignable_to_internal(
+                    t2,
+                    type_defs,
+                    self_path,
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?,
+            (t1, Self::DualName(span, name, args)) => t1.is_assignable_to_internal(
+                &type_defs.get_dual(span, name, args)?,
+                type_defs,
+                self_path,
+                other_path,
+                visited,
+                self_labels,
+                other_labels,
+                cyclic_points,
+            )?,
 
-            (t1, Self::Box(_, t2)) if t1.is_positive(type_defs)? => {
-                t1.is_assignable_to(t2, type_defs, ind)?
+            (t1, Self::Box(_, t2)) if t1.is_positive(type_defs)? => t1.is_assignable_to_internal(
+                t2,
+                type_defs,
+                self_path,
+                other_path.add(0),
+                visited,
+                self_labels,
+                other_labels,
+                cyclic_points,
+            )?,
+            (Self::DualBox(_, t1), t2) if t1.is_positive(type_defs)? => {
+                t1.clone().dual(Span::None).is_assignable_to_internal(
+                    t2,
+                    type_defs,
+                    self_path.add(0),
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
-            (Self::DualBox(_, t1), t2) if t1.is_positive(type_defs)? => t1
-                .clone()
-                .dual(Span::None)
-                .is_assignable_to(t2, type_defs, ind)?,
-            (Self::Box(_, t1), Self::Box(_, t2)) => t1.is_assignable_to(t2, type_defs, ind)?,
-            (Self::Box(_, t1), t2) => t1.is_assignable_to(t2, type_defs, ind)?,
+            (Self::Box(_, t1), Self::Box(_, t2)) => t1.is_assignable_to_internal(
+                t2,
+                type_defs,
+                self_path.add(0),
+                other_path.add(0),
+                visited,
+                self_labels,
+                other_labels,
+                cyclic_points,
+            )?,
+            (Self::Box(_, t1), t2) => t1.is_assignable_to_internal(
+                t2,
+                type_defs,
+                self_path.add(0),
+                other_path.add(0),
+                visited,
+                self_labels,
+                other_labels,
+                cyclic_points,
+            )?,
             (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
-                t2.is_assignable_to(t1, type_defs, ind)?
+                let t1 = t1.clone().dual(Span::None);
+                let t2 = t2.clone().dual(Span::None);
+                t1.is_assignable_to_internal(
+                    &t2,
+                    type_defs,
+                    self_path.add(0),
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
-            (t1, Self::DualBox(_, t2)) => t2.is_assignable_to(t1, type_defs, ind)?,
+            (t1, Self::DualBox(_, t2)) => {
+                let t2 = t2.clone().dual(Span::None);
+                t1.is_assignable_to_internal(
+                    &t2,
+                    type_defs,
+                    self_path,
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
+            }
 
             (Self::Pair(_, t1, u1), Self::Pair(_, t2, u2)) => {
-                t1.is_assignable_to(t2, type_defs, ind)?
-                    && u1.is_assignable_to(u2, type_defs, ind)?
+                t1.is_assignable_to_internal(
+                    t2,
+                    type_defs,
+                    self_path.add(0),
+                    other_path.add(0),
+                    visited,
+                    self_labels.clone(),
+                    other_labels.clone(),
+                    cyclic_points.clone(),
+                )? && u1.is_assignable_to_internal(
+                    u2,
+                    type_defs,
+                    self_path.add(1),
+                    other_path.add(1),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
             (Self::Function(_, t1, u1), Self::Function(_, t2, u2)) => {
-                t2.is_assignable_to(t1, type_defs, ind)?
-                    && u1.is_assignable_to(u2, type_defs, ind)?
+                let t1 = t1.clone().dual(Span::None);
+                let t2 = t2.clone().dual(Span::None);
+                t1.is_assignable_to_internal(
+                    &t2,
+                    type_defs,
+                    self_path.add(0),
+                    other_path.add(0),
+                    visited,
+                    self_labels.clone(),
+                    other_labels.clone(),
+                    cyclic_points.clone(),
+                )? && u1.is_assignable_to_internal(
+                    u2,
+                    type_defs,
+                    self_path.add(1),
+                    other_path.add(1),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
             (Self::Either(_, branches1), Self::Either(_, branches2)) => {
-                for (branch, t1) in branches1 {
+                for ((branch, t1)) in branches1 {
                     let Some(t2) = branches2.get(branch) else {
                         return Ok(false);
                     };
-                    if !t1.is_assignable_to(t2, type_defs, ind)? {
+                    if !t1.is_assignable_to_internal(
+                        t2,
+                        type_defs,
+                        self_path.add_name(branch.clone()),
+                        other_path.add_name(branch.clone()),
+                        visited,
+                        self_labels.clone(),
+                        other_labels.clone(),
+                        cyclic_points.clone(),
+                    )? {
                         return Ok(false);
                     }
                 }
@@ -734,7 +1138,16 @@ impl Type {
                     let Some(t1) = branches1.get(branch) else {
                         return Ok(false);
                     };
-                    if !t1.is_assignable_to(t2, type_defs, ind)? {
+                    if !t1.is_assignable_to_internal(
+                        t2,
+                        type_defs,
+                        self_path.add_name(branch.clone()),
+                        other_path.add_name(branch.clone()),
+                        visited,
+                        self_labels.clone(),
+                        other_labels.clone(),
+                        cyclic_points.clone(),
+                    )? {
                         return Ok(false);
                     }
                 }
@@ -742,72 +1155,128 @@ impl Type {
             }
             (Self::Break(_), Self::Break(_)) => true,
             (Self::Continue(_), Self::Continue(_)) => true,
-
             (
-                Self::Recursive {
-                    asc: asc1,
-                    label: label1,
-                    body: body1,
-                    ..
-                },
-                Self::Recursive {
+                typ,
+                t2 @ Self::Recursive {
                     asc: asc2,
-                    label: label2,
-                    body: body2,
+                    label,
+                    body,
                     ..
                 },
             ) => {
-                if !asc2.iter().all(|label| asc1.contains(label)) {
-                    return Ok(false);
+                if !asc2.is_empty() {
+                    if let Self::Recursive { asc: asc1, .. } = typ {
+                        if !asc2.is_subset(asc1) {
+                            return Ok(false);
+                        }
+                    } else {
+                        return Ok(false);
+                    }
                 }
-                let mut ind = ind.clone();
-                ind.insert((label1.clone(), label2.clone()));
-                body1.is_assignable_to(body2, type_defs, &ind)?
+                visited.insert((self_path.clone(), other_path.clone()));
+                other_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        other_path.clone(),
+                        t2.clone(),
+                        FixPointType::Recursive,
+                        other_labels.clone(),
+                    )),
+                );
+                typ.is_assignable_to_internal(
+                    body,
+                    type_defs,
+                    self_path,
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
-            (
-                typ,
-                Self::Recursive {
-                    asc, label, body, ..
-                },
-            ) => typ.is_assignable_to(
-                &Self::expand_recursive(asc, label, body, type_defs)?,
-                type_defs,
-                ind,
-            )?,
-            (
-                Self::Iterative {
-                    asc: asc1,
-                    label: label1,
-                    body: body1,
-                    ..
-                },
-                Self::Iterative {
-                    asc: asc2,
-                    label: label2,
-                    body: body2,
-                    ..
-                },
-            ) => {
-                if !asc1.iter().all(|label| asc2.contains(label)) {
-                    return Ok(false);
-                }
-                let mut ind = ind.clone();
-                ind.insert((label1.clone(), label2.clone()));
-                body1.is_assignable_to(body2, type_defs, &ind)?
-            }
-            (
-                Self::Iterative {
-                    asc, label, body, ..
-                },
-                typ,
-            ) => Self::expand_iterative(asc, label, body, type_defs)?
-                .is_assignable_to(typ, type_defs, ind)?,
 
-            (Self::Self_(_, label1), Self::Self_(_, label2)) => {
-                ind.contains(&(label1.clone(), label2.clone()))
+            (t1 @ Self::Recursive { label, body, .. }, typ) => {
+                visited.insert((self_path.clone(), other_path.clone()));
+                self_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        self_path.clone(),
+                        t1.clone(),
+                        FixPointType::Recursive,
+                        self_labels.clone(),
+                    )),
+                );
+                body.is_assignable_to_internal(
+                    typ,
+                    type_defs,
+                    self_path.add(0),
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
-            (Self::DualSelf(_, label1), Self::DualSelf(_, label2)) => {
-                ind.contains(&(label2.clone(), label1.clone()))
+            (
+                t1 @ Self::Iterative {
+                    asc: asc1,
+                    label,
+                    body,
+                    ..
+                },
+                typ,
+            ) => {
+                if !asc1.is_empty() {
+                    if let Self::Iterative { asc: asc2, .. } = typ {
+                        if !asc1.is_subset(asc2) {
+                            return Ok(false);
+                        }
+                    } else {
+                        return Ok(false);
+                    }
+                }
+                visited.insert((self_path.clone(), other_path.clone()));
+                self_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        self_path.clone(),
+                        t1.clone(),
+                        FixPointType::Iterative,
+                        self_labels.clone(),
+                    )),
+                );
+                body.is_assignable_to_internal(
+                    typ,
+                    type_defs,
+                    self_path.add(0),
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
+            }
+            (typ, t2 @ Self::Iterative { label, body, .. }) => {
+                visited.insert((self_path.clone(), other_path.clone()));
+                other_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        other_path.clone(),
+                        t2.clone(),
+                        FixPointType::Iterative,
+                        other_labels.clone(),
+                    )),
+                );
+                typ.is_assignable_to_internal(
+                    body,
+                    type_defs,
+                    self_path,
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
 
             (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
@@ -818,7 +1287,16 @@ impl Type {
                 )]))?;
                 let mut type_defs = type_defs.clone();
                 type_defs.vars.insert(name1.clone());
-                body1.is_assignable_to(&body2, &type_defs, ind)?
+                body1.is_assignable_to_internal(
+                    &body2,
+                    &type_defs,
+                    self_path.add(0),
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
             }
 
             _ => false,
@@ -1198,11 +1676,18 @@ impl Type {
     }
 
     pub fn expand_iterative(
+        span: &Span,
         asc: &IndexSet<Option<LocalName>>,
         label: &Option<LocalName>,
         body: &Self,
         type_defs: &TypeDefs,
     ) -> Result<Self, TypeError> {
+        if !asc.is_empty() {
+            return Err(TypeError::CannotUnrollAscendantIterative(
+                span.clone(),
+                label.clone(),
+            ));
+        }
         body.clone()
             .expand_iterative_helper(asc, label, body, type_defs)
     }
@@ -1593,10 +2078,27 @@ impl Context {
 
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
             Some((_, declared_type)) => {
+                self.type_defs.validate_type(
+                    &declared_type,
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                )?;
                 let checked_def = self.check_expression(None, &unchecked_def, &declared_type)?;
                 (checked_def, declared_type)
             }
-            None => self.infer_expression(None, &unchecked_def)?,
+            None => {
+                let (expr, typ) = self.infer_expression(None, &unchecked_def)?;
+                self.type_defs.validate_type(
+                    &typ,
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                    &IndexSet::new(),
+                )?;
+                (expr, typ)
+            }
         };
 
         self.checked_definitions.write().unwrap().insert(
@@ -1843,7 +2345,7 @@ impl Context {
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_iterative(top_asc, top_label, body, &self.type_defs)?,
+                    &Type::expand_iterative(span, top_asc, top_label, body, &self.type_defs)?,
                     command,
                     analyze_process,
                 );
@@ -1974,14 +2476,10 @@ impl Context {
 
                     match (inferred_type, inferred_in_branch) {
                         (None, Some(t2)) => inferred_type = Some(t2),
-                        (Some(t1), Some(t2))
-                            if t2.is_assignable_to(&t1, &self.type_defs, &HashSet::new())? =>
-                        {
+                        (Some(t1), Some(t2)) if t2.is_assignable_to(&t1, &self.type_defs)? => {
                             inferred_type = Some(t2)
                         }
-                        (Some(t1), Some(t2))
-                            if !t1.is_assignable_to(&t2, &self.type_defs, &HashSet::new())? =>
-                        {
+                        (Some(t1), Some(t2)) if !t1.is_assignable_to(&t2, &self.type_defs)? => {
                             return Err(TypeError::TypesCannotBeUnified(t1, t2))
                         }
                         (t1, _) => inferred_type = t1,
@@ -2134,11 +2632,7 @@ impl Context {
                             var.clone(),
                         ));
                     };
-                    if !current_type.is_assignable_to(
-                        type_at_begin,
-                        &self.type_defs,
-                        &HashSet::new(),
-                    )? {
+                    if !current_type.is_assignable_to(type_at_begin, &self.type_defs)? {
                         return Err(TypeError::LoopVariableChangedType(
                             span.clone(),
                             var.clone(),
@@ -2395,11 +2889,7 @@ impl Context {
                             var.clone(),
                         ));
                     };
-                    if !current_type.is_assignable_to(
-                        type_at_begin,
-                        &self.type_defs,
-                        &HashSet::new(),
-                    )? {
+                    if !current_type.is_assignable_to(type_at_begin, &self.type_defs)? {
                         return Err(TypeError::LoopVariableChangedType(
                             span.clone(),
                             var.clone(),
@@ -3223,6 +3713,20 @@ impl TypeError {
                     "This `self` is used in a negative position.\n\nNegative self-references are not allowed."
                 )
             }
+            Self::UnguardedRecursiveSelf(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This recursive's `self` is not guarded by an either.\n\nUnguarded self references are not allowed."
+                )
+            },
+            Self::UnguardedIterativeSelf(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This iterative's `self` is not guarded by a choice.\n\nUnguarded self references are not allowed."
+                )
+            }
             Self::TypeNameNotDefined(span, name) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "Type `{}` is not defined.", name)
@@ -3386,7 +3890,7 @@ impl TypeError {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
                     labels = labels,
-                    "This `loop` may diverge. Value does not descend from the corresponding `begin`.\n\nIf this is intended, use `unfounded begin`.",
+                    "This `loop` may diverge. Value does not descend from the corresponding `begin`.\n\nIf this is intended, use `unfounded`.",
                 )
             }
             Self::LoopVariableNotPreserved(span, name) => {
@@ -3428,6 +3932,14 @@ impl TypeError {
                     buf
                 }
             }
+            Self::CannotUnrollAscendantIterative(span, label) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This `loop` may diverge. Operating on the loop variable is not allowed.\n\nIf this is intended, use `unfounded`.",
+                )
+
+            }
         }.with_source_code(source_code)
     }
 }
@@ -3442,6 +3954,8 @@ impl TypeError {
             Self::DeclaredButNotDefined(span, _)
             | Self::NoMatchingRecursiveOrIterative(span)
             | Self::SelfUsedInNegativePosition(span)
+            | Self::UnguardedRecursiveSelf(span)
+            | Self::UnguardedIterativeSelf(span)
             | Self::TypeNameNotDefined(span, _)
             | Self::TypeVariableNotDefined(span, _)
             | Self::DependencyCycle(span, _)
@@ -3462,7 +3976,8 @@ impl TypeError {
             | Self::LoopVariableNotPreserved(span, _)
             | Self::LoopVariableChangedType(span, _, _, _)
             | Self::CannotUseLinearVariableInBox(span, _)
-            | Self::Telltypes(span, _) => (span.clone(), None),
+            | Self::Telltypes(span, _)
+            | Self::CannotUnrollAscendantIterative(span, _) => (span.clone(), None),
 
             Self::TypesCannotBeUnified(typ1, typ2) => (typ1.span(), Some(typ2.span())),
         }

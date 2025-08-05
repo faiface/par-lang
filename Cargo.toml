@@ -30,6 +30,7 @@ byteview = "0.7.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
 tokio-util = "0.7.15"
+wild = "2.2.1"
 
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"
