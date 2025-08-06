@@ -124,6 +124,7 @@ dec Char.Is     : [Char, Char.Class] Bool
 /// String
 
 type String.Builder = iterative choice {
+  .addChar(Char) => self,
   .add(String) => self,
   .build => String,
 }
@@ -164,6 +165,18 @@ dec String.Builder : String.Builder
 dec String.Reader  : [String] String.Reader<either {}>
 
 dec String.Quote : [String] String
+
+/// Byte
+
+dec Byte.Equals : [Byte, Byte] Bool
+dec Byte.Code   : [Byte] Nat
+
+/// Bytes
+
+type Bytes.Builder = iterative choice {
+  .add(Bytes) => self,
+  .build => Bytes,
+}
 
 /// Console
 
