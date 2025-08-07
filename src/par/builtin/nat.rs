@@ -1,7 +1,5 @@
 use arcstr::{literal, Substr};
 use num_bigint::BigInt;
-use std::future::Future;
-use std::pin::Pin;
 use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
@@ -216,28 +214,27 @@ async fn nat_repeat(mut handle: Handle) {
 
 async fn nat_repeat_lazy(mut handle: Handle) {
     let mut n = handle.receive().nat().await;
-    nat_repeat_lazy_inner(handle, n.clone()).await;
+    nat_repeat_lazy_inner(handle, n.clone());
 }
 
-fn nat_repeat_lazy_inner(
-    mut handle: Handle,
-    mut n: BigInt,
-) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        if n > BigInt::ZERO {
-            handle.signal(literal!("step"));
+fn nat_repeat_lazy_inner(mut handle: Handle, mut n: BigInt) {
+    if n > BigInt::ZERO {
+        handle.signal(literal!("step"));
+        handle.provide_box(move |mut handle| {
+            let mut n = n.clone();
             n -= 1;
-            match handle.case().await.as_str() {
-                "next" => {
-                    handle.provide_box(move |handle| nat_repeat_lazy_inner(handle, n.clone()));
+            async move {
+                let mut n = n.clone();
+                match handle.case().await.as_str() {
+                    "next" => nat_repeat_lazy_inner(handle, n.clone()),
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
             }
-        } else {
-            handle.signal(literal!("end"));
-            handle.break_();
-        }
-    })
+        });
+    } else {
+        handle.signal(literal!("end"));
+        handle.break_();
+    }
 }
 
 async fn nat_range(mut handle: Handle) {
