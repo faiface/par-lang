@@ -1,7 +1,8 @@
-use std::{cmp::Ordering, sync::Arc};
-
 use arcstr::{literal, Substr};
 use num_bigint::BigInt;
+use std::future::Future;
+use std::pin::Pin;
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
     icombs::readback::Handle,
@@ -84,6 +85,23 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     ),
                 ),
                 |handle| Box::pin(nat_repeat(handle)),
+            ),
+            Definition::external(
+                "RepeatLazy",
+                Type::function(
+                    Type::nat(),
+                    Type::recursive(
+                        None,
+                        Type::either(vec![
+                            ("end", Type::break_()),
+                            (
+                                "step",
+                                Type::box_(Type::choice(vec![("next", Type::self_(None))])),
+                            ),
+                        ]),
+                    ),
+                ),
+                |handle| Box::pin(nat_repeat_lazy(handle)),
             ),
             Definition::external(
                 "Range",
@@ -194,6 +212,32 @@ async fn nat_repeat(mut handle: Handle) {
     }
     handle.signal(literal!("end"));
     handle.break_();
+}
+
+async fn nat_repeat_lazy(mut handle: Handle) {
+    let mut n = handle.receive().nat().await;
+    nat_repeat_lazy_inner(handle, n.clone()).await;
+}
+
+fn nat_repeat_lazy_inner(
+    mut handle: Handle,
+    mut n: BigInt,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {
+        if n > BigInt::ZERO {
+            handle.signal(literal!("step"));
+            n -= 1;
+            match handle.case().await.as_str() {
+                "next" => {
+                    handle.provide_box(move |handle| nat_repeat_lazy_inner(handle, n.clone()));
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            handle.signal(literal!("end"));
+            handle.break_();
+        }
+    })
 }
 
 async fn nat_range(mut handle: Handle) {
