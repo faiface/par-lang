@@ -16,6 +16,13 @@ dec Nat.Repeat : [Nat] recursive either {
   .step self,
 }
 
+dec Nat.RepeatLazy : [Nat] recursive either {
+  .end!,
+  .step box choice {
+    .next => self,
+  }
+}
+
 dec Nat.Range : [Nat, Nat] List<Nat>
 
 dec Nat.ToString : [Nat] String
