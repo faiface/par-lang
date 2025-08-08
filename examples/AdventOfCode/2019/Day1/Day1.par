@@ -1,0 +1,104 @@
+// Helpers
+
+dec FileRead : [String] Result<!, String>
+def FileRead = [path]
+  Storage.Get(path).case {
+    .err err => .err !,
+    .ok info => info.case {
+      .dir _ => .err !,
+      .file file => file.readUTF8.case {
+        .err err => .err !,
+        .ok reader => reader.remainder.case {
+          .err err => .err !,
+          .ok contents => .ok contents,
+        },
+      },
+    },
+  }
+
+dec StringLines : [String] List<String>
+def StringLines = [string] String.Reader(string).begin.match(.repeat.non.char '\n', .one.char '\n').case {
+  .end err => let ! = Result.Always(type !)(err) in .end!
+  .fail attempt => .item(Result.Always(type String)(attempt.remainder)).end!
+  .match(line, _) reader => .item(line) reader.loop
+}
+
+dec ListMap : [type a, b] [List<a>, box [a] b] List<b>
+def ListMap = [type a, b] [list, f] list.begin.case {
+  .end! => .end!
+  .item(x) list => .item(f(x)) list.loop,
+}
+
+dec ListMapTry : [type a, e, b] [List<box a>, box [a] Result<e, box b>] Result<e, List<b>>
+def ListMapTry = [type a, e, b] [list, f]
+  let builder: List.Builder<box b> = List.Builder(type box b) in
+  list.begin.case {
+    .end! => .ok builder.build,
+    .item(x) list =>
+      f(x).case {
+        .err err => let _ = builder.build in .err err,
+        .ok y =>
+          let builder = builder.add(y) in
+          list.loop,
+      },
+  }
+
+dec ListSum : [List<Nat>] Nat
+def ListSum = [list]
+  let result = 0 in
+  list.begin.case {
+    .end! => result,
+    .item(n) list =>
+      let result = Nat.Add(result, n) in
+      list.loop,
+  }
+
+// AoC Logic
+
+dec Fuel : [Nat] Nat
+def Fuel = [mass] Nat.Max(0, Int.Sub(Nat.Div(mass, 3), 2))
+
+dec TotalFuel : [Nat] Nat
+def TotalFuel = [mass]
+  let totalMass = 0 in
+  // number of steps should be less than mass, so this works as a bound
+  Nat.Repeat(mass).begin.case {
+    .end! => totalMass,
+    .step rest =>
+      let mass = Fuel(mass) in
+      let totalMass = Nat.Add(totalMass, mass) in
+      Nat.Equals(mass, 0).case {
+        .true! => totalMass,
+        .false! => rest.loop,
+      }
+  }
+
+dec Main : !
+def Main = chan exit {
+  let console = Console.Open
+
+  FileRead("input01.txt").case {
+    .err! => {
+      console.print("could not read file")
+      console.close
+      exit!
+    }
+    .ok input => {}
+  }
+
+  let lines = StringLines(input)
+  ListMapTry(type String, !, Nat)(lines, box Nat.FromString).case {
+    .err! => {
+      console.print("invalid input")
+      console.close
+      exit!
+    }
+    .ok masses => {}
+  }
+  let result1 = ListSum(ListMap(type Nat, Nat)(masses, box Fuel))
+  console.print(String.Builder.add("Part 1: ").add(Nat.ToString(result1)).build)
+  let result2 = ListSum(ListMap(type Nat, Nat)(masses, box TotalFuel))
+  console.print(String.Builder.add("Part 2: ").add(Nat.ToString(result2)).build)
+  console.close
+  exit!
+}
