@@ -877,6 +877,10 @@ impl Type {
             }
 
             (Self::Self_(_, label1), t2) => {
+                if !self_labels.0.contains_key(label1) {
+                    return Ok(false);
+                }
+
                 let (self_path, self_type, self_fixpoint_type, self_labels) = self_labels
                     .0
                     .get(label1)
@@ -907,6 +911,10 @@ impl Type {
             }
 
             (t1, Self::Self_(_, label2)) => {
+                if !self_labels.0.contains_key(label2) {
+                    return Ok(false);
+                }
+
                 let (other_path, other_type, other_fixpoint_type, other_labels) = other_labels
                     .0
                     .get(label2)
