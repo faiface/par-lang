@@ -176,8 +176,15 @@ dec String.Quote : [String] String
 
 /// Byte
 
+type Byte.Class = either {
+  .any!,
+  .byte Byte,
+  .range(Byte, Byte)!,
+}
+
 dec Byte.Equals : [Byte, Byte] Bool
 dec Byte.Code   : [Byte] Nat
+dec Byte.Is     : [Byte, Byte.Class] Bool
 
 /// Bytes
 
@@ -185,6 +192,42 @@ type Bytes.Builder = iterative choice {
   .add(Bytes) => self,
   .build => Bytes,
 }
+
+type Bytes.Reader<e> = recursive iterative/attempt choice {
+  .close => !,
+  .remainder => Result<e, Bytes>,
+  .byte => either {
+    .end Result<e, !>,
+    .byte(Byte) self,
+  },
+  .match(Bytes.Pattern, Bytes.Pattern) => either {
+    .end Result<e, !>,
+    .fail self/attempt,
+    .match(Bytes, Bytes) self,
+  },
+  .matchEnd(Bytes.Pattern, Bytes.Pattern) => either {
+    .end Result<e, !>,
+    .fail self/attempt,
+    .match(Bytes, Bytes)!,
+  },
+}
+
+type Bytes.Pattern = recursive either {
+  .empty!,
+  .bytes Bytes,
+  .one Byte.Class,
+  .non Byte.Class,
+  .min Nat,
+  .max Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List<self>,
+  .and List<self>,
+  .or List<self>,
+}
+
+dec Bytes.Builder : Bytes.Builder
+dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
 
 /// Console
 
