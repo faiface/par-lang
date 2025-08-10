@@ -213,18 +213,18 @@ async fn nat_repeat(mut handle: Handle) {
 }
 
 async fn nat_repeat_lazy(mut handle: Handle) {
-    let mut n = handle.receive().nat().await;
+    let n = handle.receive().nat().await;
     nat_repeat_lazy_inner(handle, n.clone());
 }
 
-fn nat_repeat_lazy_inner(mut handle: Handle, mut n: BigInt) {
+fn nat_repeat_lazy_inner(mut handle: Handle, n: BigInt) {
     if n > BigInt::ZERO {
         handle.signal(literal!("step"));
         handle.provide_box(move |mut handle| {
             let mut n = n.clone();
             n -= 1;
             async move {
-                let mut n = n.clone();
+                let n = n.clone();
                 match handle.case().await.as_str() {
                     "next" => nat_repeat_lazy_inner(handle, n.clone()),
                     _ => unreachable!(),
