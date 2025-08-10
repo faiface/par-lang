@@ -19,6 +19,13 @@ dec Nat.Repeat : [Nat] recursive either {
   .step self,
 }
 
+dec Nat.RepeatLazy : [Nat] recursive either {
+  .end!,
+  .step box choice {
+    .next => self,
+  }
+}
+
 dec Nat.Range : [Nat, Nat] List<Nat>
 
 dec Nat.ToString : [Nat] String
@@ -153,7 +160,8 @@ type String.Pattern = recursive either {
   .str String,
   .one Char.Class,
   .non Char.Class,
-  .length Nat,
+  .min Nat,
+  .max Nat,
   .repeat self,
   .repeat1 self,
   .concat List<self>,

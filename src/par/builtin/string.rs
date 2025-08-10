@@ -171,7 +171,8 @@ pub(crate) enum Pattern {
     Nil,
     All,
     Empty,
-    Length(BigInt),
+    Min(BigInt),
+    Max(BigInt),
     Str(Substr),
     One(CharClass),
     Non(CharClass),
@@ -210,10 +211,15 @@ impl Pattern {
                 handle.break_();
                 Box::new(Self::Empty)
             }
-            "length" => {
-                // .length Nat
+            "min" => {
+                // .min Nat
                 let n = handle.nat().await;
-                Box::new(Self::Length(n))
+                Box::new(Self::Min(n))
+            }
+            "max" => {
+                // .max Nat
+                let n = handle.nat().await;
+                Box::new(Self::Max(n))
             }
             "non" => {
                 // .non Char.Class
@@ -311,7 +317,8 @@ impl MachineInner {
 
             Pattern::Empty => State::Init,
 
-            Pattern::Length(_) => State::Index(0),
+            Pattern::Min(_) => State::Index(0),
+            Pattern::Max(_) => State::Index(0),
 
             Pattern::Str(_) => State::Index(0),
 
@@ -348,7 +355,8 @@ impl MachineInner {
 
             (Pattern::Empty, State::Init) => Some(true),
 
-            (Pattern::Length(n), State::Index(i)) => Some(n == &BigInt::from(*i)),
+            (Pattern::Min(n), State::Index(i)) => Some(&BigInt::from(*i) >= n),
+            (Pattern::Max(n), State::Index(i)) => Some(&BigInt::from(*i) <= n),
 
             (Pattern::Str(s), State::Index(i)) => Some(s.len() == *i),
 
@@ -392,7 +400,8 @@ impl MachineInner {
 
             (Pattern::Empty, State::Init) => self.state = State::Halt,
 
-            (Pattern::Length(n), State::Index(i)) => {
+            (Pattern::Min(_), State::Index(i)) => *i += 1,
+            (Pattern::Max(n), State::Index(i)) => {
                 if &BigInt::from(*i) < n {
                     *i += 1;
                 } else {
