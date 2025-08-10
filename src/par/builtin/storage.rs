@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, ffi::OsStr, fs::Metadata, path::PathBuf, sync::Arc};
 
 use arcstr::{literal, Substr};
+use byteview::ByteView;
 use num_bigint::BigInt;
 use tokio::{
     fs::{self, File},
@@ -10,7 +11,7 @@ use tokio::{
 use crate::{
     icombs::readback::Handle,
     par::{
-        builtin::string::{Machine, Pattern},
+        builtin::{bytes::{BytesMachine, BytesPattern}, string::{StringMachine, StringPattern}},
         process,
         program::{Definition, Module},
         types::Type,
@@ -170,6 +171,18 @@ fn provide_file_info(handle: Handle, info: FileInfo) {
 
                 "size" => handle.provide_nat(BigInt::from(info.metadata.len())),
 
+                "readBytes" => match File::open(info.path.as_ref()).await {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        provide_bytes_reader(handle, file).await;
+                    }
+
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+
                 "readUTF8" => match File::open(info.path.as_ref()).await {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
@@ -186,6 +199,178 @@ fn provide_file_info(handle: Handle, info: FileInfo) {
             }
         }
     })
+}
+
+async fn provide_bytes_reader(mut handle: Handle, file: File) {
+    let mut remainder = FileRemainder {
+        file,
+        buffer: VecDeque::new(),
+    };
+
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                handle.break_();
+                return;
+            }
+
+            "byte" => match remainder.byte_indices().next().await {
+                Ok(Some((_, b))) => {
+                    handle.signal(literal!("byte"));
+                    handle.send().provide_byte(b);
+                    remainder.pop_bytes(1);
+                }
+                Ok(None) => {
+                    handle.signal(literal!("end"));
+                    handle.signal(literal!("ok"));
+                    handle.break_();
+                    return;
+                }
+                Err(err) => {
+                    handle.signal(literal!("end"));
+                    handle.signal(literal!("err"));
+                    handle.provide_string(Substr::from(err.to_string()));
+                    return;
+                }
+            },
+
+            "match" => {
+                let prefix = BytesPattern::readback(handle.receive()).await;
+                let suffix = BytesPattern::readback(handle.receive()).await;
+                match remainder.byte_indices().next().await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("ok"));
+                        handle.break_();
+                        return;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                        return;
+                    }
+                }
+
+                let mut m = BytesMachine::start(Box::new(BytesPattern::Concat(prefix, suffix)));
+
+                let mut best_match = None;
+                let mut byte_indices = remainder.byte_indices();
+                loop {
+                    let (pos, b) = match byte_indices.next().await {
+                        Ok(Some((pos, b))) => (pos, b),
+                        Ok(None) => break,
+                        Err(err) => {
+                            handle.signal(literal!("end"));
+                            handle.signal(literal!("err"));
+                            handle.provide_string(Substr::from(err.to_string()));
+                            return;
+                        }
+                    };
+                    match (m.leftmost_feasible_split(pos), best_match) {
+                        (Some(fi), Some((bi, _))) if fi > bi => break,
+                        (None, _) => break,
+                        _ => {}
+                    }
+                    m.advance(pos, b);
+                    match (m.leftmost_accepting_split(), best_match) {
+                        (Some(ai), Some((bi, _))) if ai <= bi => best_match = Some((ai, pos + 1)),
+                        (Some(ai), None) => best_match = Some((ai, pos + 1)),
+                        _ => {}
+                    }
+                }
+
+                match best_match {
+                    Some((i, j)) => {
+                        handle.signal(literal!("match"));
+                        handle.send().provide_bytes(remainder.pop_bytes(i));
+                        handle.send().provide_bytes(remainder.pop_bytes(j - i));
+                    }
+                    None => {
+                        handle.signal(literal!("fail"));
+                    }
+                }
+            }
+
+            "matchEnd" => {
+                let prefix = BytesPattern::readback(handle.receive()).await;
+                let suffix = BytesPattern::readback(handle.receive()).await;
+                match remainder.byte_indices().next().await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("ok"));
+                        handle.break_();
+                        return;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("end"));
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                        return;
+                    }
+                }
+
+                let mut m = BytesMachine::start(Box::new(BytesPattern::Concat(prefix, suffix)));
+
+                let mut byte_indices = remainder.byte_indices();
+                loop {
+                    let (pos, b) = match byte_indices.next().await {
+                        Ok(Some((pos, b))) => (pos, b),
+                        Ok(None) => break,
+                        Err(err) => {
+                            handle.signal(literal!("end"));
+                            handle.signal(literal!("err"));
+                            handle.provide_string(Substr::from(err.to_string()));
+                            return;
+                        }
+                    };
+                    if m.accepts() == None {
+                        break;
+                    }
+                    m.advance(pos, b);
+                }
+
+                match m.leftmost_accepting_split() {
+                    Some(i) => {
+                        let left = remainder.pop_bytes(i);
+                        let right = match remainder.all_bytes().await {
+                            Ok(bytes) => bytes,
+                            Err(err) => {
+                                handle.signal(literal!("end"));
+                                handle.signal(literal!("err"));
+                                handle.provide_string(Substr::from(err.to_string()));
+                                return;
+                            }
+                        };
+                        handle.signal(literal!("match"));
+                        handle.send().provide_bytes(left);
+                        handle.send().provide_bytes(right);
+                        handle.break_();
+                        return;
+                    }
+                    None => {
+                        handle.signal(literal!("fail"));
+                    }
+                }
+            }
+            "remainder" => {
+                match remainder.all_bytes().await {
+                    Ok(bytes) => {
+                        handle.signal(literal!("ok"));
+                        handle.provide_bytes(bytes);
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+                return;
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 async fn provide_string_reader(mut handle: Handle, file: File) {
@@ -205,7 +390,7 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                 Ok(Some((_, len, ch))) => {
                     handle.signal(literal!("char"));
                     handle.send().provide_char(ch);
-                    remainder.pop(len);
+                    remainder.pop_str(len);
                 }
                 Ok(None) => {
                     handle.signal(literal!("end"));
@@ -222,8 +407,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
             },
 
             "match" => {
-                let prefix = Pattern::readback(handle.receive()).await;
-                let suffix = Pattern::readback(handle.receive()).await;
+                let prefix = StringPattern::readback(handle.receive()).await;
+                let suffix = StringPattern::readback(handle.receive()).await;
                 match remainder.char_indices().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
@@ -240,7 +425,7 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                     }
                 }
 
-                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+                let mut m = StringMachine::start(Box::new(StringPattern::Concat(prefix, suffix)));
 
                 let mut best_match = None;
                 let mut char_indices = remainder.char_indices();
@@ -271,8 +456,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                 match best_match {
                     Some((i, j)) => {
                         handle.signal(literal!("match"));
-                        handle.send().provide_string(remainder.pop(i));
-                        handle.send().provide_string(remainder.pop(j - i));
+                        handle.send().provide_string(remainder.pop_str(i));
+                        handle.send().provide_string(remainder.pop_str(j - i));
                     }
                     None => {
                         handle.signal(literal!("fail"));
@@ -281,8 +466,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
             }
 
             "matchEnd" => {
-                let prefix = Pattern::readback(handle.receive()).await;
-                let suffix = Pattern::readback(handle.receive()).await;
+                let prefix = StringPattern::readback(handle.receive()).await;
+                let suffix = StringPattern::readback(handle.receive()).await;
                 match remainder.char_indices().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
@@ -299,7 +484,7 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                     }
                 }
 
-                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+                let mut m = StringMachine::start(Box::new(StringPattern::Concat(prefix, suffix)));
 
                 let mut char_indices = remainder.char_indices();
                 loop {
@@ -321,8 +506,8 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
 
                 match m.leftmost_accepting_split() {
                     Some(i) => {
-                        let left = remainder.pop(i);
-                        let right = match remainder.all().await {
+                        let left = remainder.pop_str(i);
+                        let right = match remainder.all_str().await {
                             Ok(string) => string,
                             Err(err) => {
                                 handle.signal(literal!("end"));
@@ -343,7 +528,7 @@ async fn provide_string_reader(mut handle: Handle, file: File) {
                 }
             }
             "remainder" => {
-                match remainder.all().await {
+                match remainder.all_str().await {
                     Ok(string) => {
                         handle.signal(literal!("ok"));
                         handle.provide_string(string);
@@ -366,6 +551,14 @@ struct FileRemainder {
 }
 
 impl FileRemainder {
+    fn byte_indices(&mut self) -> FileRemainderBytes<'_> {
+        FileRemainderBytes {
+            remainder: self,
+            index: 0,
+            tmp: [0; 256],
+        }
+    }
+
     fn char_indices(&mut self) -> FileRemainderChars<'_> {
         FileRemainderChars {
             bytes: FileRemainderBytes {
@@ -377,13 +570,26 @@ impl FileRemainder {
         }
     }
 
-    fn pop(&mut self, n: usize) -> Substr {
+    fn pop_bytes(&mut self, n: usize) -> ByteView {
+        self.buffer.drain(..n).collect()
+    }
+
+    fn pop_str(&mut self, n: usize) -> Substr {
         let popped = self.buffer.drain(..n).collect::<Vec<u8>>();
         let popped = String::from_utf8_lossy(&popped[..]);
         Substr::from(popped)
     }
 
-    async fn all(&mut self) -> io::Result<Substr> {
+    async fn all_bytes(&mut self) -> io::Result<ByteView> {
+        let mut bytes = Vec::new();
+        let mut byte_indices = self.byte_indices();
+        while let Some((_, b)) = byte_indices.next().await? {
+            bytes.push(b);
+        }
+        Ok(ByteView::from(bytes))
+    }
+
+    async fn all_str(&mut self) -> io::Result<Substr> {
         let mut string = String::new();
         let mut char_indices = self.char_indices();
         while let Some((_, _, ch)) = char_indices.next().await? {
@@ -400,10 +606,10 @@ struct FileRemainderBytes<'a> {
 }
 
 impl<'a> FileRemainderBytes<'a> {
-    async fn next(&mut self) -> io::Result<Option<u8>> {
+    async fn next(&mut self) -> io::Result<Option<(usize, u8)>> {
         if let Some(b) = self.remainder.buffer.get(self.index) {
             self.index += 1;
-            return Ok(Some(*b));
+            return Ok(Some((self.index - 1, *b)));
         }
         let n = self.remainder.file.read(&mut self.tmp[..]).await?;
         if n == 0 {
@@ -412,7 +618,7 @@ impl<'a> FileRemainderBytes<'a> {
         self.remainder.buffer.extend(&self.tmp[..n]);
         let b = self.remainder.buffer.get(self.index).unwrap();
         self.index += 1;
-        Ok(Some(*b))
+        Ok(Some((self.index - 1, *b)))
     }
 }
 
@@ -426,7 +632,7 @@ impl<'a> FileRemainderChars<'a> {
         loop {
             while self.tmp.len() < 4 {
                 match self.bytes.next().await? {
-                    Some(b) => self.tmp.push(b),
+                    Some((_, b)) => self.tmp.push(b),
                     None => break,
                 }
             }

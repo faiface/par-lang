@@ -84,8 +84,8 @@ async fn string_reader(mut handle: Handle) {
                 }
             },
             "match" => {
-                let prefix = Pattern::readback(handle.receive()).await;
-                let suffix = Pattern::readback(handle.receive()).await;
+                let prefix = StringPattern::readback(handle.receive()).await;
+                let suffix = StringPattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
                     handle.signal(literal!("end"));
                     handle.signal(literal!("ok"));
@@ -93,7 +93,7 @@ async fn string_reader(mut handle: Handle) {
                     return;
                 }
 
-                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+                let mut m = StringMachine::start(Box::new(StringPattern::Concat(prefix, suffix)));
 
                 let mut best_match = None;
                 for (pos, ch) in remainder.char_indices() {
@@ -125,8 +125,8 @@ async fn string_reader(mut handle: Handle) {
                 }
             }
             "matchEnd" => {
-                let prefix = Pattern::readback(handle.receive()).await;
-                let suffix = Pattern::readback(handle.receive()).await;
+                let prefix = StringPattern::readback(handle.receive()).await;
+                let suffix = StringPattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
                     handle.signal(literal!("end"));
                     handle.signal(literal!("ok"));
@@ -134,7 +134,7 @@ async fn string_reader(mut handle: Handle) {
                     return;
                 }
 
-                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+                let mut m = StringMachine::start(Box::new(StringPattern::Concat(prefix, suffix)));
 
                 for (pos, ch) in remainder.char_indices() {
                     if m.accepts() == None {
@@ -167,7 +167,7 @@ async fn string_reader(mut handle: Handle) {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Pattern {
+pub(crate) enum StringPattern {
     Nil,
     All,
     Empty,
@@ -183,7 +183,7 @@ pub(crate) enum Pattern {
     Repeat1(Box<Self>),
 }
 
-impl Pattern {
+impl StringPattern {
     pub(crate) async fn readback(mut handle: Handle) -> Box<Self> {
         match handle.case().await.as_str() {
             "and" => {
@@ -262,13 +262,13 @@ impl Pattern {
 }
 
 #[derive(Debug)]
-pub(crate) struct Machine {
-    pattern: Box<Pattern>,
+pub(crate) struct StringMachine {
+    pattern: Box<StringPattern>,
     inner: MachineInner,
 }
 
-impl Machine {
-    pub(crate) fn start(pattern: Box<Pattern>) -> Self {
+impl StringMachine {
+    pub(crate) fn start(pattern: Box<StringPattern>) -> Self {
         let inner = MachineInner::start(&pattern, 0);
         Self { pattern, inner }
     }
@@ -282,7 +282,7 @@ impl Machine {
     }
 
     pub(crate) fn leftmost_accepting_split(&self) -> Option<usize> {
-        let Pattern::Concat(_, p2) = self.pattern.as_ref() else {
+        let StringPattern::Concat(_, p2) = self.pattern.as_ref() else {
             return None;
         };
         let State::Concat(_, heap) = &self.inner.state else {
@@ -309,23 +309,23 @@ struct MachineInner {
 }
 
 impl MachineInner {
-    fn start(pattern: &Pattern, start: usize) -> Self {
+    fn start(pattern: &StringPattern, start: usize) -> Self {
         let state = match pattern {
-            Pattern::Nil => State::Halt,
+            StringPattern::Nil => State::Halt,
 
-            Pattern::All => State::Init,
+            StringPattern::All => State::Init,
 
-            Pattern::Empty => State::Init,
+            StringPattern::Empty => State::Init,
 
-            Pattern::Min(_) => State::Index(0),
-            Pattern::Max(_) => State::Index(0),
+            StringPattern::Min(_) => State::Index(0),
+            StringPattern::Max(_) => State::Index(0),
 
-            Pattern::Str(_) => State::Index(0),
+            StringPattern::Str(_) => State::Index(0),
 
-            Pattern::One(_) => State::Index(0),
-            Pattern::Non(_) => State::Index(0),
+            StringPattern::One(_) => State::Index(0),
+            StringPattern::Non(_) => State::Index(0),
 
-            Pattern::Concat(p1, p2) => {
+            StringPattern::Concat(p1, p2) => {
                 let prefix = Self::start(p1, start);
                 let suffixes = if prefix.accepts(p1) == Some(true) {
                     vec![Self::start(p2, start)]
@@ -335,56 +335,56 @@ impl MachineInner {
                 State::Concat(Box::new(prefix), suffixes)
             }
 
-            Pattern::And(p1, p2) | Pattern::Or(p1, p2) => State::Pair(
+            StringPattern::And(p1, p2) | StringPattern::Or(p1, p2) => State::Pair(
                 Box::new(Self::start(p1, start)),
                 Box::new(Self::start(p2, start)),
             ),
 
-            Pattern::Repeat(_) => State::Init,
-            Pattern::Repeat1(p) => State::Heap(vec![Self::start(p, start)]),
+            StringPattern::Repeat(_) => State::Init,
+            StringPattern::Repeat1(p) => State::Heap(vec![Self::start(p, start)]),
         };
 
         Self { state, start }
     }
 
-    fn accepts(&self, pattern: &Pattern) -> Option<bool> {
+    fn accepts(&self, pattern: &StringPattern) -> Option<bool> {
         match (pattern, &self.state) {
             (_, State::Halt) => None,
 
-            (Pattern::All, State::Init) => Some(true),
+            (StringPattern::All, State::Init) => Some(true),
 
-            (Pattern::Empty, State::Init) => Some(true),
+            (StringPattern::Empty, State::Init) => Some(true),
 
-            (Pattern::Min(n), State::Index(i)) => Some(&BigInt::from(*i) >= n),
-            (Pattern::Max(n), State::Index(i)) => Some(&BigInt::from(*i) <= n),
+            (StringPattern::Min(n), State::Index(i)) => Some(&BigInt::from(*i) >= n),
+            (StringPattern::Max(n), State::Index(i)) => Some(&BigInt::from(*i) <= n),
 
-            (Pattern::Str(s), State::Index(i)) => Some(s.len() == *i),
+            (StringPattern::Str(s), State::Index(i)) => Some(s.len() == *i),
 
-            (Pattern::One(_), State::Index(i)) => Some(*i == 1),
-            (Pattern::Non(_), State::Index(i)) => Some(*i == 1),
+            (StringPattern::One(_), State::Index(i)) => Some(*i == 1),
+            (StringPattern::Non(_), State::Index(i)) => Some(*i == 1),
 
-            (Pattern::Concat(p1, p2), State::Concat(m1, heap)) => heap
+            (StringPattern::Concat(p1, p2), State::Concat(m1, heap)) => heap
                 .iter()
                 .filter_map(|m2| m2.accepts(p2))
                 .max()
                 .or_else(|| m1.accepts(p1).map(|_| false)),
 
-            (Pattern::And(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
+            (StringPattern::And(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
                 (Some(a1), Some(a2)) => Some(a1 && a2),
                 (None, _) | (_, None) => None,
             },
 
-            (Pattern::Or(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
+            (StringPattern::Or(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
                 (Some(a1), Some(a2)) => Some(a1 || a2),
                 (None, a) | (a, None) => a,
             },
 
-            (Pattern::Repeat(_), State::Init) => Some(true),
-            (Pattern::Repeat(p), State::Heap(heap)) => {
+            (StringPattern::Repeat(_), State::Init) => Some(true),
+            (StringPattern::Repeat(p), State::Heap(heap)) => {
                 heap.iter().filter_map(|m| m.accepts(p)).max()
             }
 
-            (Pattern::Repeat1(p), State::Heap(heap)) => {
+            (StringPattern::Repeat1(p), State::Heap(heap)) => {
                 heap.iter().filter_map(|m| m.accepts(p)).max()
             }
 
@@ -392,16 +392,16 @@ impl MachineInner {
         }
     }
 
-    fn advance(&mut self, pattern: &Pattern, pos: usize, len: usize, ch: char) {
+    fn advance(&mut self, pattern: &StringPattern, pos: usize, len: usize, ch: char) {
         match (pattern, &mut self.state) {
             (_, State::Halt) => {}
 
-            (Pattern::All, State::Init) => {}
+            (StringPattern::All, State::Init) => {}
 
-            (Pattern::Empty, State::Init) => self.state = State::Halt,
+            (StringPattern::Empty, State::Init) => self.state = State::Halt,
 
-            (Pattern::Min(_), State::Index(i)) => *i += 1,
-            (Pattern::Max(n), State::Index(i)) => {
+            (StringPattern::Min(_), State::Index(i)) => *i += 1,
+            (StringPattern::Max(n), State::Index(i)) => {
                 if &BigInt::from(*i) < n {
                     *i += 1;
                 } else {
@@ -409,7 +409,7 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::Str(s), State::Index(i)) => {
+            (StringPattern::Str(s), State::Index(i)) => {
                 if s.substr(*i..).chars().next() == Some(ch) {
                     *i += ch.len_utf8();
                 } else {
@@ -417,14 +417,14 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::One(class), State::Index(i)) => {
+            (StringPattern::One(class), State::Index(i)) => {
                 if *i == 0 && class.contains(ch) {
                     *i = 1;
                 } else {
                     self.state = State::Halt;
                 }
             }
-            (Pattern::Non(class), State::Index(i)) => {
+            (StringPattern::Non(class), State::Index(i)) => {
                 if *i == 0 && !class.contains(ch) {
                     *i = 1;
                 } else {
@@ -432,7 +432,7 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::Concat(p1, p2), State::Concat(m1, heap)) => {
+            (StringPattern::Concat(p1, p2), State::Concat(m1, heap)) => {
                 m1.advance(p1, pos, len, ch);
                 for m2 in heap.iter_mut() {
                     m2.advance(p2, pos, len, ch);
@@ -449,7 +449,7 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::And(p1, p2), State::Pair(m1, m2)) => {
+            (StringPattern::And(p1, p2), State::Pair(m1, m2)) => {
                 m1.advance(p1, pos, len, ch);
                 m2.advance(p2, pos, len, ch);
                 if m1.state == State::Halt || m2.state == State::Halt {
@@ -457,7 +457,7 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::Or(p1, p2), State::Pair(m1, m2)) => {
+            (StringPattern::Or(p1, p2), State::Pair(m1, m2)) => {
                 m1.advance(p1, pos, len, ch);
                 m2.advance(p2, pos, len, ch);
                 if m1.state == State::Halt && m2.state == State::Halt {
@@ -465,12 +465,12 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::Repeat(p), State::Init) => {
+            (StringPattern::Repeat(p), State::Init) => {
                 let mut m = Self::start(p, pos);
                 m.advance(p, pos, len, ch);
                 self.state = State::Heap(vec![m])
             }
-            (Pattern::Repeat(p) | Pattern::Repeat1(p), State::Heap(heap)) => {
+            (StringPattern::Repeat(p) | StringPattern::Repeat1(p), State::Heap(heap)) => {
                 if heap.iter().any(|m| m.accepts(p) == Some(true)) {
                     heap.push(Self::start(p, pos));
                 }

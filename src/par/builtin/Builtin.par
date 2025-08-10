@@ -248,6 +248,7 @@ type Storage.PathInfo = box choice {
 type Storage.FileInfo = box choice {
   .path => Storage.PathInfo,
   .size => Nat.Nat,
+  .readBytes => Result<Storage.Error, Bytes.Reader<Storage.Error>>,
   .readUTF8 => Result<Storage.Error, String.Reader<Storage.Error>>,
 }
 
