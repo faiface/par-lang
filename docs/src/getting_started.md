@@ -5,6 +5,7 @@ Let's install the **Par** programming language. Currently, we have:
   an _automatic UI._
 - A _`run`_ command to run definitions with the [unit](./types/unit.md) type straight from
   the console.
+- A _`check`_ command to check Par programs for validity without actually running them.
 
 At the moment, there are no pre-built binaries, or releases, so we'll have to build it from
 souce.
