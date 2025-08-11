@@ -7,10 +7,9 @@ use std::{
     thread,
 };
 
-use eframe::egui::{self, Theme};
+use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
-use crate::spawn::TokioSpawn;
 use crate::{
     icombs::readback::TypedHandle,
     par::{
@@ -24,6 +23,7 @@ use crate::{
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
 use crate::{location::Span, par::program::CheckedModule};
+use crate::{par::program::NameWithType, spawn::TokioSpawn};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use tokio_util::sync::CancellationToken;
 
@@ -334,11 +334,11 @@ impl eframe::App for Playground {
 }
 
 fn row_and_column(source: &str, index: usize) -> (usize, usize) {
-    let (mut row, mut col) = (1, 0);
+    let (mut row, mut col) = (0, 0);
     for c in source.chars().take(index) {
         if c == '\n' {
             row += 1;
-            col = 1;
+            col = 0;
         } else {
             col += 1;
         }
@@ -506,8 +506,7 @@ impl Playground {
                         pretty, checked, ..
                     })) = &mut self.compiled
                     {
-                        //FIXME
-                        /*if let Ok(checked) = checked {
+                        if let Ok(checked) = checked {
                             if let Some(NameWithType(_, typ)) = checked
                                 .type_on_hover
                                 .query(self.cursor_pos.0, self.cursor_pos.1)
@@ -518,7 +517,7 @@ impl Playground {
                                     ui.label(RichText::new(buf).code().color(green()));
                                 });
                             }
-                        }*/
+                        }
 
                         if self.show_compiled {
                             CodeEditor::default()
