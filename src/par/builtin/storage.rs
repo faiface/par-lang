@@ -11,7 +11,10 @@ use tokio::{
 use crate::{
     icombs::readback::Handle,
     par::{
-        builtin::{bytes::{BytesMachine, BytesPattern}, string::{StringMachine, StringPattern}},
+        builtin::{
+            bytes::{BytesMachine, BytesPattern},
+            string::{StringMachine, StringPattern},
+        },
         process,
         program::{Definition, Module},
         types::Type,

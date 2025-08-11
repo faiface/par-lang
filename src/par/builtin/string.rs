@@ -369,15 +369,19 @@ impl MachineInner {
                 .max()
                 .or_else(|| m1.accepts(p1).map(|_| false)),
 
-            (StringPattern::And(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
-                (Some(a1), Some(a2)) => Some(a1 && a2),
-                (None, _) | (_, None) => None,
-            },
+            (StringPattern::And(p1, p2), State::Pair(m1, m2)) => {
+                match (m1.accepts(p1), m2.accepts(p2)) {
+                    (Some(a1), Some(a2)) => Some(a1 && a2),
+                    (None, _) | (_, None) => None,
+                }
+            }
 
-            (StringPattern::Or(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
-                (Some(a1), Some(a2)) => Some(a1 || a2),
-                (None, a) | (a, None) => a,
-            },
+            (StringPattern::Or(p1, p2), State::Pair(m1, m2)) => {
+                match (m1.accepts(p1), m2.accepts(p2)) {
+                    (Some(a1), Some(a2)) => Some(a1 || a2),
+                    (None, a) | (a, None) => a,
+                }
+            }
 
             (StringPattern::Repeat(_), State::Init) => Some(true),
             (StringPattern::Repeat(p), State::Heap(heap)) => {

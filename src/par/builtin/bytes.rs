@@ -354,15 +354,19 @@ impl MachineInner {
                 .max()
                 .or_else(|| m1.accepts(p1).map(|_| false)),
 
-            (BytesPattern::And(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
-                (Some(a1), Some(a2)) => Some(a1 && a2),
-                (None, _) | (_, None) => None,
-            },
+            (BytesPattern::And(p1, p2), State::Pair(m1, m2)) => {
+                match (m1.accepts(p1), m2.accepts(p2)) {
+                    (Some(a1), Some(a2)) => Some(a1 && a2),
+                    (None, _) | (_, None) => None,
+                }
+            }
 
-            (BytesPattern::Or(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
-                (Some(a1), Some(a2)) => Some(a1 || a2),
-                (None, a) | (a, None) => a,
-            },
+            (BytesPattern::Or(p1, p2), State::Pair(m1, m2)) => {
+                match (m1.accepts(p1), m2.accepts(p2)) {
+                    (Some(a1), Some(a2)) => Some(a1 || a2),
+                    (None, a) | (a, None) => a,
+                }
+            }
 
             (BytesPattern::Repeat(_), State::Init) => Some(true),
             (BytesPattern::Repeat(p), State::Heap(heap)) => {
