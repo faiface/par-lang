@@ -1,0 +1,30 @@
+// Try in the Playground!
+
+dec ReorderAsync :
+  [List<either { .now String }>]
+  List<String>
+
+def ReorderAsync = [strings] chan yield {
+  let yield = Cell.Share(type dual List<String>)(chan cell {
+    strings.begin.case {
+      .end! => { cell.end! }
+
+      .item(then) => {
+        cell.split(chan cell {
+          then.case {
+            .now str => {
+              cell.take[yield]
+              yield.item(str)
+              cell.put(yield)
+              cell.end!
+            }
+          }
+        })
+
+        strings.loop
+      }
+    }
+  }).put(yield)
+
+  yield.end!
+}

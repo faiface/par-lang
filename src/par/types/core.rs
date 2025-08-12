@@ -195,6 +195,17 @@ impl Type {
             }),
         )
     }
+
+    pub fn forall(var: &'static str, body: Self) -> Self {
+        Self::Forall(
+            Span::None,
+            LocalName {
+                span: Span::None,
+                string: ArcStr::from(var),
+            },
+            Box::new(body),
+        )
+    }
 }
 
 impl Type {

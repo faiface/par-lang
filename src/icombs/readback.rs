@@ -136,6 +136,12 @@ impl Handle {
         }
     }
 
+    pub fn link(self, dual: Handle) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(self.tree.unwrap(), dual.tree.unwrap());
+        locked.notify_reducer();
+    }
+
     pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
     where
         F: 'static + Send + Future<Output = ()>,
