@@ -240,6 +240,7 @@ explored.</p>
 an <em>automatic UI.</em></li>
 <li>A <em><code>run</code></em> command to run definitions with the <a href="./types/unit.html">unit</a> type straight from
 the console.</li>
+<li>A <em><code>check</code></em> command to check Par programs for validity without actually running them.</li>
 </ul>
 <p>At the moment, there are no pre-built binaries, or releases, so we’ll have to build it from
 souce.</p>
@@ -344,7 +345,7 @@ with repeatedly.</li>
 followed by an upper-case name, an <code>=</code> sign, and an expression computing the value.</p>
 <pre><code class="language-par">def MyNumber = 7
 </code></pre>
-<p>In this case, Par is able to infer the type of <code>MyNumber</code> as <a href="structure/./strings_and_numbers.html#nat"><code>Nat</code></a>
+<p>In this case, Par is able to infer the type of <code>MyNumber</code> as <a href="structure/./primitive_types.html#nat"><code>Nat</code></a>
 (a natural number), so no type annotation is needed. Often, a type annotation is needed, or wanted.
 In those cases, we can add it using a colon after the name:</p>
 <pre><code class="language-par">def MyName: String = "Michal"
@@ -378,7 +379,7 @@ to their corresponding definitions.</p>
 <p>With <a href="structure/../types/recursive.html">recursive</a> and <a href="structure/../types/iterative.html">iterative</a> types being anonymous,
 Par has no issue treating types as their shapes, instead of their names. In fact, type definitions are
 completely redundant in Par. Every usage of a global type (with the exception of the
-<a href="structure/./strings_and_numbers.html">primitives</a>) can be replaced by its definition, until no definitions are
+<a href="structure/./primitive_types.html">primitives</a>) can be replaced by its definition, until no definitions are
 used.</p>
 <p><em>Actually, all definitions are redundant in Par. However, programming without them would be quite tedious.</em></p>
 </blockquote>
@@ -424,15 +425,17 @@ type argument. So, the above is equal to:</p>
   .item(Int) self,
 }
 </code></pre>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="strings--numbers"><a class="header" href="#strings--numbers">Strings &amp; Numbers</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="primitive-types"><a class="header" href="#primitive-types">Primitive Types</a></h1>
 <p>Before taking a stroll in the diverse garden of Par’s types, let’s stop by the most basic ones:
 the <em>primitives.</em></p>
-<p>At the moment, Par has four primitive types:</p>
+<p>At the moment, Par has six primitive types:</p>
 <ul>
 <li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
 <li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
 <li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters.</li>
-<li><strong><code>Char</code></strong> — Singular Unicode characters.</li>
+<li><strong><code>Char</code></strong> — Singular Unicode character.</li>
+<li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
+<li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
 </ul>
 <blockquote>
 <p>There’s a <strong>significant distinction</strong> between <em>primitives</em> and all other types in Par.</p>
@@ -452,6 +455,8 @@ efficient representation.</p>
 <li>Press <strong>Compile,</strong> and <strong>Run.</strong> Scroll the list that pops up.
 <img src="structure/../images/strings_and_numbers_1.png" alt="List of built-in functions" /></li>
 </ol>
+<p>Alternatively, the <a href="structure/../builtin.html">Built-In Definitions</a> chapter contains all built-in definitions
+available in the language.</p>
 <p><strong>To figure out the type of a built-in function:</strong></p>
 <ol>
 <li>Assigning it to your own <code>def</code>, such as:
@@ -561,8 +566,32 @@ def Char2 = '\n'
 copy-paste this one, if you ever need it:</p>
 <pre><code class="language-par">dec Chars : [String] List&lt;Char&gt;
 def Chars = [s] String.Reader(s).begin.char.case {
-  .end! =&gt; .end!,
+  .end _ =&gt; .end!,
   .char(c) rest =&gt; .item(c) rest.loop,
+}
+</code></pre>
+<h2 id="byte"><a class="header" href="#byte"><code>Byte</code></a></h2>
+<p>A byte consists of eight bits, whose numerical value can range from 0 and 255, inclusive. <code>Byte</code>
+literals are written in decimal, enclosed in double angle brackets:</p>
+<pre><code class="language-par">def Byte1 = &lt;&lt;65&gt;&gt;   // inferred as `Byte`
+def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapped
+</code></pre>
+<p>Since <code>Byte</code> is a subtype of <code>Bytes</code>, every variable of type <code>Byte</code> can be used as a <code>Bytes</code>, too.</p>
+<p>Just like <code>Char</code>s, there’s a built-in function to check if a <code>Byte</code> is a part of a byte class. For <code>Byte</code>s, that’s mainly byte ranges:</p>
+<pre><code class="language-par">def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
+</code></pre>
+<h2 id="bytes"><a class="header" href="#bytes"><code>Bytes</code></a></h2>
+<p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
+that multiple decimal values are allowed, and are delimited by spaces:</p>
+<pre><code class="language-par">def Bytes1 = &lt;&lt;65 91&gt;&gt;  // inferred as `Bytes`
+def Bytes2 = &lt;&lt; &gt;&gt;      // zero-byte sequence
+// def Bytes3 = &lt;&lt;&gt;&gt;    // This triggers syntax error for now, but we intend to fix it
+</code></pre>
+<p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
+<pre><code class="language-par">dec Bytes : [Bytes] List&lt;Byte&gt;
+def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
+  .end _ =&gt; .end!,
+  .byte(b) rest =&gt; .item(b) rest.loop,
 }
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-let-expression"><a class="header" href="#the-let-expression">The <code>let</code> Expression</a></h1>
@@ -1090,7 +1119,7 @@ and passed around freely.</p>
 <h3 id="which-types-are-non-linear"><a class="header" href="#which-types-are-non-linear">Which types are non-linear?</a></h3>
 <p>These are:</p>
 <ul>
-<li>All <a href="./structure/strings_and_numbers.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code></li>
+<li>All <a href="./structure/primitive_types.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code></li>
 <li><a href="./types/unit.html"><strong>Unit</strong></a></li>
 <li><a href="./types/either.html"><strong>Either</strong></a></li>
 <li><a href="./types/pair.html"><strong>Pair</strong></a></li>
@@ -1682,6 +1711,19 @@ a non-empty list, which starts with a pair.</p>
 <p>This one starts with a <a href="types/./choice.html">choice</a>, which enables polling the elements on demand, or
 cancelling the rest of the stream. However, being recursive, a <code>FiniteStream&lt;a&gt;</code> is guaranteed
 to reach the <code>.end!</code> eventually, if not cancelled.</p>
+<p>There is nonetheless an important restriction: in order for <code>self</code> references to remain useful,
+<strong>every <code>self</code> reference for a <code>recursive</code> must be guarded by an <code>either</code>.</strong> The <code>either</code> doesn’t
+have to be right next to the <code>recursive</code>, but it <em>has</em> to be somewhere in-between <code>recursive</code> and
+<code>self</code>:</p>
+<pre><code class="language-par">type ValidList&lt;a&gt; = recursive (a) either {
+  .end!,
+  .item self,  // Okay. This `self` is guarded by an `either`.
+}
+
+type InvalidList&lt;a&gt; = recursive (a) self  // Error! Unguarded `self` reference
+</code></pre>
+<p><a href="types/./iterative.html">Iterative</a> types have a similar restriction: <strong>their <code>self</code> reference must be
+guarded by a <a href="types/./choice.html"><code>choice</code></a>.</strong></p>
 </blockquote>
 <p>The key features of <em>recursive types</em> are that <strong>their values are finite,</strong> and that
 <strong>we can perform recursion on them.</strong></p>
@@ -2065,6 +2107,19 @@ a linear type, there would be no way to get rid of it if it only contained the <
 </li>
 <li>And so on…</li>
 </ol>
+<blockquote>
+<p>Just like <a href="types/./recursive.html"><code>recursive</code></a> types, <code>iterative</code> types have an important restriction:
+<strong>every <code>self</code> reference for an <code>iterative</code> must be guarded by a <code>choice</code>.</strong> The <code>choice</code> doesn’t
+have to be right next to the <code>iterative</code>, but it <em>has</em> to be somewhere in-between <code>iterative</code> and
+<code>self</code>:</p>
+<pre><code class="language-par">type ValidSequence&lt;a&gt; = iterative (a) choice {
+  .close =&gt; !,
+  .next =&gt; self,  // Okay. This `self` is guarded by a `choice`.
+}
+
+type InvalidSequence&lt;a&gt; = iterative (a) self  // Error! Unguarded `self` reference
+</code></pre>
+</blockquote>
 <p>So, if both <a href="types/./recursive.html">recursive</a> and iterative types can be equated with their expansions,
 <strong>what’s the difference?</strong> The difference lies in their construction and destruction:</p>
 <ul>
@@ -2197,7 +2252,7 @@ def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
 <li><a href="types/./either.html">Either</a></li>
 <li><a href="types/./pair.html">Pair</a></li>
 <li><a href="types/./recursive.html">Recursive</a></li>
-<li>All the <a href="types/../structure/strings_and_numbers.html">primitives</a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>.</li>
+<li>All the <a href="types/../structure/primitive_types.html">primitives</a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>.</li>
 </ul>
 <p>Any combination of these is always non-linear — they can be copied and discarded freely.</p>
 <p>But types that contain <a href="types/./function.html"><strong>functions,</strong></a> <a href="types/./choice.html"><strong>choices,</strong></a> and other non-data types
@@ -2484,7 +2539,7 @@ to exchange information, or even other channels.</li>
 what to send, what to receive.</li>
 </ul>
 <p>From among these, we have already encountered one in Par: <em>channels</em>. That’s because aside from
-<a href="./structure/strings_and_numbers.html">primitives</a>, <strong>all values in Par are channels.</strong> Yes,
+<a href="./structure/primitive_types.html">primitives</a>, <strong>all values in Par are channels.</strong> Yes,
 <a href="./types/function.html">functions</a>, <a href="./types/pair.html">pairs</a>, <a href="./types/choice.html">choices</a>, all of them. It will become much
 clearer as we understand this process syntax.</p>
 <p>Processes and commands have been more hidden, so far. They were always there, but not in a plain sight! Any expression, be

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Strings &amp; Numbers - Par Documentation</title>
+        <title>Primitive Types - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/structure/strings_and_numbers.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/structure/primitive_types.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,15 +160,17 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="strings--numbers"><a class="header" href="#strings--numbers">Strings &amp; Numbers</a></h1>
+                        <h1 id="primitive-types"><a class="header" href="#primitive-types">Primitive Types</a></h1>
 <p>Before taking a stroll in the diverse garden of Par’s types, let’s stop by the most basic ones:
 the <em>primitives.</em></p>
-<p>At the moment, Par has four primitive types:</p>
+<p>At the moment, Par has six primitive types:</p>
 <ul>
 <li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
 <li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
 <li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters.</li>
-<li><strong><code>Char</code></strong> — Singular Unicode characters.</li>
+<li><strong><code>Char</code></strong> — Singular Unicode character.</li>
+<li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
+<li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
 </ul>
 <blockquote>
 <p>There’s a <strong>significant distinction</strong> between <em>primitives</em> and all other types in Par.</p>
@@ -188,6 +190,8 @@ efficient representation.</p>
 <li>Press <strong>Compile,</strong> and <strong>Run.</strong> Scroll the list that pops up.
 <img src="../images/strings_and_numbers_1.png" alt="List of built-in functions" /></li>
 </ol>
+<p>Alternatively, the <a href="../builtin.html">Built-In Definitions</a> chapter contains all built-in definitions
+available in the language.</p>
 <p><strong>To figure out the type of a built-in function:</strong></p>
 <ol>
 <li>Assigning it to your own <code>def</code>, such as:
@@ -297,8 +301,32 @@ def Char2 = '\n'
 copy-paste this one, if you ever need it:</p>
 <pre><code class="language-par">dec Chars : [String] List&lt;Char&gt;
 def Chars = [s] String.Reader(s).begin.char.case {
-  .end! =&gt; .end!,
+  .end _ =&gt; .end!,
   .char(c) rest =&gt; .item(c) rest.loop,
+}
+</code></pre>
+<h2 id="byte"><a class="header" href="#byte"><code>Byte</code></a></h2>
+<p>A byte consists of eight bits, whose numerical value can range from 0 and 255, inclusive. <code>Byte</code>
+literals are written in decimal, enclosed in double angle brackets:</p>
+<pre><code class="language-par">def Byte1 = &lt;&lt;65&gt;&gt;   // inferred as `Byte`
+def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapped
+</code></pre>
+<p>Since <code>Byte</code> is a subtype of <code>Bytes</code>, every variable of type <code>Byte</code> can be used as a <code>Bytes</code>, too.</p>
+<p>Just like <code>Char</code>s, there’s a built-in function to check if a <code>Byte</code> is a part of a byte class. For <code>Byte</code>s, that’s mainly byte ranges:</p>
+<pre><code class="language-par">def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
+</code></pre>
+<h2 id="bytes"><a class="header" href="#bytes"><code>Bytes</code></a></h2>
+<p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
+that multiple decimal values are allowed, and are delimited by spaces:</p>
+<pre><code class="language-par">def Bytes1 = &lt;&lt;65 91&gt;&gt;  // inferred as `Bytes`
+def Bytes2 = &lt;&lt; &gt;&gt;      // zero-byte sequence
+// def Bytes3 = &lt;&lt;&gt;&gt;    // This triggers syntax error for now, but we intend to fix it
+</code></pre>
+<p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
+<pre><code class="language-par">dec Bytes : [Bytes] List&lt;Byte&gt;
+def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
+  .end _ =&gt; .end!,
+  .byte(b) rest =&gt; .item(b) rest.loop,
 }
 </code></pre>
 

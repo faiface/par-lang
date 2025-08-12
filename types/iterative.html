@@ -228,6 +228,19 @@ a linear type, there would be no way to get rid of it if it only contained the <
 </li>
 <li>And so on…</li>
 </ol>
+<blockquote>
+<p>Just like <a href="./recursive.html"><code>recursive</code></a> types, <code>iterative</code> types have an important restriction:
+<strong>every <code>self</code> reference for an <code>iterative</code> must be guarded by a <code>choice</code>.</strong> The <code>choice</code> doesn’t
+have to be right next to the <code>iterative</code>, but it <em>has</em> to be somewhere in-between <code>iterative</code> and
+<code>self</code>:</p>
+<pre><code class="language-par">type ValidSequence&lt;a&gt; = iterative (a) choice {
+  .close =&gt; !,
+  .next =&gt; self,  // Okay. This `self` is guarded by a `choice`.
+}
+
+type InvalidSequence&lt;a&gt; = iterative (a) self  // Error! Unguarded `self` reference
+</code></pre>
+</blockquote>
 <p>So, if both <a href="./recursive.html">recursive</a> and iterative types can be equated with their expansions,
 <strong>what’s the difference?</strong> The difference lies in their construction and destruction:</p>
 <ul>

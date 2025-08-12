@@ -281,6 +281,19 @@ a non-empty list, which starts with a pair.</p>
 <p>This one starts with a <a href="./choice.html">choice</a>, which enables polling the elements on demand, or
 cancelling the rest of the stream. However, being recursive, a <code>FiniteStream&lt;a&gt;</code> is guaranteed
 to reach the <code>.end!</code> eventually, if not cancelled.</p>
+<p>There is nonetheless an important restriction: in order for <code>self</code> references to remain useful,
+<strong>every <code>self</code> reference for a <code>recursive</code> must be guarded by an <code>either</code>.</strong> The <code>either</code> doesn’t
+have to be right next to the <code>recursive</code>, but it <em>has</em> to be somewhere in-between <code>recursive</code> and
+<code>self</code>:</p>
+<pre><code class="language-par">type ValidList&lt;a&gt; = recursive (a) either {
+  .end!,
+  .item self,  // Okay. This `self` is guarded by an `either`.
+}
+
+type InvalidList&lt;a&gt; = recursive (a) self  // Error! Unguarded `self` reference
+</code></pre>
+<p><a href="./iterative.html">Iterative</a> types have a similar restriction: <strong>their <code>self</code> reference must be
+guarded by a <a href="./choice.html"><code>choice</code></a>.</strong></p>
 </blockquote>
 <p>The key features of <em>recursive types</em> are that <strong>their values are finite,</strong> and that
 <strong>we can perform recursion on them.</strong></p>
