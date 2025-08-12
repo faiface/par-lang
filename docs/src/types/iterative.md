@@ -77,7 +77,7 @@ Just like [recursive types](./recursive.md), iterative types can be equated with
 
 > Just like [`recursive`](./recursive.md) types, `iterative` types have an important restriction:
 > **every `self` reference for an `iterative` must be guarded by a `choice`.** The `choice` doesn't
-> have to be right next to the `iterative`, but it *has* to be somewhere in between `iterative` and
+> have to be right next to the `iterative`, but it *has* to be somewhere in-between `iterative` and
 > `self`:
 >
 > ```par
