@@ -139,7 +139,7 @@ The recursive type can be thought of as being equivalent to its _expansion_. Tha
 >
 > There is nonetheless an important restriction: in order for `self` references to remain useful,
 > **every `self` reference for a `recursive` must be guarded by an `either`.** The `either` doesn't
-> have to be right next to the `recursive`, but it *has* to be somewhere in between `recursive` and
+> have to be right next to the `recursive`, but it *has* to be somewhere in-between `recursive` and
 > `self`:
 >
 > ```par
