@@ -137,9 +137,10 @@ The recursive type can be thought of as being equivalent to its _expansion_. Tha
 > cancelling the rest of the stream. However, being recursive, a `FiniteStream<a>` is guaranteed
 > to reach the `.end!` eventually, if not cancelled.
 >
-> There is nonetheless still an important restriction: **every `self` reference for a `recursive`
-> must be guarded by an `either`.** The `either` doesn't have to be right next to the `recursive`,
-> but it *has* to be somewhere between `recursive` and `self`:
+> There is nonetheless an important restriction: in order for `self` references to remain useful,
+> **every `self` reference for a `recursive` must be guarded by an `either`.** The `either` doesn't
+> have to be right next to the `recursive`, but it *has* to be somewhere in between `recursive` and
+> `self`:
 >
 > ```par
 > type ValidList<a> = recursive (a) either {

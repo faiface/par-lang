@@ -9,7 +9,7 @@ At the moment, Par has six primitive types:
 - **`String`** — UTF-8 encoded sequence of Unicode characters.
 - **`Char`** — Singular Unicode character.
 - **`Byte`** — Singular data unit that consists of eight bits. They are a subtype of `Bytes`.
-- **`Bytes`** — Sequence of bytes.
+- **`Bytes`** — Contiguous-in-memory sequence of bytes.
 
 > There's a **significant distinction** between _primitives_ and all other types in Par.
 >
@@ -187,7 +187,7 @@ copy-paste this one, if you ever need it:
 ```par
 dec Chars : [String] List<Char>
 def Chars = [s] String.Reader(s).begin.char.case {
-  .end r => let ! = Result.Always(type !)(r) in .end!,
+  .end _ => .end!,
   .char(c) rest => .item(c) rest.loop,
 }
 ```
@@ -204,7 +204,7 @@ def Byte2 = <<321>>  // out-of-bounds values are automatically wrapped
 
 Since `Byte` is a subtype of `Bytes`, every variable of type `Byte` can be used as a `Bytes`, too.
 
-Just like `Char`s, there's a built-in function to check if a `Byte` falls into a user-defined range:
+Just like `Char`s, there's a built-in function to check if a `Byte` is a part of a byte class. For `Byte`s, that's mainly byte ranges:
 
 ```par
 def IsMsbSet = Byte.Is(<<192>>, .range(<<128>>, <<255>>)!)  // .true!
@@ -212,12 +212,13 @@ def IsMsbSet = Byte.Is(<<192>>, .range(<<128>>, <<255>>)!)  // .true!
 
 ## `Bytes`
 
-`Bytes` are sequences of one or more bytes. Their literals are similar to those of `Byte`s, except
+`Bytes` are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of `Byte`s, except
 that multiple decimal values are allowed, and are delimited by spaces:
 
 ```par
 def Bytes1 = <<65 91>>  // inferred as `Bytes`
-def Bytes2 = <<>>       // Error! Empty `Bytes` are not supported
+def Bytes2 = << >>      // zero-byte sequence
+// def Bytes3 = <<>>    // This triggers syntax error for now, but we intend to fix it
 ```
 
 A `Bytes` can also be broken down to a list of `Byte`s:
@@ -225,7 +226,7 @@ A `Bytes` can also be broken down to a list of `Byte`s:
 ```par
 dec Bytes : [Bytes] List<Byte>
 def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
-	.end r => let ! = Result.Always(type !)(r) in .end!,
-	.byte(b) rest => .item(b) rest.loop,
+  .end _ => .end!,
+  .byte(b) rest => .item(b) rest.loop,
 }
 ```
