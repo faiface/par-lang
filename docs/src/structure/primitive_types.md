@@ -1,13 +1,15 @@
-# Strings & Numbers
+# Primitive Types
 
 Before taking a stroll in the diverse garden of Par's types, let's stop by the most basic ones:
 the _primitives._
 
-At the moment, Par has four primitive types:
+At the moment, Par has six primitive types:
 - **`Int`** — Integers, positive and negative whole numbers, arbitrary size.
 - **`Nat`** — Natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
 - **`String`** — UTF-8 encoded sequence of Unicode characters.
-- **`Char`** — Singular Unicode characters.
+- **`Char`** — Singular Unicode character.
+- **`Byte`** — Singular data unit that consists of eight bits. They are a subtype of `Bytes`.
+- **`Bytes`** — Contiguous-in-memory sequence of bytes.
 
 > There's a **significant distinction** between _primitives_ and all other types in Par.
 >
@@ -28,6 +30,9 @@ Primitives are manipulated using magical built-in functions.
    ```
 2. Press **Compile,** and **Run.** Scroll the list that pops up.
    ![List of built-in functions](../images/strings_and_numbers_1.png)
+
+Alternatively, the [Built-In Definitions](../builtin.md) chapter contains all built-in definitions
+available in the language.
 
 **To figure out the type of a built-in function:**
 
@@ -182,7 +187,46 @@ copy-paste this one, if you ever need it:
 ```par
 dec Chars : [String] List<Char>
 def Chars = [s] String.Reader(s).begin.char.case {
-  .end! => .end!,
+  .end _ => .end!,
   .char(c) rest => .item(c) rest.loop,
+}
+```
+
+## `Byte`
+
+A byte consists of eight bits, whose numerical value can range from 0 and 255, inclusive. `Byte`
+literals are written in decimal, enclosed in double angle brackets:
+
+```par
+def Byte1 = <<65>>   // inferred as `Byte`
+def Byte2 = <<321>>  // out-of-bounds values are automatically wrapped
+```
+
+Since `Byte` is a subtype of `Bytes`, every variable of type `Byte` can be used as a `Bytes`, too.
+
+Just like `Char`s, there's a built-in function to check if a `Byte` is a part of a byte class. For `Byte`s, that's mainly byte ranges:
+
+```par
+def IsMsbSet = Byte.Is(<<192>>, .range(<<128>>, <<255>>)!)  // .true!
+```
+
+## `Bytes`
+
+`Bytes` are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of `Byte`s, except
+that multiple decimal values are allowed, and are delimited by spaces:
+
+```par
+def Bytes1 = <<65 91>>  // inferred as `Bytes`
+def Bytes2 = << >>      // zero-byte sequence
+// def Bytes3 = <<>>    // This triggers syntax error for now, but we intend to fix it
+```
+
+A `Bytes` can also be broken down to a list of `Byte`s:
+
+```par
+dec Bytes : [Bytes] List<Byte>
+def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
+  .end _ => .end!,
+  .byte(b) rest => .item(b) rest.loop,
 }
 ```

@@ -75,7 +75,7 @@ Let’s look at what falls into each category.
 
 These are:
 
-- All [**primitives**](./structure/strings_and_numbers.md): `Int`, `Nat`, `String`, `Char`
+- All [**primitives**](./structure/primitive_types.md): `Int`, `Nat`, `String`, `Char`
 - [**Unit**](./types/unit.md)
 - [**Either**](./types/either.md)
 - [**Pair**](./types/pair.md)

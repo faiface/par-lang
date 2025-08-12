@@ -75,6 +75,20 @@ Just like [recursive types](./recursive.md), iterative types can be equated with
    ```
 4. And so on...
 
+> Just like [`recursive`](./recursive.md) types, `iterative` types have an important restriction:
+> **every `self` reference for an `iterative` must be guarded by a `choice`.** The `choice` doesn't
+> have to be right next to the `iterative`, but it *has* to be somewhere in-between `iterative` and
+> `self`:
+>
+> ```par
+> type ValidSequence<a> = iterative (a) choice {
+>   .close => !,
+>   .next => self,  // Okay. This `self` is guarded by a `choice`.
+> }
+> 
+> type InvalidSequence<a> = iterative (a) self  // Error! Unguarded `self` reference
+> ```
+
 So, if both [recursive](./recursive.md) and iterative types can be equated with their expansions,
 **what's the difference?** The difference lies in their construction and destruction:
 - **Recursive types** are **constructed step by step** and **destructed by loops**.
