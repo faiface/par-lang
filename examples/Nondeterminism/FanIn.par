@@ -1,0 +1,35 @@
+// Try in the Playground!
+
+def TryFanIn = FanIn(type String)
+
+dec FanIn : [type a] [List<List<a>>] List<a>
+def FanIn = [type a] [lists] chan yield {
+  let yield = Cell.Share(type dual List<a>)(chan cell {
+    lists.begin.case {
+      .end! => {
+        cell.end!
+      }
+
+      .item(list) => {
+        cell.split(chan cell {
+          list.begin.case {
+            .end! => {
+              cell.end!
+            }
+
+            .item(value) => {
+              cell.take[yield]
+              yield.item(value)
+              cell.put(yield)
+              list.loop
+            }
+          }
+        })
+
+        lists.loop
+      }
+    }
+  }).put(yield)
+
+  yield.end!
+}
