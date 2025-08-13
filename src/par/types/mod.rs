@@ -1,5 +1,5 @@
 pub mod core;
-pub use core::{Operation, PrimitiveType, Type};
+pub use core::{LoopId, Operation, PrimitiveType, Type};
 
 pub mod error;
 pub use error::TypeError;

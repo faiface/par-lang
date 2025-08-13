@@ -1,6 +1,6 @@
 use crate::location::{Span, Spanning};
 use crate::par::language::{GlobalName, LocalName};
-use crate::par::types::{Operation, Type};
+use crate::par::types::{LoopId, Operation, Type};
 use indexmap::IndexMap;
 use miette::LabeledSpan;
 use std::fmt::Write;
@@ -33,7 +33,7 @@ pub enum TypeError {
     RedundantBranch(Span, LocalName, Type),
     TypesCannotBeUnified(Type, Type),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
-    DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] Option<LocalName>),
+    DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] LoopId),
     CannotUnrollAscendantIterative(Span, #[allow(unused)] Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),

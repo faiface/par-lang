@@ -1,9 +1,23 @@
 use super::super::language::{GlobalName, LocalName};
 use crate::location::{Span, Spanning};
-use crate::par::types::visit;
+use crate::par::types::visit::Polarity;
+use crate::par::types::{visit, TypeDefs, TypeError};
 use arcstr::ArcStr;
 use indexmap::IndexSet;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LoopId(u64);
+
+static NEXT_LOOP_ID: AtomicU64 = AtomicU64::new(0);
+
+impl LoopId {
+    pub fn new() -> Self {
+        let id = NEXT_LOOP_ID.fetch_add(1, Ordering::SeqCst);
+        Self(id)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrimitiveType {
@@ -47,17 +61,17 @@ pub enum Type {
     Continue(Span),
     Recursive {
         span: Span,
-        // The ascendents of the type (denoted by the names of the respective loop points):
+        // The ascendents of the type (denoted by unique IDs generated for each loop):
         // If you `begin` on a `recursive`, and it expands, so its `self`s get replaced by new
         // `recursive`s, these new `recursive`s will have as their *ascendent* the original `recursive`.
         // This is for totality checking.
-        asc: IndexSet<Option<LocalName>>,
+        asc: IndexSet<LoopId>,
         label: Option<LocalName>,
         body: Box<Self>,
     },
     Iterative {
         span: Span,
-        asc: IndexSet<Option<LocalName>>,
+        asc: IndexSet<LoopId>,
         label: Option<LocalName>,
         body: Box<Self>,
     },
@@ -253,5 +267,47 @@ impl Spanning for Type {
             | Self::Exists(span, _, _)
             | Self::Forall(span, _, _) => span.clone(),
         }
+    }
+}
+
+impl Type {
+    pub fn remove_asc(&mut self, defs: &TypeDefs) -> Result<(), TypeError> {
+        fn inner(typ: &mut Type, polarity: Polarity, defs: &TypeDefs) -> Result<(), TypeError> {
+            match (typ, polarity) {
+                (Type::Recursive { asc, body, .. }, Polarity::Positive | Polarity::Neither)
+                | (Type::Iterative { asc, body, .. }, Polarity::Negative | Polarity::Neither) => {
+                    asc.clear();
+                    inner(body, polarity, defs)?;
+                }
+                (
+                    Type::Iterative {
+                        span, asc, body, ..
+                    },
+                    Polarity::Positive | Polarity::Both,
+                )
+                | (
+                    Type::Recursive {
+                        span, asc, body, ..
+                    },
+                    Polarity::Negative | Polarity::Both,
+                ) => {
+                    if !asc.is_empty() {
+                        return Err(TypeError::CannotUnrollAscendantIterative(
+                            span.clone(),
+                            None,
+                        ));
+                    }
+                    inner(body, polarity, defs)?;
+                }
+                (typ, polarity) => visit::continue_mut_polarized(
+                    typ,
+                    polarity,
+                    defs,
+                    |child: &mut Type, polarity| inner(child, polarity, defs),
+                )?,
+            }
+            Ok(())
+        }
+        inner(self, Polarity::Positive, defs)
     }
 }

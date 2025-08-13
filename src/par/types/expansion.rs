@@ -1,7 +1,7 @@
 use crate::location::Span;
 use crate::par::language::LocalName;
 use crate::par::types::visit;
-use crate::par::types::{Type, TypeDefs, TypeError};
+use crate::par::types::{LoopId, Type, TypeDefs, TypeError};
 use indexmap::IndexSet;
 
 impl Type {
@@ -14,7 +14,7 @@ impl Type {
     }
 
     pub fn expand_recursive(
-        asc: &IndexSet<Option<LocalName>>,
+        asc: &IndexSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
     ) -> Result<Self, TypeError> {
@@ -22,7 +22,7 @@ impl Type {
         fn inner(
             typ: &mut Type,
             target_label: &Option<LocalName>,
-            asc: &IndexSet<Option<LocalName>>,
+            asc: &IndexSet<LoopId>,
             body: &Type,
         ) -> Result<(), TypeError> {
             match typ {
@@ -60,7 +60,7 @@ impl Type {
 
     pub fn expand_iterative(
         span: &Span,
-        asc: &IndexSet<Option<LocalName>>,
+        asc: &IndexSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
     ) -> Result<Self, TypeError> {
@@ -75,7 +75,7 @@ impl Type {
         fn inner(
             typ: &mut Type,
             target_label: &Option<LocalName>,
-            asc: &IndexSet<Option<LocalName>>,
+            asc: &IndexSet<LoopId>,
             body: &Type,
         ) -> Result<(), TypeError> {
             match typ {
