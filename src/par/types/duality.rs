@@ -1,6 +1,7 @@
 use super::super::language::LocalName;
 use super::core::Type;
 use crate::location::Span;
+use crate::par::types::visit;
 
 impl Type {
     pub fn dual(self, span0: Span) -> Self {
@@ -80,123 +81,27 @@ impl Type {
         }
     }
 
-    fn dualize_self(self, label: &Option<LocalName>) -> Self {
-        match self {
-            Self::Primitive(span, p) => Self::Primitive(span, p),
-            Self::DualPrimitive(span, p) => Self::DualPrimitive(span, p),
-
-            Self::Var(span, name) => Self::Var(span, name),
-            Self::DualVar(span, name) => Self::DualVar(span, name),
-            Self::Name(span, name, args) => Self::Name(
-                span,
-                name,
-                args.into_iter()
-                    .map(|arg| arg.dualize_self(label))
-                    .collect(),
-            ),
-            Self::DualName(span, name, args) => Self::DualName(
-                span,
-                name,
-                args.into_iter()
-                    .map(|arg| arg.dualize_self(label))
-                    .collect(),
-            ),
-
-            Self::Box(span, body) => Self::Box(span, Box::new(body.dualize_self(label))),
-            Self::DualBox(span, body) => Self::DualBox(span, Box::new(body.dualize_self(label))),
-
-            Self::Pair(loc, t, u) => Self::Pair(
-                loc.clone(),
-                Box::new(t.dualize_self(label)),
-                Box::new(u.dualize_self(label)),
-            ),
-            Self::Function(loc, t, u) => Self::Function(
-                loc.clone(),
-                Box::new(t.dualize_self(label)),
-                Box::new(u.dualize_self(label)),
-            ),
-            Self::Either(span, branches) => Self::Either(
-                span.clone(),
-                branches
-                    .into_iter()
-                    .map(|(branch, t)| (branch, t.dualize_self(label)))
-                    .collect(),
-            ),
-            Self::Choice(span, branches) => Self::Choice(
-                span.clone(),
-                branches
-                    .into_iter()
-                    .map(|(branch, t)| (branch, t.dualize_self(label)))
-                    .collect(),
-            ),
-            Self::Break(span) => Self::Break(span.clone()),
-            Self::Continue(span) => Self::Continue(span.clone()),
-
-            Self::Recursive {
-                span,
-                asc,
-                label: label1,
-                body: t,
-            } => {
-                if &label1 == label {
-                    Self::Recursive {
-                        span,
-                        asc,
-                        label: label1,
-                        body: t,
-                    }
-                } else {
-                    Self::Recursive {
-                        span,
-                        asc,
-                        label: label1,
-                        body: Box::new(t.dualize_self(label)),
-                    }
+    fn dualize_self(mut self, label: &Option<LocalName>) -> Self {
+        fn inner(typ: &mut Type, target_label: &Option<LocalName>) -> Result<(), ()> {
+            match typ {
+                Type::Self_(span, label) if label == target_label => {
+                    *typ = Type::DualSelf(span.clone(), label.clone());
+                }
+                Type::DualSelf(span, label) if label == target_label => {
+                    *typ = Type::Self_(span.clone(), label.clone());
+                }
+                Type::Recursive { label, .. } | Type::Iterative { label, .. }
+                    if label == target_label =>
+                {
+                    // our label is shadowed
+                }
+                _ => {
+                    visit::continue_mut(typ, |child: &mut Type| inner(child, target_label))?;
                 }
             }
-            Self::Iterative {
-                span,
-                asc,
-                label: label1,
-                body: t,
-            } => {
-                if &label1 == label {
-                    Self::Iterative {
-                        span,
-                        asc,
-                        label: label1,
-                        body: t,
-                    }
-                } else {
-                    Self::Iterative {
-                        span,
-                        asc,
-                        label: label1,
-                        body: Box::new(t.dualize_self(label)),
-                    }
-                }
-            }
-            Self::Self_(span, label1) => {
-                if &label1 == label {
-                    Self::DualSelf(span, label1)
-                } else {
-                    Self::Self_(span, label1)
-                }
-            }
-            Self::DualSelf(span, label1) => {
-                if &label1 == label {
-                    Self::Self_(span, label1)
-                } else {
-                    Self::DualSelf(span, label1)
-                }
-            }
-
-            Self::Exists(loc, name, t) => {
-                Self::Exists(loc.clone(), name.clone(), Box::new(t.dualize_self(label)))
-            }
-            Self::Forall(loc, name, t) => {
-                Self::Forall(loc.clone(), name.clone(), Box::new(t.dualize_self(label)))
-            }
+            Ok(())
         }
+        inner(&mut self, label).unwrap();
+        self
     }
 }
