@@ -1,6 +1,6 @@
 use super::super::language::LocalName;
 use super::super::process::{Command, Expression, Process};
-use super::core::{Operation, Type};
+use super::core::{LoopId, Operation, Type};
 use super::error::TypeError;
 use super::Context;
 use crate::location::Span;
@@ -333,10 +333,9 @@ impl Context {
                 let mut typ_asc = typ_asc.clone();
 
                 if !*unfounded {
-                    typ_asc.insert(label.clone());
+                    let loop_id = LoopId::new();
+                    typ_asc.insert(loop_id);
                 }
-
-                self.invalidate_ascendent(label);
                 self.loop_points.insert(
                     label.clone(),
                     (
@@ -403,11 +402,11 @@ impl Context {
                 if let (Type::Recursive { asc: asc1, .. }, Type::Recursive { asc: asc2, .. }) =
                     (typ, &driver_type)
                 {
-                    for label in asc2 {
-                        if !asc1.contains(label) {
+                    for loop_id in asc2 {
+                        if !asc1.contains(loop_id) {
                             return Err(TypeError::DoesNotDescendSubjectOfBegin(
                                 span.clone(),
-                                label.clone(),
+                                loop_id.clone(),
                             ));
                         }
                     }

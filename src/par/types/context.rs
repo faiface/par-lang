@@ -73,7 +73,7 @@ impl Context {
                 (checked_def, declared_type)
             }
             None => {
-                let (expr, typ) = self.infer_expression(None, &unchecked_def)?;
+                let (expr, mut typ) = self.infer_expression(None, &unchecked_def)?;
                 self.type_defs.validate_type(
                     &typ,
                     &IndexSet::new(),
@@ -81,6 +81,7 @@ impl Context {
                     &IndexSet::new(),
                     &IndexSet::new(),
                 )?;
+                typ.remove_asc(&self.type_defs)?;
                 (expr, typ)
             }
         };
@@ -155,12 +156,6 @@ impl Context {
         Ok(())
     }
 
-    pub fn invalidate_ascendent(&mut self, label: &Option<LocalName>) {
-        for (_, t) in &mut self.variables {
-            t.invalidate_ascendent(label);
-        }
-    }
-
     pub fn capture(
         &mut self,
         inference_subject: Option<&LocalName>,
@@ -207,69 +202,5 @@ impl Context {
             ));
         }
         Ok(())
-    }
-}
-
-impl Type {
-    fn invalidate_ascendent(&mut self, label: &Option<LocalName>) {
-        match self {
-            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
-            Self::Var(_, _) | Self::DualVar(_, _) => {}
-            Self::Name(_, _, args) | Self::DualName(_, _, args) => {
-                for arg in args {
-                    arg.invalidate_ascendent(label);
-                }
-            }
-            Self::Box(_, body) | Self::DualBox(_, body) => {
-                body.invalidate_ascendent(label);
-            }
-            Self::Pair(_, t, u) => {
-                t.invalidate_ascendent(label);
-                u.invalidate_ascendent(label);
-            }
-            Self::Function(_, t, u) => {
-                t.invalidate_ascendent(label);
-                u.invalidate_ascendent(label);
-            }
-            Self::Either(_, branches) => {
-                for (_, t) in branches {
-                    t.invalidate_ascendent(label);
-                }
-            }
-            Self::Choice(_, branches) => {
-                for (_, t) in branches {
-                    t.invalidate_ascendent(label);
-                }
-            }
-            Self::Break(_) => {}
-            Self::Continue(_) => {}
-
-            Self::Recursive {
-                span: _,
-                asc,
-                label: _,
-                body: t,
-            } => {
-                asc.shift_remove(label);
-                t.invalidate_ascendent(label);
-            }
-            Self::Iterative {
-                span: _,
-                asc,
-                label: _,
-                body: t,
-            } => {
-                asc.shift_remove(label);
-                t.invalidate_ascendent(label);
-            }
-            Self::Self_(_, _) | Self::DualSelf(_, _) => {}
-
-            Self::Exists(_, _, t) => {
-                t.invalidate_ascendent(label);
-            }
-            Self::Forall(_, _, t) => {
-                t.invalidate_ascendent(label);
-            }
-        }
     }
 }
