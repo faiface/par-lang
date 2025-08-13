@@ -1,5 +1,6 @@
 use super::super::language::{GlobalName, LocalName};
 use crate::location::{Span, Spanning};
+use crate::par::types::visit;
 use arcstr::ArcStr;
 use indexmap::IndexSet;
 use std::collections::BTreeMap;
@@ -210,62 +211,21 @@ impl Type {
 
 impl Type {
     pub fn qualify(&mut self, module: Option<&str>) {
-        match self {
-            Self::Primitive(span, _) | Self::DualPrimitive(span, _) => *span = Span::None,
-            Self::Var(span, _) | Self::DualVar(span, _) => *span = Span::None,
-            Self::Name(span, name, args) | Self::DualName(span, name, args) => {
-                *span = Span::None;
-                name.qualify(module);
-                for arg in args {
-                    arg.qualify(module);
+        fn inner(typ: &mut Type, module: Option<&str>) -> Result<(), ()> {
+            match typ {
+                Type::Name(_, name, args) | Type::DualName(_, name, args) => {
+                    name.qualify(module);
+                    for arg in args {
+                        inner(arg, module)?;
+                    }
+                }
+                _ => {
+                    visit::continue_mut(typ, |child: &mut Type| inner(child, module))?;
                 }
             }
-            Self::Box(span, body) | Self::DualBox(span, body) => {
-                *span = Span::None;
-                body.qualify(module);
-            }
-            Self::Pair(span, t, u) => {
-                *span = Span::None;
-                t.qualify(module);
-                u.qualify(module);
-            }
-            Self::Function(span, t, u) => {
-                *span = Span::None;
-                t.qualify(module);
-                u.qualify(module);
-            }
-            Self::Either(span, branches) => {
-                *span = Span::None;
-                for (_, typ) in branches {
-                    typ.qualify(module);
-                }
-            }
-            Self::Choice(span, branches) => {
-                *span = Span::None;
-                for (_, typ) in branches {
-                    typ.qualify(module);
-                }
-            }
-            Self::Break(span) => *span = Span::None,
-            Self::Continue(span) => *span = Span::None,
-            Self::Recursive { span, body, .. } => {
-                *span = Span::None;
-                body.qualify(module);
-            }
-            Self::Iterative { span, body, .. } => {
-                *span = Span::None;
-                body.qualify(module);
-            }
-            Self::Self_(span, _) | Self::DualSelf(span, _) => *span = Span::None,
-            Self::Exists(span, _, body) => {
-                *span = Span::None;
-                body.qualify(module);
-            }
-            Self::Forall(span, _, body) => {
-                *span = Span::None;
-                body.qualify(module);
-            }
+            Ok(())
         }
+        inner(self, module).unwrap();
     }
 }
 

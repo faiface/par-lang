@@ -139,7 +139,7 @@ impl Context {
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_iterative(span, top_asc, top_label, body, &self.type_defs)?,
+                    &Type::expand_iterative(span, top_asc, top_label, body)?,
                     command,
                     analyze_process,
                 );
@@ -157,7 +157,7 @@ impl Context {
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_recursive(top_asc, top_label, body, &self.type_defs)?,
+                    &Type::expand_recursive(top_asc, top_label, body)?,
                     command,
                     analyze_process,
                 );
@@ -359,7 +359,7 @@ impl Context {
                 self.put(
                     span,
                     object.clone(),
-                    Type::expand_recursive(&typ_asc, typ_label, typ_body, &self.type_defs)?,
+                    Type::expand_recursive(&typ_asc, typ_label, typ_body)?,
                 )?;
                 let (process, inferred_type) = analyze_process(self, process)?;
 

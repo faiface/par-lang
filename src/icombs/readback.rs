@@ -763,7 +763,7 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                 asc,
                 label,
                 body,
-            } => Type::expand_recursive(&asc, &label, &body, &type_defs).unwrap(),
+            } => Type::expand_recursive(&asc, &label, &body).unwrap(),
             Type::Iterative {
                 span,
                 asc,
@@ -771,7 +771,7 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
                 body,
             } => {
                 if asc.is_empty() {
-                    Type::expand_iterative(&Span::None, &asc, &label, &body, &type_defs).unwrap()
+                    Type::expand_iterative(&Span::None, &asc, &label, &body).unwrap()
                 } else {
                     break Type::Iterative {
                         span,
