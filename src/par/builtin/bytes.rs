@@ -1,4 +1,3 @@
-use arcstr::literal;
 use byteview::ByteView;
 use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
@@ -6,7 +5,7 @@ use std::{cmp::Ordering, sync::Arc};
 use crate::{
     icombs::readback::Handle,
     par::{
-        builtin::{byte::ByteClass, list::readback_list},
+        builtin::{byte::ByteClass, list::readback_list, reader::provide_bytes_reader},
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
@@ -50,105 +49,8 @@ async fn bytes_builder(mut handle: Handle) {
 }
 
 async fn bytes_reader(mut handle: Handle) {
-    let mut remainder = handle.receive().bytes().await;
-    loop {
-        match handle.case().await.as_str() {
-            "close" => {
-                handle.break_();
-                return;
-            }
-            "byte" => match remainder.get(0) {
-                Some(b) => {
-                    handle.signal(literal!("byte"));
-                    handle.send().provide_byte(*b);
-                    remainder = remainder.slice(1..);
-                }
-                None => {
-                    handle.signal(literal!("end"));
-                    handle.signal(literal!("ok"));
-                    handle.break_();
-                    return;
-                }
-            },
-            "match" => {
-                let prefix = BytesPattern::readback(handle.receive()).await;
-                let suffix = BytesPattern::readback(handle.receive()).await;
-                if remainder.is_empty() {
-                    handle.signal(literal!("end"));
-                    handle.signal(literal!("ok"));
-                    handle.break_();
-                    return;
-                }
-
-                let mut m = BytesMachine::start(Box::new(BytesPattern::Concat(prefix, suffix)));
-
-                let mut best_match = None;
-                for (pos, &b) in remainder.iter().enumerate() {
-                    match (m.leftmost_feasible_split(pos), best_match) {
-                        (Some(fi), Some((bi, _))) if fi > bi => break,
-                        (None, _) => break,
-                        _ => {}
-                    }
-                    m.advance(pos, b);
-                    match (m.leftmost_accepting_split(), best_match) {
-                        (Some(ai), Some((bi, _))) if ai <= bi => best_match = Some((ai, pos + 1)),
-                        (Some(ai), None) => best_match = Some((ai, pos + 1)),
-                        _ => {}
-                    }
-                }
-
-                match best_match {
-                    Some((i, j)) => {
-                        handle.signal(literal!("match"));
-                        handle.send().provide_bytes(remainder.slice(..i));
-                        handle.send().provide_bytes(remainder.slice(i..j));
-                        remainder = remainder.slice(j..);
-                    }
-                    None => {
-                        handle.signal(literal!("fail"));
-                    }
-                }
-            }
-            "matchEnd" => {
-                let prefix = BytesPattern::readback(handle.receive()).await;
-                let suffix = BytesPattern::readback(handle.receive()).await;
-                if remainder.is_empty() {
-                    handle.signal(literal!("end"));
-                    handle.signal(literal!("ok"));
-                    handle.break_();
-                    return;
-                }
-
-                let mut m = BytesMachine::start(Box::new(BytesPattern::Concat(prefix, suffix)));
-
-                for (pos, &b) in remainder.iter().enumerate() {
-                    if m.accepts() == None {
-                        break;
-                    }
-                    m.advance(pos, b);
-                }
-
-                match m.leftmost_accepting_split() {
-                    Some(i) => {
-                        handle.signal(literal!("match"));
-                        handle.send().provide_bytes(remainder.slice(..i));
-                        handle.send().provide_bytes(remainder.slice(i..));
-                        handle.break_();
-                        return;
-                    }
-                    None => {
-                        handle.signal(literal!("fail"));
-                    }
-                }
-            }
-            "remainder" => {
-                handle.signal(literal!("ok"));
-                handle.provide_bytes(remainder);
-                return;
-            }
-            _ => unreachable!(),
-        }
-    }
+    let remainder = handle.receive().bytes().await;
+    provide_bytes_reader(handle, remainder).await;
 }
 
 #[derive(Debug, Clone)]

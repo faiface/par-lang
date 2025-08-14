@@ -1,12 +1,12 @@
 use std::{cmp::Ordering, sync::Arc};
 
-use arcstr::{literal, Substr};
+use arcstr::Substr;
 use num_bigint::BigInt;
 
 use crate::{
     icombs::readback::Handle,
     par::{
-        builtin::{char_::CharClass, list::readback_list},
+        builtin::{char_::CharClass, list::readback_list, reader::provide_string_reader},
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
@@ -63,107 +63,8 @@ async fn string_quote(mut handle: Handle) {
 }
 
 async fn string_reader(mut handle: Handle) {
-    let mut remainder = handle.receive().string().await;
-    loop {
-        match handle.case().await.as_str() {
-            "close" => {
-                handle.break_();
-                return;
-            }
-            "char" => match remainder.chars().next() {
-                Some(ch) => {
-                    handle.signal(literal!("char"));
-                    handle.send().provide_char(ch);
-                    remainder = remainder.substr(ch.len_utf8()..);
-                }
-                None => {
-                    handle.signal(literal!("end"));
-                    handle.signal(literal!("ok"));
-                    handle.break_();
-                    return;
-                }
-            },
-            "match" => {
-                let prefix = StringPattern::readback(handle.receive()).await;
-                let suffix = StringPattern::readback(handle.receive()).await;
-                if remainder.is_empty() {
-                    handle.signal(literal!("end"));
-                    handle.signal(literal!("ok"));
-                    handle.break_();
-                    return;
-                }
-
-                let mut m = StringMachine::start(Box::new(StringPattern::Concat(prefix, suffix)));
-
-                let mut best_match = None;
-                for (pos, ch) in remainder.char_indices() {
-                    match (m.leftmost_feasible_split(pos), best_match) {
-                        (Some(fi), Some((bi, _))) if fi > bi => break,
-                        (None, _) => break,
-                        _ => {}
-                    }
-                    m.advance(pos, ch.len_utf8(), ch);
-                    match (m.leftmost_accepting_split(), best_match) {
-                        (Some(ai), Some((bi, _))) if ai <= bi => {
-                            best_match = Some((ai, pos + ch.len_utf8()))
-                        }
-                        (Some(ai), None) => best_match = Some((ai, pos + ch.len_utf8())),
-                        _ => {}
-                    }
-                }
-
-                match best_match {
-                    Some((i, j)) => {
-                        handle.signal(literal!("match"));
-                        handle.send().provide_string(remainder.substr(..i));
-                        handle.send().provide_string(remainder.substr(i..j));
-                        remainder = remainder.substr(j..);
-                    }
-                    None => {
-                        handle.signal(literal!("fail"));
-                    }
-                }
-            }
-            "matchEnd" => {
-                let prefix = StringPattern::readback(handle.receive()).await;
-                let suffix = StringPattern::readback(handle.receive()).await;
-                if remainder.is_empty() {
-                    handle.signal(literal!("end"));
-                    handle.signal(literal!("ok"));
-                    handle.break_();
-                    return;
-                }
-
-                let mut m = StringMachine::start(Box::new(StringPattern::Concat(prefix, suffix)));
-
-                for (pos, ch) in remainder.char_indices() {
-                    if m.accepts() == None {
-                        break;
-                    }
-                    m.advance(pos, ch.len_utf8(), ch);
-                }
-
-                match m.leftmost_accepting_split() {
-                    Some(i) => {
-                        handle.signal(literal!("match"));
-                        handle.send().provide_string(remainder.substr(..i));
-                        handle.send().provide_string(remainder.substr(i..));
-                        handle.break_();
-                        return;
-                    }
-                    None => {
-                        handle.signal(literal!("fail"));
-                    }
-                }
-            }
-            "remainder" => {
-                handle.signal(literal!("ok"));
-                handle.provide_string(remainder);
-                return;
-            }
-            _ => unreachable!(),
-        }
-    }
+    let remainder = handle.receive().string().await;
+    provide_string_reader(handle, remainder).await;
 }
 
 #[derive(Debug, Clone)]
