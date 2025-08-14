@@ -5,7 +5,7 @@
 - [Getting Started](./getting_started.md)
 - [Basic Program Structure](./basic_program_structure.md)
   - [Definitions & Declarations](./structure/definitions_and_declarations.md)
-  - [Strings & Numbers](./structure/strings_and_numbers.md)
+  - [Primitive Types](./structure/primitive_types.md)
   - [The `let` Expression](./structure/let_expressions.md)
 - [The Big Table](./big_table.md)
 - [Built-In Definitions](./builtin.md)

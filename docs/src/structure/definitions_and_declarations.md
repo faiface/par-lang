@@ -52,7 +52,7 @@ followed by an upper-case name, an `=` sign, and an expression computing the val
 def MyNumber = 7
 ```
 
-In this case, Par is able to infer the type of `MyNumber` as [`Nat`](./strings_and_numbers.md#nat)
+In this case, Par is able to infer the type of `MyNumber` as [`Nat`](./primitive_types.md#nat)
 (a natural number), so no type annotation is needed. Often, a type annotation is needed, or wanted.
 In those cases, we can add it using a colon after the name:
 
@@ -101,7 +101,7 @@ Par has a [structural](TODO) type system. While many languages offer multiple fo
 > With [recursive](../types/recursive.md) and [iterative](../types/iterative.md) types being anonymous,
 > Par has no issue treating types as their shapes, instead of their names. In fact, type definitions are
 > completely redundant in Par. Every usage of a global type (with the exception of the
-> [primitives](./strings_and_numbers.md)) can be replaced by its definition, until no definitions are
+> [primitives](./primitive_types.md)) can be replaced by its definition, until no definitions are
 > used.
 >
 > _Actually, all definitions are redundant in Par. However, programming without them would be quite tedious._

@@ -34,7 +34,7 @@ language consists of:
   what to send, what to receive.
 
 From among these, we have already encountered one in Par: _channels_. That's because aside from
-[primitives](./structure/strings_and_numbers.md), **all values in Par are channels.** Yes,
+[primitives](./structure/primitive_types.md), **all values in Par are channels.** Yes,
 [functions](./types/function.md), [pairs](./types/pair.md), [choices](./types/choice.md), all of them. It will become much
 clearer as we understand this process syntax.
 

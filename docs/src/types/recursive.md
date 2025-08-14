@@ -136,6 +136,23 @@ The recursive type can be thought of as being equivalent to its _expansion_. Tha
 > This one starts with a [choice](./choice.md), which enables polling the elements on demand, or
 > cancelling the rest of the stream. However, being recursive, a `FiniteStream<a>` is guaranteed
 > to reach the `.end!` eventually, if not cancelled.
+>
+> There is nonetheless an important restriction: in order for `self` references to remain useful,
+> **every `self` reference for a `recursive` must be guarded by an `either`.** The `either` doesn't
+> have to be right next to the `recursive`, but it *has* to be somewhere in-between `recursive` and
+> `self`:
+>
+> ```par
+> type ValidList<a> = recursive (a) either {
+>   .end!,
+>   .item self,  // Okay. This `self` is guarded by an `either`.
+> }
+> 
+> type InvalidList<a> = recursive (a) self  // Error! Unguarded `self` reference
+> ```
+> 
+> [Iterative](./iterative.md) types have a similar restriction: **their `self` reference must be
+> guarded by a [`choice`](./choice.md).**
 
 The key features of _recursive types_ are that **their values are finite,** and that
 **we can perform recursion on them.**

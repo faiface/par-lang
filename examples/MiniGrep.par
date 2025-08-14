@@ -1,0 +1,163 @@
+def Program: ! = chan exit {
+  let console = Console.Open
+
+  console.print("Welcome to Mini Grep!")
+  console.prompt("Path: ")[input]
+  input.case {
+    .err! => {
+      console.print("Failed to read input.").close
+      exit!
+    }
+    .ok path => {}
+  }
+  console.prompt("Needle: ")[input]
+  input.case {
+    .err! => {
+      console.print("Failed to read input.").close
+      exit!
+    }
+    .ok needle => {}
+  }
+
+  Traverse(path).begin.case {
+    .end! => {}
+    .item(fileInfo) rest => {
+      GrepFile(needle, fileInfo).begin/file.case {
+        .end! => {}
+        .item((lineNumber) lineContent) remainingLines => {
+          console.print("")
+          console.print(String.Builder
+            .add(fileInfo.path.absolute)
+            .add(":")
+            .add(Nat.ToString(lineNumber))
+            .build)
+          console.print(lineContent)
+          remainingLines.loop/file
+        }
+      }
+      rest.loop
+    }
+  }
+
+  console.close
+  exit!
+}
+
+dec GrepFile : [String, Storage.FileInfo] List<(Nat) String>
+def GrepFile = [needle, fileInfo] fileInfo.readUTF8.case {
+  .err e => do { Debug.Log(e) } in .end!,
+  .ok reader => do {
+    let lines = Lines(type Storage.Error)(reader)
+    let lines = Enumerate1(type Storage.Error, String)(lines)
+    let lines = Filter(type Storage.Error, (Nat) String)
+                  (lines, box [(_) line] Contains(needle, line))
+  } in lines.begin.next.case {
+    .end result => do {
+      result.case {
+        .err e => { Debug.Log(e) }
+        .ok! => {}
+      }
+    } in .end!,
+    .item(line) rest => .item(line) rest.loop,
+  }
+}
+
+dec Traverse : [String] List<Storage.FileInfo>
+def Traverse = [path] Storage.Get(path).case {
+  .err e => do { Debug.Log(e) } in .end!,
+  .ok item => item.case {
+    .file info => .item(info).end!,
+    .dir info => TraverseDir(info),
+  }
+}
+
+dec TraverseDir : [Storage.DirInfo] List<Storage.FileInfo>
+def TraverseDir = [dir] dir.begin/tree.list.case {
+  .err e => do { Debug.Log(e) } in .end!,
+  .ok items => items.begin.case {
+    .end! => .end!,
+    .item(it) rest => it.case {
+      .file info => .item(info) rest.loop,
+      .dir info => Concat(type Storage.FileInfo)(info.loop/tree, rest.loop),
+    }
+  }
+}
+
+// ---
+
+dec Concat : [type a] [List<a>, List<a>] List<a>
+def Concat = [type a] [left, right] left.begin.case {
+  .end! => right,
+  .item(x) xs => .item(x) xs.loop,
+}
+
+dec Contains : [String, String] Bool
+def Contains = [needle, haystack]
+  String.Reader(haystack).match(.repeat.one.any!, .str needle).case {
+    .end _ => .false!,
+    .fail reader => do {
+      reader.close
+    } in .false!,
+    .match(_, _) reader => do {
+      reader.close
+    } in .true!,
+  }
+
+// ---
+
+type Iterator<e, a> = recursive choice {
+  .close => !,
+  .next => either {
+    .end Result<e, !>,
+    .item(a) self,
+  }
+}
+
+dec Lines : [type e] [String.Reader<e>] Iterator<e, String>
+def Lines = [type e] [reader] do { reader.begin } in case {
+  .close => reader.close,
+
+  .next => reader.match(.repeat.one.any!, .str "\n").case {
+    .end result => .end result,
+    .fail reader => reader.remainder.case {
+      .err e => .end.err e,
+      .ok line => .item(line) case {
+        .close => !,
+        .next => .end.ok!,
+      },
+    }
+    .match(line, _) reader => .item(line) reader.loop,
+  }
+}
+
+dec Filter : [type e, a] [Iterator<e, box a>, box [a] Bool] Iterator<e, a>
+def Filter = [type e, a] [iter, predicate] do { iter.begin } in case {
+  .close => iter.close,
+  .next => iter.next.case {
+    .end result => .end result,
+    .item(value) iter => predicate(value).case {
+      .true! => .item(value) iter.loop,
+      .false! => iter.begin/skip.next.case {
+        .end result => .end result,
+        .item(value) iter => predicate(value).case {
+          .true! => .item(value) iter.loop,
+          .false! => iter.loop/skip,
+        }
+      },
+    }
+  }
+}
+
+dec Enumerate1 : [type e, a] [Iterator<e, a>] Iterator<e, (Nat) a>
+def Enumerate1 = [type e, a] [iter] do {
+  let index = 1
+  iter.begin
+} in case {
+  .close => iter.close,
+  .next => iter.next.case {
+    .end result => .end result,
+    .item(value) iter => .item((index) value) do {
+      let index = Nat.Add(index, 1)
+    } in iter.loop
+  }
+}

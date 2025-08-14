@@ -1,0 +1,42 @@
+def PlayWithQueue: Queue<String> = Queue.Empty(type String)
+
+type Queue<a> =
+  iterative/push recursive/pop
+  choice {
+    .push(a) => self/push,
+    .pop => either {
+      .end!,
+      .item(a) self/pop,
+    }
+  }
+
+// This implementation of the queue has time complexity O(1)
+// for both pushing and popping. Not amortized, O(1) every time.
+dec Queue.Empty : [type a] Queue<a>
+def Queue.Empty = [type a] do {
+  let front: List<a> = .end!
+  let back = List.Builder(type a)
+} in begin/push case {
+  .push(value) => do {
+    back.add(value)
+  } in loop/push,
+
+  .pop => front.begin/pop.case {
+    .end! => back.build.begin/pop.case {
+      .end! => .end!,
+      .item(value) front => .item(value) case {
+        .push(value) => do {
+          let back = List.Builder(type a) 
+          back.add(value)
+        } in loop/push,
+        .pop => front.loop/pop,
+      }
+    }
+    .item(value) front => .item(value) case {
+      .push(value) => do {
+        back.add(value)
+      } in loop/push,
+      .pop => front.loop/pop,
+    }
+  }
+}

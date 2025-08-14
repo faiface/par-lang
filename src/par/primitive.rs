@@ -1,6 +1,7 @@
 use std::fmt::{self, Write};
 
 use arcstr::Substr;
+use byteview::ByteView;
 use num_bigint::BigInt;
 
 use super::types::Type;
@@ -10,6 +11,7 @@ pub enum Primitive {
     Int(BigInt),
     String(Substr),
     Char(char),
+    Bytes(ByteView),
 }
 
 impl Primitive {
@@ -18,7 +20,23 @@ impl Primitive {
             Self::Int(i) => write!(f, "{}", i),
             Self::String(s) => write!(f, "{:?}", s),
             Self::Char(c) => write!(f, "{:?}", c),
+            Self::Bytes(b) => {
+                write!(f, "<<")?;
+                for (i, &byte) in b.as_ref().iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{}", byte as i64)?;
+                }
+                write!(f, ">>")
+            }
         }
+    }
+
+    pub fn pretty_string(&self) -> String {
+        let mut buf = String::new();
+        self.pretty(&mut buf, 0).unwrap();
+        buf
     }
 
     pub fn get_type(&self) -> Type {
@@ -27,6 +45,8 @@ impl Primitive {
             Self::Int(_) => Type::int(),
             Self::String(_) => Type::string(),
             Self::Char(_) => Type::char(),
+            Self::Bytes(b) if b.len() == 1 => Type::byte(),
+            Self::Bytes(_) => Type::bytes(),
         }
     }
 }

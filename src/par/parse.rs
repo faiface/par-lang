@@ -13,6 +13,7 @@ use crate::par::{
     types::Type,
 };
 use arcstr::{ArcStr, Substr};
+use byteview::ByteView;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
@@ -339,6 +340,13 @@ pub fn parse_module(input: &str) -> std::result::Result<Module<Expression>, Synt
             .map(|x| x.1.to_string().chars().chain(['\n']).collect::<String>())
             .collect::<String>(),
     })
+}
+
+pub fn parse_bytes(input: &str) -> Option<Vec<u8>> {
+    (literal_bytes_inner, winnow::combinator::eof)
+        .parse_next(&mut Input::new(&lex(input)))
+        .map(|(b, _)| b)
+        .ok()
 }
 
 fn type_def(input: &mut Input) -> Result<TypeDef> {
@@ -753,7 +761,13 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression> {
-    alt((expr_literal_int, expr_literal_string, expr_literal_char)).parse_next(input)
+    alt((
+        expr_literal_int,
+        expr_literal_string,
+        expr_literal_char,
+        expr_literal_bytes,
+    ))
+    .parse_next(input)
 }
 
 fn expr_list(input: &mut Input) -> Result<Expression> {
@@ -766,11 +780,16 @@ fn expr_list(input: &mut Input) -> Result<Expression> {
 }
 
 fn expr_literal_int(input: &mut Input) -> Result<Expression> {
+    literal_int
+        .map(|(span, i)| Expression::Primitive(span, Primitive::Int(i)))
+        .parse_next(input)
+}
+
+fn literal_int(input: &mut Input) -> Result<(Span, BigInt)> {
     t(TokenKind::Integer)
         .map(|token| {
             let s: String = token.raw.chars().filter(|c| *c != '_').collect();
-            let i = BigInt::parse_bytes(s.as_bytes(), 10).unwrap();
-            Expression::Primitive(token.span, Primitive::Int(i))
+            (token.span, BigInt::parse_bytes(s.as_bytes(), 10).unwrap())
         })
         .parse_next(input)
 }
@@ -795,6 +814,41 @@ fn expr_literal_char(input: &mut Input) -> Result<Expression> {
                 .next()
                 .unwrap();
             Expression::Primitive(token.span, Primitive::Char(value))
+        })
+        .parse_next(input)
+}
+
+fn expr_literal_bytes(input: &mut Input) -> Result<Expression> {
+    commit_after(
+        (t(TokenKind::Lt), t(TokenKind::Lt)),
+        (literal_bytes_inner, t(TokenKind::Gt), t(TokenKind::Gt)),
+    )
+    .map(|((pre, _), (bytes, _, post))| {
+        Expression::Primitive(
+            pre.span.join(post.span),
+            Primitive::Bytes(ByteView::new(&bytes)),
+        )
+    })
+    .parse_next(input)
+}
+
+fn literal_bytes_inner(input: &mut Input) -> Result<Vec<u8>> {
+    repeat(0.., literal_byte).parse_next(input)
+}
+
+fn literal_byte(input: &mut Input) -> Result<u8> {
+    literal_int
+        .map(|(_, i)| {
+            if i < BigInt::ZERO {
+                let rem: BigInt = i % 256;
+                if rem == BigInt::ZERO {
+                    0
+                } else {
+                    (256 - rem.iter_u32_digits().next().unwrap_or(0)) as u8
+                }
+            } else {
+                (i.iter_u32_digits().next().unwrap_or(0) % 256) as u8
+            }
         })
         .parse_next(input)
 }

@@ -16,7 +16,7 @@ Even without box types, some types in Par are already non-linear. These are the 
 - [Either](./either.md)
 - [Pair](./pair.md)
 - [Recursive](./recursive.md)
-- All the [primitives](../structure/strings_and_numbers.md): `Int`, `Nat`, `String`, `Char`.
+- All the [primitives](../structure/primitive_types.md): `Int`, `Nat`, `String`, `Char`.
 
 Any combination of these is always non-linear — they can be copied and discarded freely.
 

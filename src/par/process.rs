@@ -591,7 +591,7 @@ impl<Typ: Clone> Expression<Typ> {
 }
 
 impl Process<()> {
-    pub fn qualify(self: Arc<Self>, module: &str) -> Arc<Self> {
+    pub fn qualify(self: Arc<Self>, module: Option<&str>) -> Arc<Self> {
         Arc::new(match Self::clone(&self) {
             Self::Let {
                 span: _,
@@ -633,7 +633,7 @@ impl Process<()> {
 }
 
 impl Command<()> {
-    pub fn qualify(&mut self, module: &str) {
+    pub fn qualify(&mut self, module: Option<&str>) {
         match self {
             Self::Link(expression) => {
                 *expression = expression.clone().qualify(module);
@@ -676,7 +676,7 @@ impl Command<()> {
 }
 
 impl Expression<()> {
-    pub fn qualify(self: Arc<Self>, module: &str) -> Arc<Self> {
+    pub fn qualify(self: Arc<Self>, module: Option<&str>) -> Arc<Self> {
         Arc::new(match Self::clone(&self) {
             Self::Global(_, mut name, ()) => {
                 name.qualify(module);
