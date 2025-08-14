@@ -18,10 +18,16 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             span: Span::None,
             name: GlobalName::external(Some("Test"), "Test"),
             params: vec![],
-            typ: Type::iterative_box_choice(vec![(
-                "assert",
-                Type::function(Type::string(), Type::function(Type::bool(), Type::break_())),
-            )]),
+            typ: Type::iterative(
+                None,
+                Type::box_(Type::choice(vec![(
+                    "assert",
+                    Type::function(
+                        Type::string(),
+                        Type::function(Type::name(Some("Bool"), "Bool", vec![]), Type::break_()),
+                    ),
+                )])),
+            ),
         }],
         declarations: vec![],
         definitions: vec![],
