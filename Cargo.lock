@@ -2418,6 +2418,7 @@ dependencies = [
  "miette",
  "num-bigint",
  "rfd",
+ "scopeguard",
  "serde",
  "serde_json",
  "stacker",

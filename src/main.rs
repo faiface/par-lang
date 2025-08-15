@@ -18,6 +18,8 @@ mod par;
 mod playground;
 mod readback;
 mod spawn;
+mod test_assertion;
+mod test_runner;
 
 fn main() {
     let matches = command!()
@@ -48,6 +50,15 @@ fn main() {
         .subcommand(
             Command::new("lsp").about("Start the Par language server for editor integration"),
         )
+        .subcommand(
+            Command::new("test")
+                .about("Run Par tests")
+                .arg(
+                    arg!([file] "Run tests in a specific file")
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(arg!(--filter <FILTER> "Only run tests matching this filter").required(false)),
+        )
         .get_matches_from(wild::args());
 
     match matches.subcommand() {
@@ -68,6 +79,11 @@ fn main() {
             }
         }
         Some(("lsp", _)) => run_language_server(),
+        Some(("test", args)) => {
+            let file = args.get_one::<PathBuf>("file");
+            let filter = args.get_one::<String>("filter");
+            run_tests(file.cloned(), filter.cloned());
+        }
         _ => unreachable!(),
     }
 }
@@ -213,4 +229,8 @@ fn check(file: PathBuf) {
 
 fn run_language_server() {
     language_server::language_server_main::main()
+}
+
+fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
+    test_runner::run_tests(file, filter);
 }

@@ -10,6 +10,7 @@ pub mod nat;
 pub mod reader;
 pub mod storage;
 pub mod string;
+pub mod test;
 
 use std::sync::Arc;
 
@@ -31,4 +32,5 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Cell"), cell::external_module());
     module.import(Some("Console"), console::external_module());
     module.import(Some("Storage"), storage::external_module());
+    module.import(Some("Test"), test::external_module());
 }
