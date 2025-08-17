@@ -229,6 +229,20 @@ type Bytes.Pattern = recursive either {
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
 
+/// Cell (EXPERIMENTAL)
+
+type Cell<a> = iterative choice {
+  .end => ?,
+  .split(dual self) => self,
+  .take => (a) choice {
+    .put(a) => self,
+  }
+}
+
+dec Cell.Share : [type a] [dual Cell<a>] choice {
+  .put(a) => a,
+}
+
 /// Console
 
 type Console = iterative choice {
@@ -251,6 +265,7 @@ type Storage.PathInfo = box choice {
 type Storage.FileInfo = box choice {
   .path => Storage.PathInfo,
   .size => Nat.Nat,
+  .readBytes => Result<Storage.Error, Bytes.Reader<Storage.Error>>,
   .readUTF8 => Result<Storage.Error, String.Reader<Storage.Error>>,
 }
 
