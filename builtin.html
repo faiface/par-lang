@@ -389,6 +389,20 @@ type Bytes.Pattern = recursive either {
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
 
+/// Cell (EXPERIMENTAL)
+
+type Cell&lt;a&gt; = iterative choice {
+  .end =&gt; ?,
+  .split(dual self) =&gt; self,
+  .take =&gt; (a) choice {
+    .put(a) =&gt; self,
+  }
+}
+
+dec Cell.Share : [type a] [dual Cell&lt;a&gt;] choice {
+  .put(a) =&gt; a,
+}
+
 /// Console
 
 type Console = iterative choice {
@@ -411,6 +425,7 @@ type Storage.PathInfo = box choice {
 type Storage.FileInfo = box choice {
   .path =&gt; Storage.PathInfo,
   .size =&gt; Nat.Nat,
+  .readBytes =&gt; Result&lt;Storage.Error, Bytes.Reader&lt;Storage.Error&gt;&gt;,
   .readUTF8 =&gt; Result&lt;Storage.Error, String.Reader&lt;Storage.Error&gt;&gt;,
 }
 
