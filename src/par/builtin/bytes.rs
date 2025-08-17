@@ -28,6 +28,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(bytes_reader(handle)),
             ),
+            Definition::external(
+                "FromString",
+                Type::function(Type::string(), Type::bytes()),
+                |handle| Box::pin(bytes_from_string(handle)),
+            ),
         ],
     }
 }
@@ -51,6 +56,11 @@ async fn bytes_builder(mut handle: Handle) {
 async fn bytes_reader(mut handle: Handle) {
     let remainder = handle.receive().bytes().await;
     provide_bytes_reader(handle, remainder).await;
+}
+
+async fn bytes_from_string(mut handle: Handle) {
+    let string = handle.receive().string().await;
+    handle.provide_bytes(ByteView::from(string.as_str()))
 }
 
 #[derive(Debug, Clone)]

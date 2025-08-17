@@ -34,6 +34,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(Type::string(), Type::string()),
                 |handle| Box::pin(string_quote(handle)),
             ),
+            Definition::external(
+                "FromBytes",
+                Type::function(Type::bytes(), Type::string()),
+                |handle| Box::pin(string_from_bytes(handle)),
+            ),
         ],
     }
 }
@@ -65,6 +70,11 @@ async fn string_quote(mut handle: Handle) {
 async fn string_reader(mut handle: Handle) {
     let remainder = handle.receive().string().await;
     provide_string_reader(handle, remainder).await;
+}
+
+async fn string_from_bytes(mut handle: Handle) {
+    let bytes = handle.receive().bytes().await;
+    handle.provide_string(Substr::from(String::from_utf8_lossy(&bytes)))
 }
 
 #[derive(Debug, Clone)]

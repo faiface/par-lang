@@ -171,6 +171,8 @@ dec String.Reader  : [String] String.Reader<either {}>
 
 dec String.Quote : [String] String
 
+dec String.FromBytes : [Bytes] String
+
 /// Byte
 
 type Byte.Class = either {
@@ -225,6 +227,8 @@ type Bytes.Pattern = recursive either {
 
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
+
+dec Bytes.FromString : [String] Bytes
 
 /// Cell (EXPERIMENTAL)
 
