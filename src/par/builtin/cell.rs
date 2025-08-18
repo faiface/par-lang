@@ -21,26 +21,18 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             Type::forall(
                 "a",
                 Type::function(
+                    Type::var("a"),
+                    Type::function(
                     Type::name(None, "Cell", vec![Type::var("a")]).dual(Span::None),
-                    Type::choice(vec![(
-                        "put",
-                        Type::function(Type::var("a"), Type::var("a")),
-                    )]),
-                ),
-            ),
+                    Type::var("a")))),
             |handle| Box::pin(cell_share(handle)),
         )],
     }
 }
 
 async fn cell_share(mut handle: Handle) {
-    let sharing = handle.send();
-
-    match handle.case().await.as_str() {
-        "put" => {}
-        _ => unreachable!(),
-    }
     let initial_value = handle.receive();
+    let sharing = handle.send();
 
     let mutex = Arc::new(Mutex::new(Cell {
         shared: Some(initial_value),

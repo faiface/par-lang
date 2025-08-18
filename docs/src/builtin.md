@@ -174,6 +174,8 @@ dec String.Reader  : [String] String.Reader<either {}>
 
 dec String.Quote : [String] String
 
+dec String.FromBytes : [Bytes] String
+
 /// Byte
 
 type Byte.Class = either {
@@ -229,6 +231,8 @@ type Bytes.Pattern = recursive either {
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
 
+dec Bytes.FromString : [String] Bytes
+
 /// Cell (EXPERIMENTAL)
 
 type Cell<a> = iterative choice {
@@ -239,9 +243,7 @@ type Cell<a> = iterative choice {
   }
 }
 
-dec Cell.Share : [type a] [dual Cell<a>] choice {
-  .put(a) => a,
-}
+dec Cell.Share : [type a] [a, dual Cell<a>] a
 
 /// Console
 

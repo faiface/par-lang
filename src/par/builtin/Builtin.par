@@ -240,9 +240,7 @@ type Cell<a> = iterative choice {
   }
 }
 
-dec Cell.Share : [type a] [dual Cell<a>] choice {
-  .put(a) => a,
-}
+dec Cell.Share : [type a] [a, dual Cell<a>] a
 
 /// Console
 
