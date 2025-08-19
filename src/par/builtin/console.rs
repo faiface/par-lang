@@ -47,12 +47,12 @@ async fn console_open(mut handle: Handle) {
 
                 handle.send().concurrently(|mut handle| async move {
                     match result {
-                        Ok(_) => {
+                        Ok(n) if n > 0 => {
                             let string = Substr::from(buf.trim_end_matches(&['\n', '\r']));
                             handle.signal(literal!("ok"));
                             handle.provide_string(string);
                         }
-                        Err(_) => {
+                        _ => {
                             handle.signal(literal!("err"));
                             handle.break_();
                         }
