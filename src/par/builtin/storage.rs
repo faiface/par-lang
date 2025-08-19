@@ -13,7 +13,7 @@ use crate::{
     par::{
         builtin::reader::{
             provide_bytes_reader, provide_string_reader, AsyncByteIterator, AsyncCharIterator,
-            BytesRemainder, CharsRemainder,
+            BytesRemainder, CharsRemainder, Never,
         },
         process,
         program::{Definition, Module},
@@ -219,11 +219,27 @@ impl FileRemainder {
 }
 
 impl BytesRemainder for FileRemainder {
-    type Error = io::Error;
+    type ErrIn = Never;
+    type ErrOut = io::Error;
     type Iterator<'a>
         = FileRemainderByteIterator<'a>
     where
         Self: 'a;
+
+    async fn read_error_in(_: Handle) -> Self::ErrIn {
+        unreachable!()
+    }
+
+    async fn provide_error_out(handle: Handle, err_out: Self::ErrOut) {
+        handle.provide_string(Substr::from(err_out.to_string()));
+    }
+
+    async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
+        match result_in {
+            Ok(()) => {}
+        }
+        Ok(())
+    }
 
     fn bytes(&mut self) -> Self::Iterator<'_> {
         FileRemainderByteIterator {
@@ -237,7 +253,7 @@ impl BytesRemainder for FileRemainder {
         self.buffer.drain(..n).collect()
     }
 
-    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::Error> {
+    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut> {
         let mut result = Vec::new();
         let mut bytes = self.bytes();
         while let Some((_, b)) = bytes.next().await? {
@@ -248,11 +264,27 @@ impl BytesRemainder for FileRemainder {
 }
 
 impl CharsRemainder for FileRemainder {
-    type Error = io::Error;
+    type ErrIn = Never;
+    type ErrOut = io::Error;
     type Iterator<'a>
         = FileRemainderCharIterator<'a>
     where
         Self: 'a;
+
+    async fn read_error_in(_: Handle) -> Self::ErrIn {
+        unreachable!()
+    }
+
+    async fn provide_error_out(handle: Handle, err_out: Self::ErrOut) {
+        handle.provide_string(Substr::from(err_out.to_string()));
+    }
+
+    async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
+        match result_in {
+            Ok(()) => {}
+        }
+        Ok(())
+    }
 
     fn chars(&mut self) -> Self::Iterator<'_> {
         FileRemainderCharIterator {
@@ -271,7 +303,7 @@ impl CharsRemainder for FileRemainder {
         Substr::from(popped)
     }
 
-    async fn remaining_chars(&mut self) -> Result<Substr, Self::Error> {
+    async fn remaining_chars(&mut self) -> Result<Substr, Self::ErrOut> {
         let mut result = String::new();
         let mut chars = self.chars();
         while let Some((_, _, ch)) = chars.next().await? {
@@ -288,9 +320,9 @@ struct FileRemainderByteIterator<'a> {
 }
 
 impl<'a> AsyncByteIterator for FileRemainderByteIterator<'a> {
-    type Error = io::Error;
+    type ErrOut = io::Error;
 
-    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::Error> {
+    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::ErrOut> {
         if let Some(b) = self.remainder.buffer.get(self.index) {
             self.index += 1;
             return Ok(Some((self.index - 1, *b)));
@@ -312,9 +344,9 @@ struct FileRemainderCharIterator<'a> {
 }
 
 impl<'a> AsyncCharIterator for FileRemainderCharIterator<'a> {
-    type Error = io::Error;
+    type ErrOut = io::Error;
 
-    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::Error> {
+    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::ErrOut> {
         loop {
             while self.tmp.len() < 4 {
                 match self.bytes.next().await? {

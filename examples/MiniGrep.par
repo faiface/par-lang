@@ -96,33 +96,33 @@ def Contains = [needle, haystack]
   String.Reader(haystack).match(.repeat.one.any!, .str needle).case {
     .end _ => .false!,
     .fail reader => do {
-      reader.close
+      reader.close(.ok!)
     } in .false!,
     .match(_, _) reader => do {
-      reader.close
+      reader.close(.ok!)
     } in .true!,
   }
 
 // ---
 
 type Iterator<e, a> = recursive choice {
-  .close => !,
+  .close => Result<e, !>,
   .next => either {
     .end Result<e, !>,
     .item(a) self,
   }
 }
 
-dec Lines : [type e] [String.Reader<e>] Iterator<e, String>
+dec Lines : [type e] [String.Reader<either{}, e>] Iterator<e, String>
 def Lines = [type e] [reader] do { reader.begin } in case {
-  .close => reader.close,
+  .close => reader.close(.ok!),
 
   .next => reader.match(.repeat.one.any!, .str "\n").case {
     .end result => .end result,
     .fail reader => reader.remainder.case {
       .err e => .end.err e,
       .ok line => .item(line) case {
-        .close => !,
+        .close => .ok!,
         .next => .end.ok!,
       },
     }

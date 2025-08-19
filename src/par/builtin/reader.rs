@@ -10,35 +10,45 @@ use crate::{
 };
 
 pub trait BytesRemainder {
-    type Error;
-    type Iterator<'a>: AsyncByteIterator<Error = Self::Error>
+    type ErrIn;
+    type ErrOut;
+    type Iterator<'a>: AsyncByteIterator<ErrOut = Self::ErrOut>
     where
         Self: 'a;
 
+    async fn read_error_in(handle: Handle) -> Self::ErrIn;
+    async fn provide_error_out(handle: Handle, err_out: Self::ErrOut);
+
+    async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut>;
     fn bytes(&mut self) -> Self::Iterator<'_>;
     fn pop_bytes(&mut self, n: usize) -> ByteView;
-    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::Error>;
+    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut>;
 }
 
 pub trait CharsRemainder {
-    type Error;
-    type Iterator<'a>: AsyncCharIterator<Error = Self::Error>
+    type ErrIn;
+    type ErrOut;
+    type Iterator<'a>: AsyncCharIterator<ErrOut = Self::ErrOut>
     where
         Self: 'a;
 
+    async fn read_error_in(handle: Handle) -> Self::ErrIn;
+    async fn provide_error_out(handle: Handle, err_out: Self::ErrOut);
+
+    async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut>;
     fn chars(&mut self) -> Self::Iterator<'_>;
     fn pop_chars(&mut self, n: usize) -> Substr;
-    async fn remaining_chars(&mut self) -> Result<Substr, Self::Error>;
+    async fn remaining_chars(&mut self) -> Result<Substr, Self::ErrOut>;
 }
 
 pub trait AsyncByteIterator {
-    type Error;
-    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::Error>;
+    type ErrOut;
+    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::ErrOut>;
 }
 
 pub trait AsyncCharIterator {
-    type Error;
-    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::Error>;
+    type ErrOut;
+    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::ErrOut>;
 }
 
 pub enum Never {}
@@ -50,29 +60,46 @@ impl ToString for Never {
 }
 
 impl BytesRemainder for ByteView {
-    type Error = Never;
+    type ErrIn = Never;
+    type ErrOut = Never;
     type Iterator<'a>
         = (usize, &'a ByteView)
     where
         Self: 'a;
+
+    async fn read_error_in(_: Handle) -> Self::ErrIn {
+        unreachable!()
+    }
+
+    async fn provide_error_out(_: Handle, err_out: Self::ErrOut) {
+        match err_out {}
+    }
+
+    async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
+        match result_in {
+            Ok(()) => Ok(()),
+        }
+    }
 
     fn bytes(&mut self) -> Self::Iterator<'_> {
         (0, self)
     }
 
     fn pop_bytes(&mut self, n: usize) -> ByteView {
-        self.slice(n..)
+        let popped = self.slice(..n);
+        *self = self.slice(n..);
+        popped
     }
 
-    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::Error> {
+    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut> {
         Ok(self.clone())
     }
 }
 
 impl<'a> AsyncByteIterator for (usize, &'a ByteView) {
-    type Error = Never;
+    type ErrOut = Never;
 
-    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::Error> {
+    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::ErrOut> {
         let (index, bytes) = self;
         Ok(match bytes.get(*index) {
             Some(&byte) => Some((*index, {
@@ -85,29 +112,46 @@ impl<'a> AsyncByteIterator for (usize, &'a ByteView) {
 }
 
 impl CharsRemainder for Substr {
-    type Error = Never;
+    type ErrIn = Never;
+    type ErrOut = Never;
     type Iterator<'a>
         = (usize, &'a Substr)
     where
         Self: 'a;
+
+    async fn read_error_in(_: Handle) -> Self::ErrIn {
+        unreachable!()
+    }
+
+    async fn provide_error_out(_: Handle, err_out: Self::ErrOut) {
+        match err_out {}
+    }
+
+    async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
+        match result_in {
+            Ok(()) => Ok(()),
+        }
+    }
 
     fn chars(&mut self) -> Self::Iterator<'_> {
         (0, self)
     }
 
     fn pop_chars(&mut self, n: usize) -> Substr {
-        self.substr(n..)
+        let popped = self.substr(..n);
+        *self = self.substr(n..);
+        popped
     }
 
-    async fn remaining_chars(&mut self) -> Result<Substr, Self::Error> {
+    async fn remaining_chars(&mut self) -> Result<Substr, Self::ErrOut> {
         Ok(self.clone())
     }
 }
 
 impl<'a> AsyncCharIterator for (usize, &'a Substr) {
-    type Error = Never;
+    type ErrOut = Never;
 
-    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::Error> {
+    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::ErrOut> {
         let (index, chars) = self;
         Ok(match chars.as_str()[*index..].chars().next() {
             Some(ch) => Some((*index, ch.len_utf8(), {
@@ -119,15 +163,31 @@ impl<'a> AsyncCharIterator for (usize, &'a Substr) {
     }
 }
 
-pub async fn provide_bytes_reader(
-    mut handle: Handle,
-    mut remainder: impl BytesRemainder<Error: ToString>,
-) {
+pub async fn provide_bytes_reader<R: BytesRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.break_();
-                return;
+                let result_in = {
+                    let mut handle = handle.receive();
+                    match handle.case().await.as_str() {
+                        "ok" => {
+                            handle.continue_();
+                            Ok(())
+                        }
+                        "err" => Err(R::read_error_in(handle).await),
+                        _ => unreachable!(),
+                    }
+                };
+                match remainder.close(result_in).await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return R::provide_error_out(handle, err).await;
+                    }
+                }
             }
 
             "byte" => {
@@ -142,14 +202,12 @@ pub async fn provide_bytes_reader(
                     Ok(None) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("ok"));
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                        return;
+                        return R::provide_error_out(handle, err).await;
                     }
                 }
             }
@@ -162,14 +220,12 @@ pub async fn provide_bytes_reader(
                     Ok(None) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("ok"));
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                        return;
+                        return R::provide_error_out(handle, err).await;
                     }
                 }
 
@@ -184,8 +240,7 @@ pub async fn provide_bytes_reader(
                         Err(err) => {
                             handle.signal(literal!("end"));
                             handle.signal(literal!("err"));
-                            handle.provide_string(Substr::from(err.to_string()));
-                            return;
+                            return R::provide_error_out(handle, err).await;
                         }
                     };
                     match (m.leftmost_feasible_split(pos), best_match) {
@@ -222,14 +277,12 @@ pub async fn provide_bytes_reader(
                     Ok(None) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("ok"));
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                        return;
+                        return R::provide_error_out(handle, err).await;
                     }
                 }
 
@@ -243,8 +296,7 @@ pub async fn provide_bytes_reader(
                         Err(err) => {
                             handle.signal(literal!("end"));
                             handle.signal(literal!("err"));
-                            handle.provide_string(Substr::from(err.to_string()));
-                            return;
+                            return R::provide_error_out(handle, err).await;
                         }
                     };
                     if m.accepts() == None {
@@ -262,48 +314,59 @@ pub async fn provide_bytes_reader(
                             Err(err) => {
                                 handle.signal(literal!("end"));
                                 handle.signal(literal!("err"));
-                                handle.provide_string(Substr::from(err.to_string()));
-                                return;
+                                return R::provide_error_out(handle, err).await;
                             }
                         };
                         handle.signal(literal!("match"));
                         handle.send().provide_bytes(left);
                         handle.send().provide_bytes(right);
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     None => {
                         handle.signal(literal!("fail"));
                     }
                 }
             }
-            "remainder" => {
-                match remainder.remaining_bytes().await {
-                    Ok(bytes) => {
-                        handle.signal(literal!("ok"));
-                        handle.provide_bytes(bytes);
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                    }
+            "remainder" => match remainder.remaining_bytes().await {
+                Ok(bytes) => {
+                    handle.signal(literal!("ok"));
+                    return handle.provide_bytes(bytes);
                 }
-                return;
-            }
+                Err(err) => {
+                    handle.signal(literal!("err"));
+                    return R::provide_error_out(handle, err).await;
+                }
+            },
             _ => unreachable!(),
         }
     }
 }
 
-pub async fn provide_string_reader(
-    mut handle: Handle,
-    mut remainder: impl CharsRemainder<Error: ToString>,
-) {
+pub async fn provide_string_reader<R: CharsRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.break_();
-                return;
+                let result_in = {
+                    let mut handle = handle.receive();
+                    match handle.case().await.as_str() {
+                        "ok" => {
+                            handle.continue_();
+                            Ok(())
+                        }
+                        "err" => Err(R::read_error_in(handle).await),
+                        _ => unreachable!(),
+                    }
+                };
+                match remainder.close(result_in).await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return R::provide_error_out(handle, err).await;
+                    }
+                }
             }
 
             "char" => {
@@ -318,14 +381,12 @@ pub async fn provide_string_reader(
                     Ok(None) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("ok"));
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                        return;
+                        return R::provide_error_out(handle, err).await;
                     }
                 }
             }
@@ -338,14 +399,12 @@ pub async fn provide_string_reader(
                     Ok(None) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("ok"));
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                        return;
+                        return R::provide_error_out(handle, err).await;
                     }
                 }
 
@@ -360,8 +419,7 @@ pub async fn provide_string_reader(
                         Err(err) => {
                             handle.signal(literal!("end"));
                             handle.signal(literal!("err"));
-                            handle.provide_string(Substr::from(err.to_string()));
-                            return;
+                            return R::provide_error_out(handle, err).await;
                         }
                     };
                     match (m.leftmost_feasible_split(pos), best_match) {
@@ -398,14 +456,12 @@ pub async fn provide_string_reader(
                     Ok(None) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("ok"));
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("end"));
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                        return;
+                        return R::provide_error_out(handle, err).await;
                     }
                 }
 
@@ -419,8 +475,7 @@ pub async fn provide_string_reader(
                         Err(err) => {
                             handle.signal(literal!("end"));
                             handle.signal(literal!("err"));
-                            handle.provide_string(Substr::from(err.to_string()));
-                            return;
+                            return R::provide_error_out(handle, err).await;
                         }
                     };
                     if m.accepts() == None {
@@ -438,34 +493,29 @@ pub async fn provide_string_reader(
                             Err(err) => {
                                 handle.signal(literal!("end"));
                                 handle.signal(literal!("err"));
-                                handle.provide_string(Substr::from(err.to_string()));
-                                return;
+                                return R::provide_error_out(handle, err).await;
                             }
                         };
                         handle.signal(literal!("match"));
                         handle.send().provide_string(left);
                         handle.send().provide_string(right);
-                        handle.break_();
-                        return;
+                        return handle.break_();
                     }
                     None => {
                         handle.signal(literal!("fail"));
                     }
                 }
             }
-            "remainder" => {
-                match remainder.remaining_chars().await {
-                    Ok(string) => {
-                        handle.signal(literal!("ok"));
-                        handle.provide_string(string);
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
-                    }
+            "remainder" => match remainder.remaining_chars().await {
+                Ok(string) => {
+                    handle.signal(literal!("ok"));
+                    return handle.provide_string(string);
                 }
-                return;
-            }
+                Err(err) => {
+                    handle.signal(literal!("err"));
+                    return R::provide_error_out(handle, err).await;
+                }
+            },
             _ => unreachable!(),
         }
     }

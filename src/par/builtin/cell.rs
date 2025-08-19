@@ -23,8 +23,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(
                     Type::var("a"),
                     Type::function(
-                    Type::name(None, "Cell", vec![Type::var("a")]).dual(Span::None),
-                    Type::var("a")))),
+                        Type::name(None, "Cell", vec![Type::var("a")]).dual(Span::None),
+                        Type::var("a"),
+                    ),
+                ),
+            ),
             |handle| Box::pin(cell_share(handle)),
         )],
     }

@@ -1,6 +1,6 @@
 def Nl: String.Pattern = .or*(.str "\n", .str "\r\n")
 
-dec Lines : [String.Reader<Storage.Error>] List<String>
+dec Lines : [String.Reader<either{}, Storage.Error>] List<String>
 def Lines = [reader] chan yield {
   reader.begin.match(.repeat.one.any!, Nl).case {
     .end _ => { yield.end! }
@@ -28,4 +28,12 @@ def ReadLines = [path] Storage.Get(path).case {
     .dir _ => .err "Unsupported file type",
   }
   .err e => .err e,
+}
+
+def Program: ! = ReadLines("Queue.par").case {
+  .err e => Debug.Log(e),
+  .ok lines => do {
+    let console = Console.Open
+    console.print("OK")
+  } in console.close
 }
