@@ -4,16 +4,25 @@ def Add: [Nat, Nat] Nat = [a, b]
 def Mul: [Nat, Nat] Nat = [a, b]
   Nat.Mul(a, b)
 
-def TestAddCommutative: [Test] ! = [test] do {
-  test.assert("Add should be commutative", Nat.Equals(Add(2, 3), Add(3, 2)))
+def TestMathExpressionStyle: [Test] ! = [test] do {
+  test
+    .assert("Add should be commutative", Nat.Equals(Add(2, 3), Add(3, 2)))
+    .assert("Adding 0 should return the original number", Nat.Equals(Add(5, 0), 5))
+    .assert("3 * 4 should equal 12", Nat.Equals(Mul(3, 4), 12))
+    // .done is optional (implicit drop works here)
 } in !
 
-def TestAddIdentity: [Test] ! = [test] do {
-  test.assert("Adding 0 should return the original number", Nat.Equals(Add(5, 0), 5))
-} in !
+def TestMathProcessStyle: [Test] ! = [test] do {
+  test.assert("2 + 2 = 4", Nat.Equals(Add(2, 2), 4))
 
-def TestMultiplication: [Test] ! = [test] do {
-  test.assert("3 * 4 should equal 12", Nat.Equals(Mul(3, 4), 12))
+  let sum1 = Add(10, 15)
+  test.assert("10 + 15 = 25", Nat.Equals(sum1, 25))
+  
+  let product = Mul(sum1, 2)
+  test.assert("25 * 2 = 50", Nat.Equals(product, 50))
+
+  test.assert("Multiplication by 0 gives 0", Nat.Equals(Mul(100, 0), 0))
+  test.assert("Multiplication by 1 is identity", Nat.Equals(Mul(42, 1), 42))
 } in !
 
 def TestFailingExample: [Test] ! = [test] do {

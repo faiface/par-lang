@@ -201,6 +201,13 @@ impl Type {
         }
     }
 
+    pub fn iterative_box_choice(
+        label: Option<&'static str>,
+        branches: Vec<(&'static str, Self)>,
+    ) -> Self {
+        Self::iterative(label, Self::box_(Self::choice(branches)))
+    }
+
     pub fn self_(label: Option<&'static str>) -> Self {
         Self::Self_(
             Span::None,

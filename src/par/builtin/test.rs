@@ -18,15 +18,21 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             span: Span::None,
             name: GlobalName::external(Some("Test"), "Test"),
             params: vec![],
-            typ: Type::iterative(
+            typ: Type::iterative_box_choice(
                 None,
-                Type::box_(Type::choice(vec![(
-                    "assert",
-                    Type::function(
-                        Type::string(),
-                        Type::function(Type::name(Some("Bool"), "Bool", vec![]), Type::break_()),
+                vec![
+                    (
+                        "assert",
+                        Type::function(
+                            Type::string(),
+                            Type::function(
+                                Type::name(Some("Bool"), "Bool", vec![]),
+                                Type::self_(None),
+                            ),
+                        ),
                     ),
-                )])),
+                    ("done", Type::break_()),
+                ],
             ),
         }],
         declarations: vec![],
@@ -35,6 +41,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 pub fn provide_test(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
+    provide_test_inner(handle, sender);
+}
+
+fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
     handle.provide_box(move |mut handle| {
         let sender = sender.clone();
         async move {
@@ -68,6 +78,12 @@ pub fn provide_test(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
                     };
 
                     let _ = sender.send(result);
+
+                    // Continue to next assertion - provide a new box for the next iteration
+                    provide_test_inner(handle, sender);
+                }
+                "done" => {
+                    handle.break_();
                 }
                 other => {
                     panic!("Unexpected method call on Test: {}", other);
