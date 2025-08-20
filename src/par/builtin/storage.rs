@@ -4,8 +4,8 @@ use arcstr::{literal, Substr};
 use byteview::ByteView;
 use num_bigint::BigInt;
 use tokio::{
-    fs::{self, File},
-    io::{self, AsyncReadExt},
+    fs::{self, File, OpenOptions},
+    io::{self, AsyncReadExt, AsyncWriteExt},
 };
 
 use crate::{
@@ -25,24 +25,56 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![],
         declarations: vec![],
-        definitions: vec![Definition::external(
-            "Get",
-            Type::function(
-                Type::string(),
-                Type::name(
-                    Some("Result"),
-                    "Result",
-                    vec![
-                        Type::name(None, "Error", vec![]),
-                        Type::either(vec![
-                            ("file", Type::name(None, "FileInfo", vec![])),
-                            ("dir", Type::name(None, "DirInfo", vec![])),
-                        ]),
-                    ],
+        definitions: vec![
+            Definition::external(
+                "Get",
+                Type::function(
+                    Type::string(),
+                    Type::name(
+                        Some("Result"),
+                        "Result",
+                        vec![
+                            Type::name(None, "Error", vec![]),
+                            Type::either(vec![
+                                ("file", Type::name(None, "FileInfo", vec![])),
+                                ("dir", Type::name(None, "DirInfo", vec![])),
+                            ]),
+                        ],
+                    ),
                 ),
+                |handle| Box::pin(storage_open(handle)),
             ),
-            |handle| Box::pin(storage_open(handle)),
-        )],
+            Definition::external(
+                "CreateFile",
+                Type::function(
+                    Type::string(),
+                    Type::name(
+                        Some("Result"),
+                        "Result",
+                        vec![
+                            Type::name(None, "Error", vec![]),
+                            Type::name(None, "FileInfo", vec![]),
+                        ],
+                    ),
+                ),
+                |handle| Box::pin(storage_create_file(PathBuf::new(), handle)),
+            ),
+            Definition::external(
+                "CreateDir",
+                Type::function(
+                    Type::string(),
+                    Type::name(
+                        Some("Result"),
+                        "Result",
+                        vec![
+                            Type::name(None, "Error", vec![]),
+                            Type::name(None, "DirInfo", vec![]),
+                        ],
+                    ),
+                ),
+                |handle| Box::pin(storage_create_dir(PathBuf::new(), handle)),
+            ),
+        ],
     }
 }
 
@@ -78,6 +110,57 @@ async fn storage_open(mut handle: Handle) {
     } else {
         handle.signal(literal!("err"));
         handle.provide_string(Substr::from("Unsupported file type"));
+    }
+}
+
+async fn storage_create_file(prefix: PathBuf, mut handle: Handle) {
+    let mut path = prefix;
+    let suffix = PathBuf::from(handle.receive().string().await.as_str());
+    path.push(suffix);
+
+    match File::create(&path).await {
+        Ok(file) => match file.metadata().await {
+            Ok(metadata) => {
+                handle.signal(literal!("ok"));
+                return provide_file_info(
+                    handle,
+                    FileInfo {
+                        path: Arc::new(path),
+                        metadata,
+                    },
+                );
+            }
+            Err(err) => {
+                handle.signal(literal!("err"));
+                return handle.provide_string(Substr::from(err.to_string()));
+            }
+        },
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(Substr::from(err.to_string()));
+        }
+    }
+}
+
+async fn storage_create_dir(prefix: PathBuf, mut handle: Handle) {
+    let mut path = prefix;
+    let suffix = PathBuf::from(handle.receive().string().await.as_str());
+    path.push(suffix);
+
+    match fs::create_dir(&path).await {
+        Ok(()) => {
+            handle.signal(literal!("ok"));
+            return provide_dir_info(
+                handle,
+                DirInfo {
+                    path: Arc::new(path),
+                },
+            );
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(Substr::from(err.to_string()));
+        }
     }
 }
 
@@ -159,6 +242,8 @@ fn provide_dir_info(handle: Handle, info: DirInfo) {
                     handle.break_();
                 }
 
+                "createFile" => storage_create_file(info.path.as_ref().clone(), handle).await,
+                //"createDir" => storage_create_dir(info.path.as_ref().clone(), handle).await,
                 _ => unreachable!(),
             }
         }
@@ -177,24 +262,76 @@ fn provide_file_info(handle: Handle, info: FileInfo) {
                 "readBytes" => match File::open(info.path.as_ref()).await {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        provide_bytes_reader(handle, FileRemainder::new(file)).await;
+                        return provide_bytes_reader(handle, FileRemainder::new(file)).await;
                     }
 
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(Substr::from(err.to_string()));
                     }
                 },
 
                 "readUTF8" => match File::open(info.path.as_ref()).await {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        provide_string_reader(handle, FileRemainder::new(file)).await;
+                        return provide_string_reader(handle, FileRemainder::new(file)).await;
                     }
 
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+
+                "overwriteBytes" => match File::create(info.path.as_ref()).await {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        provide_bytes_writer_for_file(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+
+                "appendBytes" => match OpenOptions::new()
+                    .append(true)
+                    .open(info.path.as_ref())
+                    .await
+                {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        provide_bytes_writer_for_file(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+
+                "overwriteUTF8" => match File::create(info.path.as_ref()).await {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        provide_string_writer_for_file(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+
+                "appendUTF8" => match OpenOptions::new()
+                    .append(true)
+                    .open(info.path.as_ref())
+                    .await
+                {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        provide_string_writer_for_file(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
                     }
                 },
 
@@ -202,6 +339,104 @@ fn provide_file_info(handle: Handle, info: FileInfo) {
             }
         }
     })
+}
+
+async fn provide_bytes_writer_for_file(mut handle: Handle, mut file: File) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                handle.receive().concurrently(|mut handle| async {
+                    match handle.case().await.as_str() {
+                        "ok" => handle.continue_(),
+                        _ => unreachable!(),
+                    }
+                });
+                match file.flush().await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+
+            "write" => {
+                let bytes = handle.receive().bytes().await;
+                match file.write(&bytes).await {
+                    Ok(_) => {
+                        handle.signal(literal!("ok"));
+                        continue;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+async fn provide_string_writer_for_file(mut handle: Handle, mut file: File) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                handle.receive().concurrently(|mut handle| async {
+                    match handle.case().await.as_str() {
+                        "ok" => handle.continue_(),
+                        _ => unreachable!(),
+                    }
+                });
+                match file.flush().await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+
+            "writeChar" => {
+                let ch = handle.receive().char().await;
+                let mut buf = [0; 4];
+                let string = ch.encode_utf8(&mut buf);
+                match file.write(string.as_bytes()).await {
+                    Ok(_) => {
+                        handle.signal(literal!("ok"));
+                        continue;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+
+            "write" => {
+                let string = handle.receive().string().await;
+                match file.write(string.as_bytes()).await {
+                    Ok(_) => {
+                        handle.signal(literal!("ok"));
+                        continue;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
 }
 
 struct FileRemainder {

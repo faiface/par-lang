@@ -24,7 +24,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 "Reader",
                 Type::function(
                     Type::bytes(),
-                    Type::name(None, "Reader", vec![Type::either(vec![]), Type::either(vec![])]),
+                    Type::name(
+                        None,
+                        "Reader",
+                        vec![Type::either(vec![]), Type::either(vec![])],
+                    ),
                 ),
                 |handle| Box::pin(bytes_reader(handle)),
             ),

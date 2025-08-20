@@ -403,6 +403,7 @@ impl Type {
             }
             (Self::Break(_), Self::Break(_)) => true,
             (Self::Continue(_), Self::Continue(_)) => true,
+
             (
                 typ,
                 t2 @ Self::Recursive {
@@ -465,6 +466,7 @@ impl Type {
                     cyclic_points,
                 )?
             }
+
             (
                 t1 @ Self::Iterative {
                     asc: asc1,
@@ -504,6 +506,7 @@ impl Type {
                     cyclic_points,
                 )?
             }
+
             (typ, t2 @ Self::Iterative { label, body, .. }) => {
                 visited.insert((self_path.clone(), other_path.clone()));
                 other_labels.0.insert(
