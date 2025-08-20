@@ -175,7 +175,7 @@ impl Module<Arc<process::Expression<()>>> {
         } in &mut self.definitions
         {
             name.qualify(module);
-            *expression = expression.clone().qualify(module);
+            expression.qualify(module);
         }
     }
 
