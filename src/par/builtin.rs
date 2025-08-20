@@ -14,12 +14,15 @@ pub mod test;
 
 use std::sync::Arc;
 
+use crate::location::FileName;
+
 use super::{process, program::Module};
 
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         None,
-        Module::parse_and_compile(include_str!("./builtin/Builtin.par")).unwrap(),
+        Module::parse_and_compile(include_str!("./builtin/Builtin.par"), FileName::Builtin)
+            .unwrap(),
     );
 
     module.import(Some("Nat"), nat::external_module());

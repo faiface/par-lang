@@ -210,6 +210,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     ))
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
+                    /* a /* b */ */
                     let raw = take_while(
                         0..,
                         |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'),

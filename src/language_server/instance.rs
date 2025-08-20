@@ -1,6 +1,6 @@
 use super::io::IO;
 use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
-use crate::location::{Span, Spanning};
+use crate::location::{FileName, Span, Spanning};
 use crate::par::program::NameWithType;
 use crate::playground::{Checked, Compiled};
 use lsp_types::{self as lsp, Uri};
@@ -16,6 +16,7 @@ pub type CompileResult = Result<Checked, CompileError>;
 
 pub struct Instance {
     uri: Uri,
+    file: FileName,
     dirty: bool,
     compiled: Option<CompileResult>,
     io: IO,
@@ -24,6 +25,7 @@ pub struct Instance {
 impl Instance {
     pub fn new(uri: Uri, io: IO) -> Instance {
         Self {
+            file: FileName::Path(uri.as_str().into()),
             uri,
             dirty: true,
             compiled: None,
@@ -38,10 +40,11 @@ impl Instance {
 
         let payload = match &self.compiled {
             Some(Ok(compiled)) => {
-                if let Some(NameWithType(name, typ)) = compiled
-                    .type_on_hover
-                    .query(pos.line as usize, pos.character as usize)
-                {
+                if let Some(NameWithType(name, typ)) = compiled.type_on_hover.query(
+                    &self.file,
+                    pos.line as usize,
+                    pos.character as usize,
+                ) {
                     let mut buf = String::new();
                     if let Some(name) = name {
                         write!(&mut buf, "{}: ", name).unwrap();
@@ -97,7 +100,7 @@ impl Instance {
         TYPE_PARAMETER: type alias
          */
 
-        for (name, (span, _, _)) in compiled.program.type_defs.globals.as_ref() {
+        for (name, (span, _, _, _)) in compiled.program.type_defs.globals.as_ref() {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), span.points())
             {
@@ -486,9 +489,11 @@ impl Instance {
         let code = self.io.read(&self.uri);
 
         // todo: progress reporting
-        let compiled = stacker::grow(32 * 1024 * 1024, || Compiled::from_string(&code.unwrap()))
-            .map_err(|err| CompileError::Compile(err))
-            .and_then(|compiled| compiled.checked.map_err(|err| CompileError::Compile(err)));
+        let compiled = stacker::grow(32 * 1024 * 1024, || {
+            Compiled::from_string(&code.unwrap(), self.file.clone())
+        })
+        .map_err(|err| CompileError::Compile(err))
+        .and_then(|compiled| compiled.checked.map_err(|err| CompileError::Compile(err)));
 
         let result = match &compiled {
             Ok(_) => {

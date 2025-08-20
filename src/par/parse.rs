@@ -6,7 +6,7 @@ use super::{
     lexer::{lex, Input, Token, TokenKind},
     primitive::Primitive,
 };
-use crate::location::{Span, Spanning};
+use crate::location::{FileName, Span, Spanning};
 use crate::par::{
     language::LocalName,
     program::{Declaration, Definition, Module, TypeDef},
@@ -192,7 +192,18 @@ impl ProgramParseError {
     }
 }
 
-fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramParseError> {
+fn with_file<'a, I, O, E, F>(mut f: F, file: &'a FileName) -> impl Parser<I, O, E> + 'a
+where
+    I: Stream,
+    F: FnMut(&mut I, &FileName) -> std::result::Result<O, E> + 'a,
+{
+    move |i: &mut I| f(i, file)
+}
+
+fn program(
+    mut input: Input,
+    file: &FileName,
+) -> std::result::Result<Module<Expression>, ProgramParseError> {
     enum Item<Expr> {
         TypeDef(TypeDef),
         Declaration(Declaration),
@@ -202,9 +213,9 @@ fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramP
     let parser = repeat(
         0..,
         alt((
-            type_def.map(Item::TypeDef),
-            declaration.map(Item::Declaration),
-            definition.map(|(def, typ)| Item::Definition(def, typ)),
+            with_file(type_def, file).map(Item::TypeDef),
+            with_file(declaration, file).map(Item::Declaration),
+            with_file(definition, file).map(|(def, typ)| Item::Definition(def, typ)),
         ))
         .context(StrContext::Label("item")),
     )
@@ -219,6 +230,7 @@ fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramP
             Item::Definition(
                 Definition {
                     span,
+                    file,
                     name,
                     expression,
                 },
@@ -227,12 +239,14 @@ fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramP
                 if let Some(typ) = annotation {
                     acc.declarations.push(Declaration {
                         span: span.clone(),
+                        file: file.clone(),
                         name: name.clone(),
                         typ,
                     });
                 }
                 acc.definitions.push(Definition {
                     span,
+                    file,
                     name,
                     expression,
                 });
@@ -307,9 +321,12 @@ pub fn set_miette_hook() {
     }));
 }
 
-pub fn parse_module(input: &str) -> std::result::Result<Module<Expression>, SyntaxError> {
+pub fn parse_module(
+    input: &str,
+    file: FileName,
+) -> std::result::Result<Module<Expression>, SyntaxError> {
     let tokens = lex(&input);
-    let e = match program(Input::new(&tokens)) {
+    let e = match program(Input::new(&tokens), &file) {
         Ok(x) => return Ok(x),
         Err(e) => e,
     };
@@ -349,13 +366,14 @@ pub fn parse_bytes(input: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-fn type_def(input: &mut Input) -> Result<TypeDef> {
+fn type_def(input: &mut Input, file: &FileName) -> Result<TypeDef> {
     commit_after(
         t(TokenKind::Type),
         (global_name, type_params, t(TokenKind::Eq), typ),
     )
     .map(|(pre, (name, type_params, _, typ))| TypeDef {
         span: pre.span.join(typ.span()),
+        file: file.clone(),
         name,
         params: type_params.map_or_else(Vec::new, |(_, params)| params),
         typ,
@@ -364,10 +382,11 @@ fn type_def(input: &mut Input) -> Result<TypeDef> {
     .parse_next(input)
 }
 
-fn declaration(input: &mut Input) -> Result<Declaration> {
+fn declaration(input: &mut Input, file: &FileName) -> Result<Declaration> {
     commit_after(t(TokenKind::Dec), (global_name, t(TokenKind::Colon), typ))
         .map(|(pre, (name, _, typ))| Declaration {
             span: pre.span.join(typ.span()),
+            file: file.clone(),
             name,
             typ,
         })
@@ -375,7 +394,10 @@ fn declaration(input: &mut Input) -> Result<Declaration> {
         .parse_next(input)
 }
 
-fn definition(input: &mut Input) -> Result<(Definition<Expression>, Option<Type>)> {
+fn definition(
+    input: &mut Input,
+    file: &FileName,
+) -> Result<(Definition<Expression>, Option<Type>)> {
     commit_after(
         t(TokenKind::Def),
         (global_name, annotation, t(TokenKind::Eq), expression),
@@ -384,6 +406,7 @@ fn definition(input: &mut Input) -> Result<(Definition<Expression>, Option<Type>
         (
             Definition {
                 span: pre.span.join(expression.span()),
+                file: file.clone(),
                 name,
                 expression,
             },
@@ -1681,14 +1704,14 @@ mod test {
     #[test]
     fn test_parse_examples() {
         let input = include_str!("../../examples/HelloWorld.par");
-        assert!(parse_module(input).is_ok());
+        assert!(parse_module(input, "HelloWorld.par".into()).is_ok());
         let input = include_str!("../../examples/Fibonacci.par");
-        assert!(parse_module(input).is_ok());
+        assert!(parse_module(input, "Fibonacci.par".into()).is_ok());
         let input = include_str!("../../examples/RockPaperScissors.par");
-        assert!(parse_module(input).is_ok());
+        assert!(parse_module(input, "RockPaperScissors.par".into()).is_ok());
         let input = include_str!("../../examples/StringManipulation.par");
-        assert!(parse_module(input).is_ok());
+        assert!(parse_module(input, "StringManipulation.par".into()).is_ok());
         let input = "begin the errors";
-        assert!(parse_module(input).is_err());
+        assert!(parse_module(input, "error.par".into()).is_err());
     }
 }
