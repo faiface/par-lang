@@ -7,7 +7,7 @@ At the moment, Par has six primitive types:
 - **`Int`** — Integers, positive and negative whole numbers, arbitrary size.
 - **`Nat`** — Natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
 - **`String`** — UTF-8 encoded sequence of Unicode characters.
-- **`Char`** — Singular Unicode character.
+- **`Char`** — Singular Unicode character. They are a subtype of `String`.
 - **`Byte`** — Singular data unit that consists of eight bits. They are a subtype of `Bytes`.
 - **`Bytes`** — Contiguous-in-memory sequence of bytes.
 
@@ -174,6 +174,8 @@ A `Char` is a single Unicode character. `Char` literals are enclosed in single q
 def Char1 = 'a'  // inferred as `Char`
 def Char2 = '\n'
 ```
+
+Since `Char` is a subtype of `String`, every variable of type `Char` can be used as a `String`, too.
 
 There's a built-in function to check if a `Char` is a part of a character class:
 

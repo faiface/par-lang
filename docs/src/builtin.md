@@ -131,7 +131,6 @@ dec Char.Is     : [Char, Char.Class] Bool
 /// String
 
 type String.Builder = iterative choice {
-  .addChar(Char) => self,
   .add(String) => self,
   .build => String,
 }
