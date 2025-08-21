@@ -53,7 +53,6 @@ pub enum Tree {
     Primitive(Primitive),
     IntRequest(oneshot::Sender<BigInt>),
     StringRequest(oneshot::Sender<Substr>),
-    CharRequest(oneshot::Sender<char>),
     BytesRequest(oneshot::Sender<ByteView>),
 
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
@@ -87,7 +86,6 @@ impl Tree {
             | Self::SignalRequest(_)
             | Self::IntRequest(_)
             | Self::StringRequest(_)
-            | Self::CharRequest(_)
             | Self::BytesRequest(_)
             | Self::External(_)
             | Self::ExternalBox(_) => {}
@@ -120,7 +118,6 @@ impl core::fmt::Debug for Tree {
             Self::SignalRequest(_) => f.debug_tuple("SignalRequest").field(&"<channel>").finish(),
             Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
             Self::StringRequest(_) => f.debug_tuple("StringRequest").field(&"<channel>").finish(),
-            Self::CharRequest(_) => f.debug_tuple("CharRequest").field(&"<channel>").finish(),
             Self::BytesRequest(_) => f.debug_tuple("BytesRequest").field(&"<channel>").finish(),
             Self::External(_) => f.debug_tuple("External").field(&"<function>").finish(),
             Self::ExternalBox(_) => f.debug_tuple("ExternalBox").field(&"<closure>").finish(),
@@ -143,7 +140,6 @@ impl Clone for Tree {
             Self::SignalRequest(_) => panic!("cannot clone Tree::SignalRequest"),
             Self::IntRequest(_) => panic!("cannot clone Tree::IntRequest"),
             Self::StringRequest(_) => panic!("cannot clone Tree::StringRequest"),
-            Self::CharRequest(_) => panic!("cannot clone Tree::CharRequest"),
             Self::BytesRequest(_) => panic!("cannot clone Tree::BytesRequest"),
             Self::External(f) => Self::External(*f),
             Self::ExternalBox(f) => Self::ExternalBox(Arc::clone(f)),
@@ -565,7 +561,6 @@ impl Net {
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
-            | Tree::CharRequest(_)
             | Tree::BytesRequest(_)
             | Tree::External(_)
             | Tree::ExternalBox(_) => {}
@@ -676,7 +671,6 @@ impl Net {
             Tree::SignalRequest(_) => format!("<signal request>"),
             Tree::IntRequest(_) => format!("<int request>"),
             Tree::StringRequest(_) => format!("<string request>"),
-            Tree::CharRequest(_) => format!("<char request>"),
             Tree::BytesRequest(_) => format!("<bytes request>"),
 
             Tree::External(_) => format!("<external>"),
@@ -721,7 +715,6 @@ impl Net {
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
-            | Tree::CharRequest(_)
             | Tree::BytesRequest(_)
             | Tree::External(_)
             | Tree::ExternalBox(_) => {}
@@ -801,7 +794,6 @@ impl Net {
             Tree::SignalRequest(_) => vec![],
             Tree::IntRequest(_) => vec![],
             Tree::StringRequest(_) => vec![],
-            Tree::CharRequest(_) => vec![],
             Tree::BytesRequest(_) => vec![],
             Tree::External(_) => vec![],
             Tree::ExternalBox(_) => vec![],

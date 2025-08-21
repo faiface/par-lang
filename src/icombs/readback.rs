@@ -227,11 +227,15 @@ impl Handle {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::CharRequest(tx), self.tree.unwrap());
+            locked.link(Tree::StringRequest(tx), self.tree.unwrap());
             locked.notify_reducer();
             rx
         };
-        rx.await.expect("sender dropped")
+        let value = rx.await.expect("sender dropped");
+        let mut chars = value.chars();
+        let char = chars.next().unwrap();
+        assert!(chars.next().is_none());
+        char
     }
 
     pub fn provide_char(self, value: char) {
@@ -537,12 +541,16 @@ impl TypedHandle {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::CharRequest(tx), self.tree.tree);
+            locked.link(Tree::StringRequest(tx), self.tree.tree);
             locked.notify_reducer();
             rx
         };
 
-        rx.await.expect("sender dropped")
+        let value = rx.await.expect("sender dropped");
+        let mut chars = value.chars();
+        let char = chars.next().unwrap();
+        assert!(chars.next().is_none());
+        char
     }
 
     pub fn provide_char(mut self, value: char) {
