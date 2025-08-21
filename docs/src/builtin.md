@@ -136,20 +136,26 @@ type String.Builder = iterative choice {
   .build => String,
 }
 
-type String.Reader<e> = recursive iterative/attempt choice {
-  .close => !,
-  .remainder => Result<e, String>,
+type String.Writer<errIn, errOut> = iterative choice {
+  .close(Result<errIn, !>) => Result<errOut, !>,
+  .writeChar(Char) => Result<errOut, self>,
+  .write(String) => Result<errOut, self>,
+}
+
+type String.Reader<errIn, errOut> = recursive iterative/attempt choice {
+  .close(Result<errIn, !>) => Result<errOut, !>,
+  .remainder => Result<errOut, String>,
   .char => either {
-    .end Result<e, !>,
+    .end Result<errOut, !>,
     .char(Char) self,
   },
   .match(String.Pattern, String.Pattern) => either {
-    .end Result<e, !>,
+    .end Result<errOut, !>,
     .fail self/attempt,
     .match(String, String) self,
   },
   .matchEnd(String.Pattern, String.Pattern) => either {
-    .end Result<e, !>,
+    .end Result<errOut, !>,
     .fail self/attempt,
     .match(String, String)!,
   },
@@ -170,7 +176,7 @@ type String.Pattern = recursive either {
 }
 
 dec String.Builder : String.Builder
-dec String.Reader  : [String] String.Reader<either {}>
+dec String.Reader  : [String] String.Reader<either{}, either{}>
 
 dec String.Quote : [String] String
 
@@ -195,20 +201,25 @@ type Bytes.Builder = iterative choice {
   .build => Bytes,
 }
 
-type Bytes.Reader<e> = recursive iterative/attempt choice {
-  .close => !,
-  .remainder => Result<e, Bytes>,
+type Bytes.Writer<errIn, errOut> = iterative choice {
+  .close(Result<errIn, !>) => Result<errOut, !>,
+  .write(Bytes) => Result<errOut, self>,
+}
+
+type Bytes.Reader<errIn, errOut> = recursive iterative/attempt choice {
+  .close(Result<errIn, !>) => Result<errOut, !>,
+  .remainder => Result<errOut, Bytes>,
   .byte => either {
-    .end Result<e, !>,
+    .end Result<errOut, !>,
     .byte(Byte) self,
   },
   .match(Bytes.Pattern, Bytes.Pattern) => either {
-    .end Result<e, !>,
+    .end Result<errOut, !>,
     .fail self/attempt,
     .match(Bytes, Bytes) self,
   },
   .matchEnd(Bytes.Pattern, Bytes.Pattern) => either {
-    .end Result<e, !>,
+    .end Result<errOut, !>,
     .fail self/attempt,
     .match(Bytes, Bytes)!,
   },
@@ -229,7 +240,7 @@ type Bytes.Pattern = recursive either {
 }
 
 dec Bytes.Builder : Bytes.Builder
-dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
+dec Bytes.Reader  : [Bytes] Bytes.Reader<either{}, either{}>
 
 dec Bytes.FromString : [String] Bytes
 
@@ -267,22 +278,35 @@ type Storage.PathInfo = box choice {
 type Storage.FileInfo = box choice {
   .path => Storage.PathInfo,
   .size => Nat.Nat,
-  .readBytes => Result<Storage.Error, Bytes.Reader<Storage.Error>>,
-  .readUTF8 => Result<Storage.Error, String.Reader<Storage.Error>>,
+
+  .readBytes => Result<Storage.Error, Bytes.Reader<either{}, Storage.Error>>,
+  .readUTF8 => Result<Storage.Error, String.Reader<either{}, Storage.Error>>,
+
+  .overwriteBytes => Result<Storage.Error, Bytes.Writer<either{}, Storage.Error>>,
+  .appendBytes => Result<Storage.Error, Bytes.Writer<either{}, Storage.Error>>,
+
+  .overwriteUTF8 => Result<Storage.Error, String.Writer<either{}, Storage.Error>>,
+  .appendUTF8 => Result<Storage.Error, String.Writer<either{}, Storage.Error>>,
 }
 
 type Storage.DirInfo = recursive box choice {
   .path => Storage.PathInfo,
+
   .list => Result<Storage.Error, List<either {
     .file Storage.FileInfo,
     .dir self,
   }>>,
+
+  .createFile(String) => Result<Storage.Error, Storage.FileInfo>,
 }
 
 dec Storage.Get : [String] Result<Storage.Error, either {
   .file Storage.FileInfo,
   .dir Storage.DirInfo,
 }>
+
+dec Storage.CreateFile : [String] Result<Storage.Error, Storage.FileInfo>
+dec Storage.CreateDir  : [String] Result<Storage.Error, Storage.DirInfo>
 
 /// Debug
 
