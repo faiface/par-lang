@@ -16,4 +16,5 @@ pub mod validation;
 pub use context::Context;
 pub mod display;
 pub mod expansion;
+pub mod tests;
 pub mod visit;
