@@ -48,7 +48,6 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
     handle.provide_box(move |mut handle| {
         let sender = sender.clone();
         async move {
-            // for iterative box choice, we need to handle each method call
             match handle.case().await.as_str() {
                 "assert" => {
                     let description = handle.receive().string().await.to_string();

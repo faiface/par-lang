@@ -2,16 +2,17 @@ use crate::icombs::{
     readback::{TypedHandle, TypedReadback},
     IcCompiled,
 };
-use crate::par::{language, parse, program, types};
+use crate::par::parse;
 use crate::playground::Compiled;
 use crate::spawn::TokioSpawn;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
 use colored::Colorize;
 use futures::task::SpawnExt;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{fmt::Display, fs};
+use tokio::runtime::Runtime;
 
 #[derive(Debug)]
 enum TestStatus {
@@ -19,8 +20,29 @@ enum TestStatus {
     Failed(String),
     FailedWithAssertions(Vec<AssertionResult>),
     CompileError(String),
-    TypeError,
-    ReadError,
+    TypeError(String),
+    ReadError(String),
+}
+
+impl TestStatus {
+    fn is_passed(&self) -> bool {
+        matches!(self, TestStatus::Passed)
+    }
+}
+
+impl Display for TestStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TestStatus::Passed => write!(f, "passed"),
+            TestStatus::Failed(msg) => write!(f, "failed: {msg}"),
+            TestStatus::FailedWithAssertions(v) => {
+                write!(f, "failed with {} assertion(s)", v.len())
+            }
+            TestStatus::CompileError(msg) => write!(f, "compile error: {msg}"),
+            TestStatus::TypeError(msg) => write!(f, "type error: {msg}"),
+            TestStatus::ReadError(msg) => write!(f, "read error: {msg}"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -33,10 +55,9 @@ struct TestResult {
 pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
     parse::set_miette_hook();
 
-    let test_files = if let Some(file) = file {
-        vec![file]
-    } else {
-        find_test_files()
+    let test_files = match file {
+        Some(f) => vec![f],
+        None => find_test_files(),
     };
 
     if test_files.is_empty() {
@@ -44,6 +65,7 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
         return;
     }
 
+    // TODO: placeholder for indicating that we are running tests
     println!("{}", "Running tests...".bright_blue());
     println!();
 
@@ -70,7 +92,7 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
 fn find_test_files() -> Vec<PathBuf> {
     let mut test_files = Vec::new();
 
-    // For now, just look for .par files in the current directory
+    // TODO: For now, just look for .par files in the current directory
     // In the future, when multi-file is supported, we can add back directory scanning
     if let Ok(entries) = fs::read_dir(".") {
         for entry in entries.flatten() {
@@ -92,7 +114,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         results.push(TestResult {
             name: file.to_string_lossy().to_string(),
             duration: Duration::ZERO,
-            status: TestStatus::ReadError,
+            status: TestStatus::ReadError(format!("Failed to read file: {}", file.display())),
         });
         return results;
     };
@@ -120,7 +142,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         results.push(TestResult {
             name: file.to_string_lossy().to_string(),
             duration: Duration::ZERO,
-            status: TestStatus::TypeError,
+            status: TestStatus::TypeError("Type checking failed".to_string()),
         });
         return results;
     };
@@ -128,18 +150,22 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let program = checked.program;
     let ic_compiled = checked.ic_compiled.unwrap();
 
-    for (name, _) in &program.definitions {
-        // Look for definitions that start with Test (case-sensitive)
-        if name.primary.starts_with("Test") && name.primary != "Test" {
-            if let Some(filter) = filter {
-                if !name.primary.contains(filter) {
-                    continue;
-                }
-            }
+    // Look for definitions that start with Test (case-sensitive)
+    let test_definitions: Vec<_> = program
+        .definitions
+        .iter()
+        .filter(|(name, _)| name.primary.starts_with("Test") && name.primary != "Test")
+        .filter(|(name, _)| {
+            filter
+                .as_ref()
+                .map(|f| name.primary.contains(f))
+                .unwrap_or(true)
+        })
+        .collect();
 
-            let result = run_single_test(&program, &ic_compiled, name.primary.clone());
-            results.push(result);
-        }
+    for (name, _) in test_definitions {
+        let result = run_single_test(&program, &ic_compiled, name.primary.clone());
+        results.push(result);
     }
 
     results
@@ -151,16 +177,29 @@ fn run_single_test(
     test_name: String,
 ) -> TestResult {
     let start = Instant::now();
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let runtime = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                duration: start.elapsed(),
+                status: TestStatus::Failed(format!("Failed to create runtime: {}", e)),
+            };
+        }
+    };
+
     let result = runtime.block_on(async {
         let name = program
             .definitions
             .iter()
             .find(|(n, _)| n.primary == test_name)
             .map(|(n, _)| n)
-            .ok_or_else(|| "Definition not found")?;
+            .ok_or_else(|| format!("Test definition '{}' not found", test_name))?;
 
-        let ty = ic_compiled.get_type_of(name).ok_or("Type not found")?;
+        let ty = ic_compiled
+            .get_type_of(name)
+            .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
 
         run_test_with_test_type(program, ic_compiled, name, &ty).await
     });
@@ -187,7 +226,9 @@ async fn run_test_with_test_type(
     let (sender, receiver) = create_assertion_channel();
 
     let mut net = ic_compiled.create_net();
-    let child_net = ic_compiled.get_with_name(name).ok_or("Net not found")?;
+    let child_net = ic_compiled
+        .get_with_name(name)
+        .ok_or_else(|| format!("Failed to get net for test '{}'", name.primary))?;
 
     let tree = net.inject_net(child_net).with_type(ty.clone());
 
@@ -216,7 +257,7 @@ async fn run_test_with_test_type(
             // Continue with the test execution
             continue_handle.readback().await
         })
-        .map_err(|_| "Spawn failed")?;
+        .map_err(|e| format!("Failed to spawn test execution: {:?}", e))?;
 
     // collect results from the receiver
     let mut results = Vec::new();
@@ -239,62 +280,57 @@ async fn run_test_with_test_type(
                 Err("Test completed but no assertions were made".to_string())
             }
         }
-        _ => Err("Test did not return expected type".to_string()),
+        _ => Err("Test did not return expected type (!Break)".to_string()),
     }
 }
 
 const PASSED: &str = "✓";
 const FAILED: &str = "✗";
 
+// TODO: Current implementation only outputting the top-level test suite name, but should output sub-cases as well.
 fn print_test_results(file: &Path, results: &[TestResult]) {
-    let file_name = file.file_name().unwrap().to_string_lossy();
-    println!("{} {}", PASSED.green(), file_name.bright_white());
+    let file_label = file
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_else(|| file.to_string_lossy());
+    let all_passed = results.iter().all(|r| r.status.is_passed());
+    let icon = if all_passed {
+        PASSED.green()
+    } else {
+        FAILED.red()
+    };
 
-    // TODO: consider to use Cow when we need to structure the output more
-    for result in results {
-        let (icon, error_info): (colored::ColoredString, Option<ErrorInfo>) = match &result.status {
-            TestStatus::Passed => (PASSED.green(), None),
-            TestStatus::Failed(msg) => (FAILED.red(), Some(ErrorInfo::Message(msg.clone()))),
-            TestStatus::FailedWithAssertions(assertions) => (
-                FAILED.red(),
-                Some(ErrorInfo::Assertions(assertions.clone())),
-            ),
-            TestStatus::CompileError(msg) => (FAILED.red(), Some(ErrorInfo::Message(msg.clone()))),
-            TestStatus::TypeError => (
-                FAILED.red(),
-                Some(ErrorInfo::Message("Type check failed".to_string())),
-            ),
-            TestStatus::ReadError => (
-                FAILED.red(),
-                Some(ErrorInfo::Message("File read error".to_string())),
-            ),
+    println!("{} {}", icon, file_label.bright_white());
+
+    for r in results {
+        let icon = if r.status.is_passed() {
+            PASSED.green()
+        } else {
+            FAILED.red()
         };
+        let duration = format!("({:.3}s)", r.duration.as_secs_f32()).dimmed();
+        println!("  {} {} {}", icon, r.name, duration);
 
-        let duration = format!("({:.3}s)", result.duration.as_secs_f32()).dimmed();
-        println!("  {} {} {}", icon, result.name, duration);
-
-        match error_info {
-            Some(ErrorInfo::Message(msg)) => {
+        match &r.status {
+            TestStatus::Failed(msg)
+            | TestStatus::CompileError(msg)
+            | TestStatus::TypeError(msg)
+            | TestStatus::ReadError(msg) => {
                 println!("    {}", msg.red());
             }
-            Some(ErrorInfo::Assertions(assertions)) => {
-                for assertion in assertions {
+            TestStatus::FailedWithAssertions(assertions) => {
+                for a in assertions {
                     println!(
                         "    {} {}: {}",
                         FAILED.red(),
-                        assertion.description,
+                        a.description,
                         "assertion failed".red()
                     );
                 }
             }
-            None => {}
+            TestStatus::Passed => {}
         }
     }
-}
-
-enum ErrorInfo {
-    Message(String),
-    Assertions(Vec<AssertionResult>),
 }
 
 fn print_summary(total: usize, passed: usize, duration: std::time::Duration) {
