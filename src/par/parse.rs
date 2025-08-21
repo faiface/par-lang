@@ -808,12 +808,9 @@ fn expr_literal_char(input: &mut Input) -> Result<Expression> {
     t(TokenKind::Char)
         .map(|token| {
             // validated in lexer
-            let value = unescaper::unescape(token.raw)
-                .unwrap()
-                .chars()
-                .next()
-                .unwrap();
-            Expression::Primitive(token.span, Primitive::Char(value))
+            let value = unescaper::unescape(token.raw).unwrap();
+            assert!(value.len() == 1);
+            Expression::Primitive(token.span, Primitive::String(Substr::from(value)))
         })
         .parse_next(input)
 }

@@ -236,7 +236,12 @@ impl Handle {
 
     pub fn provide_char(self, value: char) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.unwrap());
+        locked.link(
+            Tree::Primitive(Primitive::String(Substr::from(
+                value.encode_utf8(&mut [0u8; 4]),
+            ))),
+            self.tree.unwrap(),
+        );
         locked.notify_reducer();
     }
 
@@ -547,7 +552,12 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.tree);
+        locked.link(
+            Tree::Primitive(Primitive::String(Substr::from(
+                value.encode_utf8(&mut [0u8; 4]),
+            ))),
+            self.tree.tree,
+        );
         locked.notify_reducer();
     }
 

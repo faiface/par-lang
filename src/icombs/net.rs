@@ -474,10 +474,6 @@ impl Net {
                 resp.send(s).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
-            (Primitive::Char(c), Tree::CharRequest(resp)) => {
-                resp.send(c).expect("receiver dropped");
-                self.rewrites.resp += 1;
-            }
             (Primitive::Bytes(b), Tree::BytesRequest(resp)) => {
                 resp.send(b).expect("receiver dropped");
                 self.rewrites.resp += 1;
@@ -675,7 +671,6 @@ impl Net {
 
             Tree::Primitive(Primitive::Int(i)) => format!("{{{}}}", i),
             Tree::Primitive(Primitive::String(s)) => format!("{{{:?}}}", s),
-            Tree::Primitive(Primitive::Char(c)) => format!("{{{:?}}}", c),
             Tree::Primitive(Primitive::Bytes(b)) => format!("{{{:?}}}", b),
 
             Tree::SignalRequest(_) => format!("<signal request>"),
