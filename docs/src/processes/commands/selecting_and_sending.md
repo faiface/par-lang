@@ -18,6 +18,7 @@ We construct an empty `String.Builder` using the built-in definition of the same
 ```par
 def LetsBuildStrings = do {
   let builder = String.Builder
+}
 ```
 
 ## Selection
