@@ -2705,6 +2705,7 @@ can be repeatedly interacted with.</p>
 <p>We construct an empty <code>String.Builder</code> using the built-in definition of the same name:</p>
 <pre><code class="language-par">def LetsBuildStrings = do {
   let builder = String.Builder
+  // code continued below...
 </code></pre>
 <h2 id="selection"><a class="header" href="#selection">Selection</a></h2>
 <p>Now, we have a local variable <code>builder</code> of the type <code>String.Builder</code>.</p>
@@ -2716,6 +2717,7 @@ itself then looks the same as the usual <a href="processes/commands/../types/cho
 <pre><code class="language-par">def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add        // selection command
+  // code continued below...
 </code></pre>
 <p>That’s it! Now, here’s the crucial bit: after selection, <code>builder</code> <strong>changes its type</strong> to the type
 of the selected branch. Here’s the one we selected:</p>
@@ -2820,6 +2822,7 @@ come with their own command styles. Every type does.</p>
 <p>This function takes a list of strings, and returns them concatenated. We’ll use process syntax and
 see how it works out!</p>
 <pre><code class="language-par">def Concat = [strings] do {
+  // code continued below...
 </code></pre>
 <p><strong>Let’s go step by step!</strong></p>
 <h2 id="recursion-in-processes"><a class="header" href="#recursion-in-processes">Recursion in processes</a></h2>
