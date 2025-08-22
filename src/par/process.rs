@@ -591,129 +591,97 @@ impl<Typ: Clone> Expression<Typ> {
 }
 
 impl Process<()> {
-    pub fn qualify(self: Arc<Self>, module: Option<&str>) -> Arc<Self> {
-        Arc::new(match Self::clone(&self) {
+    pub fn qualify(self: &mut Arc<Self>, module: Option<&str>) {
+        match Arc::make_mut(self) {
             Self::Let {
                 span: _,
-                name,
-                mut annotation,
+                name: _,
+                annotation,
                 typ: (),
                 value,
                 then,
             } => {
-                if let Some(annotation) = &mut annotation {
+                if let Some(annotation) = annotation {
                     annotation.qualify(module);
                 }
-                Self::Let {
-                    span: Default::default(),
-                    name,
-                    annotation,
-                    typ: (),
-                    value: value.qualify(module),
-                    then: then.qualify(module),
-                }
+                value.qualify(module);
+                then.qualify(module);
             }
             Self::Do {
                 span: _,
-                name,
+                name: _,
                 typ: (),
-                mut command,
-            } => {
-                command.qualify(module);
-                Self::Do {
-                    span: Default::default(),
-                    name,
-                    typ: (),
-                    command,
-                }
-            }
-            Self::Telltypes(span, process) => Self::Telltypes(span, process.qualify(module)),
-        })
+                command,
+            } => command.qualify(module),
+            Self::Telltypes(_span, process) => process.qualify(module),
+        }
     }
 }
 
 impl Command<()> {
     pub fn qualify(&mut self, module: Option<&str>) {
         match self {
-            Self::Link(expression) => {
-                *expression = expression.clone().qualify(module);
-            }
+            Self::Link(expression) => expression.qualify(module),
             Self::Send(expression, process) => {
-                *expression = expression.clone().qualify(module);
-                *process = process.clone().qualify(module);
+                expression.qualify(module);
+                process.qualify(module);
             }
             Self::Receive(_, annotation, (), process) => {
                 if let Some(annotation) = annotation {
                     annotation.qualify(module);
                 }
-                *process = process.clone().qualify(module);
+                process.qualify(module);
             }
             Self::Signal(_, process) => {
-                *process = process.clone().qualify(module);
+                process.qualify(module);
             }
             Self::Case(_, branches) => {
                 for process in branches {
-                    *process = process.clone().qualify(module);
+                    process.qualify(module);
                 }
             }
             Self::Break => {}
             Self::Continue(process) => {
-                *process = process.clone().qualify(module);
+                process.qualify(module);
             }
             Self::Begin { body, .. } => {
-                *body = body.clone().qualify(module);
+                body.qualify(module);
             }
             Self::Loop(_, _, _) => {}
             Self::SendType(argument, process) => {
                 argument.qualify(module);
-                *process = process.clone().qualify(module);
+                process.qualify(module);
             }
             Self::ReceiveType(_, process) => {
-                *process = process.clone().qualify(module);
+                process.qualify(module);
             }
         }
     }
 }
 
 impl Expression<()> {
-    pub fn qualify(self: Arc<Self>, module: Option<&str>) -> Arc<Self> {
-        Arc::new(match Self::clone(&self) {
-            Self::Global(_, mut name, ()) => {
-                name.qualify(module);
-                Self::Global(Default::default(), name, ())
-            }
-            Self::Variable(_, name, ()) => Self::Variable(Default::default(), name, ()),
-            Self::Box(_, caps, expression, ()) => {
-                Self::Box(Default::default(), caps, expression.qualify(module), ())
-            }
+    pub fn qualify(self: &mut Arc<Self>, module: Option<&str>) {
+        match Arc::make_mut(self) {
+            Self::Global(_span, name, ()) => name.qualify(module),
+            Self::Variable(_span, _name, ()) => {}
+            Self::Box(_span, _caps, expression, ()) => expression.qualify(module),
             Self::Fork {
                 span: _,
-                captures,
-                chan_name,
-                mut chan_annotation,
+                captures: _,
+                chan_name: _,
+                chan_annotation,
                 chan_type: (),
                 expr_type: (),
                 process,
             } => {
-                if let Some(chan_annotation) = &mut chan_annotation {
+                if let Some(chan_annotation) = chan_annotation {
                     chan_annotation.qualify(module);
                 }
-                Self::Fork {
-                    span: Default::default(),
-                    captures,
-                    chan_name,
-                    chan_annotation,
-                    chan_type: (),
-                    expr_type: (),
-                    process: process.qualify(module),
-                }
+                process.qualify(module)
             }
-            Self::Primitive(_, primitive, ()) => Self::Primitive(Default::default(), primitive, ()),
-            Self::External(mut claimed_type, f, ()) => {
-                claimed_type.qualify(module);
-                Self::External(claimed_type, f, ())
-            }
-        })
+            Self::Primitive(_span, _primitive, ()) => {}
+            Self::External(claimed_type, _, _) => claimed_type.qualify(module),
+        }
     }
 }
 

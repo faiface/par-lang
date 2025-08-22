@@ -1,3 +1,5 @@
+use arcstr::ArcStr;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Point {
     // 0-based
@@ -101,5 +103,29 @@ impl Point {
             start: *self,
             end: *self,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FileName {
+    Builtin,
+    Path(ArcStr),
+}
+
+impl From<&str> for FileName {
+    fn from(path: &str) -> Self {
+        FileName::Path(path.into())
+    }
+}
+
+impl From<String> for FileName {
+    fn from(path: String) -> Self {
+        FileName::Path(path.into())
+    }
+}
+
+impl From<&FileName> for FileName {
+    fn from(file: &FileName) -> Self {
+        file.clone()
     }
 }

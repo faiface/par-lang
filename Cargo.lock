@@ -2412,6 +2412,7 @@ dependencies = [
  "eframe",
  "egui_code_editor",
  "futures",
+ "hashbrown",
  "indexmap",
  "lsp-server",
  "lsp-types",

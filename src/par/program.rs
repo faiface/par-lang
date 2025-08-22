@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use crate::{
     icombs::readback::Handle,
-    location::{Point, Span},
+    location::{FileName, Point, Span},
     par::parse::parse_module,
 };
 
@@ -33,6 +33,7 @@ pub struct CheckedModule {
 #[derive(Clone, Debug)]
 pub struct TypeDef {
     pub span: Span,
+    pub file: FileName,
     pub name: GlobalName,
     pub params: Vec<LocalName>,
     pub typ: Type,
@@ -41,6 +42,7 @@ pub struct TypeDef {
 #[derive(Clone, Debug)]
 pub struct Declaration {
     pub span: Span,
+    pub file: FileName,
     pub name: GlobalName,
     pub typ: Type,
 }
@@ -48,6 +50,7 @@ pub struct Declaration {
 #[derive(Clone, Debug)]
 pub struct Definition<Expr> {
     pub span: Span,
+    pub file: FileName,
     pub name: GlobalName,
     pub expression: Expr,
 }
@@ -56,6 +59,7 @@ impl TypeDef {
     pub fn external(name: &'static str, params: &[&'static str], typ: Type) -> Self {
         Self {
             span: Default::default(),
+            file: FileName::Builtin,
             name: GlobalName::external(None, name),
             params: params
                 .into_iter()
@@ -77,6 +81,7 @@ impl Definition<Arc<process::Expression<()>>> {
     ) -> Self {
         Self {
             span: Default::default(),
+            file: FileName::Builtin,
             name: GlobalName::external(None, name),
             expression: Arc::new(process::Expression::External(typ, f, ())),
         }
@@ -102,8 +107,8 @@ impl From<CompileError> for ParseAndCompileError {
 }
 
 impl Module<Arc<process::Expression<()>>> {
-    pub fn parse_and_compile(source: &str) -> Result<Self, ParseAndCompileError> {
-        let parsed = parse_module(source)?;
+    pub fn parse_and_compile(source: &str, file: FileName) -> Result<Self, ParseAndCompileError> {
+        let parsed = parse_module(source, file)?;
 
         let compiled_definitions = parsed
             .definitions
@@ -111,11 +116,13 @@ impl Module<Arc<process::Expression<()>>> {
             .map(
                 |Definition {
                      span,
+                     file,
                      name,
                      expression,
                  }| {
                     expression.compile().map(|compiled| Definition {
                         span,
+                        file,
                         name,
                         expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
                     })
@@ -141,6 +148,7 @@ impl Module<Arc<process::Expression<()>>> {
     fn qualify(&mut self, module: Option<&str>) {
         for TypeDef {
             span: _,
+            file: _,
             name,
             params: _,
             typ,
@@ -149,18 +157,25 @@ impl Module<Arc<process::Expression<()>>> {
             name.qualify(module);
             typ.qualify(module);
         }
-        for Declaration { span: _, name, typ } in &mut self.declarations {
+        for Declaration {
+            span: _,
+            file: _,
+            name,
+            typ,
+        } in &mut self.declarations
+        {
             name.qualify(module);
             typ.qualify(module);
         }
         for Definition {
             span: _,
+            file: _,
             name,
             expression,
         } in &mut self.definitions
         {
             name.qualify(module);
-            *expression = expression.clone().qualify(module);
+            expression.qualify(module);
         }
     }
 
@@ -168,19 +183,21 @@ impl Module<Arc<process::Expression<()>>> {
         let type_defs = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
-                .map(|d| (&d.span, &d.name, &d.params, &d.typ)),
+                .map(|d| (&d.span, &d.file, &d.name, &d.params, &d.typ)),
         )?;
 
         let mut unchecked_definitions = IndexMap::new();
         for Definition {
             span,
+            file,
             name,
             expression,
         } in &self.definitions
         {
-            if let Some((span1, _)) =
-                unchecked_definitions.insert(name.clone(), (span.clone(), expression.clone()))
-            {
+            if let Some((span1, _, _)) = unchecked_definitions.insert(
+                name.clone(),
+                (span.clone(), file.clone(), expression.clone()),
+            ) {
                 return Err(TypeError::NameAlreadyDefined(
                     span.clone(),
                     span1.clone(),
@@ -190,11 +207,18 @@ impl Module<Arc<process::Expression<()>>> {
         }
 
         let mut declarations = IndexMap::new();
-        for Declaration { span, name, typ } in &self.declarations {
+        for Declaration {
+            span,
+            file,
+            name,
+            typ,
+        } in &self.declarations
+        {
             if !unchecked_definitions.contains_key(name) {
                 return Err(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
             }
-            if let Some((span1, _)) = declarations.insert(name.clone(), (span.clone(), typ.clone()))
+            if let Some((span1, _, _)) =
+                declarations.insert(name.clone(), (span.clone(), file.clone(), typ.clone()))
             {
                 return Err(TypeError::NameAlreadyDeclared(
                     span.clone(),
@@ -206,7 +230,7 @@ impl Module<Arc<process::Expression<()>>> {
 
         let names_to_check = unchecked_definitions
             .iter()
-            .map(|(name, (span, _))| (span.clone(), name.clone()))
+            .map(|(name, (span, _, _))| (span.clone(), name.clone()))
             .collect::<Vec<_>>();
 
         let mut context = Context::new(type_defs, declarations, unchecked_definitions);
@@ -219,16 +243,27 @@ impl Module<Arc<process::Expression<()>>> {
             declarations: context
                 .get_declarations()
                 .into_iter()
-                .map(|(name, (span, typ))| (name.clone(), Declaration { span, name, typ }))
+                .map(|(name, (span, file, typ))| {
+                    (
+                        name.clone(),
+                        Declaration {
+                            span,
+                            file,
+                            name,
+                            typ,
+                        },
+                    )
+                })
                 .collect(),
             definitions: context
                 .get_checked_definitions()
                 .into_iter()
-                .map(|(name, (span, expression))| {
+                .map(|(name, (span, file, expression))| {
                     (
                         name.clone(),
                         Definition {
                             span,
+                            file,
                             name,
                             expression,
                         },
@@ -253,14 +288,15 @@ impl<Expr> Default for Module<Expr> {
 pub struct NameWithType(pub Option<String>, pub Type);
 
 pub struct TypeOnHover {
-    sorted_pairs: Vec<((Point, Point), NameWithType)>,
+    map_of_sorted_pairs: hashbrown::HashMap<FileName, Vec<((Point, Point), NameWithType)>>,
 }
 
 impl TypeOnHover {
     pub fn new(program: &CheckedModule) -> Self {
-        let mut pairs = Vec::new();
+        let mut map_of_pairs = hashbrown::HashMap::<_, Vec<((Point, Point), _)>>::new();
 
-        for (name, (_, _, typ)) in program.type_defs.globals.iter() {
+        for (name, (_, file, _, typ)) in program.type_defs.globals.iter() {
+            let pairs = map_of_pairs.entry_ref(file).or_default();
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
                     (start, end),
@@ -275,6 +311,7 @@ impl TypeOnHover {
         }
 
         for (name, declaration) in &program.declarations {
+            let pairs = map_of_pairs.entry_ref(&declaration.file).or_default();
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
                     (start, end),
@@ -291,6 +328,10 @@ impl TypeOnHover {
         }
 
         for (name, definition) in &program.definitions {
+            let pairs = map_of_pairs.entry_ref(&definition.file).or_default();
+            if name.primary == "TraverseDir" {
+                dbg!(&name);
+            }
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
                     (start, end),
@@ -306,26 +347,29 @@ impl TypeOnHover {
                 });
         }
 
-        pairs.sort_by_key(|((start, _), _)| start.offset);
-        pairs.dedup_by_key(|((start, _), _)| start.offset);
+        for (_, pairs) in &mut map_of_pairs {
+            pairs.sort_by_key(|((start, _), _)| start.offset);
+            pairs.dedup_by_key(|((start, _), _)| start.offset);
+        }
 
         Self {
-            sorted_pairs: pairs,
+            map_of_sorted_pairs: map_of_pairs,
         }
     }
 }
 
 impl TypeOnHover {
-    pub fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
-        if self.sorted_pairs.is_empty() {
+    pub fn query(&self, file: &FileName, row: usize, column: usize) -> Option<NameWithType> {
+        let sorted_pairs = self.map_of_sorted_pairs.get(file)?;
+        if sorted_pairs.is_empty() {
             return None;
         }
 
         // find index with the greatest start that is <= than (row, column)
-        let (mut lo, mut hi) = (0, self.sorted_pairs.len());
+        let (mut lo, mut hi) = (0, sorted_pairs.len());
         while lo + 1 < hi {
             let mi = (lo + hi) / 2;
-            let ((mp, _), _) = self.sorted_pairs[mi];
+            let ((mp, _), _) = sorted_pairs[mi];
             if mp.row < row || (mp.row == row && mp.column <= column) {
                 lo = mi;
             } else {
@@ -333,7 +377,7 @@ impl TypeOnHover {
             }
         }
 
-        let ((start, end), typ) = &self.sorted_pairs[lo];
+        let ((start, end), typ) = &sorted_pairs[lo];
 
         // check if queried (row, column) is in the found span
         if row < start.row || (row == start.row && column < start.column) {

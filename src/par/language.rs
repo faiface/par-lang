@@ -264,7 +264,6 @@ impl Display for LocalName {
 
 impl GlobalName {
     pub fn qualify(&mut self, module: Option<&str>) {
-        self.span = Default::default();
         self.module = match self.module.take() {
             Some(old) => Some(old),
             None => module.map(String::from),

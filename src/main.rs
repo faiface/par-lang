@@ -48,7 +48,9 @@ fn main() {
                 ),
         )
         .subcommand(
-            Command::new("lsp").about("Start the Par language server for editor integration"),
+            Command::new("lsp")
+                .about("Start the Par language server for editor integration")
+                .arg(arg!(--stdio "Run lsp over stdio (default behavior)")),
         )
         .subcommand(
             Command::new("test")
@@ -137,7 +139,9 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let compiled = match stacker::grow(32 * 1024 * 1024, || Compiled::from_string(&code)) {
+        let compiled = match stacker::grow(32 * 1024 * 1024, || {
+            Compiled::from_string(&code, file.display().to_string().into())
+        }) {
             Ok(compiled) => compiled,
             Err(err) => {
                 println!("{}", err.display(Arc::from(code.as_str())).bright_red());
@@ -218,7 +222,9 @@ fn check(file: PathBuf) {
         return;
     };
 
-    match stacker::grow(32 * 1024 * 1024, || Compiled::from_string(&code)) {
+    match stacker::grow(32 * 1024 * 1024, || {
+        Compiled::from_string(&code, file.display().to_string().into())
+    }) {
         Ok(_compiled) => (),
         Err(err) => {
             println!("{}", err.display(Arc::from(code.as_str())).bright_red());

@@ -1,4 +1,4 @@
-use crate::location::Span;
+use crate::location::{FileName, Span};
 use crate::par::language::{GlobalName, LocalName};
 use crate::par::types::{Type, TypeError};
 use indexmap::{IndexMap, IndexSet};
@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct TypeDefs {
-    pub globals: Arc<IndexMap<GlobalName, (Span, Vec<LocalName>, Type)>>,
+    pub globals: Arc<IndexMap<GlobalName, (Span, FileName, Vec<LocalName>, Type)>>,
     pub vars: IndexSet<LocalName>,
 }
 
@@ -21,13 +21,22 @@ impl Default for TypeDefs {
 
 impl TypeDefs {
     pub fn new_with_validation<'a>(
-        globals: impl Iterator<Item = (&'a Span, &'a GlobalName, &'a Vec<LocalName>, &'a Type)>,
+        globals: impl Iterator<
+            Item = (
+                &'a Span,
+                &'a FileName,
+                &'a GlobalName,
+                &'a Vec<LocalName>,
+                &'a Type,
+            ),
+        >,
     ) -> Result<Self, TypeError> {
         let mut globals_map = IndexMap::new();
-        for (span, name, params, typ) in globals {
-            if let Some((span1, _, _)) =
-                globals_map.insert(name.clone(), (span.clone(), params.clone(), typ.clone()))
-            {
+        for (span, file, name, params, typ) in globals {
+            if let Some((span1, _, _, _)) = globals_map.insert(
+                name.clone(),
+                (span.clone(), file.clone(), params.clone(), typ.clone()),
+            ) {
                 return Err(TypeError::TypeNameAlreadyDefined(
                     span.clone(),
                     span1,
@@ -42,7 +51,7 @@ impl TypeDefs {
         };
 
         let mut deps_map: IndexMap<GlobalName, Vec<GlobalName>> = Default::default();
-        for (name, (_, _, typ)) in type_defs.globals.iter() {
+        for (name, (_, _, _, typ)) in type_defs.globals.iter() {
             deps_map.insert(name.clone(), typ.get_dependencies());
         }
 
@@ -50,7 +59,7 @@ impl TypeDefs {
             type_defs.validate_acyclic(name, &Default::default(), &deps_map)?
         }
 
-        for (_, (_, params, typ)) in type_defs.globals.iter() {
+        for (_, (_, _, params, typ)) in type_defs.globals.iter() {
             let mut type_defs = type_defs.clone();
             for param in params {
                 type_defs.vars.insert(param.clone());
@@ -69,7 +78,7 @@ impl TypeDefs {
 
     pub fn get(&self, span: &Span, name: &GlobalName, args: &[Type]) -> Result<Type, TypeError> {
         match self.globals.get(name) {
-            Some((_, params, typ)) => {
+            Some((_, _, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -91,7 +100,7 @@ impl TypeDefs {
         args: &[Type],
     ) -> Result<Type, TypeError> {
         match self.globals.get(name) {
-            Some((_, params, typ)) => {
+            Some((_, _, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),

@@ -12,18 +12,20 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
 use crate::{
     icombs::readback::TypedHandle,
+    location::{FileName, Span},
     par::{
         builtin::import_builtins,
-        program::{Definition, Module, ParseAndCompileError, TypeOnHover},
+        program::{
+            CheckedModule, Definition, Module, NameWithType, ParseAndCompileError, TypeOnHover,
+        },
     },
     readback::Element,
+    spawn::TokioSpawn,
 };
 use crate::{
     icombs::{compile_file, IcCompiled},
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
-use crate::{location::Span, par::program::CheckedModule};
-use crate::{par::program::NameWithType, spawn::TokioSpawn};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use tokio_util::sync::CancellationToken;
 
@@ -84,8 +86,8 @@ pub(crate) struct Compiled {
 }
 
 impl Compiled {
-    pub(crate) fn from_string(source: &str) -> Result<Compiled, Error> {
-        let mut module = Module::parse_and_compile(source)?;
+    pub(crate) fn from_string(source: &str, file: FileName) -> Result<Compiled, Error> {
+        let mut module = Module::parse_and_compile(source, file)?;
         import_builtins(&mut module);
         Ok(Compiled::from_module(module)?)
     }
@@ -97,6 +99,7 @@ impl Compiled {
             .map(
                 |Definition {
                      span: _,
+                     file: _,
                      name,
                      expression,
                  }| {
@@ -441,9 +444,11 @@ impl Playground {
         }
     }
 
+    const FILE_NAME: FileName = FileName::Path(arcstr::literal!("Playground.par"));
+
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
-            self.compiled = Some(Compiled::from_string(self.code.as_str()));
+            self.compiled = Some(Compiled::from_string(self.code.as_str(), Self::FILE_NAME));
         });
         self.compiled_code = Arc::from(self.code.as_str());
     }
@@ -507,10 +512,11 @@ impl Playground {
                     })) = &mut self.compiled
                     {
                         if let Ok(checked) = checked {
-                            if let Some(NameWithType(_, typ)) = checked
-                                .type_on_hover
-                                .query(self.cursor_pos.0, self.cursor_pos.1)
-                            {
+                            if let Some(NameWithType(_, typ)) = checked.type_on_hover.query(
+                                &Self::FILE_NAME,
+                                self.cursor_pos.0,
+                                self.cursor_pos.1,
+                            ) {
                                 ui.horizontal(|ui| {
                                     let mut buf = String::new();
                                     typ.pretty(&mut buf, 0).unwrap();
@@ -676,7 +682,9 @@ def Pair = [type _] [(x)y] (x) y
 "#;
 
         let result = std::panic::catch_unwind(|| {
-            stacker::grow(32 * 1024 * 1024, || Compiled::from_string(code))
+            stacker::grow(32 * 1024 * 1024, || {
+                Compiled::from_string(code, "test".into())
+            })
         });
 
         match result {
