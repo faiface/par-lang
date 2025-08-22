@@ -433,7 +433,7 @@ the <em>primitives.</em></p>
 <li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
 <li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
 <li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters.</li>
-<li><strong><code>Char</code></strong> — Singular Unicode character.</li>
+<li><strong><code>Char</code></strong> — Singular Unicode character. They are a subtype of <code>String</code>.</li>
 <li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
 <li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
 </ul>
@@ -556,11 +556,12 @@ def Str5 = Int.ToString(-7)  // = "-7"
 this way, too. In fact, that’s exactly what happens with <code>Str4</code>.</p>
 <h2 id="char"><a class="header" href="#char"><code>Char</code></a></h2>
 <p>A <code>Char</code> is a single Unicode character. <code>Char</code> literals are enclosed in single quotes:</p>
-<pre><code class="language-par">def Char1 = 'a'  // inferred as `Char`
-def Char2 = '\n'
+<pre><code class="language-par">def Char1 = "a"  // inferred as `Char`
+def Char2 = "\n"
 </code></pre>
+<p>Since <code>Char</code> is a subtype of <code>String</code>, every variable of type <code>Char</code> can be used as a <code>String</code>, too.</p>
 <p>There’s a built-in function to check if a <code>Char</code> is a part of a character class:</p>
-<pre><code class="language-par">def IsWhitespace = Char.Is(' ', .whitespace!)  // = .true!
+<pre><code class="language-par">def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
 </code></pre>
 <p>There’s no built-in function turning a <code>String</code> to a list of <code>Char</code>s. Feel free to
 copy-paste this one, if you ever need it:</p>
@@ -923,14 +924,12 @@ dec Char.Is     : [Char, Char.Class] Bool
 /// String
 
 type String.Builder = iterative choice {
-  .addChar(Char) =&gt; self,
   .add(String) =&gt; self,
   .build =&gt; String,
 }
 
 type String.Writer&lt;errIn, errOut&gt; = iterative choice {
   .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .writeChar(Char) =&gt; Result&lt;errOut, self&gt;,
   .write(String) =&gt; Result&lt;errOut, self&gt;,
 }
 
