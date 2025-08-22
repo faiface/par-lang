@@ -137,7 +137,6 @@ type String.Builder = iterative choice {
 
 type String.Writer<errIn, errOut> = iterative choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
-  .writeChar(Char) => Result<errOut, self>,
   .write(String) => Result<errOut, self>,
 }
 

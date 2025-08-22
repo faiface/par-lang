@@ -404,22 +404,6 @@ async fn provide_string_writer_for_file(mut handle: Handle, mut file: File) {
                 }
             }
 
-            "writeChar" => {
-                let ch = handle.receive().char().await;
-                let mut buf = [0; 4];
-                let string = ch.encode_utf8(&mut buf);
-                match file.write(string.as_bytes()).await {
-                    Ok(_) => {
-                        handle.signal(literal!("ok"));
-                        continue;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
-                    }
-                }
-            }
-
             "write" => {
                 let string = handle.receive().string().await;
                 match file.write(string.as_bytes()).await {
