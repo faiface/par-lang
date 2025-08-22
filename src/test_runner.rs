@@ -1,11 +1,14 @@
-use crate::icombs::{
-    readback::{TypedHandle, TypedReadback},
-    IcCompiled,
-};
 use crate::par::parse;
 use crate::playground::Compiled;
 use crate::spawn::TokioSpawn;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
+use crate::{
+    icombs::{
+        readback::{TypedHandle, TypedReadback},
+        IcCompiled,
+    },
+    location::FileName,
+};
 use colored::Colorize;
 use futures::task::SpawnExt;
 use std::path::{Path, PathBuf};
@@ -122,7 +125,10 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let code_with_imports = code.clone();
 
     let compiled = match stacker::grow(32 * 1024 * 1024, || {
-        Compiled::from_string(&code_with_imports)
+        Compiled::from_string(
+            &code_with_imports,
+            FileName::Path(file.to_string_lossy().into()),
+        )
     }) {
         Ok(compiled) => compiled,
         Err(err) => {

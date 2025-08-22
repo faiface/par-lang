@@ -2,7 +2,7 @@ use std::sync::{mpsc, Arc};
 
 use crate::{
     icombs::readback::Handle,
-    location::Span,
+    location::{FileName, Span},
     par::{
         language::GlobalName,
         process,
@@ -16,6 +16,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef {
             span: Span::None,
+            file: FileName::Builtin,
             name: GlobalName::external(Some("Test"), "Test"),
             params: vec![],
             typ: Type::iterative_box_choice(
