@@ -17,13 +17,7 @@ impl Primitive {
     pub fn pretty(&self, f: &mut impl Write, _indent: usize) -> fmt::Result {
         match self {
             Self::Int(i) => write!(f, "{}", i),
-            Self::String(s) => {
-                if let Some(first) = get_single_char(&s) {
-                    write!(f, "{:?}", first)
-                } else {
-                    write!(f, "{:?}", s)
-                }
-            }
+            Self::String(s) => write!(f, "{:?}", s),
             Self::Bytes(b) => {
                 write!(f, "<<")?;
                 for (i, &byte) in b.as_ref().iter().enumerate() {
@@ -47,7 +41,7 @@ impl Primitive {
         match self {
             Self::Int(n) if n >= &BigInt::ZERO => Type::nat(),
             Self::Int(_) => Type::int(),
-            Self::String(s) if get_single_char(s).is_some() => Type::char(),
+            Self::String(s) if is_single_char(s) => Type::char(),
             Self::String(_) => Type::string(),
             Self::Bytes(b) if b.len() == 1 => Type::byte(),
             Self::Bytes(_) => Type::bytes(),
@@ -55,12 +49,7 @@ impl Primitive {
     }
 }
 
-fn get_single_char(string: &str) -> Option<char> {
+fn is_single_char(string: &str) -> bool {
     let mut chars = string.chars();
-    if let Some(char) = chars.next() {
-        if chars.next().is_none() {
-            return Some(char);
-        }
-    }
-    return None;
+    chars.next().is_some() && chars.next().is_none()
 }
