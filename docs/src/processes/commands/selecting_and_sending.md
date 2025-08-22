@@ -18,6 +18,7 @@ We construct an empty `String.Builder` using the built-in definition of the same
 ```par
 def LetsBuildStrings = do {
   let builder = String.Builder
+  // code continued below...
 ```
 
 ## Selection
@@ -35,6 +36,7 @@ itself then looks the same as the usual [destruction of a choice](../types/choic
 def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add        // selection command
+  // code continued below...
 ```
 
 That's it! Now, here's the crucial bit: after selection, `builder` **changes its type** to the type
