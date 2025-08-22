@@ -131,14 +131,12 @@ dec Char.Is     : [Char, Char.Class] Bool
 /// String
 
 type String.Builder = iterative choice {
-  .addChar(Char) => self,
   .add(String) => self,
   .build => String,
 }
 
 type String.Writer<errIn, errOut> = iterative choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
-  .writeChar(Char) => Result<errOut, self>,
   .write(String) => Result<errOut, self>,
 }
 

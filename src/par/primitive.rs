@@ -10,7 +10,6 @@ use super::types::Type;
 pub enum Primitive {
     Int(BigInt),
     String(Substr),
-    Char(char),
     Bytes(ByteView),
 }
 
@@ -19,7 +18,6 @@ impl Primitive {
         match self {
             Self::Int(i) => write!(f, "{}", i),
             Self::String(s) => write!(f, "{:?}", s),
-            Self::Char(c) => write!(f, "{:?}", c),
             Self::Bytes(b) => {
                 write!(f, "<<")?;
                 for (i, &byte) in b.as_ref().iter().enumerate() {
@@ -43,10 +41,15 @@ impl Primitive {
         match self {
             Self::Int(n) if n >= &BigInt::ZERO => Type::nat(),
             Self::Int(_) => Type::int(),
+            Self::String(s) if is_single_char(s) => Type::char(),
             Self::String(_) => Type::string(),
-            Self::Char(_) => Type::char(),
             Self::Bytes(b) if b.len() == 1 => Type::byte(),
             Self::Bytes(_) => Type::bytes(),
         }
     }
+}
+
+fn is_single_char(string: &str) -> bool {
+    let mut chars = string.chars();
+    chars.next().is_some() && chars.next().is_none()
 }

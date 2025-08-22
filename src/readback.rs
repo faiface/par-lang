@@ -382,7 +382,11 @@ impl Element {
                         ui.label(RichText::from(format!("{:?}", s)).strong().code());
                     }
                     Event::Char(s) | Event::CharRequest(s) => {
-                        ui.label(RichText::from(format!("{:?}", s)).strong().code());
+                        ui.label(
+                            RichText::from(format!("{:?}", s.encode_utf8(&mut [0u8; 4])))
+                                .strong()
+                                .code(),
+                        );
                     }
                     Event::Byte(b) | Event::ByteRequest(b) => {
                         ui.label(

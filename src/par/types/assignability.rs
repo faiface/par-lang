@@ -186,6 +186,10 @@ impl Type {
             (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
                 true
             }
+            (
+                Self::Primitive(_, PrimitiveType::Char),
+                Self::Primitive(_, PrimitiveType::String),
+            ) => true,
             (Self::Primitive(_, PrimitiveType::Byte), Self::Primitive(_, PrimitiveType::Bytes)) => {
                 true
             }
@@ -193,6 +197,10 @@ impl Type {
             (
                 Self::DualPrimitive(_, PrimitiveType::Int),
                 Self::DualPrimitive(_, PrimitiveType::Nat),
+            ) => true,
+            (
+                Self::DualPrimitive(_, PrimitiveType::String),
+                Self::DualPrimitive(_, PrimitiveType::Char),
             ) => true,
             (
                 Self::DualPrimitive(_, PrimitiveType::Bytes),

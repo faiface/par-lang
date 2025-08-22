@@ -51,9 +51,6 @@ async fn string_builder(mut handle: Handle) {
     let mut buf = String::new();
     loop {
         match handle.case().await.as_str() {
-            "addChar" => {
-                buf.push(handle.receive().char().await);
-            }
             "add" => {
                 buf += &handle.receive().string().await;
             }

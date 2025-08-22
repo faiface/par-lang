@@ -238,16 +238,25 @@ impl Handle {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::CharRequest(tx), self.tree.unwrap());
+            locked.link(Tree::StringRequest(tx), self.tree.unwrap());
             locked.notify_reducer();
             rx
         };
-        rx.await.expect("sender dropped")
+        let value = rx.await.expect("sender dropped");
+        let mut chars = value.chars();
+        let char = chars.next().unwrap();
+        assert!(chars.next().is_none());
+        char
     }
 
     pub fn provide_char(self, value: char) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.unwrap());
+        locked.link(
+            Tree::Primitive(Primitive::String(Substr::from(
+                value.encode_utf8(&mut [0u8; 4]),
+            ))),
+            self.tree.unwrap(),
+        );
         locked.notify_reducer();
     }
 
@@ -543,12 +552,16 @@ impl TypedHandle {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::CharRequest(tx), self.tree.tree);
+            locked.link(Tree::StringRequest(tx), self.tree.tree);
             locked.notify_reducer();
             rx
         };
 
-        rx.await.expect("sender dropped")
+        let value = rx.await.expect("sender dropped");
+        let mut chars = value.chars();
+        let char = chars.next().unwrap();
+        assert!(chars.next().is_none());
+        char
     }
 
     pub fn provide_char(mut self, value: char) {
@@ -558,7 +571,12 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.tree);
+        locked.link(
+            Tree::Primitive(Primitive::String(Substr::from(
+                value.encode_utf8(&mut [0u8; 4]),
+            ))),
+            self.tree.tree,
+        );
         locked.notify_reducer();
     }
 
