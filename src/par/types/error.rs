@@ -2,7 +2,7 @@ use crate::location::{Span, Spanning};
 use crate::par::language::{GlobalName, LocalName};
 use crate::par::types::{LoopId, Operation, Type};
 use indexmap::IndexMap;
-use miette::LabeledSpan;
+use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -41,6 +41,19 @@ pub enum TypeError {
     Telltypes(Span, IndexMap<LocalName, Type>),
 }
 
+/// Create a `LabeledSpan` without a label at `span`
+pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
+    span.start()
+        .into_iter()
+        .map(|start| {
+            LabeledSpan::new_with_span(
+                None,
+                SourceSpan::new(SourceOffset::from(start.offset), span.len()),
+            )
+        })
+        .collect()
+}
+
 fn two_labels_from_two_spans(
     code: &str,
     span1: &Span,
@@ -48,7 +61,6 @@ fn two_labels_from_two_spans(
     label1: impl Into<Option<String>>,
     label2: impl Into<Option<String>>,
 ) -> Vec<LabeledSpan> {
-    use crate::playground::labels_from_span;
     let mut labels = labels_from_span(code, span1);
     let label1 = label1.into();
     let label2 = label2.into();
@@ -61,7 +73,6 @@ fn two_labels_from_two_spans(
 
 impl TypeError {
     pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
-        use crate::playground::labels_from_span;
         let code = &source_code;
         match self {
             Self::TypeNameAlreadyDefined(span1, span2, name) => {

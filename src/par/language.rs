@@ -3,13 +3,17 @@
 use std::{collections::BTreeMap, fmt::Display, hash::Hash, sync::Arc};
 
 use arcstr::{literal, ArcStr};
+use indexmap::IndexMap;
 
 use super::{
     primitive::Primitive,
     process::{self, Captures},
     types::Type,
 };
-use crate::location::{Span, Spanning};
+use crate::{
+    location::{Span, Spanning},
+    par::types::error::labels_from_span,
+};
 
 #[derive(Clone, Debug)]
 pub struct LocalName {
@@ -329,17 +333,108 @@ impl Display for GlobalName {
 #[derive(Clone, Debug)]
 pub enum CompileError {
     MustEndProcess(Span),
+    UnreachableCode(Span),
 }
 
 impl Spanning for CompileError {
     fn span(&self) -> Span {
         match self {
-            CompileError::MustEndProcess(span) => span.clone(),
+            Self::MustEndProcess(span) => span.clone(),
+            Self::UnreachableCode(span) => span.clone(),
         }
     }
 }
 
-type Pass = Option<Arc<process::Process<()>>>;
+impl CompileError {
+    pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
+        match self {
+            Self::MustEndProcess(span) => {
+                let labels = labels_from_span(&source_code, span);
+                let code = if labels.is_empty() {
+                    "<UI>".into()
+                } else {
+                    source_code
+                };
+                let error = miette::miette! {
+                    labels = labels,
+                    "This process must end."
+                }
+                .with_source_code(code);
+                error
+            }
+
+            Self::UnreachableCode(span) => {
+                let labels = labels_from_span(&source_code, span);
+                let code = if labels.is_empty() {
+                    "<UI>".into()
+                } else {
+                    source_code
+                };
+                let error = miette::miette! {
+                    labels = labels,
+                    "Unreachable code."
+                }
+                .with_source_code(code);
+                error
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Passes {
+    after_case: Option<Pass>,
+    catch_block: IndexMap<Option<LocalName>, Pass>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Pass {
+    process: Arc<process::Process<()>>,
+    used: bool,
+}
+
+impl Passes {
+    fn new() -> Self {
+        Passes {
+            after_case: None,
+            catch_block: IndexMap::new(),
+        }
+    }
+
+    fn set_after_case(&mut self, p: Arc<process::Process<()>>) -> Result<&mut Self, CompileError> {
+        self.unset_after_case()?;
+        self.after_case = Some(Pass::new(p));
+        Ok(self)
+    }
+
+    fn use_after_case(&mut self) -> Option<Arc<process::Process<()>>> {
+        match self.after_case.as_mut() {
+            Some(pass) => {
+                pass.used = true;
+                Some(Arc::clone(&pass.process))
+            }
+            None => None,
+        }
+    }
+
+    fn unset_after_case(&mut self) -> Result<&mut Self, CompileError> {
+        match self.after_case.take() {
+            Some(previous) if !previous.used => {
+                Err(CompileError::UnreachableCode(previous.process.span()))
+            }
+            _ => Ok(self),
+        }
+    }
+}
+
+impl Pass {
+    fn new(p: Arc<process::Process<()>>) -> Self {
+        Pass {
+            process: p,
+            used: false,
+        }
+    }
+}
 
 impl Pattern {
     pub fn compile_let(
@@ -588,12 +683,14 @@ impl Expression {
                 then: expression,
             } => {
                 let expression = expression.compile()?;
-                let body = process.compile(Some(Arc::new(process::Process::Do {
-                    span: span.clone(),
-                    name: LocalName::result(),
-                    typ: (),
-                    command: process::Command::Link(expression),
-                })))?;
+                let body = process.compile(Passes::new().set_after_case(Arc::new(
+                    process::Process::Do {
+                        span: span.clone(),
+                        name: LocalName::result(),
+                        typ: (),
+                        command: process::Command::Link(expression),
+                    },
+                ))?)?;
                 Arc::new(process::Expression::Fork {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -617,7 +714,7 @@ impl Expression {
                 chan_annotation: annotation.clone(),
                 chan_type: (),
                 expr_type: (),
-                process: process.compile(None)?,
+                process: process.compile(&mut Passes::new())?,
             }),
 
             Self::Construction(construct) => {
@@ -1034,7 +1131,7 @@ impl Spanning for ApplyBranch {
 }
 
 impl Process {
-    pub fn compile(&self, pass: Pass) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Let {
                 span,
@@ -1066,7 +1163,7 @@ impl Process {
                 process.compile(pass)?,
             )),
 
-            Self::Noop(span) => match pass {
+            Self::Noop(span) => match pass.use_after_case() {
                 Some(process) => process,
                 None => Err(CompileError::MustEndProcess(*span))?,
             },
@@ -1089,7 +1186,7 @@ impl Command {
     pub fn compile(
         &self,
         object_name: &LocalName,
-        pass: Pass,
+        pass: &mut Passes,
     ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(process) => process.compile(pass)?,
@@ -1131,17 +1228,21 @@ impl Command {
             }
 
             Self::Case(span, CommandBranches(process_branches), optional_process) => {
-                let pass = match optional_process {
-                    Some(process) => Some(process.compile(pass)?),
-                    None => pass,
-                };
-
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
+
+                if let Some(process) = optional_process {
+                    let process = process.compile(pass)?;
+                    pass.set_after_case(process)?;
+                }
                 for (branch_name, process_branch) in process_branches {
                     branches.push(branch_name.clone());
-                    processes.push(process_branch.compile(object_name, pass.clone())?);
+                    processes.push(process_branch.compile(object_name, pass)?);
                 }
+                if optional_process.is_some() {
+                    pass.unset_after_case()?;
+                }
+
                 let branches = Arc::from(branches);
                 let processes = Box::from(processes);
                 Arc::new(process::Process::Do {
@@ -1247,7 +1348,7 @@ impl CommandBranch {
     pub fn compile(
         &self,
         object_name: &LocalName,
-        pass: Pass,
+        pass: &mut Passes,
     ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(_, process) => process.compile(pass)?,

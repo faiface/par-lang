@@ -76,6 +76,16 @@ pub enum Expression<Typ> {
     ),
 }
 
+impl<Typ> Spanning for Process<Typ> {
+    fn span(&self) -> Span {
+        match self {
+            Self::Let { span, .. } => span.clone(),
+            Self::Do { span, .. } => span.clone(),
+            Self::Telltypes(span, ..) => span.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Captures {
     pub names: IndexMap<LocalName, Span>,
@@ -96,20 +106,20 @@ impl Captures {
         }
     }
 
-    pub fn single(name: LocalName, loc: Span) -> Self {
+    pub fn single(name: LocalName, span: Span) -> Self {
         let mut caps = Self::new();
-        caps.add(name, loc);
+        caps.add(name, span);
         caps
     }
 
     pub fn extend(&mut self, other: Self) {
-        for (name, loc) in other.names {
-            self.names.insert(name, loc);
+        for (name, span) in other.names {
+            self.names.insert(name, span);
         }
     }
 
-    pub fn add(&mut self, name: LocalName, loc: Span) {
-        self.names.insert(name, loc);
+    pub fn add(&mut self, name: LocalName, span: Span) {
+        self.names.insert(name, span);
     }
 
     pub fn remove(&mut self, name: &LocalName) -> Option<Span> {
@@ -124,7 +134,7 @@ impl<Typ: Clone> Process<Typ> {
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Let {
-                span: loc,
+                span,
                 name,
                 annotation,
                 typ,
@@ -137,7 +147,7 @@ impl<Typ: Clone> Process<Typ> {
                 caps.extend(caps1);
                 (
                     Arc::new(Self::Let {
-                        span: loc.clone(),
+                        span: span.clone(),
                         name: name.clone(),
                         annotation: annotation.clone(),
                         typ: typ.clone(),
@@ -148,16 +158,16 @@ impl<Typ: Clone> Process<Typ> {
                 )
             }
             Self::Do {
-                span: loc,
+                span,
                 name,
                 typ,
                 command,
             } => {
                 let (command, mut caps) = command.fix_captures(name, loop_points);
-                caps.add(name.clone(), loc.clone());
+                caps.add(name.clone(), span.clone());
                 (
                     Arc::new(Self::Do {
-                        span: loc.clone(),
+                        span: span.clone(),
                         name: name.clone(),
                         typ: typ.clone(),
                         command,
@@ -165,9 +175,9 @@ impl<Typ: Clone> Process<Typ> {
                     caps,
                 )
             }
-            Self::Telltypes(loc, process) => {
+            Self::Telltypes(span, process) => {
                 let (process, caps) = process.fix_captures(loop_points);
-                (Arc::new(Self::Telltypes(loc.clone(), process)), caps)
+                (Arc::new(Self::Telltypes(span.clone(), process)), caps)
             }
         }
     }
@@ -175,14 +185,14 @@ impl<Typ: Clone> Process<Typ> {
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Let {
-                span: loc,
+                span,
                 name,
                 annotation,
                 typ,
                 value: expression,
                 then: process,
             } => Arc::new(Self::Let {
-                span: loc.clone(),
+                span: span.clone(),
                 name: name.clone(),
                 annotation: annotation.clone(),
                 typ: typ.clone(),
@@ -190,12 +200,12 @@ impl<Typ: Clone> Process<Typ> {
                 then: process.optimize(),
             }),
             Self::Do {
-                span: loc,
+                span,
                 name,
                 typ,
                 command,
             } => Arc::new(Self::Do {
-                span: loc.clone(),
+                span: span.clone(),
                 name: name.clone(),
                 typ: typ.clone(),
                 command: match command {
@@ -250,8 +260,8 @@ impl<Typ: Clone> Process<Typ> {
                     }
                 },
             }),
-            Self::Telltypes(loc, process) => {
-                Arc::new(Self::Telltypes(loc.clone(), process.optimize()))
+            Self::Telltypes(span, process) => {
+                Arc::new(Self::Telltypes(span.clone(), process.optimize()))
             }
         }
     }

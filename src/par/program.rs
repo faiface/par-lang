@@ -329,9 +329,6 @@ impl TypeOnHover {
 
         for (name, definition) in &program.definitions {
             let pairs = map_of_pairs.entry_ref(&definition.file).or_default();
-            if name.primary == "TraverseDir" {
-                dbg!(&name);
-            }
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
                     (start, end),

@@ -12,7 +12,7 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
 use crate::{
     icombs::readback::TypedHandle,
-    location::{FileName, Span},
+    location::FileName,
     par::{
         builtin::import_builtins,
         program::{
@@ -26,7 +26,6 @@ use crate::{
     icombs::{compile_file, IcCompiled},
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
-use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
@@ -563,19 +562,6 @@ impl Playground {
     }
 }
 
-/// Create a `LabeledSpan` without a label at `span`
-pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
-    span.start()
-        .into_iter()
-        .map(|start| {
-            LabeledSpan::new_with_span(
-                None,
-                SourceSpan::new(SourceOffset::from(start.offset), span.len()),
-            )
-        })
-        .collect()
-}
-
 impl Error {
     pub fn display(&self, code: Arc<str>) -> String {
         match self {
@@ -587,20 +573,7 @@ impl Error {
                 )
             }
 
-            Self::Compile(CompileError::MustEndProcess(loc)) => {
-                let labels = labels_from_span(&code, loc);
-                let code = if labels.is_empty() {
-                    "<UI>".into()
-                } else {
-                    code
-                };
-                let error = miette::miette! {
-                    labels = labels,
-                    "This process must end."
-                }
-                .with_source_code(code);
-                format!("{error:?}")
-            }
+            Self::Compile(error) => format!("{:?}", error.to_report(code)),
 
             Self::Type(error) => format!("{:?}", error.to_report(code)),
 
