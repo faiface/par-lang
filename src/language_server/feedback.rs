@@ -1,6 +1,5 @@
 use crate::language_server::instance::CompileError;
 use crate::location::{Span, Spanning};
-use crate::par::types::error::labels_from_span;
 use lsp_types::{self as lsp, Uri};
 use miette::Diagnostic;
 use std::collections::HashMap;
@@ -70,38 +69,10 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             vec![],
         ),
 
-        CompileError::Compile(Error::Compile(
-            crate::par::language::CompileError::MustEndProcess(loc),
-        )) => {
-            let labels = labels_from_span(&code, loc);
-            let code = if labels.is_empty() {
-                "<UI>".into()
-            } else {
-                code
-            };
-            let error = miette::miette! {
-                labels = labels,
-                "This process must end."
-            }
-            .with_source_code(code);
-            (loc.clone(), format!("{error:?}"), None, vec![])
-        }
-
-        CompileError::Compile(Error::Compile(
-            crate::par::language::CompileError::UnreachableCode(loc),
-        )) => {
-            let labels = labels_from_span(&code, loc);
-            let code = if labels.is_empty() {
-                "<UI>".into()
-            } else {
-                code
-            };
-            let error = miette::miette! {
-                labels = labels,
-                "Unreachable code."
-            }
-            .with_source_code(code);
-            (loc.clone(), format!("{error:?}"), None, vec![])
+        CompileError::Compile(Error::Compile(error)) => {
+            let span = error.span();
+            let error = error.to_report(code);
+            (span, format!("{error:?}"), None, vec![])
         }
 
         CompileError::Compile(Error::Type(err)) => {

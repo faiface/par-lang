@@ -561,7 +561,7 @@ fn typ_continue(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_recursive(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::Recursive), (loop_label, typ))
+    commit_after(t(TokenKind::Recursive), (label, typ))
         .map(|(pre, (label, typ))| Type::Recursive {
             span: pre.span.join(typ.span()),
             asc: Default::default(),
@@ -574,7 +574,7 @@ fn typ_recursive(input: &mut Input) -> Result<Type> {
 fn typ_iterative(input: &mut Input) -> Result<Type> {
     commit_after(
         t(TokenKind::Iterative),
-        (loop_label, typ).context(StrContext::Label("iterative type body")),
+        (label, typ).context(StrContext::Label("iterative type body")),
     )
     .map(|(pre, (label, typ))| Type::Iterative {
         span: pre.span.join(typ.span()),
@@ -588,7 +588,7 @@ fn typ_iterative(input: &mut Input) -> Result<Type> {
 fn typ_self(input: &mut Input) -> Result<Type> {
     commit_after(
         t(TokenKind::Self_),
-        loop_label.context(StrContext::Label("self type loop label")),
+        label.context(StrContext::Label("self type loop label")),
     )
     .map(|(token, label)| {
         Type::Self_(
@@ -708,6 +708,7 @@ fn pattern(input: &mut Input) -> Result<Pattern> {
         pattern_receive_type,
         pattern_receive,
         pattern_continue,
+        pattern_try,
     ))
     .parse_next(input)
 }
@@ -744,6 +745,12 @@ fn pattern_receive(input: &mut Input) -> Result<Pattern> {
 fn pattern_continue(input: &mut Input) -> Result<Pattern> {
     t(TokenKind::Bang)
         .map(|token| Pattern::Continue(token.span))
+        .parse_next(input)
+}
+
+fn pattern_try(input: &mut Input) -> Result<Pattern> {
+    commit_after(t(TokenKind::Try), (label, pattern))
+        .map(|(pre, (label, rest))| Pattern::Try(pre.span.join(rest.span()), label, Box::new(rest)))
         .parse_next(input)
 }
 
@@ -1010,7 +1017,7 @@ fn cons_break(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_begin(input: &mut Input) -> Result<Construct> {
-    commit_after(t(TokenKind::Begin), (loop_label, construction))
+    commit_after(t(TokenKind::Begin), (label, construction))
         .map(|(unfounded, (label, construct))| Construct::Begin {
             span: unfounded.span.join(construct.span()),
             unfounded: false,
@@ -1021,7 +1028,7 @@ fn cons_begin(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_unfounded(input: &mut Input) -> Result<Construct> {
-    commit_after(t(TokenKind::Unfounded), (loop_label, construction))
+    commit_after(t(TokenKind::Unfounded), (label, construction))
         .map(|(unfounded, (label, construct))| Construct::Begin {
             span: unfounded.span.join(construct.span()),
             unfounded: true,
@@ -1032,7 +1039,7 @@ fn cons_unfounded(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_loop(input: &mut Input) -> Result<Construct> {
-    commit_after(t(TokenKind::Loop), loop_label)
+    commit_after(t(TokenKind::Loop), label)
         .map(|(token, label)| {
             Construct::Loop(
                 match &label {
@@ -1187,49 +1194,43 @@ fn apply_case(input: &mut Input) -> Result<Apply> {
 }
 
 fn apply_begin(input: &mut Input) -> Result<Apply> {
-    commit_after(
-        (t(TokenKind::Dot), t(TokenKind::Begin)),
-        (loop_label, apply),
-    )
-    .map(|((pre, _), (label, then))| {
-        let then = match (&label, then) {
-            (_, Some(then)) => then,
-            (Some(label), None) => Apply::Noop(label.span.only_end()),
-            (None, None) => Apply::Noop(pre.span.only_end()),
-        };
-        Apply::Begin {
-            span: pre.span.join(then.span()),
-            unfounded: false,
-            label,
-            then: Box::new(then),
-        }
-    })
-    .parse_next(input)
+    commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (label, apply))
+        .map(|((pre, _), (label, then))| {
+            let then = match (&label, then) {
+                (_, Some(then)) => then,
+                (Some(label), None) => Apply::Noop(label.span.only_end()),
+                (None, None) => Apply::Noop(pre.span.only_end()),
+            };
+            Apply::Begin {
+                span: pre.span.join(then.span()),
+                unfounded: false,
+                label,
+                then: Box::new(then),
+            }
+        })
+        .parse_next(input)
 }
 
 fn apply_unfounded(input: &mut Input) -> Result<Apply> {
-    commit_after(
-        (t(TokenKind::Dot), t(TokenKind::Unfounded)),
-        (loop_label, apply),
-    )
-    .map(|((pre, _), (label, then))| {
-        let then = match (&label, then) {
-            (_, Some(then)) => then,
-            (Some(label), None) => Apply::Noop(label.span.only_end()),
-            (None, None) => Apply::Noop(pre.span.only_end()),
-        };
-        Apply::Begin {
-            span: pre.span.join(then.span()),
-            unfounded: true,
-            label,
-            then: Box::new(then),
-        }
-    })
-    .parse_next(input)
+    commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, apply))
+        .map(|((pre, _), (label, then))| {
+            let then = match (&label, then) {
+                (_, Some(then)) => then,
+                (Some(label), None) => Apply::Noop(label.span.only_end()),
+                (None, None) => Apply::Noop(pre.span.only_end()),
+            };
+            Apply::Begin {
+                span: pre.span.join(then.span()),
+                unfounded: true,
+                label,
+                then: Box::new(then),
+            }
+        })
+        .parse_next(input)
 }
 
 fn apply_loop(input: &mut Input) -> Result<Apply> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), loop_label)
+    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
         .map(|((pre1, pre2), label)| {
             Apply::Loop(
                 match &label {
@@ -1315,9 +1316,15 @@ fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch> {
 }
 
 fn process(input: &mut Input) -> Result<Process> {
-    alt((proc_let, proc_telltypes, global_command, command))
-        .context(StrContext::Label("process"))
-        .parse_next(input)
+    alt((
+        proc_let,
+        proc_catch,
+        proc_telltypes,
+        global_command,
+        command,
+    ))
+    .context(StrContext::Label("process"))
+    .parse_next(input)
 }
 
 fn proc_let(input: &mut Input) -> Result<Process> {
@@ -1334,6 +1341,30 @@ fn proc_let(input: &mut Input) -> Result<Process> {
         },
         value: Box::new(expression),
     })
+    .parse_next(input)
+}
+
+fn proc_catch(input: &mut Input) -> Result<Process> {
+    commit_after(
+        t(TokenKind::Catch),
+        (
+            label,
+            pattern,
+            t(TokenKind::LCurly),
+            process,
+            t(TokenKind::RCurly),
+            process,
+        ),
+    )
+    .map(
+        |(pre, (label, pattern, _, block, _, then))| Process::Catch {
+            span: pre.span.join(block.span()),
+            label,
+            pattern,
+            block: Box::new(block),
+            then: Box::new(then),
+        },
+    )
     .parse_next(input)
 }
 
@@ -1498,7 +1529,7 @@ fn cmd_continue(input: &mut Input) -> Result<Command> {
 }
 
 fn cmd_begin(input: &mut Input) -> Result<Command> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (loop_label, cmd))
+    commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (label, cmd))
         .map(|((pre, _), (label, cmd))| {
             let cmd = match (&label, cmd) {
                 (_, Some(cmd)) => cmd,
@@ -1516,28 +1547,25 @@ fn cmd_begin(input: &mut Input) -> Result<Command> {
 }
 
 fn cmd_unfounded(input: &mut Input) -> Result<Command> {
-    commit_after(
-        (t(TokenKind::Dot), t(TokenKind::Unfounded)),
-        (loop_label, cmd),
-    )
-    .map(|((pre, _), (label, cmd))| {
-        let cmd = match (&label, cmd) {
-            (_, Some(cmd)) => cmd,
-            (Some(label), None) => noop_cmd(label.span.only_end()),
-            (None, None) => noop_cmd(pre.span.only_end()),
-        };
-        Command::Begin {
-            span: pre.span.join(cmd.span()),
-            unfounded: true,
-            label,
-            then: Box::new(cmd),
-        }
-    })
-    .parse_next(input)
+    commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, cmd))
+        .map(|((pre, _), (label, cmd))| {
+            let cmd = match (&label, cmd) {
+                (_, Some(cmd)) => cmd,
+                (Some(label), None) => noop_cmd(label.span.only_end()),
+                (None, None) => noop_cmd(pre.span.only_end()),
+            };
+            Command::Begin {
+                span: pre.span.join(cmd.span()),
+                unfounded: true,
+                label,
+                then: Box::new(cmd),
+            }
+        })
+        .parse_next(input)
 }
 
 fn cmd_loop(input: &mut Input) -> Result<Command> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), loop_label)
+    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
         .map(|((pre1, pre2), label)| {
             Command::Loop(
                 match &label {
@@ -1689,7 +1717,7 @@ fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn loop_label(input: &mut Input) -> Result<Option<LocalName>> {
+fn label(input: &mut Input) -> Result<Option<LocalName>> {
     opt(preceded(t(TokenKind::Slash), local_name)).parse_next(input)
 }
 

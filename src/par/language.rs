@@ -1,9 +1,13 @@
 // why not rename this file to ast.rs?
 
-use std::{collections::BTreeMap, fmt::Display, hash::Hash, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Display,
+    hash::Hash,
+    sync::Arc,
+};
 
 use arcstr::{literal, ArcStr};
-use indexmap::IndexMap;
 
 use super::{
     primitive::Primitive,
@@ -62,28 +66,35 @@ impl Spanning for GlobalName {
 impl LocalName {
     pub fn result() -> Self {
         Self {
-            span: Default::default(),
+            span: Span::None,
             string: literal!("#result"),
         }
     }
 
     pub fn object() -> Self {
         Self {
-            span: Default::default(),
+            span: Span::None,
             string: literal!("#object"),
+        }
+    }
+
+    pub fn error() -> Self {
+        Self {
+            span: Span::None,
+            string: literal!("#error"),
         }
     }
 
     pub fn match_(level: usize) -> Self {
         Self {
-            span: Default::default(),
+            span: Span::None,
             string: arcstr::format!("#match{}", level),
         }
     }
 
     pub fn invalid() -> Self {
         Self {
-            span: Default::default(),
+            span: Span::None,
             string: literal!("#invalid"),
         }
     }
@@ -100,6 +111,7 @@ pub enum Pattern {
     Receive(Span, Box<Self>, Box<Self>),
     Continue(Span),
     ReceiveType(Span, LocalName, Box<Self>),
+    Try(Span, Option<LocalName>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -197,6 +209,13 @@ pub enum Process {
         span: Span,
         pattern: Pattern,
         value: Box<Expression>,
+        then: Box<Self>,
+    },
+    Catch {
+        span: Span,
+        label: Option<LocalName>,
+        pattern: Pattern,
+        block: Box<Self>,
         then: Box<Self>,
     },
     GlobalCommand(GlobalName, Command),
@@ -333,6 +352,7 @@ impl Display for GlobalName {
 pub enum CompileError {
     MustEndProcess(Span),
     UnreachableCode(Span),
+    NoMatchingCatch(Span),
 }
 
 impl Spanning for CompileError {
@@ -340,6 +360,7 @@ impl Spanning for CompileError {
         match self {
             Self::MustEndProcess(span) => span.clone(),
             Self::UnreachableCode(span) => span.clone(),
+            Self::NoMatchingCatch(span) => span.clone(),
         }
     }
 }
@@ -376,6 +397,21 @@ impl CompileError {
                 .with_source_code(code);
                 error
             }
+
+            Self::NoMatchingCatch(span) => {
+                let labels = labels_from_span(&source_code, span);
+                let code = if labels.is_empty() {
+                    "<UI>".into()
+                } else {
+                    source_code
+                };
+                let error = miette::miette! {
+                    labels = labels,
+                    "No matching `catch` block defined."
+                }
+                .with_source_code(code);
+                error
+            }
         }
     }
 }
@@ -383,7 +419,7 @@ impl CompileError {
 #[derive(Clone, Debug)]
 pub struct Passes {
     after_case: Option<Pass>,
-    catch_block: IndexMap<Option<LocalName>, Pass>,
+    catch_block: HashMap<Option<LocalName>, Pass>,
 }
 
 #[derive(Clone, Debug)]
@@ -396,7 +432,7 @@ impl Passes {
     fn new() -> Self {
         Passes {
             after_case: None,
-            catch_block: IndexMap::new(),
+            catch_block: HashMap::new(),
         }
     }
 
@@ -424,6 +460,35 @@ impl Passes {
             _ => Ok(self),
         }
     }
+
+    fn set_catch_block(
+        &mut self,
+        label: Option<LocalName>,
+        p: Arc<process::Process<()>>,
+    ) -> Result<&mut Self, CompileError> {
+        self.unset_catch_block(&label)?;
+        self.catch_block.insert(label, Pass::new(p));
+        Ok(self)
+    }
+
+    fn use_catch_block(&mut self, label: &Option<LocalName>) -> Option<Arc<process::Process<()>>> {
+        match self.catch_block.get_mut(label) {
+            Some(pass) => {
+                pass.used = true;
+                Some(Arc::clone(&pass.process))
+            }
+            None => None,
+        }
+    }
+
+    fn unset_catch_block(&mut self, label: &Option<LocalName>) -> Result<&mut Self, CompileError> {
+        match self.catch_block.remove(label) {
+            Some(previous) if !previous.used => {
+                Err(CompileError::UnreachableCode(previous.process.span()))
+            }
+            _ => Ok(self),
+        }
+    }
 }
 
 impl Pass {
@@ -441,34 +506,36 @@ impl Pattern {
         span: &Span,
         expression: Arc<process::Expression<()>>,
         process: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         if let Self::Name(_, name, annotation) = self {
-            return Arc::new(process::Process::Let {
+            return Ok(Arc::new(process::Process::Let {
                 span: span.clone(),
                 name: name.clone(),
                 annotation: annotation.clone(),
                 typ: (),
                 value: expression,
                 then: process,
-            });
+            }));
         }
-        Arc::new(process::Process::Let {
+        Ok(Arc::new(process::Process::Let {
             span: span.clone(),
             name: LocalName::match_(0),
             annotation: self.annotation(),
             typ: (),
             value: expression,
-            then: self.compile_helper(0, process),
-        })
+            then: self.compile_helper(0, process, pass)?,
+        }))
     }
 
     pub fn compile_chan(
         &self,
         span: &Span,
         process: Arc<process::Process<()>>,
-    ) -> Arc<process::Expression<()>> {
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Expression<()>>, CompileError> {
         if let Self::Name(_, name, annotation) = self {
-            return Arc::new(process::Expression::Chan {
+            return Ok(Arc::new(process::Expression::Chan {
                 span: span.clone(),
                 captures: Captures::new(),
                 chan_name: name.clone(),
@@ -476,17 +543,51 @@ impl Pattern {
                 chan_type: (),
                 expr_type: (),
                 process,
-            });
+            }));
         }
-        Arc::new(process::Expression::Chan {
+        Ok(Arc::new(process::Expression::Chan {
             span: span.clone(),
             captures: Captures::new(),
             chan_name: LocalName::match_(0),
             chan_annotation: None,
             chan_type: (),
             expr_type: (),
-            process: self.compile_helper(0, process),
-        })
+            process: self.compile_helper(0, process, pass)?,
+        }))
+    }
+
+    pub fn compile_catch_block(
+        &self,
+        span: &Span,
+        block: Arc<process::Process<()>>,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        if let Self::Name(_, name, annotation) = self {
+            return Ok(Arc::new(process::Process::Let {
+                span: span.clone(),
+                name: name.clone(),
+                annotation: annotation.clone(),
+                typ: (),
+                value: Arc::new(process::Expression::Variable(
+                    span.clone(),
+                    LocalName::error(),
+                    (),
+                )),
+                then: block,
+            }));
+        }
+        Ok(Arc::new(process::Process::Let {
+            span: span.clone(),
+            name: LocalName::match_(0),
+            annotation: None,
+            typ: (),
+            value: Arc::new(process::Expression::Variable(
+                span.clone(),
+                LocalName::error(),
+                (),
+            )),
+            then: self.compile_helper(0, block, pass)?,
+        }))
     }
 
     pub fn compile_receive(
@@ -495,16 +596,17 @@ impl Pattern {
         span: &Span,
         subject: &LocalName,
         process: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         if let Self::Name(_, name, annotation) = self {
-            return Arc::new(process::Process::Do {
+            return Ok(Arc::new(process::Process::Do {
                 span: span.clone(),
                 name: subject.clone(),
                 typ: (),
                 command: process::Command::Receive(name.clone(), annotation.clone(), (), process),
-            });
+            }));
         }
-        Arc::new(process::Process::Do {
+        Ok(Arc::new(process::Process::Do {
             span: span.clone(),
             name: subject.clone(),
             typ: (),
@@ -512,18 +614,19 @@ impl Pattern {
                 LocalName::match_(level),
                 self.annotation(),
                 (),
-                self.compile_helper(level, process),
+                self.compile_helper(level, process, pass)?,
             ),
-        })
+        }))
     }
 
     fn compile_helper(
         &self,
         level: usize,
         process: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         match self {
-            Self::Name(span, name, annotation) => Arc::new(process::Process::Let {
+            Self::Name(span, name, annotation) => Ok(Arc::new(process::Process::Let {
                 span: span.clone(),
                 name: name.clone(),
                 annotation: annotation.clone(),
@@ -534,31 +637,64 @@ impl Pattern {
                     (),
                 )),
                 then: process,
-            }),
+            })),
 
-            Self::Receive(span, first, rest) => first.compile_receive(
+            Self::Receive(span, first, rest) => Ok(first.compile_receive(
                 level + 1,
                 span,
                 &LocalName::match_(level),
-                rest.compile_helper(level, process),
-            ),
+                rest.compile_helper(level, process, pass)?,
+                pass,
+            )?),
 
-            Self::Continue(span) => Arc::new(process::Process::Do {
+            Self::Continue(span) => Ok(Arc::new(process::Process::Do {
                 span: span.clone(),
                 name: LocalName::match_(level),
                 typ: (),
                 command: process::Command::Continue(process),
-            }),
+            })),
 
-            Self::ReceiveType(span, parameter, rest) => Arc::new(process::Process::Do {
+            Self::ReceiveType(span, parameter, rest) => Ok(Arc::new(process::Process::Do {
                 span: span.clone(),
                 name: LocalName::match_(level),
                 typ: (),
                 command: process::Command::ReceiveType(
                     parameter.clone(),
-                    rest.compile_helper(level, process),
+                    rest.compile_helper(level, process, pass)?,
                 ),
-            }),
+            })),
+
+            Self::Try(span, label, rest) => {
+                let Some(catch_block) = pass.use_catch_block(label) else {
+                    return Err(CompileError::NoMatchingCatch(span.clone()));
+                };
+                Ok(Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::match_(level),
+                    typ: (),
+                    command: process::Command::Case(
+                        Arc::from([
+                            LocalName::from(literal!("err")),
+                            LocalName::from(literal!("ok")),
+                        ]),
+                        Box::from([
+                            Arc::new(process::Process::Let {
+                                span: span.clone(),
+                                name: LocalName::error(),
+                                annotation: None,
+                                typ: (),
+                                value: Arc::new(process::Expression::Variable(
+                                    span.clone(),
+                                    LocalName::match_(level),
+                                    (),
+                                )),
+                                then: catch_block,
+                            }),
+                            rest.compile_helper(level, process, pass)?,
+                        ]),
+                    ),
+                }))
+            }
         }
     }
 
@@ -579,6 +715,7 @@ impl Pattern {
                     Box::new(rest),
                 ))
             }
+            Self::Try(_, _, _) => None,
         }
     }
 }
@@ -589,7 +726,8 @@ impl Spanning for Pattern {
             Self::Name(span, _, _)
             | Self::Continue(span)
             | Self::Receive(span, _, _)
-            | Self::ReceiveType(span, _, _) => span.clone(),
+            | Self::ReceiveType(span, _, _)
+            | Self::Try(span, _, _) => span.clone(),
         }
     }
 }
@@ -699,7 +837,8 @@ impl Expression {
                             typ: (),
                             command: process::Command::Link(body),
                         }),
-                    ),
+                        &mut Passes::new(),
+                    )?,
                 })
             }
 
@@ -732,7 +871,11 @@ impl Expression {
                 span,
                 pattern,
                 process,
-            } => pattern.compile_chan(span, process.compile(&mut Passes::new())?),
+            } => pattern.compile_chan(
+                span,
+                process.compile(&mut Passes::new())?,
+                &mut Passes::new(),
+            )?,
 
             Self::Construction(construct) => {
                 let process = construct.compile()?;
@@ -819,7 +962,13 @@ impl Construct {
 
             Self::Receive(span, pattern, construct) => {
                 let process = construct.compile()?;
-                pattern.compile_receive(0, span, &LocalName::result(), process)
+                pattern.compile_receive(
+                    0,
+                    span,
+                    &LocalName::result(),
+                    process,
+                    &mut Passes::new(),
+                )?
             }
 
             Self::Signal(span, chosen, construct) => {
@@ -943,7 +1092,13 @@ impl ConstructBranch {
 
             Self::Receive(span, pattern, branch) => {
                 let process = branch.compile()?;
-                pattern.compile_receive(0, span, &LocalName::result(), process)
+                pattern.compile_receive(
+                    0,
+                    span,
+                    &LocalName::result(),
+                    process,
+                    &mut Passes::new(),
+                )?
             }
 
             Self::ReceiveType(span, parameter, branch) => {
@@ -1105,7 +1260,13 @@ impl ApplyBranch {
 
             Self::Receive(span, pattern, branch) => {
                 let process = branch.compile()?;
-                pattern.compile_receive(0, span, &LocalName::object(), process)
+                pattern.compile_receive(
+                    0,
+                    span,
+                    &LocalName::object(),
+                    process,
+                    &mut Passes::new(),
+                )?
             }
 
             Self::Continue(span, expression) => {
@@ -1155,7 +1316,25 @@ impl Process {
                 pattern,
                 value,
                 then,
-            } => pattern.compile_let(span, value.compile()?, then.compile(pass)?),
+            } => pattern.compile_let(span, value.compile()?, then.compile(pass)?, pass)?,
+
+            Self::Catch {
+                span,
+                label,
+                pattern,
+                block,
+                then,
+            } => {
+                let block = pattern.compile_catch_block(
+                    span,
+                    block.compile(&mut Passes::new())?,
+                    &mut Passes::new(),
+                )?;
+                pass.set_catch_block(label.clone(), block)?;
+                let process = then.compile(pass)?;
+                pass.unset_catch_block(label)?;
+                process
+            }
 
             Self::GlobalCommand(global_name, command) => {
                 let span = global_name.span;
@@ -1191,9 +1370,11 @@ impl Process {
 impl Spanning for Process {
     fn span(&self) -> Span {
         match self {
-            Self::Let { span, .. } | Self::Telltypes(span, _) => span.clone(),
+            Self::Let { span, .. } => span.clone(),
+            Self::Catch { span, .. } => span.clone(),
             Self::GlobalCommand(_, command) => command.span(),
             Self::Command(_, command) => command.span(),
+            Self::Telltypes(span, _) => span.clone(),
             Self::Noop(span) => *span,
         }
     }
@@ -1231,7 +1412,7 @@ impl Command {
 
             Self::Receive(span, pattern, command) => {
                 let process = command.compile(object_name, pass)?;
-                pattern.compile_receive(0, span, object_name, process)
+                pattern.compile_receive(0, span, object_name, process, pass)?
             }
 
             Self::Signal(span, chosen, command) => {
@@ -1388,7 +1569,7 @@ impl CommandBranch {
 
             Self::Receive(span, pattern, branch) => {
                 let process = branch.compile(object_name, pass)?;
-                pattern.compile_receive(0, span, object_name, process)
+                pattern.compile_receive(0, span, object_name, process, pass)?
             }
 
             Self::Continue(span, process) => {
