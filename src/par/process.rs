@@ -59,7 +59,7 @@ pub enum Expression<Typ> {
     Global(Span, GlobalName, Typ),
     Variable(Span, LocalName, Typ),
     Box(Span, Captures, Arc<Self>, Typ),
-    Fork {
+    Chan {
         span: Span,
         captures: Captures,
         chan_name: LocalName,
@@ -212,7 +212,7 @@ impl<Typ: Clone> Process<Typ> {
                     Command::Link(expression) => {
                         let expression = expression.optimize();
                         match expression.optimize().as_ref() {
-                            Expression::Fork {
+                            Expression::Chan {
                                 chan_name: channel,
                                 process,
                                 ..
@@ -471,7 +471,7 @@ impl<Typ: Clone> Expression<Typ> {
                     caps,
                 )
             }
-            Self::Fork {
+            Self::Chan {
                 span,
                 chan_name: channel,
                 chan_annotation: annotation,
@@ -483,7 +483,7 @@ impl<Typ: Clone> Expression<Typ> {
                 let (process, mut caps) = process.fix_captures(loop_points);
                 caps.remove(channel);
                 (
-                    Arc::new(Self::Fork {
+                    Arc::new(Self::Chan {
                         span: *span,
                         captures: caps.clone(),
                         chan_name: channel.clone(),
@@ -520,7 +520,7 @@ impl<Typ: Clone> Expression<Typ> {
                 expression.optimize(),
                 typ.clone(),
             )),
-            Self::Fork {
+            Self::Chan {
                 span,
                 captures,
                 chan_name,
@@ -528,7 +528,7 @@ impl<Typ: Clone> Expression<Typ> {
                 chan_type,
                 expr_type,
                 process,
-            } => Arc::new(Self::Fork {
+            } => Arc::new(Self::Chan {
                 span: span.clone(),
                 captures: captures.clone(),
                 chan_name: chan_name.clone(),
@@ -564,7 +564,7 @@ impl Expression<Type> {
                 consume(*span, None, typ.clone());
                 expression.types_at_spans(type_defs, consume);
             }
-            Self::Fork {
+            Self::Chan {
                 chan_name,
                 chan_annotation,
                 chan_type,
@@ -593,7 +593,7 @@ impl<Typ: Clone> Expression<Typ> {
             Self::Global(_, _, typ) => typ.clone(),
             Self::Variable(_, _, typ) => typ.clone(),
             Self::Box(_, _, _, typ) => typ.clone(),
-            Self::Fork { expr_type, .. } => expr_type.clone(),
+            Self::Chan { expr_type, .. } => expr_type.clone(),
             Self::Primitive(_, _, typ) => typ.clone(),
             Self::External(_, _, typ) => typ.clone(),
         }
@@ -675,7 +675,7 @@ impl Expression<()> {
             Self::Global(_span, name, ()) => name.qualify(module),
             Self::Variable(_span, _name, ()) => {}
             Self::Box(_span, _caps, expression, ()) => expression.qualify(module),
-            Self::Fork {
+            Self::Chan {
                 span: _,
                 captures: _,
                 chan_name: _,
@@ -835,7 +835,7 @@ impl<Typ> Expression<Typ> {
                 expression.pretty(f, indent)
             }
 
-            Self::Fork {
+            Self::Chan {
                 chan_name: channel,
                 process,
                 ..

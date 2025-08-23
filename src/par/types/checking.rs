@@ -781,7 +781,7 @@ impl Context {
                 )))
             }
 
-            Expression::Fork {
+            Expression::Chan {
                 span,
                 captures,
                 chan_name: channel,
@@ -801,7 +801,7 @@ impl Context {
                 self.capture(inference_subject, captures, false, &mut context)?;
                 context.put(span, channel.clone(), chan_type.clone())?;
                 let process = context.check_process(process)?;
-                Ok(Arc::new(Expression::Fork {
+                Ok(Arc::new(Expression::Chan {
                     span: span.clone(),
                     captures: captures.clone(),
                     chan_name: channel.clone(),
@@ -893,7 +893,7 @@ impl Context {
                 ))
             }
 
-            Expression::Fork {
+            Expression::Chan {
                 span,
                 captures,
                 chan_name: channel,
@@ -912,7 +912,7 @@ impl Context {
                 };
                 let dual = typ.clone().dual(Span::None);
                 Ok((
-                    Arc::new(Expression::Fork {
+                    Arc::new(Expression::Chan {
                         span: span.clone(),
                         captures: captures.clone(),
                         chan_name: channel.clone(),

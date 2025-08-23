@@ -525,7 +525,7 @@ impl Compiler {
                 Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
             }),
 
-            Expression::Fork {
+            Expression::Chan {
                 captures,
                 chan_name,
                 chan_type,

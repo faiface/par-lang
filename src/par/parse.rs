@@ -768,7 +768,7 @@ fn expression(input: &mut Input) -> Result<Expression> {
         expr_let,
         expr_do,
         expr_box,
-        expr_fork,
+        expr_chan,
         application,
         construction.map(Expression::Construction),
         expr_grouped,
@@ -903,7 +903,7 @@ fn expr_box(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expr_fork(input: &mut Input) -> Result<Expression> {
+fn expr_chan(input: &mut Input) -> Result<Expression> {
     commit_after(
         t(TokenKind::Chan),
         (
@@ -915,7 +915,7 @@ fn expr_fork(input: &mut Input) -> Result<Expression> {
         ),
     )
     .map(
-        |(pre, (channel, annotation, open, process, close))| Expression::Fork {
+        |(pre, (channel, annotation, open, process, close))| Expression::Chan {
             span: pre.span.join(close.span),
             channel,
             annotation,
@@ -951,7 +951,7 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
         expr_literal,
         expr_list,
         expr_box,
-        expr_fork,
+        expr_chan,
         expr_let,
         expr_do,
         application,

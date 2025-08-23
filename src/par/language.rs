@@ -121,7 +121,7 @@ pub enum Expression {
         then: Box<Self>,
     },
     Box(Span, Box<Self>),
-    Fork {
+    Chan {
         span: Span,
         channel: LocalName,
         annotation: Option<Type>,
@@ -616,7 +616,7 @@ impl Expression {
                         ),
                     });
                 }
-                Arc::new(process::Expression::Fork {
+                Arc::new(process::Expression::Chan {
                     span,
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
@@ -657,7 +657,7 @@ impl Expression {
             } => {
                 let expression = expression.compile()?;
                 let body = body.compile()?;
-                Arc::new(process::Expression::Fork {
+                Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
@@ -691,7 +691,7 @@ impl Expression {
                         command: process::Command::Link(expression),
                     },
                 ))?)?;
-                Arc::new(process::Expression::Fork {
+                Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
@@ -702,12 +702,12 @@ impl Expression {
                 })
             }
 
-            Self::Fork {
+            Self::Chan {
                 span,
                 channel,
                 annotation,
                 process,
-            } => Arc::new(process::Expression::Fork {
+            } => Arc::new(process::Expression::Chan {
                 span: span.clone(),
                 captures: Captures::new(),
                 chan_name: channel.clone(),
@@ -719,7 +719,7 @@ impl Expression {
 
             Self::Construction(construct) => {
                 let process = construct.compile()?;
-                Arc::new(process::Expression::Fork {
+                Arc::new(process::Expression::Chan {
                     span: construct.span().clone(),
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
@@ -735,7 +735,7 @@ impl Expression {
             Self::Application(span, expr, apply) => {
                 let expr = expr.compile()?;
                 let process = apply.compile()?;
-                Arc::new(process::Expression::Fork {
+                Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
@@ -767,7 +767,7 @@ impl Spanning for Expression {
             | Self::Let { span, .. }
             | Self::Do { span, .. }
             | Self::Box(span, _)
-            | Self::Fork { span, .. }
+            | Self::Chan { span, .. }
             | Self::Application(span, _, _) => span.clone(),
 
             Self::Construction(construction) => construction.span(),
