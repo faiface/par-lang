@@ -127,7 +127,7 @@ impl Captures {
     }
 }
 
-impl<Typ: Clone> Process<Typ> {
+impl Process<()> {
     pub fn fix_captures(
         &self,
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
@@ -216,7 +216,24 @@ impl<Typ: Clone> Process<Typ> {
                                 chan_name: channel,
                                 process,
                                 ..
-                            } if name == channel => return Arc::clone(&process),
+                            } => {
+                                if name == channel {
+                                    return Arc::clone(process);
+                                } else {
+                                    return Arc::new(Process::Let {
+                                        span: span.clone(),
+                                        name: channel.clone(),
+                                        annotation: None,
+                                        typ: (),
+                                        value: Arc::new(Expression::Variable(
+                                            span.clone(),
+                                            name.clone(),
+                                            (),
+                                        )),
+                                        then: Arc::clone(process),
+                                    });
+                                }
+                            }
                             _ => Command::Link(expression),
                         }
                     }
@@ -313,7 +330,7 @@ impl Process<Type> {
     }
 }
 
-impl<Typ: Clone> Command<Typ> {
+impl Command<()> {
     pub fn fix_captures(
         &self,
         subject: &LocalName,
@@ -450,7 +467,7 @@ impl Command<Type> {
     }
 }
 
-impl<Typ: Clone> Expression<Typ> {
+impl Expression<()> {
     pub fn fix_captures(
         &self,
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
