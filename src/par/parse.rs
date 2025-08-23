@@ -907,24 +907,20 @@ fn expr_chan(input: &mut Input) -> Result<Expression> {
     commit_after(
         t(TokenKind::Chan),
         (
-            local_name,
-            annotation,
+            pattern,
             t(TokenKind::LCurly),
             opt(process),
             t(TokenKind::RCurly),
         ),
     )
-    .map(
-        |(pre, (channel, annotation, open, process, close))| Expression::Chan {
-            span: pre.span.join(close.span),
-            channel,
-            annotation,
-            process: match process {
-                Some(process) => Box::new(process),
-                None => Box::new(Process::Noop(open.span.only_end())),
-            },
+    .map(|(pre, (pattern, open, process, close))| Expression::Chan {
+        span: pre.span.join(close.span),
+        pattern,
+        process: match process {
+            Some(process) => Box::new(process),
+            None => Box::new(Process::Noop(open.span.only_end())),
         },
-    )
+    })
     .parse_next(input)
 }
 

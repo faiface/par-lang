@@ -123,8 +123,7 @@ pub enum Expression {
     Box(Span, Box<Self>),
     Chan {
         span: Span,
-        channel: LocalName,
-        annotation: Option<Type>,
+        pattern: Pattern,
         process: Box<Process>,
     },
     Construction(Construct),
@@ -463,6 +462,33 @@ impl Pattern {
         })
     }
 
+    pub fn compile_chan(
+        &self,
+        span: &Span,
+        process: Arc<process::Process<()>>,
+    ) -> Arc<process::Expression<()>> {
+        if let Self::Name(_, name, annotation) = self {
+            return Arc::new(process::Expression::Chan {
+                span: span.clone(),
+                captures: Captures::new(),
+                chan_name: name.clone(),
+                chan_annotation: annotation.clone(),
+                chan_type: (),
+                expr_type: (),
+                process,
+            });
+        }
+        Arc::new(process::Expression::Chan {
+            span: span.clone(),
+            captures: Captures::new(),
+            chan_name: LocalName::match_(0),
+            chan_annotation: None,
+            chan_type: (),
+            expr_type: (),
+            process: self.compile_helper(0, process),
+        })
+    }
+
     pub fn compile_receive(
         &self,
         level: usize,
@@ -704,18 +730,9 @@ impl Expression {
 
             Self::Chan {
                 span,
-                channel,
-                annotation,
+                pattern,
                 process,
-            } => Arc::new(process::Expression::Chan {
-                span: span.clone(),
-                captures: Captures::new(),
-                chan_name: channel.clone(),
-                chan_annotation: annotation.clone(),
-                chan_type: (),
-                expr_type: (),
-                process: process.compile(&mut Passes::new())?,
-            }),
+            } => pattern.compile_chan(span, process.compile(&mut Passes::new())?),
 
             Self::Construction(construct) => {
                 let process = construct.compile()?;
