@@ -350,15 +350,15 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                 continue;
             };
             let start = Point {
-                offset: idx,
-                row,
-                column,
+                offset: idx as u32,
+                row: row as u32,
+                column: column as u32,
             };
             idx += raw.len();
             let end = Point {
-                offset: idx,
-                row,
-                column: column + raw.len(),
+                offset: idx.try_into().expect("position too large"),
+                row: row as u32,
+                column: (column + raw.len()) as u32,
             };
             tokens.push(Token {
                 kind,

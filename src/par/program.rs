@@ -361,7 +361,7 @@ impl TypeOnHover {
         Self { files }
     }
 
-    pub fn query(&self, file: &FileName, row: usize, column: usize) -> Option<NameWithType> {
+    pub fn query(&self, file: &FileName, row: u32, column: u32) -> Option<NameWithType> {
         self.files.get(file)?.query(row, column)
     }
 }
@@ -376,7 +376,7 @@ impl FileHovers {
         self.pairs.sort_by_key(|((start, _), _)| start.offset);
         self.pairs.dedup_by_key(|((start, _), _)| start.offset);
     }
-    fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
+    fn query(&self, row: u32, column: u32) -> Option<NameWithType> {
         let sorted_pairs = &self.pairs;
         if sorted_pairs.is_empty() {
             return None;

@@ -3,11 +3,11 @@ use arcstr::ArcStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Point {
     // 0-based
-    pub offset: usize,
+    pub offset: u32,
     // 0-based
-    pub row: usize,
+    pub row: u32,
     // 0-based
-    pub column: usize,
+    pub column: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,7 +27,7 @@ pub trait Spanning {
 }
 
 impl Span {
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u32 {
         match self {
             Self::None => 0,
             Self::At { start, end } => end.offset - start.offset,

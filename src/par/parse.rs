@@ -341,12 +341,12 @@ pub fn parse_module(
         source_span: match error_tok_span {
             Span::None => SourceSpan::new(SourceOffset::from(0), input.len()),
             span @ Span::At { start, .. } => SourceSpan::new(
-                SourceOffset::from(start.offset),
+                SourceOffset::from(start.offset as usize),
                 if span.len() == 1 {
                     // miette unicode format for 1 length span is a hard-to-notice line, so don't set length to 1.
                     0
                 } else {
-                    span.len()
+                    span.len() as usize
                 },
             ),
         },

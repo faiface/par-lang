@@ -39,11 +39,11 @@ impl Instance {
 
         let payload = match &self.compiled {
             Some(Ok(compiled)) => {
-                if let Some(name_info) = compiled.type_on_hover.query(
-                    &self.file,
-                    pos.line as usize,
-                    pos.character as usize,
-                ) {
+                if let Some(name_info) =
+                    compiled
+                        .type_on_hover
+                        .query(&self.file, pos.line, pos.character)
+                {
                     let mut buf = String::new();
                     if let Some(name) = name_info.name {
                         write!(&mut buf, "{}: ", name).unwrap();
@@ -229,10 +229,9 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let name_info =
-            compiled
-                .type_on_hover
-                .query(&self.file, pos.line as usize, pos.character as usize)?;
+        let name_info = compiled
+            .type_on_hover
+            .query(&self.file, pos.line, pos.character)?;
 
         let (Span::At { start, end }, FileName::Path(path)) =
             (name_info.decl_span, name_info.def_file)
@@ -262,10 +261,9 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let name_info =
-            compiled
-                .type_on_hover
-                .query(&self.file, pos.line as usize, pos.character as usize)?;
+        let name_info = compiled
+            .type_on_hover
+            .query(&self.file, pos.line, pos.character)?;
 
         let (Span::At { start, end }, FileName::Path(path)) =
             (name_info.def_span, name_info.def_file)
@@ -487,8 +485,8 @@ fn is_inside(pos: lsp::Position, span: &Span) -> bool {
         return false;
     };
 
-    let pos_row = pos.line as usize;
-    let pos_column = pos.character as usize;
+    let pos_row = pos.line;
+    let pos_column = pos.character;
 
     !(pos_row < start.row || pos_row > end.row)
         && !(pos_row == start.row && pos_column < start.column)
