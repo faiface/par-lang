@@ -773,6 +773,7 @@ fn expression(input: &mut Input) -> Result<Expression> {
         expr_literal,
         expr_list,
         expr_let,
+        expr_catch,
         expr_do,
         expr_box,
         expr_chan,
@@ -883,6 +884,30 @@ fn expr_let(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
+fn expr_catch(input: &mut Input) -> Result<Expression> {
+    commit_after(
+        t(TokenKind::Catch),
+        (
+            label,
+            pattern,
+            t(TokenKind::Arrow),
+            expression,
+            t(TokenKind::In),
+            expression,
+        ),
+    )
+    .map(
+        |(pre, (label, pattern, _, block, _, then))| Expression::Catch {
+            span: pre.span.join(then.span()),
+            label,
+            pattern,
+            block: Box::new(block),
+            then: Box::new(then),
+        },
+    )
+    .parse_next(input)
+}
+
 fn expr_do(input: &mut Input) -> Result<Expression> {
     commit_after(
         t(TokenKind::Do),
@@ -956,6 +981,7 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
         expr_box,
         expr_chan,
         expr_let,
+        expr_catch,
         expr_do,
         application,
         expr_grouped,
@@ -1148,6 +1174,7 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
         apply_case,
         apply_send_type,
         apply_send,
+        apply_try,
     )))
     .parse_next(input)
 }
@@ -1259,6 +1286,18 @@ fn apply_send_type(input: &mut Input) -> Result<Apply> {
             .rfold(then, |then, typ| Apply::SendType(span, typ, Box::new(then)))
     })
     .parse_next(input)
+}
+
+fn apply_try(input: &mut Input) -> Result<Apply> {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Try)), (label, apply))
+        .map(|((_, pre), (label, then))| {
+            let then = match then {
+                Some(apply) => apply,
+                None => Apply::Noop(pre.span.only_end()),
+            };
+            Apply::Try(pre.span.join(pre.span), label, Box::new(then))
+        })
+        .parse_next(input)
 }
 
 fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
@@ -1425,6 +1464,7 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
             cmd_send,
             cmd_recv_type,
             cmd_receive,
+            cmd_try,
         ))
         .map(Some),
         cmd_then,
@@ -1612,6 +1652,18 @@ fn cmd_recv_type(input: &mut Input) -> Result<Command> {
         })
     })
     .parse_next(input)
+}
+
+fn cmd_try(input: &mut Input) -> Result<Command> {
+    (t(TokenKind::Dot), (t(TokenKind::Try), label, cmd))
+        .map(|(_, (try_kw, label, cmd))| {
+            let cmd = match cmd {
+                Some(cmd) => cmd,
+                None => noop_cmd(try_kw.span.only_end()),
+            };
+            Command::Try(try_kw.span, label, Box::new(cmd))
+        })
+        .parse_next(input)
 }
 
 fn pass_process(input: &mut Input) -> Result<Process> {

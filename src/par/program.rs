@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use crate::{
     icombs::readback::Handle,
     location::{FileName, Point, Span},
-    par::parse::parse_module,
+    par::{language::Passes, parse::parse_module},
 };
 
 use super::{
@@ -120,12 +120,14 @@ impl Module<Arc<process::Expression<()>>> {
                      name,
                      expression,
                  }| {
-                    expression.compile().map(|compiled| Definition {
-                        span,
-                        file,
-                        name,
-                        expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
-                    })
+                    expression
+                        .compile(&mut Passes::new())
+                        .map(|compiled| Definition {
+                            span,
+                            file,
+                            name,
+                            expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
+                        })
                 },
             )
             .collect::<Result<_, _>>()?;

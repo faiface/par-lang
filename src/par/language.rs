@@ -127,6 +127,13 @@ pub enum Expression {
         expression: Box<Self>,
         then: Box<Self>,
     },
+    Catch {
+        span: Span,
+        label: Option<LocalName>,
+        pattern: Pattern,
+        block: Box<Self>,
+        then: Box<Self>,
+    },
     Do {
         span: Span,
         process: Box<Process>,
@@ -189,6 +196,7 @@ pub enum Apply {
     },
     Loop(Span, Option<LocalName>),
     SendType(Span, Type, Box<Self>),
+    Try(Span, Option<LocalName>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -243,6 +251,7 @@ pub enum Command {
     Loop(Span, Option<LocalName>),
     SendType(Span, Type, Box<Self>),
     ReceiveType(Span, LocalName, Box<Self>),
+    Try(Span, Option<LocalName>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -418,7 +427,8 @@ impl CompileError {
 
 #[derive(Clone, Debug)]
 pub struct Passes {
-    after_case: Option<Pass>,
+    case_fallthrough: Option<Pass>,
+    stashed_case_fallthroughs: Vec<Option<Pass>>,
     catch_block: HashMap<Option<LocalName>, Pass>,
 }
 
@@ -429,21 +439,25 @@ pub struct Pass {
 }
 
 impl Passes {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Passes {
-            after_case: None,
+            case_fallthrough: None,
+            stashed_case_fallthroughs: Vec::new(),
             catch_block: HashMap::new(),
         }
     }
 
-    fn set_after_case(&mut self, p: Arc<process::Process<()>>) -> Result<&mut Self, CompileError> {
-        self.unset_after_case()?;
-        self.after_case = Some(Pass::new(p));
+    fn set_case_fallthrough(
+        &mut self,
+        p: Arc<process::Process<()>>,
+    ) -> Result<&mut Self, CompileError> {
+        self.unset_case_fallthrough()?;
+        self.case_fallthrough = Some(Pass::new(p));
         Ok(self)
     }
 
-    fn use_after_case(&mut self) -> Option<Arc<process::Process<()>>> {
-        match self.after_case.as_mut() {
+    fn use_case_fallthrough(&mut self) -> Option<Arc<process::Process<()>>> {
+        match self.case_fallthrough.as_mut() {
             Some(pass) => {
                 pass.used = true;
                 Some(Arc::clone(&pass.process))
@@ -452,13 +466,27 @@ impl Passes {
         }
     }
 
-    fn unset_after_case(&mut self) -> Result<&mut Self, CompileError> {
-        match self.after_case.take() {
+    fn unset_case_fallthrough(&mut self) -> Result<&mut Self, CompileError> {
+        match self.case_fallthrough.take() {
             Some(previous) if !previous.used => {
                 Err(CompileError::UnreachableCode(previous.process.span()))
             }
             _ => Ok(self),
         }
+    }
+
+    fn stash_case_fallthrough(&mut self) -> &mut Self {
+        self.stashed_case_fallthroughs
+            .push(self.case_fallthrough.take());
+        self
+    }
+
+    fn unstash_case_fallthrough(&mut self) -> &mut Self {
+        self.case_fallthrough = self
+            .stashed_case_fallthroughs
+            .pop()
+            .expect("case_fallthrough was supposed be stashed");
+        self
     }
 
     fn set_catch_block(
@@ -471,13 +499,17 @@ impl Passes {
         Ok(self)
     }
 
-    fn use_catch_block(&mut self, label: &Option<LocalName>) -> Option<Arc<process::Process<()>>> {
+    fn use_catch_block(
+        &mut self,
+        span: &Span,
+        label: &Option<LocalName>,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         match self.catch_block.get_mut(label) {
             Some(pass) => {
                 pass.used = true;
-                Some(Arc::clone(&pass.process))
+                Ok(Arc::clone(&pass.process))
             }
-            None => None,
+            None => Err(CompileError::NoMatchingCatch(span.clone())),
         }
     }
 
@@ -665,35 +697,13 @@ impl Pattern {
             })),
 
             Self::Try(span, label, rest) => {
-                let Some(catch_block) = pass.use_catch_block(label) else {
-                    return Err(CompileError::NoMatchingCatch(span.clone()));
-                };
-                Ok(Arc::new(process::Process::Do {
-                    span: span.clone(),
-                    name: LocalName::match_(level),
-                    typ: (),
-                    command: process::Command::Case(
-                        Arc::from([
-                            LocalName::from(literal!("err")),
-                            LocalName::from(literal!("ok")),
-                        ]),
-                        Box::from([
-                            Arc::new(process::Process::Let {
-                                span: span.clone(),
-                                name: LocalName::error(),
-                                annotation: None,
-                                typ: (),
-                                value: Arc::new(process::Expression::Variable(
-                                    span.clone(),
-                                    LocalName::match_(level),
-                                    (),
-                                )),
-                                then: catch_block,
-                            }),
-                            rest.compile_helper(level, process, pass)?,
-                        ]),
-                    ),
-                }))
+                let catch_block = pass.use_catch_block(span, label)?;
+                Ok(compile_try(
+                    span.clone(),
+                    LocalName::match_(level),
+                    catch_block,
+                    rest.compile_helper(level, process, pass)?,
+                ))
             }
         }
     }
@@ -733,7 +743,7 @@ impl Spanning for Pattern {
 }
 
 impl Expression {
-    pub fn compile(&self) -> Result<Arc<process::Expression<()>>, CompileError> {
+    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Expression<()>>, CompileError> {
         Ok(match self {
             Self::Primitive(span, value) => Arc::new(process::Expression::Primitive(
                 span.clone(),
@@ -775,7 +785,7 @@ impl Expression {
                                 span,
                                 name: LocalName::result(),
                                 typ: (),
-                                command: process::Command::Send(item.compile()?, process),
+                                command: process::Command::Send(item.compile(pass)?, process),
                             }),
                         ),
                     });
@@ -801,10 +811,10 @@ impl Expression {
                 (),
             )),
 
-            Self::Grouped(_, expression) => expression.compile()?,
+            Self::Grouped(_, expression) => expression.compile(pass)?,
 
             Self::Box(span, expression) => {
-                let expression = expression.compile()?;
+                let expression = expression.compile(pass)?;
                 Arc::new(process::Expression::Box(
                     *span,
                     Captures::new(),
@@ -819,8 +829,8 @@ impl Expression {
                 expression,
                 then: body,
             } => {
-                let expression = expression.compile()?;
-                let body = body.compile()?;
+                let expression = expression.compile(pass)?;
+                let body = body.compile(pass)?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -837,9 +847,29 @@ impl Expression {
                             typ: (),
                             command: process::Command::Link(body),
                         }),
-                        &mut Passes::new(),
+                        pass,
                     )?,
                 })
+            }
+
+            Self::Catch {
+                span,
+                label,
+                pattern,
+                block,
+                then,
+            } => {
+                let block = Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::result(),
+                    typ: (),
+                    command: process::Command::Link(block.compile(pass)?),
+                });
+                let block = pattern.compile_catch_block(span, block, pass)?;
+                pass.set_catch_block(label.clone(), block)?;
+                let expression = then.compile(pass)?;
+                pass.unset_catch_block(label)?;
+                expression
             }
 
             Self::Do {
@@ -847,8 +877,8 @@ impl Expression {
                 process,
                 then: expression,
             } => {
-                let expression = expression.compile()?;
-                let body = process.compile(Passes::new().set_after_case(Arc::new(
+                let expression = expression.compile(pass)?;
+                let body = process.compile(Passes::new().set_case_fallthrough(Arc::new(
                     process::Process::Do {
                         span: span.clone(),
                         name: LocalName::result(),
@@ -871,14 +901,10 @@ impl Expression {
                 span,
                 pattern,
                 process,
-            } => pattern.compile_chan(
-                span,
-                process.compile(&mut Passes::new())?,
-                &mut Passes::new(),
-            )?,
+            } => pattern.compile_chan(span, process.compile(pass)?, pass)?,
 
             Self::Construction(construct) => {
-                let process = construct.compile()?;
+                let process = construct.compile(pass)?;
                 Arc::new(process::Expression::Chan {
                     span: construct.span().clone(),
                     captures: Captures::new(),
@@ -890,11 +916,11 @@ impl Expression {
                 })
             }
 
-            Self::Application(_, expr, Apply::Noop(_)) => expr.compile()?,
+            Self::Application(_, expr, Apply::Noop(_)) => expr.compile(pass)?,
 
             Self::Application(span, expr, apply) => {
-                let expr = expr.compile()?;
-                let process = apply.compile()?;
+                let expr = expr.compile(pass)?;
+                let process = apply.compile(pass)?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -925,6 +951,7 @@ impl Spanning for Expression {
             | Self::Variable(span, _)
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
+            | Self::Catch { span, .. }
             | Self::Do { span, .. }
             | Self::Box(span, _)
             | Self::Chan { span, .. }
@@ -936,11 +963,11 @@ impl Spanning for Expression {
 }
 
 impl Construct {
-    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(expression) => {
                 let span = expression.span().clone();
-                let expression = expression.compile()?;
+                let expression = expression.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span,
                     name: LocalName::result(),
@@ -950,8 +977,8 @@ impl Construct {
             }
 
             Self::Send(span, argument, construct) => {
-                let argument = argument.compile()?;
-                let process = construct.compile()?;
+                let argument = argument.compile(pass)?;
+                let process = construct.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -961,18 +988,12 @@ impl Construct {
             }
 
             Self::Receive(span, pattern, construct) => {
-                let process = construct.compile()?;
-                pattern.compile_receive(
-                    0,
-                    span,
-                    &LocalName::result(),
-                    process,
-                    &mut Passes::new(),
-                )?
+                let process = construct.compile(pass)?;
+                pattern.compile_receive(0, span, &LocalName::result(), process, pass)?
             }
 
             Self::Signal(span, chosen, construct) => {
-                let process = construct.compile()?;
+                let process = construct.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -986,7 +1007,7 @@ impl Construct {
                 let mut processes = Vec::new();
                 for (branch_name, construct_branch) in construct_branches {
                     branches.push(branch_name.clone());
-                    processes.push(construct_branch.compile()?);
+                    processes.push(construct_branch.compile(pass)?);
                 }
                 let branches = Arc::from(branches);
                 let processes = Box::from(processes);
@@ -1011,7 +1032,7 @@ impl Construct {
                 label,
                 then: construct,
             } => {
-                let process = construct.compile()?;
+                let process = construct.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -1037,7 +1058,7 @@ impl Construct {
             }),
 
             Self::SendType(span, argument, construct) => {
-                let process = construct.compile()?;
+                let process = construct.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -1047,7 +1068,7 @@ impl Construct {
             }
 
             Self::ReceiveType(span, parameter, construct) => {
-                let process = construct.compile()?;
+                let process = construct.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -1078,10 +1099,10 @@ impl Spanning for Construct {
 }
 
 impl ConstructBranch {
-    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(span, expression) => {
-                let expression = expression.compile()?;
+                let expression = expression.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -1091,18 +1112,12 @@ impl ConstructBranch {
             }
 
             Self::Receive(span, pattern, branch) => {
-                let process = branch.compile()?;
-                pattern.compile_receive(
-                    0,
-                    span,
-                    &LocalName::result(),
-                    process,
-                    &mut Passes::new(),
-                )?
+                let process = branch.compile(pass)?;
+                pattern.compile_receive(0, span, &LocalName::result(), process, pass)?
             }
 
             Self::ReceiveType(span, parameter, branch) => {
-                let process = branch.compile()?;
+                let process = branch.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::result(),
@@ -1125,7 +1140,7 @@ impl Spanning for ConstructBranch {
 }
 
 impl Apply {
-    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Noop(span) => Arc::new(process::Process::Do {
                 span: span.clone(),
@@ -1139,8 +1154,8 @@ impl Apply {
             }),
 
             Self::Send(span, expression, apply) => {
-                let expression = expression.compile()?;
-                let process = apply.compile()?;
+                let expression = expression.compile(pass)?;
+                let process = apply.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::object(),
@@ -1150,7 +1165,7 @@ impl Apply {
             }
 
             Self::Signal(span, chosen, apply) => {
-                let process = apply.compile()?;
+                let process = apply.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::object(),
@@ -1164,7 +1179,7 @@ impl Apply {
                 let mut processes = Vec::new();
                 for (branch_name, expression_branch) in expression_branches {
                     branches.push(branch_name.clone());
-                    processes.push(expression_branch.compile()?);
+                    processes.push(expression_branch.compile(pass)?);
                 }
                 let branches = Arc::from(branches);
                 let processes = Box::from(processes);
@@ -1182,7 +1197,7 @@ impl Apply {
                 label,
                 then: apply,
             } => {
-                let process = apply.compile()?;
+                let process = apply.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::object(),
@@ -1208,13 +1223,23 @@ impl Apply {
             }),
 
             Self::SendType(span, argument, apply) => {
-                let process = apply.compile()?;
+                let process = apply.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::object(),
                     typ: (),
                     command: process::Command::SendType(argument.clone(), process),
                 })
+            }
+
+            Self::Try(span, label, apply) => {
+                let catch_block = pass.use_catch_block(span, label)?;
+                compile_try(
+                    span.clone(),
+                    LocalName::object(),
+                    catch_block,
+                    apply.compile(pass)?,
+                )
             }
         })
     }
@@ -1229,16 +1254,17 @@ impl Spanning for Apply {
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
-            | Self::Noop(span) => *span,
+            | Self::Noop(span)
+            | Self::Try(span, _, _) => *span,
         }
     }
 }
 
 impl ApplyBranch {
-    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(span, name, expression) => {
-                let expression = expression.compile()?;
+                let expression = expression.compile(pass)?;
                 Arc::new(process::Process::Let {
                     span: span.clone(),
                     name: name.clone(),
@@ -1259,18 +1285,12 @@ impl ApplyBranch {
             }
 
             Self::Receive(span, pattern, branch) => {
-                let process = branch.compile()?;
-                pattern.compile_receive(
-                    0,
-                    span,
-                    &LocalName::object(),
-                    process,
-                    &mut Passes::new(),
-                )?
+                let process = branch.compile(pass)?;
+                pattern.compile_receive(0, span, &LocalName::object(), process, pass)?
             }
 
             Self::Continue(span, expression) => {
-                let expression = expression.compile()?;
+                let expression = expression.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::object(),
@@ -1285,7 +1305,7 @@ impl ApplyBranch {
             }
 
             Self::ReceiveType(span, parameter, branch) => {
-                let process = branch.compile()?;
+                let process = branch.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: LocalName::object(),
@@ -1316,7 +1336,12 @@ impl Process {
                 pattern,
                 value,
                 then,
-            } => pattern.compile_let(span, value.compile()?, then.compile(pass)?, pass)?,
+            } => {
+                pass.stash_case_fallthrough();
+                let value = value.compile(pass)?;
+                pass.unstash_case_fallthrough();
+                pattern.compile_let(span, value, then.compile(pass)?, pass)?
+            }
 
             Self::Catch {
                 span,
@@ -1325,11 +1350,9 @@ impl Process {
                 block,
                 then,
             } => {
-                let block = pattern.compile_catch_block(
-                    span,
-                    block.compile(&mut Passes::new())?,
-                    &mut Passes::new(),
-                )?;
+                pass.stash_case_fallthrough();
+                let block = pattern.compile_catch_block(span, block.compile(pass)?, pass)?;
+                pass.unstash_case_fallthrough();
                 pass.set_catch_block(label.clone(), block)?;
                 let process = then.compile(pass)?;
                 pass.unset_catch_block(label)?;
@@ -1359,7 +1382,7 @@ impl Process {
                 process.compile(pass)?,
             )),
 
-            Self::Noop(span) => match pass.use_after_case() {
+            Self::Noop(span) => match pass.use_case_fallthrough() {
                 Some(process) => process,
                 None => Err(CompileError::MustEndProcess(*span))?,
             },
@@ -1390,7 +1413,7 @@ impl Command {
             Self::Then(process) => process.compile(pass)?,
 
             Self::Link(span, expression) => {
-                let expression = expression.compile()?;
+                let expression = expression.compile(pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: object_name.clone(),
@@ -1400,7 +1423,7 @@ impl Command {
             }
 
             Self::Send(span, argument, command) => {
-                let argument = argument.compile()?;
+                let argument = argument.compile(pass)?;
                 let process = command.compile(object_name, pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
@@ -1431,14 +1454,14 @@ impl Command {
 
                 if let Some(process) = optional_process {
                     let process = process.compile(pass)?;
-                    pass.set_after_case(process)?;
+                    pass.set_case_fallthrough(process)?;
                 }
                 for (branch_name, process_branch) in process_branches {
                     branches.push(branch_name.clone());
                     processes.push(process_branch.compile(object_name, pass)?);
                 }
                 if optional_process.is_some() {
-                    pass.unset_after_case()?;
+                    pass.unset_case_fallthrough()?;
                 }
 
                 let branches = Arc::from(branches);
@@ -1518,8 +1541,48 @@ impl Command {
                     command: process::Command::ReceiveType(parameter.clone(), process),
                 })
             }
+
+            Self::Try(span, label, command) => {
+                let catch_block = pass.use_catch_block(span, label)?;
+                compile_try(
+                    span.clone(),
+                    object_name.clone(),
+                    catch_block,
+                    command.compile(object_name, pass)?,
+                )
+            }
         })
     }
+}
+
+fn compile_try(
+    span: Span,
+    variable: LocalName,
+    catch_block: Arc<process::Process<()>>,
+    ok_process: Arc<process::Process<()>>,
+) -> Arc<process::Process<()>> {
+    Arc::new(process::Process::Do {
+        span: span.clone(),
+        name: variable.clone(),
+        typ: (),
+        command: process::Command::Case(
+            Arc::from([
+                LocalName::from(literal!("err")),
+                LocalName::from(literal!("ok")),
+            ]),
+            Box::from([
+                Arc::new(process::Process::Let {
+                    span: span.clone(),
+                    name: LocalName::error(),
+                    annotation: None,
+                    typ: (),
+                    value: Arc::new(process::Expression::Variable(span, variable, ())),
+                    then: catch_block,
+                }),
+                ok_process,
+            ]),
+        ),
+    })
 }
 
 impl Spanning for Command {
@@ -1535,7 +1598,8 @@ impl Spanning for Command {
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
-            | Self::ReceiveType(span, _, _) => span.clone(),
+            | Self::ReceiveType(span, _, _)
+            | Self::Try(span, _, _) => span.clone(),
 
             Self::Then(process) => process.span(),
         }
