@@ -1,7 +1,6 @@
 use super::io::IO;
 use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
 use crate::location::{FileName, Span, Spanning};
-use crate::par::program::NameWithType;
 use crate::playground::{Checked, Compiled};
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
@@ -40,16 +39,16 @@ impl Instance {
 
         let payload = match &self.compiled {
             Some(Ok(compiled)) => {
-                if let Some(NameWithType(name, typ)) = compiled.type_on_hover.query(
+                if let Some(name_info) = compiled.type_on_hover.query(
                     &self.file,
                     pos.line as usize,
                     pos.character as usize,
                 ) {
                     let mut buf = String::new();
-                    if let Some(name) = name {
+                    if let Some(name) = name_info.name {
                         write!(&mut buf, "{}: ", name).unwrap();
                     }
-                    typ.pretty(&mut buf, 0).unwrap();
+                    name_info.typ.pretty(&mut buf, 0).unwrap();
                     lsp::MarkedString::LanguageString(lsp::LanguageString {
                         language: "par".to_owned(),
                         value: buf,
@@ -230,38 +229,24 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let mut original = None;
+        let name_info =
+            compiled
+                .type_on_hover
+                .query(&self.file, pos.line as usize, pos.character as usize)?;
 
-        for (name, _) in &compiled.program.definitions {
-            if is_inside(pos, &name.span()) {
-                let Some(declaration) = compiled.program.declarations.get(name) else {
-                    return None;
-                };
+        let (Span::At { start, end }, FileName::Path(path)) =
+            (name_info.decl_span, name_info.def_file)
+        else {
+            return None;
+        };
 
-                original = Some(declaration);
-                break;
-            }
-        }
-
-        for (name, declaration) in &compiled.program.declarations {
-            if is_inside(pos, &name.span()) {
-                original = Some(declaration);
-                break;
-            }
-        }
-
-        let declaration = original?;
-
-        match declaration.name.span {
-            Span::None => None,
-            Span::At { start, end } => Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-                uri: self.uri.clone(),
-                range: lsp::Range {
-                    start: start.into(),
-                    end: end.into(),
-                },
-            })),
-        }
+        Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
+            uri: path.parse().ok()?,
+            range: lsp::Range {
+                start: start.into(),
+                end: end.into(),
+            },
+        }))
     }
 
     pub fn handle_goto_definition(
@@ -277,44 +262,24 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let mut original = None;
+        let name_info =
+            compiled
+                .type_on_hover
+                .query(&self.file, pos.line as usize, pos.character as usize)?;
 
-        //TODO: use map indexing
-        for (name, _) in &compiled.program.declarations {
-            if is_inside(pos, &name.span()) {
-                let Some(definition) = compiled
-                    .program
-                    .definitions
-                    .iter()
-                    .find(|(def_name, _)| def_name == &name)
-                else {
-                    return None;
-                };
+        let (Span::At { start, end }, FileName::Path(path)) =
+            (name_info.def_span, name_info.def_file)
+        else {
+            return None;
+        };
 
-                original = Some(definition);
-                break;
-            }
-        }
-
-        for definition in &compiled.program.definitions {
-            if is_inside(pos, &definition.0.span()) {
-                original = Some(definition);
-                break;
-            }
-        }
-
-        let definition = original?;
-
-        match definition.0.span {
-            Span::None => None,
-            Span::At { start, end } => Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-                uri: self.uri.clone(),
-                range: lsp::Range {
-                    start: start.into(),
-                    end: end.into(),
-                },
-            })),
-        }
+        Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
+            uri: path.parse().ok()?,
+            range: lsp::Range {
+                start: start.into(),
+                end: end.into(),
+            },
+        }))
     }
 
     // todo: caching

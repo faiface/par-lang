@@ -77,8 +77,17 @@ impl TypeDefs {
     }
 
     pub fn get(&self, span: &Span, name: &GlobalName, args: &[Type]) -> Result<Type, TypeError> {
+        self.get_with_span(span, name, args).map(|(_, _, typ)| typ)
+    }
+
+    pub fn get_with_span(
+        &self,
+        span: &Span,
+        name: &GlobalName,
+        args: &[Type],
+    ) -> Result<(Span, &FileName, Type), TypeError> {
         match self.globals.get(name) {
-            Some((_, _, params, typ)) => {
+            Some((span, file, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -87,7 +96,8 @@ impl TypeDefs {
                         args.len(),
                     ));
                 }
-                Ok(typ.clone().substitute(params.iter().zip(args).collect())?)
+                let typ = typ.clone().substitute(params.iter().zip(args).collect())?;
+                Ok((*span, file, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
@@ -99,8 +109,18 @@ impl TypeDefs {
         name: &GlobalName,
         args: &[Type],
     ) -> Result<Type, TypeError> {
+        self.get_dual_with_span(span, name, args)
+            .map(|(_, _, typ)| typ)
+    }
+
+    pub fn get_dual_with_span(
+        &self,
+        span: &Span,
+        name: &GlobalName,
+        args: &[Type],
+    ) -> Result<(Span, &FileName, Type), TypeError> {
         match self.globals.get(name) {
-            Some((_, _, params, typ)) => {
+            Some((span, file, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -109,10 +129,11 @@ impl TypeDefs {
                         args.len(),
                     ));
                 }
-                Ok(typ
+                let typ = typ
                     .clone()
                     .dual(Span::None)
-                    .substitute(params.iter().zip(args).collect())?)
+                    .substitute(params.iter().zip(args).collect())?;
+                Ok((*span, file, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }

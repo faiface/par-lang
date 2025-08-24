@@ -1,4 +1,5 @@
-use crate::location::Span;
+use crate::location::{FileName, Span};
+use crate::par::process::NameWithType;
 use crate::par::types::{PrimitiveType, Type, TypeDefs};
 use std::fmt;
 use std::fmt::Write;
@@ -353,18 +354,26 @@ impl Type {
     pub fn types_at_spans(
         &self,
         type_defs: &TypeDefs,
-        consume: &mut impl FnMut(Span, Option<String>, Type),
+        consume: &mut impl FnMut(Span, NameWithType),
     ) {
         match self {
             Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
             Self::Var(_, _) | Self::DualVar(_, _) => {}
-            Self::Name(span, _, args) | Self::DualName(span, _, args) => {
+            Self::Name(span, name, args) | Self::DualName(span, name, args) => {
+                let (def_span, def_file, typ) = match self {
+                    Self::Name(..) => type_defs.get_with_span(span, name, args),
+                    _ => type_defs.get_dual_with_span(span, name, args),
+                }
+                .unwrap_or_else(|_| (Span::None, &FileName::Builtin, self.clone()));
                 consume(
                     *span,
-                    None,
-                    self.expand_definition(type_defs)
-                        .ok()
-                        .unwrap_or_else(|| self.clone()),
+                    NameWithType {
+                        name: None,
+                        typ,
+                        def_span,
+                        decl_span: def_span,
+                        def_file: def_file.clone(),
+                    },
                 );
                 for arg in args {
                     arg.types_at_spans(type_defs, consume);

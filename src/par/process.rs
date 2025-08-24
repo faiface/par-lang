@@ -1,11 +1,12 @@
 use super::{
     language::{GlobalName, LocalName},
     primitive::Primitive,
-    types::{Type, TypeDefs},
+    types::Type,
 };
 use crate::{
     icombs::readback::Handle,
-    location::{Span, Spanning},
+    location::{FileName, Span, Spanning},
+    par::program::CheckedModule,
 };
 use indexmap::IndexMap;
 use std::{
@@ -260,8 +261,8 @@ impl<Typ: Clone> Process<Typ> {
 impl Process<Type> {
     pub fn types_at_spans(
         &self,
-        type_defs: &TypeDefs,
-        consume: &mut impl FnMut(Span, Option<String>, Type),
+        program: &CheckedModule,
+        consume: &mut impl FnMut(Span, NameWithType),
     ) {
         match self {
             Process::Let {
@@ -272,12 +273,12 @@ impl Process<Type> {
                 then,
                 ..
             } => {
-                value.types_at_spans(type_defs, consume);
-                consume(name.span(), Some(format!("{}", name)), typ.clone());
+                value.types_at_spans(program, consume);
+                consume(name.span(), NameWithType::named(name, typ.clone()));
                 if let Some(annotation) = annotation {
-                    annotation.types_at_spans(type_defs, consume);
+                    annotation.types_at_spans(&program.type_defs, consume);
                 }
-                then.types_at_spans(type_defs, consume);
+                then.types_at_spans(program, consume);
             }
             Process::Do {
                 span,
@@ -286,18 +287,18 @@ impl Process<Type> {
                 command,
                 ..
             } => {
-                consume(name.span(), Some(format!("{}", name)), typ.clone());
+                consume(name.span(), NameWithType::named(name, typ.clone()));
                 if name == &LocalName::result() {
-                    consume(*span, None, typ.clone().dual(Span::None));
+                    consume(*span, NameWithType::unnamed(typ.clone().dual(Span::None)));
                 } else if name == &LocalName::object() {
-                    consume(*span, None, typ.clone());
+                    consume(*span, NameWithType::unnamed(typ.clone()));
                 } else {
-                    consume(*span, Some(format!("{}", name)), typ.clone());
+                    consume(*span, NameWithType::named(name, typ.clone()));
                 }
-                command.types_at_spans(type_defs, consume);
+                command.types_at_spans(program, consume);
             }
             Process::Telltypes(_, process) => {
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
         }
     }
@@ -396,45 +397,45 @@ impl<Typ: Clone> Command<Typ> {
 impl Command<Type> {
     pub fn types_at_spans(
         &self,
-        type_defs: &TypeDefs,
-        consume: &mut impl FnMut(Span, Option<String>, Type),
+        program: &CheckedModule,
+        consume: &mut impl FnMut(Span, NameWithType),
     ) {
         match self {
             Self::Link(expression) => {
-                expression.types_at_spans(type_defs, consume);
+                expression.types_at_spans(program, consume);
             }
             Self::Send(argument, process) => {
-                argument.types_at_spans(type_defs, consume);
-                process.types_at_spans(type_defs, consume);
+                argument.types_at_spans(program, consume);
+                process.types_at_spans(program, consume);
             }
             Self::Receive(param, annotation, param_type, process) => {
-                consume(param.span(), Some(format!("{}", param)), param_type.clone());
+                consume(param.span(), NameWithType::named(param, param_type.clone()));
                 if let Some(annotation) = annotation {
-                    annotation.types_at_spans(type_defs, consume);
+                    annotation.types_at_spans(&program.type_defs, consume);
                 }
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
             Self::Signal(_, process) => {
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
             Self::Case(_, branches) => {
                 for process in branches {
-                    process.types_at_spans(type_defs, consume);
+                    process.types_at_spans(program, consume);
                 }
             }
             Self::Break => {}
             Self::Continue(process) => {
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
             Self::Begin { body, .. } => {
-                body.types_at_spans(type_defs, consume);
+                body.types_at_spans(program, consume);
             }
             Self::Loop(_, _, _) => {}
             Self::SendType(_, process) => {
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
             Self::ReceiveType(_, process) => {
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
         }
     }
@@ -537,22 +538,67 @@ impl<Typ: Clone> Expression<Typ> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct NameWithType {
+    pub name: Option<String>,
+    pub typ: Type,
+    pub def_span: Span,
+    pub decl_span: Span,
+    pub def_file: FileName,
+}
+
+impl NameWithType {
+    pub fn new(name: Option<String>, typ: Type) -> Self {
+        NameWithType {
+            name,
+            typ,
+            def_span: Span::None,
+            decl_span: Span::None,
+            def_file: FileName::Builtin,
+        }
+    }
+    pub fn named(name: impl ToString, typ: Type) -> Self {
+        Self::new(Some(name.to_string()), typ)
+    }
+    pub fn unnamed(typ: Type) -> Self {
+        Self::new(None, typ)
+    }
+}
+
 impl Expression<Type> {
     pub fn types_at_spans(
         &self,
-        type_defs: &TypeDefs,
-        consume: &mut impl FnMut(Span, Option<String>, Type),
+        program: &CheckedModule,
+        consume: &mut impl FnMut(Span, NameWithType),
     ) {
         match self {
             Self::Global(_, name, typ) => {
-                consume(name.span(), Some(format!("{}", name)), typ.clone());
+                let (def_span, def_file) = match program.definitions.get(name) {
+                    Some(def) => (def.name.span, def.file.clone()),
+                    None => (Span::None, FileName::Builtin),
+                };
+                let decl_span = program
+                    .declarations
+                    .get(name)
+                    .map(|decl| decl.name.span)
+                    .unwrap_or(def_span);
+                consume(
+                    name.span(),
+                    NameWithType {
+                        name: Some(name.to_string()),
+                        typ: typ.clone(),
+                        def_span,
+                        decl_span,
+                        def_file,
+                    },
+                );
             }
             Self::Variable(_, name, typ) => {
-                consume(name.span(), Some(format!("{}", name)), typ.clone());
+                consume(name.span(), NameWithType::named(name, typ.clone()));
             }
             Self::Box(span, _, expression, typ) => {
-                consume(*span, None, typ.clone());
-                expression.types_at_spans(type_defs, consume);
+                consume(*span, NameWithType::unnamed(typ.clone()));
+                expression.types_at_spans(program, consume);
             }
             Self::Fork {
                 chan_name,
@@ -563,13 +609,12 @@ impl Expression<Type> {
             } => {
                 consume(
                     chan_name.span(),
-                    Some(format!("{}", chan_name)),
-                    chan_type.clone(),
+                    NameWithType::named(chan_name, chan_type.clone()),
                 );
                 if let Some(chan_annotation) = chan_annotation {
-                    chan_annotation.types_at_spans(type_defs, consume);
+                    chan_annotation.types_at_spans(&program.type_defs, consume);
                 }
-                process.types_at_spans(type_defs, consume);
+                process.types_at_spans(program, consume);
             }
             Self::Primitive(_, _, _) => {}
             Self::External(_, _, _) => {}
