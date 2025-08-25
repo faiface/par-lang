@@ -774,6 +774,7 @@ fn expression(input: &mut Input) -> Result<Expression> {
         expr_list,
         expr_let,
         expr_catch,
+        expr_throw,
         expr_do,
         expr_box,
         expr_chan,
@@ -906,6 +907,18 @@ fn expr_catch(input: &mut Input) -> Result<Expression> {
         },
     )
     .parse_next(input)
+}
+
+fn expr_throw(input: &mut Input) -> Result<Expression> {
+    commit_after(t(TokenKind::Throw), (label, expression))
+        .map(|(pre, (label, expression))| {
+            Expression::Throw(
+                pre.span.join(expression.span()),
+                label,
+                Box::new(expression),
+            )
+        })
+        .parse_next(input)
 }
 
 fn expr_do(input: &mut Input) -> Result<Expression> {
@@ -1358,6 +1371,7 @@ fn process(input: &mut Input) -> Result<Process> {
     alt((
         proc_let,
         proc_catch,
+        proc_throw,
         proc_telltypes,
         global_command,
         command,
@@ -1405,6 +1419,18 @@ fn proc_catch(input: &mut Input) -> Result<Process> {
         },
     )
     .parse_next(input)
+}
+
+fn proc_throw(input: &mut Input) -> Result<Process> {
+    commit_after(t(TokenKind::Throw), (label, expression))
+        .map(|(pre, (label, expression))| {
+            Process::Throw(
+                pre.span.join(expression.span()),
+                label,
+                Box::new(expression),
+            )
+        })
+        .parse_next(input)
 }
 
 fn proc_telltypes(input: &mut Input) -> Result<Process> {

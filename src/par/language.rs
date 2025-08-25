@@ -134,6 +134,7 @@ pub enum Expression {
         block: Box<Self>,
         then: Box<Self>,
     },
+    Throw(Span, Option<LocalName>, Box<Self>),
     Do {
         span: Span,
         process: Box<Process>,
@@ -226,6 +227,7 @@ pub enum Process {
         block: Box<Self>,
         then: Box<Self>,
     },
+    Throw(Span, Option<LocalName>, Box<Expression>),
     GlobalCommand(GlobalName, Command),
     Command(LocalName, Command),
     Telltypes(Span, Box<Self>),
@@ -872,6 +874,29 @@ impl Expression {
                 expression
             }
 
+            Self::Throw(span, label, expression) => {
+                let catch_block = pass.use_catch_block(span, label)?;
+                pass.stash_case_fallthrough();
+                let expression = expression.compile(pass)?;
+                pass.unstash_case_fallthrough();
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process: Arc::new(process::Process::Let {
+                        span: span.clone(),
+                        name: LocalName::error(),
+                        annotation: None,
+                        typ: (),
+                        value: expression,
+                        then: catch_block,
+                    }),
+                })
+            }
+
             Self::Do {
                 span,
                 process,
@@ -952,6 +977,7 @@ impl Spanning for Expression {
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
             | Self::Catch { span, .. }
+            | Self::Throw(span, _, _)
             | Self::Do { span, .. }
             | Self::Box(span, _)
             | Self::Chan { span, .. }
@@ -1359,6 +1385,21 @@ impl Process {
                 process
             }
 
+            Self::Throw(span, label, expression) => {
+                let catch_block = pass.use_catch_block(span, label)?;
+                pass.stash_case_fallthrough();
+                let expression = expression.compile(pass)?;
+                pass.unstash_case_fallthrough();
+                Arc::new(process::Process::Let {
+                    span: span.clone(),
+                    name: LocalName::error(),
+                    annotation: None,
+                    typ: (),
+                    value: expression,
+                    then: catch_block,
+                })
+            }
+
             Self::GlobalCommand(global_name, command) => {
                 let span = global_name.span;
                 let local_name = LocalName {
@@ -1395,6 +1436,7 @@ impl Spanning for Process {
         match self {
             Self::Let { span, .. } => span.clone(),
             Self::Catch { span, .. } => span.clone(),
+            Self::Throw(span, _, _) => span.clone(),
             Self::GlobalCommand(_, command) => command.span(),
             Self::Command(_, command) => command.span(),
             Self::Telltypes(span, _) => span.clone(),
