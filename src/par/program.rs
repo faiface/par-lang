@@ -12,7 +12,7 @@ use crate::{
 use super::{
     language::{CompileError, GlobalName, LocalName},
     parse::SyntaxError,
-    process,
+    process::{self, NameWithType},
     types::{Context, Type, TypeDefs, TypeError},
 };
 
@@ -286,80 +286,100 @@ impl<Expr> Default for Module<Expr> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct NameWithType(pub Option<String>, pub Type);
-
 pub struct TypeOnHover {
-    map_of_sorted_pairs: hashbrown::HashMap<FileName, Vec<((Point, Point), NameWithType)>>,
+    files: hashbrown::HashMap<FileName, FileHovers>,
+}
+
+#[derive(Default)]
+struct FileHovers {
+    pairs: Vec<((Point, Point), NameWithType)>,
 }
 
 impl TypeOnHover {
     pub fn new(program: &CheckedModule) -> Self {
-        let mut map_of_pairs = hashbrown::HashMap::<_, Vec<((Point, Point), _)>>::new();
+        let mut files = hashbrown::HashMap::<_, FileHovers>::new();
 
         for (name, (_, file, _, typ)) in program.type_defs.globals.iter() {
-            let pairs = map_of_pairs.entry_ref(file).or_default();
-            if let Some((start, end)) = name.span.points() {
-                pairs.push((
-                    (start, end),
-                    NameWithType(Some(format!("{}", name)), typ.clone()),
-                ));
-            }
-            typ.types_at_spans(&program.type_defs, &mut |span, name, typ| {
-                if let Some((start, end)) = span.points() {
-                    pairs.push(((start, end), NameWithType(name, typ)))
-                }
+            let file_hovers = files.entry_ref(file).or_default();
+            file_hovers.push(
+                name.span,
+                NameWithType::named(name.to_string(), typ.clone()),
+            );
+            typ.types_at_spans(&program.type_defs, &mut |span, name_info| {
+                file_hovers.push(span, name_info)
             });
         }
 
         for (name, declaration) in &program.declarations {
-            let pairs = map_of_pairs.entry_ref(&declaration.file).or_default();
-            if let Some((start, end)) = name.span.points() {
-                pairs.push((
-                    (start, end),
-                    NameWithType(Some(format!("{}", name)), declaration.typ.clone()),
-                ));
-            }
+            let file_hovers = files.entry_ref(&declaration.file).or_default();
+            let (def_span, def_file) = match program.definitions.get(name) {
+                Some(def) => (def.name.span, def.file.clone()),
+                None => (Span::None, FileName::Builtin),
+            };
+            file_hovers.push(
+                name.span,
+                NameWithType {
+                    name: Some(name.to_string()),
+                    typ: declaration.typ.clone(),
+                    def_span,
+                    decl_span: Span::None,
+                    def_file,
+                },
+            );
             declaration
                 .typ
-                .types_at_spans(&program.type_defs, &mut |span, name, typ| {
-                    if let Some((start, end)) = span.points() {
-                        pairs.push(((start, end), NameWithType(name, typ)))
-                    }
+                .types_at_spans(&program.type_defs, &mut |span, name_info| {
+                    file_hovers.push(span, name_info)
                 });
         }
 
         for (name, definition) in &program.definitions {
-            let pairs = map_of_pairs.entry_ref(&definition.file).or_default();
-            if let Some((start, end)) = name.span.points() {
-                pairs.push((
-                    (start, end),
-                    NameWithType(Some(format!("{}", name)), definition.expression.get_type()),
-                ));
-            }
+            let file_hovers = files.entry_ref(&definition.file).or_default();
+            let (decl_span, decl_file) = match program.declarations.get(name) {
+                Some(decl) => (decl.name.span, decl.file.clone()),
+                None => (Span::None, FileName::Builtin),
+            };
+            file_hovers.push(
+                name.span,
+                NameWithType {
+                    name: Some(name.to_string()),
+                    typ: definition.expression.get_type(),
+                    def_span: Span::None,
+                    decl_span,
+                    def_file: decl_file,
+                },
+            );
             definition
                 .expression
-                .types_at_spans(&program.type_defs, &mut |span, name, typ| {
-                    if let Some((start, end)) = span.points() {
-                        pairs.push(((start, end), NameWithType(name, typ)))
-                    }
+                .types_at_spans(program, &mut |span, name_info| {
+                    file_hovers.push(span, name_info)
                 });
         }
 
-        for (_, pairs) in &mut map_of_pairs {
-            pairs.sort_by_key(|((start, _), _)| start.offset);
-            pairs.dedup_by_key(|((start, _), _)| start.offset);
+        for file_hovers in files.values_mut() {
+            file_hovers.sort_and_dedup();
         }
 
-        Self {
-            map_of_sorted_pairs: map_of_pairs,
-        }
+        Self { files }
+    }
+
+    pub fn query(&self, file: &FileName, row: usize, column: usize) -> Option<NameWithType> {
+        self.files.get(file)?.query(row, column)
     }
 }
 
-impl TypeOnHover {
-    pub fn query(&self, file: &FileName, row: usize, column: usize) -> Option<NameWithType> {
-        let sorted_pairs = self.map_of_sorted_pairs.get(file)?;
+impl FileHovers {
+    fn push(&mut self, span: Span, name_info: NameWithType) {
+        if let Some(points) = span.points() {
+            self.pairs.push((points, name_info))
+        }
+    }
+    fn sort_and_dedup(&mut self) {
+        self.pairs.sort_by_key(|((start, _), _)| start.offset);
+        self.pairs.dedup_by_key(|((start, _), _)| start.offset);
+    }
+    fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
+        let sorted_pairs = &self.pairs;
         if sorted_pairs.is_empty() {
             return None;
         }

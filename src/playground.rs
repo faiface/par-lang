@@ -15,9 +15,7 @@ use crate::{
     location::FileName,
     par::{
         builtin::import_builtins,
-        program::{
-            CheckedModule, Definition, Module, NameWithType, ParseAndCompileError, TypeOnHover,
-        },
+        program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
     },
     readback::Element,
     spawn::TokioSpawn,
@@ -511,14 +509,14 @@ impl Playground {
                     })) = &mut self.compiled
                     {
                         if let Ok(checked) = checked {
-                            if let Some(NameWithType(_, typ)) = checked.type_on_hover.query(
+                            if let Some(name_info) = checked.type_on_hover.query(
                                 &Self::FILE_NAME,
                                 self.cursor_pos.0,
                                 self.cursor_pos.1,
                             ) {
                                 ui.horizontal(|ui| {
                                     let mut buf = String::new();
-                                    typ.pretty(&mut buf, 0).unwrap();
+                                    name_info.typ.pretty(&mut buf, 0).unwrap();
                                     ui.label(RichText::new(buf).code().color(green()));
                                 });
                             }
