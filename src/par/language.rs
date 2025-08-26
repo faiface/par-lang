@@ -488,7 +488,10 @@ impl Passes {
         label: Option<LocalName>,
         p: Option<Arc<process::Process<()>>>,
     ) -> Result<&mut Self, CompileError> {
-        self.catch_stash.entry(label.clone()).or_default().push(self.catch.remove(&label));
+        self.catch_stash
+            .entry(label.clone())
+            .or_default()
+            .push(self.catch.remove(&label));
         if let Some(p) = p {
             self.catch.insert(label, Pass::new(p));
         }
