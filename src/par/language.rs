@@ -429,9 +429,10 @@ impl CompileError {
 
 #[derive(Clone, Debug)]
 pub struct Passes {
-    case_fallthrough: Option<Pass>,
-    stashed_case_fallthroughs: Vec<Option<Pass>>,
-    catch_block: HashMap<Option<LocalName>, Pass>,
+    fallthrough: Option<Pass>,
+    fallthrough_stash: Vec<Option<Pass>>,
+    catch: HashMap<Option<LocalName>, Pass>,
+    catch_stash: HashMap<Option<LocalName>, Vec<Option<Pass>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -443,23 +444,24 @@ pub struct Pass {
 impl Passes {
     pub fn new() -> Self {
         Passes {
-            case_fallthrough: None,
-            stashed_case_fallthroughs: Vec::new(),
-            catch_block: HashMap::new(),
+            fallthrough: None,
+            fallthrough_stash: Vec::new(),
+            catch: HashMap::new(),
+            catch_stash: HashMap::new(),
         }
     }
 
-    fn set_case_fallthrough(
+    fn set_fallthrough(
         &mut self,
-        p: Arc<process::Process<()>>,
+        p: Option<Arc<process::Process<()>>>,
     ) -> Result<&mut Self, CompileError> {
-        self.unset_case_fallthrough()?;
-        self.case_fallthrough = Some(Pass::new(p));
+        self.fallthrough_stash.push(self.fallthrough.take());
+        self.fallthrough = p.map(Pass::new);
         Ok(self)
     }
 
-    fn use_case_fallthrough(&mut self) -> Option<Arc<process::Process<()>>> {
-        match self.case_fallthrough.as_mut() {
+    fn use_fallthrough(&mut self) -> Option<Arc<process::Process<()>>> {
+        match self.fallthrough.as_mut() {
             Some(pass) => {
                 pass.used = true;
                 Some(Arc::clone(&pass.process))
@@ -468,45 +470,37 @@ impl Passes {
         }
     }
 
-    fn unset_case_fallthrough(&mut self) -> Result<&mut Self, CompileError> {
-        match self.case_fallthrough.take() {
-            Some(previous) if !previous.used => {
-                Err(CompileError::UnreachableCode(previous.process.span()))
+    fn unset_fallthrough(&mut self) -> Result<&mut Self, CompileError> {
+        if let Some(previous) = self.fallthrough.take() {
+            if !previous.used {
+                return Err(CompileError::UnreachableCode(previous.process.span()));
             }
-            _ => Ok(self),
         }
-    }
-
-    fn stash_case_fallthrough(&mut self) -> &mut Self {
-        self.stashed_case_fallthroughs
-            .push(self.case_fallthrough.take());
-        self
-    }
-
-    fn unstash_case_fallthrough(&mut self) -> &mut Self {
-        self.case_fallthrough = self
-            .stashed_case_fallthroughs
+        self.fallthrough = self
+            .fallthrough_stash
             .pop()
-            .expect("case_fallthrough was supposed be stashed");
-        self
-    }
-
-    fn set_catch_block(
-        &mut self,
-        label: Option<LocalName>,
-        p: Arc<process::Process<()>>,
-    ) -> Result<&mut Self, CompileError> {
-        self.unset_catch_block(&label)?;
-        self.catch_block.insert(label, Pass::new(p));
+            .expect("fallthrough was supposed be stashed");
         Ok(self)
     }
 
-    fn use_catch_block(
+    fn set_catch(
+        &mut self,
+        label: Option<LocalName>,
+        p: Option<Arc<process::Process<()>>>,
+    ) -> Result<&mut Self, CompileError> {
+        self.catch_stash.entry(label.clone()).or_default().push(self.catch.remove(&label));
+        if let Some(p) = p {
+            self.catch.insert(label, Pass::new(p));
+        }
+        Ok(self)
+    }
+
+    fn use_catch(
         &mut self,
         span: &Span,
         label: &Option<LocalName>,
     ) -> Result<Arc<process::Process<()>>, CompileError> {
-        match self.catch_block.get_mut(label) {
+        match self.catch.get_mut(label) {
             Some(pass) => {
                 pass.used = true;
                 Ok(Arc::clone(&pass.process))
@@ -515,13 +509,22 @@ impl Passes {
         }
     }
 
-    fn unset_catch_block(&mut self, label: &Option<LocalName>) -> Result<&mut Self, CompileError> {
-        match self.catch_block.remove(label) {
-            Some(previous) if !previous.used => {
-                Err(CompileError::UnreachableCode(previous.process.span()))
+    fn unset_catch(&mut self, label: Option<LocalName>) -> Result<&mut Self, CompileError> {
+        if let Some(previous) = self.catch.remove(&label) {
+            if !previous.used {
+                return Err(CompileError::UnreachableCode(previous.process.span()));
             }
-            _ => Ok(self),
         }
+        let stashed = self
+            .catch_stash
+            .entry(label.clone())
+            .or_default()
+            .pop()
+            .expect("catch was supposed be stashed");
+        if let Some(stashed) = stashed {
+            self.catch.insert(label, stashed);
+        }
+        Ok(self)
     }
 }
 
@@ -699,7 +702,7 @@ impl Pattern {
             })),
 
             Self::Try(span, label, rest) => {
-                let catch_block = pass.use_catch_block(span, label)?;
+                let catch_block = pass.use_catch(span, label)?;
                 Ok(compile_try(
                     span.clone(),
                     LocalName::match_(level),
@@ -868,17 +871,17 @@ impl Expression {
                     command: process::Command::Link(block.compile(pass)?),
                 });
                 let block = pattern.compile_catch_block(span, block, pass)?;
-                pass.set_catch_block(label.clone(), block)?;
+                pass.set_catch(label.clone(), Some(block))?;
                 let expression = then.compile(pass)?;
-                pass.unset_catch_block(label)?;
+                pass.unset_catch(label.clone())?;
                 expression
             }
 
             Self::Throw(span, label, expression) => {
-                let catch_block = pass.use_catch_block(span, label)?;
-                pass.stash_case_fallthrough();
+                let catch_block = pass.use_catch(span, label)?;
+                pass.set_fallthrough(None)?;
                 let expression = expression.compile(pass)?;
-                pass.unstash_case_fallthrough();
+                pass.unset_fallthrough()?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -903,14 +906,14 @@ impl Expression {
                 then: expression,
             } => {
                 let expression = expression.compile(pass)?;
-                let body = process.compile(Passes::new().set_case_fallthrough(Arc::new(
+                let body = process.compile(Passes::new().set_fallthrough(Some(Arc::new(
                     process::Process::Do {
                         span: span.clone(),
                         name: LocalName::result(),
                         typ: (),
                         command: process::Command::Link(expression),
                     },
-                ))?)?;
+                )))?)?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -1259,7 +1262,7 @@ impl Apply {
             }
 
             Self::Try(span, label, apply) => {
-                let catch_block = pass.use_catch_block(span, label)?;
+                let catch_block = pass.use_catch(span, label)?;
                 compile_try(
                     span.clone(),
                     LocalName::object(),
@@ -1363,9 +1366,9 @@ impl Process {
                 value,
                 then,
             } => {
-                pass.stash_case_fallthrough();
+                pass.set_fallthrough(None)?;
                 let value = value.compile(pass)?;
-                pass.unstash_case_fallthrough();
+                pass.unset_fallthrough()?;
                 pattern.compile_let(span, value, then.compile(pass)?, pass)?
             }
 
@@ -1376,20 +1379,20 @@ impl Process {
                 block,
                 then,
             } => {
-                pass.stash_case_fallthrough();
+                pass.set_fallthrough(None)?;
                 let block = pattern.compile_catch_block(span, block.compile(pass)?, pass)?;
-                pass.unstash_case_fallthrough();
-                pass.set_catch_block(label.clone(), block)?;
+                pass.unset_fallthrough()?;
+                pass.set_catch(label.clone(), Some(block))?;
                 let process = then.compile(pass)?;
-                pass.unset_catch_block(label)?;
+                pass.unset_catch(label.clone())?;
                 process
             }
 
             Self::Throw(span, label, expression) => {
-                let catch_block = pass.use_catch_block(span, label)?;
-                pass.stash_case_fallthrough();
+                let catch_block = pass.use_catch(span, label)?;
+                pass.set_fallthrough(None)?;
                 let expression = expression.compile(pass)?;
-                pass.unstash_case_fallthrough();
+                pass.unset_fallthrough()?;
                 Arc::new(process::Process::Let {
                     span: span.clone(),
                     name: LocalName::error(),
@@ -1423,7 +1426,7 @@ impl Process {
                 process.compile(pass)?,
             )),
 
-            Self::Noop(span) => match pass.use_case_fallthrough() {
+            Self::Noop(span) => match pass.use_fallthrough() {
                 Some(process) => process,
                 None => Err(CompileError::MustEndProcess(*span))?,
             },
@@ -1496,14 +1499,14 @@ impl Command {
 
                 if let Some(process) = optional_process {
                     let process = process.compile(pass)?;
-                    pass.set_case_fallthrough(process)?;
+                    pass.set_fallthrough(Some(process))?;
                 }
                 for (branch_name, process_branch) in process_branches {
                     branches.push(branch_name.clone());
                     processes.push(process_branch.compile(object_name, pass)?);
                 }
                 if optional_process.is_some() {
-                    pass.unset_case_fallthrough()?;
+                    pass.unset_fallthrough()?;
                 }
 
                 let branches = Arc::from(branches);
@@ -1585,7 +1588,7 @@ impl Command {
             }
 
             Self::Try(span, label, command) => {
-                let catch_block = pass.use_catch_block(span, label)?;
+                let catch_block = pass.use_catch(span, label)?;
                 compile_try(
                     span.clone(),
                     object_name.clone(),
