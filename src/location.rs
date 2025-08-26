@@ -95,6 +95,10 @@ impl Span {
             },
         }
     }
+
+    pub fn with_file(self, file: FileName) -> FileSpan {
+        FileSpan::new(self, file)
+    }
 }
 
 impl Point {
@@ -127,5 +131,52 @@ impl From<String> for FileName {
 impl From<&FileName> for FileName {
     fn from(file: &FileName) -> Self {
         file.clone()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FileSpan {
+    inner: Option<((Point, Point), FileName)>,
+}
+
+impl FileSpan {
+    pub const NONE: Self = Self { inner: None };
+
+    pub fn new(span: Span, file: FileName) -> Self {
+        match span {
+            Span::None => Self { inner: None },
+            Span::At { start, end } => Self {
+                inner: Some(((start, end), file)),
+            },
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        match self.inner {
+            Some(((start, end), _)) => Span::At { start, end },
+            None => Span::None,
+        }
+    }
+
+    pub fn file(&self) -> Option<&FileName> {
+        self.inner.as_ref().map(|(_, file)| file)
+    }
+
+    pub fn file_path(&self) -> Option<&ArcStr> {
+        match &self.inner {
+            Some((_, FileName::Path(path))) => Some(path),
+            _ => None,
+        }
+    }
+
+    pub fn with_span(&self, span: Span) -> Self {
+        match &self.inner {
+            Some((_, file)) => FileSpan::new(span, file.clone()),
+            None => FileSpan::NONE,
+        }
+    }
+
+    pub fn points(&self) -> Option<(Point, Point)> {
+        self.inner.as_ref().map(|&(points, _)| points)
     }
 }

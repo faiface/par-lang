@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     icombs::readback::Handle,
-    location::{FileName, Span, Spanning},
+    location::{FileSpan, Span, Spanning},
     par::program::CheckedModule,
 };
 use indexmap::IndexMap;
@@ -542,9 +542,8 @@ impl<Typ: Clone> Expression<Typ> {
 pub struct NameWithType {
     pub name: Option<String>,
     pub typ: Type,
-    pub def_span: Span,
-    pub decl_span: Span,
-    pub def_file: FileName,
+    pub def_span: FileSpan,
+    pub decl_span: FileSpan,
 }
 
 impl NameWithType {
@@ -552,9 +551,8 @@ impl NameWithType {
         NameWithType {
             name,
             typ,
-            def_span: Span::None,
-            decl_span: Span::None,
-            def_file: FileName::Builtin,
+            def_span: FileSpan::NONE,
+            decl_span: FileSpan::NONE,
         }
     }
     pub fn named(name: impl ToString, typ: Type) -> Self {
@@ -573,15 +571,15 @@ impl Expression<Type> {
     ) {
         match self {
             Self::Global(_, name, typ) => {
-                let (def_span, def_file) = match program.definitions.get(name) {
-                    Some(def) => (def.name.span, def.file.clone()),
-                    None => (Span::None, FileName::Builtin),
+                let def_span = match program.definitions.get(name) {
+                    Some(def) => def.span.with_span(def.name.span),
+                    None => FileSpan::NONE,
                 };
                 let decl_span = program
                     .declarations
                     .get(name)
-                    .map(|decl| decl.name.span)
-                    .unwrap_or(def_span);
+                    .map(|decl| decl.span.with_span(decl.name.span))
+                    .unwrap_or_else(|| def_span.clone());
                 consume(
                     name.span(),
                     NameWithType {
@@ -589,7 +587,6 @@ impl Expression<Type> {
                         typ: typ.clone(),
                         def_span,
                         decl_span,
-                        def_file,
                     },
                 );
             }

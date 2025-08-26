@@ -97,7 +97,6 @@ impl Compiled {
             .map(
                 |Definition {
                      span: _,
-                     file: _,
                      name,
                      expression,
                  }| {

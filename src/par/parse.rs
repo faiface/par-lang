@@ -230,7 +230,6 @@ fn program(
             Item::Definition(
                 Definition {
                     span,
-                    file,
                     name,
                     expression,
                 },
@@ -239,14 +238,12 @@ fn program(
                 if let Some(typ) = annotation {
                     acc.declarations.push(Declaration {
                         span: span.clone(),
-                        file: file.clone(),
                         name: name.clone(),
                         typ,
                     });
                 }
                 acc.definitions.push(Definition {
                     span,
-                    file,
                     name,
                     expression,
                 });
@@ -372,8 +369,7 @@ fn type_def(input: &mut Input, file: &FileName) -> Result<TypeDef> {
         (global_name, type_params, t(TokenKind::Eq), typ),
     )
     .map(|(pre, (name, type_params, _, typ))| TypeDef {
-        span: pre.span.join(typ.span()),
-        file: file.clone(),
+        span: pre.span.join(typ.span()).with_file(file.clone()),
         name,
         params: type_params.map_or_else(Vec::new, |(_, params)| params),
         typ,
@@ -385,8 +381,7 @@ fn type_def(input: &mut Input, file: &FileName) -> Result<TypeDef> {
 fn declaration(input: &mut Input, file: &FileName) -> Result<Declaration> {
     commit_after(t(TokenKind::Dec), (global_name, t(TokenKind::Colon), typ))
         .map(|(pre, (name, _, typ))| Declaration {
-            span: pre.span.join(typ.span()),
-            file: file.clone(),
+            span: pre.span.join(typ.span()).with_file(file.clone()),
             name,
             typ,
         })
@@ -405,8 +400,7 @@ fn definition(
     .map(|(pre, (name, annotation, _, expression))| {
         (
             Definition {
-                span: pre.span.join(expression.span()),
-                file: file.clone(),
+                span: pre.span.join(expression.span()).with_file(file.clone()),
                 name,
                 expression,
             },

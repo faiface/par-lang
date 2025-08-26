@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use crate::{
     icombs::readback::Handle,
-    location::{FileName, Point, Span},
+    location::{FileName, FileSpan, Point, Span},
     par::parse::parse_module,
 };
 
@@ -32,8 +32,7 @@ pub struct CheckedModule {
 
 #[derive(Clone, Debug)]
 pub struct TypeDef {
-    pub span: Span,
-    pub file: FileName,
+    pub span: FileSpan,
     pub name: GlobalName,
     pub params: Vec<LocalName>,
     pub typ: Type,
@@ -41,16 +40,14 @@ pub struct TypeDef {
 
 #[derive(Clone, Debug)]
 pub struct Declaration {
-    pub span: Span,
-    pub file: FileName,
+    pub span: FileSpan,
     pub name: GlobalName,
     pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
 pub struct Definition<Expr> {
-    pub span: Span,
-    pub file: FileName,
+    pub span: FileSpan,
     pub name: GlobalName,
     pub expression: Expr,
 }
@@ -59,7 +56,6 @@ impl TypeDef {
     pub fn external(name: &'static str, params: &[&'static str], typ: Type) -> Self {
         Self {
             span: Default::default(),
-            file: FileName::Builtin,
             name: GlobalName::external(None, name),
             params: params
                 .into_iter()
@@ -81,7 +77,6 @@ impl Definition<Arc<process::Expression<()>>> {
     ) -> Self {
         Self {
             span: Default::default(),
-            file: FileName::Builtin,
             name: GlobalName::external(None, name),
             expression: Arc::new(process::Expression::External(typ, f, ())),
         }
@@ -116,13 +111,11 @@ impl Module<Arc<process::Expression<()>>> {
             .map(
                 |Definition {
                      span,
-                     file,
                      name,
                      expression,
                  }| {
                     expression.compile().map(|compiled| Definition {
                         span,
-                        file,
                         name,
                         expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
                     })
@@ -148,7 +141,6 @@ impl Module<Arc<process::Expression<()>>> {
     fn qualify(&mut self, module: Option<&str>) {
         for TypeDef {
             span: _,
-            file: _,
             name,
             params: _,
             typ,
@@ -157,19 +149,12 @@ impl Module<Arc<process::Expression<()>>> {
             name.qualify(module);
             typ.qualify(module);
         }
-        for Declaration {
-            span: _,
-            file: _,
-            name,
-            typ,
-        } in &mut self.declarations
-        {
+        for Declaration { span: _, name, typ } in &mut self.declarations {
             name.qualify(module);
             typ.qualify(module);
         }
         for Definition {
             span: _,
-            file: _,
             name,
             expression,
         } in &mut self.definitions
@@ -183,46 +168,37 @@ impl Module<Arc<process::Expression<()>>> {
         let type_defs = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
-                .map(|d| (&d.span, &d.file, &d.name, &d.params, &d.typ)),
+                .map(|d| (&d.span, &d.name, &d.params, &d.typ)),
         )?;
 
         let mut unchecked_definitions = IndexMap::new();
         for Definition {
             span,
-            file,
             name,
             expression,
         } in &self.definitions
         {
-            if let Some((span1, _, _)) = unchecked_definitions.insert(
-                name.clone(),
-                (span.clone(), file.clone(), expression.clone()),
-            ) {
+            if let Some((span1, _)) =
+                unchecked_definitions.insert(name.clone(), (span.clone(), expression.clone()))
+            {
                 return Err(TypeError::NameAlreadyDefined(
-                    span.clone(),
-                    span1.clone(),
+                    span.span(),
+                    span1.span(),
                     name.clone(),
                 ));
             }
         }
 
         let mut declarations = IndexMap::new();
-        for Declaration {
-            span,
-            file,
-            name,
-            typ,
-        } in &self.declarations
-        {
+        for Declaration { span, name, typ } in &self.declarations {
             if !unchecked_definitions.contains_key(name) {
-                return Err(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
+                return Err(TypeError::DeclaredButNotDefined(span.span(), name.clone()));
             }
-            if let Some((span1, _, _)) =
-                declarations.insert(name.clone(), (span.clone(), file.clone(), typ.clone()))
+            if let Some((span1, _)) = declarations.insert(name.clone(), (span.clone(), typ.clone()))
             {
                 return Err(TypeError::NameAlreadyDeclared(
-                    span.clone(),
-                    span1,
+                    span.span(),
+                    span1.span(),
                     name.clone(),
                 ));
             }
@@ -230,12 +206,12 @@ impl Module<Arc<process::Expression<()>>> {
 
         let names_to_check = unchecked_definitions
             .iter()
-            .map(|(name, (span, _, _))| (span.clone(), name.clone()))
+            .map(|(name, (span, _))| (span.clone(), name.clone()))
             .collect::<Vec<_>>();
 
         let mut context = Context::new(type_defs, declarations, unchecked_definitions);
         for (span, name) in names_to_check {
-            context.check_definition(&span, &name)?;
+            context.check_definition(&span.span(), &name)?;
         }
 
         Ok(CheckedModule {
@@ -243,27 +219,16 @@ impl Module<Arc<process::Expression<()>>> {
             declarations: context
                 .get_declarations()
                 .into_iter()
-                .map(|(name, (span, file, typ))| {
-                    (
-                        name.clone(),
-                        Declaration {
-                            span,
-                            file,
-                            name,
-                            typ,
-                        },
-                    )
-                })
+                .map(|(name, (span, typ))| (name.clone(), Declaration { span, name, typ }))
                 .collect(),
             definitions: context
                 .get_checked_definitions()
                 .into_iter()
-                .map(|(name, (span, file, expression))| {
+                .map(|(name, (span, expression))| {
                     (
                         name.clone(),
                         Definition {
                             span,
-                            file,
                             name,
                             expression,
                         },
@@ -297,7 +262,8 @@ impl TypeOnHover {
     pub fn new(program: &CheckedModule) -> Self {
         let mut files = hashbrown::HashMap::<_, FileHovers>::new();
 
-        for (name, (_, file, _, typ)) in program.type_defs.globals.iter() {
+        for (name, (span, _, typ)) in program.type_defs.globals.iter() {
+            let Some(file) = span.file() else { continue };
             let file_hovers = files.entry_ref(file).or_default();
             file_hovers.push(
                 name.span,
@@ -309,10 +275,13 @@ impl TypeOnHover {
         }
 
         for (name, declaration) in &program.declarations {
-            let file_hovers = files.entry_ref(&declaration.file).or_default();
-            let (def_span, def_file) = match program.definitions.get(name) {
-                Some(def) => (def.name.span, def.file.clone()),
-                None => (Span::None, FileName::Builtin),
+            let Some(file) = declaration.span.file() else {
+                continue;
+            };
+            let file_hovers = files.entry_ref(file).or_default();
+            let def_span = match program.definitions.get(name) {
+                Some(def) => def.name.span.with_file(file.clone()),
+                None => FileSpan::NONE,
             };
             file_hovers.push(
                 name.span,
@@ -320,8 +289,7 @@ impl TypeOnHover {
                     name: Some(name.to_string()),
                     typ: declaration.typ.clone(),
                     def_span,
-                    decl_span: Span::None,
-                    def_file,
+                    decl_span: FileSpan::NONE,
                 },
             );
             declaration
@@ -332,19 +300,21 @@ impl TypeOnHover {
         }
 
         for (name, definition) in &program.definitions {
-            let file_hovers = files.entry_ref(&definition.file).or_default();
-            let (decl_span, decl_file) = match program.declarations.get(name) {
-                Some(decl) => (decl.name.span, decl.file.clone()),
-                None => (Span::None, FileName::Builtin),
+            let Some(file) = definition.span.file() else {
+                continue;
+            };
+            let file_hovers = files.entry_ref(file).or_default();
+            let decl_span = match program.declarations.get(name) {
+                Some(decl) => decl.name.span.with_file(file.clone()),
+                None => FileSpan::NONE,
             };
             file_hovers.push(
                 name.span,
                 NameWithType {
                     name: Some(name.to_string()),
                     typ: definition.expression.get_type(),
-                    def_span: Span::None,
+                    def_span: FileSpan::NONE,
                     decl_span,
-                    def_file: decl_file,
                 },
             );
             definition

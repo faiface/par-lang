@@ -1,6 +1,6 @@
 use super::io::IO;
 use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
-use crate::location::{FileName, Span, Spanning};
+use crate::location::{FileName, Span};
 use crate::playground::{Checked, Compiled};
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
@@ -99,7 +99,7 @@ impl Instance {
         TYPE_PARAMETER: type alias
          */
 
-        for (name, (span, _, _, _)) in compiled.program.type_defs.globals.as_ref() {
+        for (name, (span, _, _)) in compiled.program.type_defs.globals.as_ref() {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), span.points())
             {
@@ -233,11 +233,8 @@ impl Instance {
             .type_on_hover
             .query(&self.file, pos.line, pos.character)?;
 
-        let (Span::At { start, end }, FileName::Path(path)) =
-            (name_info.decl_span, name_info.def_file)
-        else {
-            return None;
-        };
+        let (start, end) = name_info.decl_span.points()?;
+        let path = name_info.decl_span.file_path()?;
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
             uri: path.parse().ok()?,
@@ -265,11 +262,8 @@ impl Instance {
             .type_on_hover
             .query(&self.file, pos.line, pos.character)?;
 
-        let (Span::At { start, end }, FileName::Path(path)) =
-            (name_info.def_span, name_info.def_file)
-        else {
-            return None;
-        };
+        let (start, end) = name_info.decl_span.points()?;
+        let path = name_info.decl_span.file_path()?;
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
             uri: path.parse().ok()?,
@@ -363,7 +357,7 @@ impl Instance {
                 .program
                 .definitions
                 .iter()
-                .filter_map(|(name, def)| name.span().points().map(|pts| (pts, name, def)))
+                .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
                 .map(|((start, end), name, _)| lsp::CodeLens {
                     range: lsp::Range {
                         start: start.into(),
@@ -395,7 +389,7 @@ impl Instance {
                 .definitions
                 .iter()
                 .filter(|(name, _)| !compiled.program.declarations.contains_key(*name))
-                .filter_map(|(name, def)| name.span().points().map(|pts| (pts, name, def)))
+                .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
                 .map(|((_, end), _, definition)| {
                     let mut label = ": ".to_owned();
                     definition
