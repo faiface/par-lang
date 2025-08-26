@@ -416,7 +416,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+mod lexer_test {
     use super::*;
 
     #[test]
@@ -436,6 +436,7 @@ mod test {
                 TokenKind::RParen,
                 TokenKind::Colon,
                 TokenKind::UppercaseIdentifier,
+                TokenKind::Colon,
                 TokenKind::LowercaseIdentifier,
                 TokenKind::Colon,
                 TokenKind::UppercaseIdentifier,
@@ -485,7 +486,7 @@ mod test {
                     },
                 },
                 Token {
-                    kind: TokenKind::Unknown,
+                    kind: TokenKind::Slash,
                     raw: "/",
                     span: Span::At {
                         start: Point {
