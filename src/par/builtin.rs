@@ -21,7 +21,7 @@ use super::{process, program::Module};
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         None,
-        Module::parse_and_compile(include_str!("./builtin/Builtin.par"), FileName::Builtin)
+        Module::parse_and_compile(include_str!("./builtin/Builtin.par"), FileName::BUILTIN)
             .unwrap(),
     );
 

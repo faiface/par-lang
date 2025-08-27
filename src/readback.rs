@@ -253,7 +253,7 @@ impl Element {
                             }
 
                             Request::Byte(mut input, callback) => {
-                                let input_byte = parse_bytes(&input)
+                                let input_byte = parse_bytes(&input, &"input".into())
                                     .filter(|b| b.len() == 1)
                                     .and_then(|b| b.get(0).copied());
                                 let entered = ui
@@ -279,7 +279,7 @@ impl Element {
                             }
 
                             Request::Bytes(mut input, callback) => {
-                                let input_bytes = parse_bytes(&input);
+                                let input_bytes = parse_bytes(&input, &"input".into());
                                 let entered = ui
                                     .horizontal(|ui| {
                                         ui.add(

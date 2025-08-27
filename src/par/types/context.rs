@@ -1,4 +1,4 @@
-use crate::location::{FileName, Span};
+use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
 use crate::par::process::{Captures, Expression};
 use crate::par::types::{Type, TypeDefs, TypeError};
@@ -8,8 +8,8 @@ use std::sync::{Arc, RwLock};
 #[derive(Clone, Debug)]
 pub struct Context {
     pub type_defs: TypeDefs,
-    declarations: Arc<IndexMap<GlobalName, (Span, FileName, Type)>>,
-    unchecked_definitions: Arc<IndexMap<GlobalName, (Span, FileName, Arc<Expression<()>>)>>,
+    declarations: Arc<IndexMap<GlobalName, (Span, Type)>>,
+    unchecked_definitions: Arc<IndexMap<GlobalName, (Span, Arc<Expression<()>>)>>,
     checked_definitions: Arc<RwLock<IndexMap<GlobalName, CheckedDef>>>,
     current_deps: IndexSet<GlobalName>,
     pub variables: IndexMap<LocalName, Type>,
@@ -19,7 +19,6 @@ pub struct Context {
 #[derive(Clone, Debug)]
 struct CheckedDef {
     span: Span,
-    file: FileName,
     def: Arc<Expression<Type>>,
     typ: Type,
 }
@@ -27,8 +26,8 @@ struct CheckedDef {
 impl Context {
     pub fn new(
         type_defs: TypeDefs,
-        declarations: IndexMap<GlobalName, (Span, FileName, Type)>,
-        unchecked_definitions: IndexMap<GlobalName, (Span, FileName, Arc<Expression<()>>)>,
+        declarations: IndexMap<GlobalName, (Span, Type)>,
+        unchecked_definitions: IndexMap<GlobalName, (Span, Arc<Expression<()>>)>,
     ) -> Self {
         Self {
             type_defs,
@@ -50,7 +49,7 @@ impl Context {
             return Err(TypeError::GlobalNameNotDefined(span.clone(), name.clone()));
         };
         let name_def = name_def.clone();
-        let (span_def, file_def, unchecked_def) = def.clone();
+        let (span_def, unchecked_def) = def.clone();
 
         if !self.current_deps.insert(name.clone()) {
             return Err(TypeError::DependencyCycle(
@@ -64,7 +63,7 @@ impl Context {
         }
 
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
-            Some((_, _, declared_type)) => {
+            Some((_, declared_type)) => {
                 self.type_defs.validate_type(
                     &declared_type,
                     &IndexSet::new(),
@@ -93,7 +92,6 @@ impl Context {
             name_def,
             CheckedDef {
                 span: span_def,
-                file: file_def,
                 def: checked_def,
                 typ: checked_type.clone(),
             },
@@ -102,27 +100,16 @@ impl Context {
         Ok(checked_type)
     }
 
-    pub fn get_checked_definitions(
-        &self,
-    ) -> IndexMap<GlobalName, (Span, FileName, Arc<Expression<Type>>)> {
+    pub fn get_checked_definitions(&self) -> IndexMap<GlobalName, (Span, Arc<Expression<Type>>)> {
         self.checked_definitions
             .read()
             .unwrap()
             .iter()
-            .map(|(name, checked)| {
-                (
-                    name.clone(),
-                    (
-                        checked.span.clone(),
-                        checked.file.clone(),
-                        checked.def.clone(),
-                    ),
-                )
-            })
+            .map(|(name, checked)| (name.clone(), (checked.span.clone(), checked.def.clone())))
             .collect()
     }
 
-    pub fn get_declarations(&self) -> IndexMap<GlobalName, (Span, FileName, Type)> {
+    pub fn get_declarations(&self) -> IndexMap<GlobalName, (Span, Type)> {
         (*self.declarations).clone()
     }
 

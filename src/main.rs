@@ -140,7 +140,7 @@ fn run_definition(file: PathBuf, definition: String) {
         };
 
         let compiled = match stacker::grow(32 * 1024 * 1024, || {
-            Compiled::from_string(&code, file.display().to_string().into())
+            Compiled::from_string(&code, file.into())
         }) {
             Ok(compiled) => compiled,
             Err(err) => {
@@ -223,7 +223,7 @@ fn check(file: PathBuf) {
     };
 
     match stacker::grow(32 * 1024 * 1024, || {
-        Compiled::from_string(&code, file.display().to_string().into())
+        Compiled::from_string(&code, file.into())
     }) {
         Ok(_compiled) => (),
         Err(err) => {

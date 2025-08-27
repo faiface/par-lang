@@ -36,7 +36,7 @@ pub struct Playground {
     show_compiled: bool,
     show_ic: bool,
     element: Option<Arc<Mutex<Element>>>,
-    cursor_pos: (usize, usize),
+    cursor_pos: (u32, u32),
     theme_mode: ThemeMode,
     rt: tokio::runtime::Runtime,
     cancel_token: Option<CancellationToken>,
@@ -97,7 +97,6 @@ impl Compiled {
             .map(
                 |Definition {
                      span: _,
-                     file: _,
                      name,
                      expression,
                  }| {
@@ -334,8 +333,9 @@ impl eframe::App for Playground {
     }
 }
 
-fn row_and_column(source: &str, index: usize) -> (usize, usize) {
+fn row_and_column(source: &str, index: usize) -> (u32, u32) {
     let (mut row, mut col) = (0, 0);
+    assert!(u32::try_from(index).is_ok(), "file size is too large");
     for c in source.chars().take(index) {
         if c == '\n' {
             row += 1;
@@ -442,7 +442,7 @@ impl Playground {
         }
     }
 
-    const FILE_NAME: FileName = FileName::Path(arcstr::literal!("Playground.par"));
+    const FILE_NAME: FileName = FileName(arcstr::literal!("Playground.par"));
 
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
@@ -568,7 +568,10 @@ pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
         .map(|start| {
             LabeledSpan::new_with_span(
                 None,
-                SourceSpan::new(SourceOffset::from(start.offset), span.len()),
+                SourceSpan::new(
+                    SourceOffset::from(start.offset as usize),
+                    span.len() as usize,
+                ),
             )
         })
         .collect()

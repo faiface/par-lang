@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     icombs::readback::Handle,
-    location::{FileName, Span, Spanning},
+    location::{Span, Spanning},
     par::program::CheckedModule,
 };
 use indexmap::IndexMap;
@@ -289,11 +289,14 @@ impl Process<Type> {
             } => {
                 consume(name.span(), NameWithType::named(name, typ.clone()));
                 if name == &LocalName::result() {
-                    consume(*span, NameWithType::unnamed(typ.clone().dual(Span::None)));
+                    consume(
+                        span.clone(),
+                        NameWithType::unnamed(typ.clone().dual(Span::None)),
+                    );
                 } else if name == &LocalName::object() {
-                    consume(*span, NameWithType::unnamed(typ.clone()));
+                    consume(span.clone(), NameWithType::unnamed(typ.clone()));
                 } else {
-                    consume(*span, NameWithType::named(name, typ.clone()));
+                    consume(span.clone(), NameWithType::named(name, typ.clone()));
                 }
                 command.types_at_spans(program, consume);
             }
@@ -448,17 +451,22 @@ impl<Typ: Clone> Expression<Typ> {
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Global(span, name, typ) => (
-                Arc::new(Self::Global(*span, name.clone(), typ.clone())),
+                Arc::new(Self::Global(span.clone(), name.clone(), typ.clone())),
                 Captures::new(),
             ),
             Self::Variable(span, name, typ) => (
-                Arc::new(Self::Variable(*span, name.clone(), typ.clone())),
+                Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone())),
                 Captures::single(name.clone(), span.clone()),
             ),
             Self::Box(span, _, expression, typ) => {
                 let (expression, caps) = expression.fix_captures(loop_points);
                 (
-                    Arc::new(Self::Box(*span, caps.clone(), expression, typ.clone())),
+                    Arc::new(Self::Box(
+                        span.clone(),
+                        caps.clone(),
+                        expression,
+                        typ.clone(),
+                    )),
                     caps,
                 )
             }
@@ -475,7 +483,7 @@ impl<Typ: Clone> Expression<Typ> {
                 caps.remove(channel);
                 (
                     Arc::new(Self::Fork {
-                        span: *span,
+                        span: span.clone(),
                         captures: caps.clone(),
                         chan_name: channel.clone(),
                         chan_annotation: annotation.clone(),
@@ -500,13 +508,13 @@ impl<Typ: Clone> Expression<Typ> {
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Global(span, name, typ) => {
-                Arc::new(Self::Global(*span, name.clone(), typ.clone()))
+                Arc::new(Self::Global(span.clone(), name.clone(), typ.clone()))
             }
             Self::Variable(span, name, typ) => {
-                Arc::new(Self::Variable(*span, name.clone(), typ.clone()))
+                Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone()))
             }
             Self::Box(span, caps, expression, typ) => Arc::new(Self::Box(
-                *span,
+                span.clone(),
                 caps.clone(),
                 expression.optimize(),
                 typ.clone(),
@@ -544,7 +552,6 @@ pub struct NameWithType {
     pub typ: Type,
     pub def_span: Span,
     pub decl_span: Span,
-    pub def_file: FileName,
 }
 
 impl NameWithType {
@@ -554,7 +561,6 @@ impl NameWithType {
             typ,
             def_span: Span::None,
             decl_span: Span::None,
-            def_file: FileName::Builtin,
         }
     }
     pub fn named(name: impl ToString, typ: Type) -> Self {
@@ -573,15 +579,12 @@ impl Expression<Type> {
     ) {
         match self {
             Self::Global(_, name, typ) => {
-                let (def_span, def_file) = match program.definitions.get(name) {
-                    Some(def) => (def.name.span, def.file.clone()),
-                    None => (Span::None, FileName::Builtin),
-                };
-                let decl_span = program
-                    .declarations
-                    .get(name)
-                    .map(|decl| decl.name.span)
-                    .unwrap_or(def_span);
+                let def_span = (program.definitions.get(name))
+                    .map(|def| def.name.span())
+                    .unwrap_or_default();
+                let decl_span = (program.declarations.get(name))
+                    .map(|decl| decl.name.span())
+                    .unwrap_or_else(|| def_span.clone());
                 consume(
                     name.span(),
                     NameWithType {
@@ -589,7 +592,6 @@ impl Expression<Type> {
                         typ: typ.clone(),
                         def_span,
                         decl_span,
-                        def_file,
                     },
                 );
             }
@@ -597,7 +599,7 @@ impl Expression<Type> {
                 consume(name.span(), NameWithType::named(name, typ.clone()));
             }
             Self::Box(span, _, expression, typ) => {
-                consume(*span, NameWithType::unnamed(typ.clone()));
+                consume(span.clone(), NameWithType::unnamed(typ.clone()));
                 expression.types_at_spans(program, consume);
             }
             Self::Fork {

@@ -1,6 +1,6 @@
 use super::io::IO;
 use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
-use crate::location::{FileName, Span, Spanning};
+use crate::location::{FileName, Span};
 use crate::playground::{Checked, Compiled};
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ pub struct Instance {
 impl Instance {
     pub fn new(uri: Uri, io: IO) -> Instance {
         Self {
-            file: FileName::Path(uri.as_str().into()),
+            file: uri.as_str().into(),
             uri,
             dirty: true,
             compiled: None,
@@ -39,11 +39,11 @@ impl Instance {
 
         let payload = match &self.compiled {
             Some(Ok(compiled)) => {
-                if let Some(name_info) = compiled.type_on_hover.query(
-                    &self.file,
-                    pos.line as usize,
-                    pos.character as usize,
-                ) {
+                if let Some(name_info) =
+                    compiled
+                        .type_on_hover
+                        .query(&self.file, pos.line, pos.character)
+                {
                     let mut buf = String::new();
                     if let Some(name) = name_info.name {
                         write!(&mut buf, "{}: ", name).unwrap();
@@ -99,7 +99,7 @@ impl Instance {
         TYPE_PARAMETER: type alias
          */
 
-        for (name, (span, _, _, _)) in compiled.program.type_defs.globals.as_ref() {
+        for (name, (span, _, _)) in compiled.program.type_defs.globals.as_ref() {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), span.points())
             {
@@ -229,19 +229,18 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let name_info =
-            compiled
-                .type_on_hover
-                .query(&self.file, pos.line as usize, pos.character as usize)?;
+        let name_info = compiled
+            .type_on_hover
+            .query(&self.file, pos.line, pos.character)?;
 
-        let (Span::At { start, end }, FileName::Path(path)) =
-            (name_info.decl_span, name_info.def_file)
-        else {
+        let (start, end) = name_info.decl_span.points()?;
+        let path = name_info.decl_span.file()?;
+        if path == FileName::BUILTIN {
             return None;
-        };
+        }
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: path.parse().ok()?,
+            uri: path.0.parse().ok()?,
             range: lsp::Range {
                 start: start.into(),
                 end: end.into(),
@@ -262,19 +261,18 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let name_info =
-            compiled
-                .type_on_hover
-                .query(&self.file, pos.line as usize, pos.character as usize)?;
+        let name_info = compiled
+            .type_on_hover
+            .query(&self.file, pos.line, pos.character)?;
 
-        let (Span::At { start, end }, FileName::Path(path)) =
-            (name_info.def_span, name_info.def_file)
-        else {
+        let (start, end) = name_info.def_span.points()?;
+        let path = name_info.def_span.file()?;
+        if path == FileName::BUILTIN {
             return None;
-        };
+        }
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: path.parse().ok()?,
+            uri: path.0.parse().ok()?,
             range: lsp::Range {
                 start: start.into(),
                 end: end.into(),
@@ -365,7 +363,7 @@ impl Instance {
                 .program
                 .definitions
                 .iter()
-                .filter_map(|(name, def)| name.span().points().map(|pts| (pts, name, def)))
+                .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
                 .map(|((start, end), name, _)| lsp::CodeLens {
                     range: lsp::Range {
                         start: start.into(),
@@ -397,7 +395,7 @@ impl Instance {
                 .definitions
                 .iter()
                 .filter(|(name, _)| !compiled.program.declarations.contains_key(*name))
-                .filter_map(|(name, def)| name.span().points().map(|pts| (pts, name, def)))
+                .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
                 .map(|((_, end), _, definition)| {
                     let mut label = ": ".to_owned();
                     definition
@@ -487,8 +485,8 @@ fn is_inside(pos: lsp::Position, span: &Span) -> bool {
         return false;
     };
 
-    let pos_row = pos.line as usize;
-    let pos_column = pos.character as usize;
+    let pos_row = pos.line;
+    let pos_column = pos.character;
 
     !(pos_row < start.row || pos_row > end.row)
         && !(pos_row == start.row && pos_column < start.column)

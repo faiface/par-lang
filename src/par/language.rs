@@ -483,18 +483,17 @@ impl Expression {
             )),
 
             Self::List(span, items) => {
-                let span = *span;
                 let mut process = Arc::new(process::Process::Do {
-                    span,
+                    span: span.clone(),
                     name: LocalName::result(),
                     typ: (),
                     command: process::Command::Signal(
                         LocalName {
-                            span,
+                            span: span.clone(),
                             string: literal!("end"),
                         },
                         Arc::new(process::Process::Do {
-                            span,
+                            span: span.clone(),
                             name: LocalName::result(),
                             typ: (),
                             command: process::Command::Break,
@@ -504,12 +503,12 @@ impl Expression {
                 for item in items.iter().rev() {
                     let span = item.span();
                     process = Arc::new(process::Process::Do {
-                        span,
+                        span: span.clone(),
                         name: LocalName::result(),
                         typ: (),
                         command: process::Command::Signal(
                             LocalName {
-                                span,
+                                span: span.clone(),
                                 string: literal!("item"),
                             },
                             Arc::new(process::Process::Do {
@@ -522,7 +521,7 @@ impl Expression {
                     });
                 }
                 Arc::new(process::Expression::Fork {
-                    span,
+                    span: span.clone(),
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
                     chan_annotation: None,
@@ -547,7 +546,7 @@ impl Expression {
             Self::Box(span, expression) => {
                 let expression = expression.compile()?;
                 Arc::new(process::Expression::Box(
-                    *span,
+                    span.clone(),
                     Captures::new(),
                     expression,
                     (),
@@ -960,7 +959,7 @@ impl Spanning for Apply {
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
-            | Self::Noop(span) => *span,
+            | Self::Noop(span) => span.clone(),
         }
     }
 }
@@ -1044,13 +1043,13 @@ impl Process {
             } => pattern.compile_let(span, value.compile()?, then.compile(pass)?),
 
             Self::GlobalCommand(global_name, command) => {
-                let span = global_name.span;
+                let span = global_name.span.clone();
                 let local_name = LocalName {
-                    span,
+                    span: span.clone(),
                     string: arcstr::format!("{}", global_name),
                 };
                 Arc::new(process::Process::Let {
-                    span,
+                    span: span.clone(),
                     name: local_name.clone(),
                     annotation: None,
                     typ: (),
@@ -1068,7 +1067,7 @@ impl Process {
 
             Self::Noop(span) => match pass {
                 Some(process) => process,
-                None => Err(CompileError::MustEndProcess(*span))?,
+                None => Err(CompileError::MustEndProcess(span.clone()))?,
             },
         })
     }
@@ -1080,7 +1079,7 @@ impl Spanning for Process {
             Self::Let { span, .. } | Self::Telltypes(span, _) => span.clone(),
             Self::GlobalCommand(_, command) => command.span(),
             Self::Command(_, command) => command.span(),
-            Self::Noop(span) => *span,
+            Self::Noop(span) => span.clone(),
         }
     }
 }
