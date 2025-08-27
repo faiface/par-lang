@@ -442,7 +442,7 @@ impl Playground {
         }
     }
 
-    const FILE_NAME: FileName = FileName::Path(arcstr::literal!("Playground.par"));
+    const FILE_NAME: FileName = FileName(arcstr::literal!("Playground.par"));
 
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {

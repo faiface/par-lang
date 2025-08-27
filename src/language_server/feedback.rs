@@ -135,7 +135,7 @@ fn span_to_lsp_range(span: &Span) -> lsp::Range {
                 character: 0,
             },
         },
-        Span::At { start, end } => lsp::Range {
+        Span::At { start, end, .. } => lsp::Range {
             start: lsp::Position {
                 line: start.row as u32,
                 character: start.column as u32,

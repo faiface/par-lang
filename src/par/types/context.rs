@@ -1,4 +1,4 @@
-use crate::location::{FileSpan, Span};
+use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
 use crate::par::process::{Captures, Expression};
 use crate::par::types::{Type, TypeDefs, TypeError};
@@ -8,8 +8,8 @@ use std::sync::{Arc, RwLock};
 #[derive(Clone, Debug)]
 pub struct Context {
     pub type_defs: TypeDefs,
-    declarations: Arc<IndexMap<GlobalName, (FileSpan, Type)>>,
-    unchecked_definitions: Arc<IndexMap<GlobalName, (FileSpan, Arc<Expression<()>>)>>,
+    declarations: Arc<IndexMap<GlobalName, (Span, Type)>>,
+    unchecked_definitions: Arc<IndexMap<GlobalName, (Span, Arc<Expression<()>>)>>,
     checked_definitions: Arc<RwLock<IndexMap<GlobalName, CheckedDef>>>,
     current_deps: IndexSet<GlobalName>,
     pub variables: IndexMap<LocalName, Type>,
@@ -18,7 +18,7 @@ pub struct Context {
 
 #[derive(Clone, Debug)]
 struct CheckedDef {
-    span: FileSpan,
+    span: Span,
     def: Arc<Expression<Type>>,
     typ: Type,
 }
@@ -26,8 +26,8 @@ struct CheckedDef {
 impl Context {
     pub fn new(
         type_defs: TypeDefs,
-        declarations: IndexMap<GlobalName, (FileSpan, Type)>,
-        unchecked_definitions: IndexMap<GlobalName, (FileSpan, Arc<Expression<()>>)>,
+        declarations: IndexMap<GlobalName, (Span, Type)>,
+        unchecked_definitions: IndexMap<GlobalName, (Span, Arc<Expression<()>>)>,
     ) -> Self {
         Self {
             type_defs,
@@ -100,9 +100,7 @@ impl Context {
         Ok(checked_type)
     }
 
-    pub fn get_checked_definitions(
-        &self,
-    ) -> IndexMap<GlobalName, (FileSpan, Arc<Expression<Type>>)> {
+    pub fn get_checked_definitions(&self) -> IndexMap<GlobalName, (Span, Arc<Expression<Type>>)> {
         self.checked_definitions
             .read()
             .unwrap()
@@ -111,7 +109,7 @@ impl Context {
             .collect()
     }
 
-    pub fn get_declarations(&self) -> IndexMap<GlobalName, (FileSpan, Type)> {
+    pub fn get_declarations(&self) -> IndexMap<GlobalName, (Span, Type)> {
         (*self.declarations).clone()
     }
 

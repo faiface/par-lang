@@ -1,4 +1,4 @@
-use crate::location::{Point, Span};
+use crate::location::{FileName, Point, Span};
 use core::str::FromStr;
 use winnow::{
     combinator::{alt, not, opt, peek, preceded, repeat},
@@ -66,6 +66,13 @@ pub struct Token<'i> {
     pub raw: &'i str,
     pub span: Span,
 }
+
+impl Token<'_> {
+    pub fn span(&self) -> Span {
+        self.span.clone()
+    }
+}
+
 // More useful in winnow debug view
 // impl core::fmt::Debug for Token<'_> {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -169,7 +176,7 @@ impl<'a, T: FromStr> ParseSlice<T> for &Token<'a> {
 pub type Tokens<'i> = TokenSlice<'i, Token<'i>>;
 pub type Input<'a> = Tokens<'a>;
 
-pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
+pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
     type Error = EmptyError;
     (|input: &'s str| -> Result<Vec<Token<'s>>, Error> {
         let mut input = input;
@@ -363,7 +370,11 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
             tokens.push(Token {
                 kind,
                 raw,
-                span: Span::At { start, end },
+                span: Span::At {
+                    start,
+                    end,
+                    file: file.clone(),
+                },
             });
         }
         Ok(tokens)
@@ -419,9 +430,11 @@ where
 mod test {
     use super::*;
 
+    const FILE: FileName = FileName(arcstr::literal!("Test.par"));
+
     #[test]
     fn tok() {
-        let tokens = lex(&mut "({[< ><>]}):Abc:abc_123: A\n_Ab");
+        let tokens = lex(&mut "({[< ><>]}):Abc:abc_123: A\n_Ab", &FILE);
         assert_eq!(
             tokens.iter().map(|x| x.kind).collect::<Vec<_>>(),
             vec![
@@ -447,7 +460,10 @@ mod test {
 
     #[test]
     fn block_comment() {
-        let tokens = lex(&mut "abc/*\n\n/* comment \n*///\n*/ not_a_comment /*  */ /");
+        let tokens = lex(
+            &mut "abc/*\n\n/* comment \n*///\n*/ not_a_comment /*  */ /",
+            &FILE,
+        );
         eprintln!("{:#?}", tokens);
         assert_eq!(
             tokens,
@@ -465,7 +481,8 @@ mod test {
                             offset: 3,
                             row: 0,
                             column: 3
-                        }
+                        },
+                        file: FILE
                     },
                 },
                 Token {
@@ -481,7 +498,8 @@ mod test {
                             offset: 40,
                             row: 4,
                             column: 16
-                        }
+                        },
+                        file: FILE
                     },
                 },
                 Token {
@@ -497,7 +515,8 @@ mod test {
                             offset: 49,
                             row: 4,
                             column: 25
-                        }
+                        },
+                        file: FILE
                     },
                 }
             ]

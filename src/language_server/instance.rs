@@ -24,7 +24,7 @@ pub struct Instance {
 impl Instance {
     pub fn new(uri: Uri, io: IO) -> Instance {
         Self {
-            file: FileName::Path(uri.as_str().into()),
+            file: uri.as_str().into(),
             uri,
             dirty: true,
             compiled: None,
@@ -234,10 +234,13 @@ impl Instance {
             .query(&self.file, pos.line, pos.character)?;
 
         let (start, end) = name_info.decl_span.points()?;
-        let path = name_info.decl_span.file_path()?;
+        let path = name_info.decl_span.file()?;
+        if path == FileName::BUILTIN {
+            return None;
+        }
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: path.parse().ok()?,
+            uri: path.0.parse().ok()?,
             range: lsp::Range {
                 start: start.into(),
                 end: end.into(),
@@ -262,11 +265,14 @@ impl Instance {
             .type_on_hover
             .query(&self.file, pos.line, pos.character)?;
 
-        let (start, end) = name_info.decl_span.points()?;
-        let path = name_info.decl_span.file_path()?;
+        let (start, end) = name_info.def_span.points()?;
+        let path = name_info.def_span.file()?;
+        if path == FileName::BUILTIN {
+            return None;
+        }
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: path.parse().ok()?,
+            uri: path.0.parse().ok()?,
             range: lsp::Range {
                 start: start.into(),
                 end: end.into(),

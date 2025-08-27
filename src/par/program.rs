@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use crate::{
     icombs::readback::Handle,
-    location::{FileName, FileSpan, Point, Span},
+    location::{FileName, Point, Span, Spanning},
     par::parse::parse_module,
 };
 
@@ -32,7 +32,7 @@ pub struct CheckedModule {
 
 #[derive(Clone, Debug)]
 pub struct TypeDef {
-    pub span: FileSpan,
+    pub span: Span,
     pub name: GlobalName,
     pub params: Vec<LocalName>,
     pub typ: Type,
@@ -40,14 +40,14 @@ pub struct TypeDef {
 
 #[derive(Clone, Debug)]
 pub struct Declaration {
-    pub span: FileSpan,
+    pub span: Span,
     pub name: GlobalName,
     pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
 pub struct Definition<Expr> {
-    pub span: FileSpan,
+    pub span: Span,
     pub name: GlobalName,
     pub expression: Expr,
 }
@@ -182,8 +182,8 @@ impl Module<Arc<process::Expression<()>>> {
                 unchecked_definitions.insert(name.clone(), (span.clone(), expression.clone()))
             {
                 return Err(TypeError::NameAlreadyDefined(
-                    span.span(),
-                    span1.span(),
+                    span.clone(),
+                    span1,
                     name.clone(),
                 ));
             }
@@ -192,13 +192,13 @@ impl Module<Arc<process::Expression<()>>> {
         let mut declarations = IndexMap::new();
         for Declaration { span, name, typ } in &self.declarations {
             if !unchecked_definitions.contains_key(name) {
-                return Err(TypeError::DeclaredButNotDefined(span.span(), name.clone()));
+                return Err(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
             }
             if let Some((span1, _)) = declarations.insert(name.clone(), (span.clone(), typ.clone()))
             {
                 return Err(TypeError::NameAlreadyDeclared(
-                    span.span(),
-                    span1.span(),
+                    span.clone(),
+                    span1,
                     name.clone(),
                 ));
             }
@@ -211,7 +211,7 @@ impl Module<Arc<process::Expression<()>>> {
 
         let mut context = Context::new(type_defs, declarations, unchecked_definitions);
         for (span, name) in names_to_check {
-            context.check_definition(&span.span(), &name)?;
+            context.check_definition(&span, &name)?;
         }
 
         Ok(CheckedModule {
@@ -264,9 +264,9 @@ impl TypeOnHover {
 
         for (name, (span, _, typ)) in program.type_defs.globals.iter() {
             let Some(file) = span.file() else { continue };
-            let file_hovers = files.entry_ref(file).or_default();
+            let file_hovers = files.entry(file).or_default();
             file_hovers.push(
-                name.span,
+                name.span(),
                 NameWithType::named(name.to_string(), typ.clone()),
             );
             typ.types_at_spans(&program.type_defs, &mut |span, name_info| {
@@ -278,18 +278,17 @@ impl TypeOnHover {
             let Some(file) = declaration.span.file() else {
                 continue;
             };
-            let file_hovers = files.entry_ref(file).or_default();
-            let def_span = match program.definitions.get(name) {
-                Some(def) => def.name.span.with_file(file.clone()),
-                None => FileSpan::NONE,
-            };
+            let file_hovers = files.entry(file).or_default();
+            let def_span = (program.definitions.get(name))
+                .map(|def| def.name.span())
+                .unwrap_or_default();
             file_hovers.push(
-                name.span,
+                name.span(),
                 NameWithType {
                     name: Some(name.to_string()),
                     typ: declaration.typ.clone(),
                     def_span,
-                    decl_span: FileSpan::NONE,
+                    decl_span: Span::None,
                 },
             );
             declaration
@@ -303,17 +302,16 @@ impl TypeOnHover {
             let Some(file) = definition.span.file() else {
                 continue;
             };
-            let file_hovers = files.entry_ref(file).or_default();
-            let decl_span = match program.declarations.get(name) {
-                Some(decl) => decl.name.span.with_file(file.clone()),
-                None => FileSpan::NONE,
-            };
+            let file_hovers = files.entry(file).or_default();
+            let decl_span = (program.declarations.get(name))
+                .map(|decl| decl.name.span())
+                .unwrap_or_default();
             file_hovers.push(
-                name.span,
+                name.span(),
                 NameWithType {
                     name: Some(name.to_string()),
                     typ: definition.expression.get_type(),
-                    def_span: FileSpan::NONE,
+                    def_span: Span::None,
                     decl_span,
                 },
             );

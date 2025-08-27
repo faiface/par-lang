@@ -758,7 +758,7 @@ impl Context {
                 if let Some(inference_subject) = inference_subject {
                     if captures.names.contains_key(inference_subject) {
                         return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                            *span,
+                            span.clone(),
                             inference_subject.clone(),
                         ));
                     }
@@ -774,7 +774,7 @@ impl Context {
                 let expression =
                     self.check_expression(inference_subject, expression, &target_inner_type)?;
                 Ok(Arc::new(Expression::Box(
-                    *span,
+                    span.clone(),
                     captures.clone(),
                     expression,
                     target_type.clone(),
@@ -873,7 +873,7 @@ impl Context {
                 if let Some(inference_subject) = inference_subject {
                     if captures.names.contains_key(inference_subject) {
                         return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                            *span,
+                            span.clone(),
                             inference_subject.clone(),
                         ));
                     }
@@ -881,10 +881,10 @@ impl Context {
                 let mut context = self.split();
                 self.capture(inference_subject, captures, true, &mut context)?;
                 let (expression, typ) = self.infer_expression(inference_subject, expression)?;
-                let typ = Type::Box(*span, Box::new(typ.clone()));
+                let typ = Type::Box(span.clone(), Box::new(typ.clone()));
                 Ok((
                     Arc::new(Expression::Box(
-                        *span,
+                        span.clone(),
                         captures.clone(),
                         expression,
                         typ.clone(),

@@ -1,4 +1,4 @@
-use crate::location::{FileSpan, Span};
+use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
 use crate::par::types::{Type, TypeError};
 use indexmap::{IndexMap, IndexSet};
@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct TypeDefs {
-    pub globals: Arc<IndexMap<GlobalName, (FileSpan, Vec<LocalName>, Type)>>,
+    pub globals: Arc<IndexMap<GlobalName, (Span, Vec<LocalName>, Type)>>,
     pub vars: IndexSet<LocalName>,
 }
 
@@ -21,7 +21,7 @@ impl Default for TypeDefs {
 
 impl TypeDefs {
     pub fn new_with_validation<'a>(
-        globals: impl Iterator<Item = (&'a FileSpan, &'a GlobalName, &'a Vec<LocalName>, &'a Type)>,
+        globals: impl Iterator<Item = (&'a Span, &'a GlobalName, &'a Vec<LocalName>, &'a Type)>,
     ) -> Result<Self, TypeError> {
         let mut globals_map = IndexMap::new();
         for (span, name, params, typ) in globals {
@@ -29,8 +29,8 @@ impl TypeDefs {
                 globals_map.insert(name.clone(), (span.clone(), params.clone(), typ.clone()))
             {
                 return Err(TypeError::TypeNameAlreadyDefined(
-                    span.span(),
-                    span1.span(),
+                    span.clone(),
+                    span1.clone(),
                     name.clone(),
                 ));
             }
@@ -76,12 +76,12 @@ impl TypeDefs {
         span: &Span,
         name: &GlobalName,
         args: &[Type],
-    ) -> Result<(&FileSpan, Type), TypeError> {
+    ) -> Result<(&Span, Type), TypeError> {
         match self.globals.get(name) {
             Some((span, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
-                        span.span(),
+                        span.clone(),
                         name.clone(),
                         params.len(),
                         args.len(),
@@ -109,12 +109,12 @@ impl TypeDefs {
         span: &Span,
         name: &GlobalName,
         args: &[Type],
-    ) -> Result<(&FileSpan, Type), TypeError> {
+    ) -> Result<(&Span, Type), TypeError> {
         match self.globals.get(name) {
             Some((span, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
-                        span.span(),
+                        span.clone(),
                         name.clone(),
                         params.len(),
                         args.len(),
@@ -139,7 +139,7 @@ impl TypeDefs {
         let mut deps_stack = deps_stack.clone();
         if !deps_stack.insert(name.clone()) {
             return Err(TypeError::DependencyCycle(
-                self.globals[name].0.span(),
+                self.globals[name].0.clone(),
                 deps_stack
                     .clone()
                     .into_iter()
