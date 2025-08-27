@@ -1,7 +1,7 @@
 use super::io::IO;
 use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
 use crate::location::{FileName, Span};
-use crate::playground::{Checked, Compiled};
+use crate::playground::BuildResult;
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -11,13 +11,12 @@ pub enum CompileError {
     Compile(crate::playground::Error),
     //Types(TypeError<Internal<Name>>),
 }
-pub type CompileResult = Result<Checked, CompileError>;
 
 pub struct Instance {
     uri: Uri,
     file: FileName,
     dirty: bool,
-    compiled: Option<CompileResult>,
+    build: BuildResult,
     io: IO,
 }
 
@@ -27,7 +26,7 @@ impl Instance {
             file: uri.as_str().into(),
             uri,
             dirty: true,
-            compiled: None,
+            build: BuildResult::None,
             io,
         }
     }
@@ -37,13 +36,9 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let payload = match &self.compiled {
-            Some(Ok(compiled)) => {
-                if let Some(name_info) =
-                    compiled
-                        .type_on_hover
-                        .query(&self.file, pos.line, pos.character)
-                {
+        let payload = match self.build.type_on_hover() {
+            Some(type_on_hover) => {
+                if let Some(name_info) = type_on_hover.query(&self.file, pos.line, pos.character) {
                     let mut buf = String::new();
                     if let Some(name) = name_info.name {
                         write!(&mut buf, "{}: ", name).unwrap();
@@ -57,7 +52,6 @@ impl Instance {
                     return None;
                 }
             }
-            Some(Err(_)) => return None,
             None => lsp::MarkedString::String("Not compiled".to_string()),
         };
 
@@ -79,7 +73,7 @@ impl Instance {
     ) -> Option<lsp::DocumentSymbolResponse> {
         tracing::debug!("Handling symbols request with params: {:?}", params);
 
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(checked) = self.build.checked() else {
             return None;
         };
 
@@ -99,7 +93,7 @@ impl Instance {
         TYPE_PARAMETER: type alias
          */
 
-        for (name, (span, _, _)) in compiled.program.type_defs.globals.as_ref() {
+        for (name, (span, _, _)) in checked.type_defs.globals.as_ref() {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), span.points())
             {
@@ -125,7 +119,7 @@ impl Instance {
             }
         }
 
-        for (name, declaration) in &compiled.program.declarations {
+        for (name, declaration) in &checked.declarations {
             let mut detail = String::new();
             declaration.typ.pretty_compact(&mut detail).unwrap();
 
@@ -154,7 +148,7 @@ impl Instance {
             }
         }
 
-        for (name, definition) in &compiled.program.definitions {
+        for (name, definition) in &checked.definitions {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), definition.span.points())
             {
@@ -223,15 +217,13 @@ impl Instance {
             "Handling goto declaration request with params: {:?}",
             params
         );
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(type_on_hover) = self.build.type_on_hover() else {
             return None;
         };
 
         let pos = params.text_document_position_params.position;
 
-        let name_info = compiled
-            .type_on_hover
-            .query(&self.file, pos.line, pos.character)?;
+        let name_info = type_on_hover.query(&self.file, pos.line, pos.character)?;
 
         let (start, end) = name_info.decl_span.points()?;
         let path = name_info.decl_span.file()?;
@@ -255,15 +247,13 @@ impl Instance {
         // todo: locals
 
         tracing::debug!("Handling goto definition request with params: {:?}", params);
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(type_on_hover) = self.build.type_on_hover() else {
             return None;
         };
 
         let pos = params.text_document_position_params.position;
 
-        let name_info = compiled
-            .type_on_hover
-            .query(&self.file, pos.line, pos.character)?;
+        let name_info = type_on_hover.query(&self.file, pos.line, pos.character)?;
 
         let (start, end) = name_info.def_span.points()?;
         let path = name_info.def_span.file()?;
@@ -286,13 +276,13 @@ impl Instance {
         params: &lsp::SemanticTokensParams,
     ) -> Option<lsp::SemanticTokensResult> {
         tracing::info!("Handling semantic tokens request with params: {:?}", params);
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(checked) = self.build.checked() else {
             return None;
         };
 
         let mut semantic_tokens = Vec::new();
 
-        for (name, _) in compiled.program.type_defs.globals.as_ref() {
+        for (name, _) in checked.type_defs.globals.as_ref() {
             if let Some(start) = name.span.start() {
                 semantic_tokens.push(lsp::SemanticToken {
                     delta_line: start.row as u32,
@@ -304,7 +294,7 @@ impl Instance {
             }
         }
 
-        for (name, _) in &compiled.program.declarations {
+        for (name, _) in &checked.declarations {
             if let Some(start) = name.span.start() {
                 semantic_tokens.push(lsp::SemanticToken {
                     delta_line: start.row as u32,
@@ -317,7 +307,7 @@ impl Instance {
             }
         }
 
-        for (name, _) in &compiled.program.definitions {
+        for (name, _) in &checked.definitions {
             if let Some(start) = name.span.start() {
                 semantic_tokens.push(lsp::SemanticToken {
                     delta_line: start.row as u32,
@@ -354,13 +344,12 @@ impl Instance {
 
     pub fn provide_code_lens(&self, params: &lsp::CodeLensParams) -> Option<Vec<lsp::CodeLens>> {
         tracing::debug!("Handling code lens request with params: {:?}", params);
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(checked) = self.build.checked() else {
             return None;
         };
 
         Some(
-            compiled
-                .program
+            checked
                 .definitions
                 .iter()
                 .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
@@ -385,16 +374,15 @@ impl Instance {
         params: &lsp::InlayHintParams,
     ) -> Option<Vec<lsp::InlayHint>> {
         tracing::debug!("Handling inlay hints request with params: {:?}", params);
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(checked) = self.build.checked() else {
             return None;
         };
 
         Some(
-            compiled
-                .program
+            checked
                 .definitions
                 .iter()
-                .filter(|(name, _)| !compiled.program.declarations.contains_key(*name))
+                .filter(|(name, _)| !checked.declarations.contains_key(*name))
                 .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
                 .map(|((_, end), _, definition)| {
                     let mut label = ": ".to_owned();
@@ -421,13 +409,12 @@ impl Instance {
 
     pub fn run_in_playground(&self, def_name: &str) -> Option<serde_json::Value> {
         tracing::info!("Handling playground request with def_name: {:?}", def_name);
-        let Some(Ok(compiled)) = &self.compiled else {
+        let Some(checked) = self.build.checked() else {
             return None;
         };
 
         //TODO: use map indexing
-        let Some(_definition) = compiled
-            .program
+        let Some(_definition) = checked
             .definitions
             .iter()
             .find(|(name, _)| name.to_string().as_str() == def_name)
@@ -442,37 +429,19 @@ impl Instance {
         None
     }
 
-    pub fn compile(&mut self) -> Result<(), CompileError> {
+    pub fn compile(&mut self) {
         tracing::info!("Compiling: {:?}", self.uri);
         if !self.dirty {
             tracing::info!("No changes");
             tracing::debug!("No changes to compile");
-            return Ok(());
+            return;
         }
         let code = self.io.read(&self.uri);
 
-        // todo: progress reporting
-        let compiled = stacker::grow(32 * 1024 * 1024, || {
-            Compiled::from_string(&code.unwrap(), self.file.clone())
-        })
-        .map_err(|err| CompileError::Compile(err))
-        .and_then(|compiled| compiled.checked.map_err(|err| CompileError::Compile(err)));
-
-        let result = match &compiled {
-            Ok(_) => {
-                self.dirty = false;
-                tracing::info!("Compilation successful");
-                Ok(())
-            }
-            Err(err) => {
-                tracing::info!("Compilation failed");
-                Err(err.clone())
-            }
-        };
-
-        self.compiled = Some(compiled);
-
-        result
+        self.build = stacker::grow(32 * 1024 * 1024, || {
+            BuildResult::from_source(&code.unwrap(), self.file.clone())
+        });
+        tracing::info!("Compiled!");
     }
 
     pub fn mark_dirty(&mut self) {

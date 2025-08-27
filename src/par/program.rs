@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -249,18 +249,19 @@ impl<Expr> Default for Module<Expr> {
     }
 }
 
+#[derive(Clone)]
 pub struct TypeOnHover {
-    files: hashbrown::HashMap<FileName, FileHovers>,
+    files: HashMap<FileName, FileHovers>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct FileHovers {
     pairs: Vec<((Point, Point), NameWithType)>,
 }
 
 impl TypeOnHover {
     pub fn new(program: &CheckedModule) -> Self {
-        let mut files = hashbrown::HashMap::<_, FileHovers>::new();
+        let mut files = HashMap::<_, FileHovers>::new();
 
         for (name, (span, _, typ)) in program.type_defs.globals.iter() {
             let Some(file) = span.file() else { continue };

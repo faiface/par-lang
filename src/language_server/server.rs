@@ -225,16 +225,6 @@ impl<'c> LanguageServer<'c> {
         let instance = self.instance_for(uri);
         let compile_result = instance.compile();
         let feedback = self.feedback.cleanup();
-        match compile_result {
-            Ok(_) => { /* warnings */ }
-            Err(err) => {
-                // todo: better io management (store files as Arc<str>, for example)
-                feedback.add_diagnostic(
-                    uri.clone(),
-                    diagnostic_for_error(&err, self.io.read(uri).unwrap().into()),
-                );
-            }
-        };
     }
 
     fn cache_file(&mut self, uri: &Uri, text: String) {

@@ -58,7 +58,7 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
     use crate::playground::Error;
 
     let (span, message, help, _related_spans) = match err {
-        CompileError::Compile(Error::Parse(err)) => (
+        CompileError::Compile(Error::Syntax(err)) => (
             err.span(),
             // Show syntax error with miette's formatting
             format!(

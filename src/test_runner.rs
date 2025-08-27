@@ -3,7 +3,7 @@ use crate::icombs::{
     IcCompiled,
 };
 use crate::par::parse;
-use crate::playground::Compiled;
+use crate::playground::BuildResult;
 use crate::spawn::TokioSpawn;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
 use colored::Colorize;
@@ -121,24 +121,23 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
 
     let code_with_imports = code.clone();
 
-    let compiled = match stacker::grow(32 * 1024 * 1024, || {
-        Compiled::from_string(&code_with_imports, file.into())
-    }) {
-        Ok(compiled) => compiled,
-        Err(err) => {
-            results.push(TestResult {
-                name: file.to_string_lossy().to_string(),
-                duration: Duration::ZERO,
-                status: TestStatus::CompileError(
-                    err.display(Arc::from(code_with_imports.as_str()))
-                        .to_string(),
-                ),
-            });
-            return results;
-        }
-    };
+    let build = stacker::grow(32 * 1024 * 1024, || {
+        BuildResult::from_source(&code_with_imports, file.into())
+    });
+    if let Some(error) = build.error() {
+        results.push(TestResult {
+            name: file.to_string_lossy().to_string(),
+            duration: Duration::ZERO,
+            status: TestStatus::CompileError(
+                error
+                    .display(Arc::from(code_with_imports.as_str()))
+                    .to_string(),
+            ),
+        });
+        return results;
+    }
 
-    let Ok(checked) = compiled.checked else {
+    let Some(checked) = build.checked() else {
         results.push(TestResult {
             name: file.to_string_lossy().to_string(),
             duration: Duration::ZERO,
@@ -147,11 +146,17 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         return results;
     };
 
-    let program = checked.program;
-    let ic_compiled = checked.ic_compiled.unwrap();
+    let Some(ic_compiled) = build.ic_compiled() else {
+        results.push(TestResult {
+            name: file.to_string_lossy().to_string(),
+            duration: Duration::ZERO,
+            status: TestStatus::TypeError("IC compilation failed".to_string()),
+        });
+        return results;
+    };
 
     // Look for definitions that start with Test (case-sensitive)
-    let test_definitions: Vec<_> = program
+    let test_definitions: Vec<_> = checked
         .definitions
         .iter()
         .filter(|(name, _)| name.primary.starts_with("Test") && name.primary != "Test")
@@ -164,7 +169,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         .collect();
 
     for (name, _) in test_definitions {
-        let result = run_single_test(&program, &ic_compiled, name.primary.clone());
+        let result = run_single_test(&checked, &ic_compiled, name.primary.clone());
         results.push(result);
     }
 
