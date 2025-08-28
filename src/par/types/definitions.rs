@@ -181,42 +181,36 @@ impl TypeDefs {
                 }
             }
             Type::Name(span, name, args) => {
+                // Dereference alias first so guarding/position checks happen in the body
+                let t = self.get(span, name, args)?;
+                self.validate_type_inner(&t, self_pos, self_neg, unguarded_self_rec, unguarded_self_iter)?;
+                // Separately validate arguments for existence/kind and matching recursive/iterative,
+                // but without guarding checks (unguarded_self_* cleared). This avoids flagging
+                // unguarded self before the alias body provides the guard.
                 for arg in args {
                     self.validate_type_inner(
                         arg,
                         self_pos,
                         self_neg,
-                        unguarded_self_rec,
-                        unguarded_self_iter,
+                        &IndexSet::new(),
+                        &IndexSet::new(),
                     )?;
                 }
-                let t = self.get(span, name, args)?;
-                self.validate_type_inner(
-                    &t,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                )?;
             }
             Type::DualName(span, name, args) => {
+                // Dereference alias first so guarding/position checks happen in the body (with polarity swapped)
+                let t = self.get(span, name, args)?;
+                self.validate_type_inner(&t, self_neg, self_pos, unguarded_self_rec, unguarded_self_iter)?;
+                // Separately validate arguments similar to above, but with positions swapped
                 for arg in args {
                     self.validate_type_inner(
                         arg,
                         self_neg,
                         self_pos,
-                        unguarded_self_rec,
-                        unguarded_self_iter,
+                        &IndexSet::new(),
+                        &IndexSet::new(),
                     )?;
                 }
-                let t = self.get(span, name, args)?;
-                self.validate_type_inner(
-                    &t,
-                    self_neg,
-                    self_pos,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                )?;
             }
 
             Type::Box(_, body) => self.validate_type_inner(
