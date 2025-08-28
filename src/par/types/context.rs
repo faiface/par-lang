@@ -64,25 +64,13 @@ impl Context {
 
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
             Some((_, declared_type)) => {
-                self.type_defs.validate_type(
-                    &declared_type,
-                    &IndexSet::new(),
-                    &IndexSet::new(),
-                    &IndexSet::new(),
-                    &IndexSet::new(),
-                )?;
+                self.type_defs.validate_type(&declared_type)?;
                 let checked_def = self.check_expression(None, &unchecked_def, &declared_type)?;
                 (checked_def, declared_type)
             }
             None => {
                 let (expr, mut typ) = self.infer_expression(None, &unchecked_def)?;
-                self.type_defs.validate_type(
-                    &typ,
-                    &IndexSet::new(),
-                    &IndexSet::new(),
-                    &IndexSet::new(),
-                    &IndexSet::new(),
-                )?;
+                self.type_defs.validate_type(&typ)?;
                 typ.remove_asc(&self.type_defs)?;
                 (expr, typ)
             }

@@ -55,13 +55,7 @@ impl TypeDefs {
             for param in params {
                 type_defs.vars.insert(param.clone());
             }
-            type_defs.validate_type(
-                typ,
-                &IndexSet::new(),
-                &IndexSet::new(),
-                &IndexSet::new(),
-                &IndexSet::new(),
-            )?;
+            type_defs.validate_type(typ)?;
         }
 
         Ok(type_defs)
@@ -155,7 +149,17 @@ impl TypeDefs {
         Ok(())
     }
 
-    pub fn validate_type(
+    pub fn validate_type(&self, typ: &Type) -> Result<(), TypeError> {
+        self.validate_type_inner(
+            typ,
+            &IndexSet::new(),
+            &IndexSet::new(),
+            &IndexSet::new(),
+            &IndexSet::new(),
+        )
+    }
+
+    fn validate_type_inner(
         &self,
         typ: &Type,
         self_pos: &IndexSet<Option<LocalName>>,
@@ -178,7 +182,7 @@ impl TypeDefs {
             }
             Type::Name(span, name, args) => {
                 for arg in args {
-                    self.validate_type(
+                    self.validate_type_inner(
                         arg,
                         self_pos,
                         self_neg,
@@ -187,7 +191,7 @@ impl TypeDefs {
                     )?;
                 }
                 let t = self.get(span, name, args)?;
-                self.validate_type(
+                self.validate_type_inner(
                     &t,
                     self_pos,
                     self_neg,
@@ -197,7 +201,7 @@ impl TypeDefs {
             }
             Type::DualName(span, name, args) => {
                 for arg in args {
-                    self.validate_type(
+                    self.validate_type_inner(
                         arg,
                         self_neg,
                         self_pos,
@@ -206,7 +210,7 @@ impl TypeDefs {
                     )?;
                 }
                 let t = self.get(span, name, args)?;
-                self.validate_type(
+                self.validate_type_inner(
                     &t,
                     self_neg,
                     self_pos,
@@ -215,14 +219,14 @@ impl TypeDefs {
                 )?;
             }
 
-            Type::Box(_, body) => self.validate_type(
+            Type::Box(_, body) => self.validate_type_inner(
                 body,
                 self_pos,
                 self_neg,
                 unguarded_self_rec,
                 unguarded_self_iter,
             )?,
-            Type::DualBox(_, body) => self.validate_type(
+            Type::DualBox(_, body) => self.validate_type_inner(
                 body,
                 self_neg,
                 self_pos,
@@ -231,14 +235,14 @@ impl TypeDefs {
             )?,
 
             Type::Pair(_, t, u) => {
-                self.validate_type(
+                self.validate_type_inner(
                     t,
                     self_pos,
                     self_neg,
                     unguarded_self_rec,
                     unguarded_self_iter,
                 )?;
-                self.validate_type(
+                self.validate_type_inner(
                     u,
                     self_pos,
                     self_neg,
@@ -247,14 +251,14 @@ impl TypeDefs {
                 )?;
             }
             Type::Function(_, t, u) => {
-                self.validate_type(
+                self.validate_type_inner(
                     t,
                     self_neg,
                     self_pos,
                     unguarded_self_rec,
                     unguarded_self_iter,
                 )?;
-                self.validate_type(
+                self.validate_type_inner(
                     u,
                     self_pos,
                     self_neg,
@@ -265,7 +269,7 @@ impl TypeDefs {
             Type::Either(_, branches) => {
                 let unguarded_self_rec = IndexSet::new();
                 for (_, t) in branches {
-                    self.validate_type(
+                    self.validate_type_inner(
                         t,
                         self_pos,
                         self_neg,
@@ -277,7 +281,7 @@ impl TypeDefs {
             Type::Choice(_, branches) => {
                 let unguarded_self_iter = IndexSet::new();
                 for (_, t) in branches {
-                    self.validate_type(
+                    self.validate_type_inner(
                         t,
                         self_pos,
                         self_neg,
@@ -305,7 +309,7 @@ impl TypeDefs {
                     }
                     _ => unreachable!(),
                 }
-                self.validate_type(
+                self.validate_type_inner(
                     body,
                     &self_pos,
                     &self_neg,
@@ -339,7 +343,7 @@ impl TypeDefs {
             Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
                 let mut with_var = self.clone();
                 with_var.vars.insert(name.clone());
-                with_var.validate_type(
+                with_var.validate_type_inner(
                     body,
                     self_pos,
                     self_neg,
