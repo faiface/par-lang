@@ -364,6 +364,13 @@ pub enum CompileError {
     MustEndProcess(Span),
     UnreachableCode(Span),
     NoMatchingCatch(Span),
+    MatchingCatchDisabled(Span, CatchDisabledReason),
+}
+
+#[derive(Clone, Debug)]
+pub enum CatchDisabledReason {
+    DifferentProcess,
+    ValuePartiallyConstructed,
 }
 
 impl Spanning for CompileError {
@@ -372,57 +379,37 @@ impl Spanning for CompileError {
             Self::MustEndProcess(span) => span.clone(),
             Self::UnreachableCode(span) => span.clone(),
             Self::NoMatchingCatch(span) => span.clone(),
+            Self::MatchingCatchDisabled(span, _) => span.clone(),
         }
     }
 }
 
 impl CompileError {
     pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
+        let mk_report = |span: &Span, msg: &'static str| {
+            let labels = labels_from_span(&source_code, span);
+            let code: Arc<str> = if labels.is_empty() {
+                "<UI>".into()
+            } else {
+                Arc::clone(&source_code)
+            };
+            miette::miette! { labels = labels, "{}", msg }.with_source_code(code)
+        };
+
         match self {
-            Self::MustEndProcess(span) => {
-                let labels = labels_from_span(&source_code, span);
-                let code = if labels.is_empty() {
-                    "<UI>".into()
-                } else {
-                    source_code
-                };
-                let error = miette::miette! {
-                    labels = labels,
-                    "This process must end."
-                }
-                .with_source_code(code);
-                error
+            Self::MustEndProcess(span) => mk_report(span, "This process must end."),
+            Self::UnreachableCode(span) => mk_report(span, "Unreachable code."),
+            Self::NoMatchingCatch(span) => mk_report(span, "No matching `catch` block defined."),
+            Self::MatchingCatchDisabled(span, CatchDisabledReason::DifferentProcess) => {
+                mk_report(span, "Matching `catch` is in a different process.")
             }
-
-            Self::UnreachableCode(span) => {
-                let labels = labels_from_span(&source_code, span);
-                let code = if labels.is_empty() {
-                    "<UI>".into()
-                } else {
-                    source_code
-                };
-                let error = miette::miette! {
-                    labels = labels,
-                    "Unreachable code."
-                }
-                .with_source_code(code);
-                error
-            }
-
-            Self::NoMatchingCatch(span) => {
-                let labels = labels_from_span(&source_code, span);
-                let code = if labels.is_empty() {
-                    "<UI>".into()
-                } else {
-                    source_code
-                };
-                let error = miette::miette! {
-                    labels = labels,
-                    "No matching `catch` block defined."
-                }
-                .with_source_code(code);
-                error
-            }
+            Self::MatchingCatchDisabled(
+                span,
+                CatchDisabledReason::ValuePartiallyConstructed,
+            ) => mk_report(
+                span,
+                "The expression the matching `catch` would return from has its result already partially constructed.",
+            ),
         }
     }
 }
@@ -439,6 +426,8 @@ pub struct Passes {
 pub struct Pass {
     process: Arc<process::Process<()>>,
     used: bool,
+    // Stack of reasons that currently disable this catch (LIFO).
+    disabled_reasons: Vec<CatchDisabledReason>,
 }
 
 impl Passes {
@@ -505,6 +494,9 @@ impl Passes {
     ) -> Result<Arc<process::Process<()>>, CompileError> {
         match self.catch.get_mut(label) {
             Some(pass) => {
+                if let Some(reason) = pass.disabled_reasons.last().cloned() {
+                    return Err(CompileError::MatchingCatchDisabled(span.clone(), reason));
+                }
                 pass.used = true;
                 Ok(Arc::clone(&pass.process))
             }
@@ -529,6 +521,24 @@ impl Passes {
         }
         Ok(self)
     }
+
+    fn disable_catches(&mut self, reason: CatchDisabledReason) -> &mut Self {
+        for pass in self.catch.values_mut() {
+            pass.disabled_reasons.push(reason.clone());
+        }
+        self
+    }
+
+    fn enable_catches(&mut self) -> &mut Self {
+        for pass in self.catch.values_mut() {
+            if !pass.disabled_reasons.is_empty() {
+                pass.disabled_reasons
+                    .pop()
+                    .expect("disabled reason must exist (well-parenthesized)");
+            }
+        }
+        self
+    }
 }
 
 impl Pass {
@@ -536,6 +546,7 @@ impl Pass {
         Pass {
             process: p,
             used: false,
+            disabled_reasons: Vec::new(),
         }
     }
 }
@@ -837,7 +848,9 @@ impl Expression {
                 expression,
                 then: body,
             } => {
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
                 let expression = expression.compile(pass)?;
+                pass.enable_catches();
                 let body = body.compile(pass)?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
@@ -932,10 +945,17 @@ impl Expression {
                 span,
                 pattern,
                 process,
-            } => pattern.compile_chan(span, process.compile(pass)?, pass)?,
+            } => {
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
+                let proc = process.compile(pass)?;
+                pass.enable_catches();
+                pattern.compile_chan(span, proc, pass)?
+            }
 
             Self::Construction(construct) => {
+                pass.disable_catches(CatchDisabledReason::ValuePartiallyConstructed);
                 let process = construct.compile(pass)?;
+                pass.enable_catches();
                 Arc::new(process::Expression::Chan {
                     span: construct.span().clone(),
                     captures: Captures::new(),
@@ -1370,7 +1390,9 @@ impl Process {
                 then,
             } => {
                 pass.set_fallthrough(None)?;
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
                 let value = value.compile(pass)?;
+                pass.enable_catches();
                 pass.unset_fallthrough()?;
                 pattern.compile_let(span, value, then.compile(pass)?, pass)?
             }
@@ -1394,7 +1416,9 @@ impl Process {
             Self::Throw(span, label, expression) => {
                 let catch_block = pass.use_catch(span, label)?;
                 pass.set_fallthrough(None)?;
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
                 let expression = expression.compile(pass)?;
+                pass.enable_catches();
                 pass.unset_fallthrough()?;
                 Arc::new(process::Process::Let {
                     span: span.clone(),
@@ -1461,7 +1485,9 @@ impl Command {
             Self::Then(process) => process.compile(pass)?,
 
             Self::Link(span, expression) => {
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
                 let expression = expression.compile(pass)?;
+                pass.enable_catches();
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: object_name.clone(),
@@ -1471,7 +1497,9 @@ impl Command {
             }
 
             Self::Send(span, argument, command) => {
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
                 let argument = argument.compile(pass)?;
+                pass.enable_catches();
                 let process = command.compile(object_name, pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
