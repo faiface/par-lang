@@ -1,6 +1,6 @@
 use crate::icombs::readback::{TypedHandle, TypedReadback};
 use crate::par::types::Type;
-use crate::playground::{Compiled, Playground};
+use crate::playground::{BuildResult, Playground};
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
@@ -139,24 +139,20 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let compiled = match stacker::grow(32 * 1024 * 1024, || {
-            Compiled::from_string(&code, file.display().to_string().into())
-        }) {
-            Ok(compiled) => compiled,
-            Err(err) => {
-                println!("{}", err.display(Arc::from(code.as_str())).bright_red());
-                return;
-            }
-        };
+        let build = stacker::grow(32 * 1024 * 1024, || {
+            BuildResult::from_source(&code, file.into())
+        });
+        if let Some(error) = build.error() {
+            println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+            return;
+        }
 
-        let Ok(checked) = compiled.checked else {
+        let Some(checked) = build.checked() else {
             println!("Type check failed");
             return;
         };
 
-        let program = checked.program;
-
-        let Some((name, _)) = program
+        let Some((name, _)) = checked
             .definitions
             .iter()
             .find(|(name, _)| name.primary == definition)
@@ -166,7 +162,7 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let Some(ic_compiled) = checked.ic_compiled else {
+        let Some(ic_compiled) = build.ic_compiled() else {
             println!("{}: {}", "IC compilation failed".bright_red(), definition);
             return;
         };
@@ -192,7 +188,7 @@ fn run_definition(file: PathBuf, definition: String) {
         let readback_future = spawner
             .spawn_with_handle(async move {
                 let handle =
-                    TypedHandle::from_wrapper(program.type_defs.clone(), net_wrapper, tree);
+                    TypedHandle::from_wrapper(checked.type_defs.clone(), net_wrapper, tree);
                 loop {
                     match handle.readback().await {
                         TypedReadback::Break => {
@@ -222,15 +218,12 @@ fn check(file: PathBuf) {
         return;
     };
 
-    match stacker::grow(32 * 1024 * 1024, || {
-        Compiled::from_string(&code, file.display().to_string().into())
-    }) {
-        Ok(_compiled) => (),
-        Err(err) => {
-            println!("{}", err.display(Arc::from(code.as_str())).bright_red());
-            return;
-        }
-    };
+    let build = stacker::grow(32 * 1024 * 1024, || {
+        BuildResult::from_source(&code, file.into())
+    });
+    if let Some(error) = build.error() {
+        println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+    }
 }
 
 fn run_language_server() {

@@ -58,7 +58,7 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
     use crate::playground::Error;
 
     let (span, message, help, _related_spans) = match err {
-        CompileError::Compile(Error::Parse(err)) => (
+        CompileError::Compile(Error::Syntax(err)) => (
             err.span(),
             // Show syntax error with miette's formatting
             format!(
@@ -124,7 +124,7 @@ fn span_to_lsp_range(span: &Span) -> lsp::Range {
                 character: 0,
             },
         },
-        Span::At { start, end } => lsp::Range {
+        Span::At { start, end, .. } => lsp::Range {
             start: lsp::Position {
                 line: start.row as u32,
                 character: start.column as u32,

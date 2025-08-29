@@ -23,10 +23,14 @@ impl Context {
                 then: process,
             } => {
                 let (expression, typ) = match annotation {
-                    Some(annotated_type) => (
-                        self.check_expression(None, expression, annotated_type)?,
-                        annotated_type.clone(),
-                    ),
+                    Some(annotated_type) => {
+                        // Validate annotation before using it
+                        self.type_defs.validate_type(annotated_type)?;
+                        (
+                            self.check_expression(None, expression, annotated_type)?,
+                            annotated_type.clone(),
+                        )
+                    }
                     None => self.infer_expression(None, expression)?,
                 };
                 self.put(span, name.clone(), typ.clone())?;
@@ -195,6 +199,8 @@ impl Context {
                     ));
                 };
                 if let Some(annotated_type) = annotation {
+                    // Validate annotation before using it
+                    self.type_defs.validate_type(annotated_type)?;
                     parameter_type.check_assignable(span, annotated_type, &self.type_defs)?;
                 }
                 self.put(span, parameter.clone(), *parameter_type.clone())?;
@@ -758,7 +764,7 @@ impl Context {
                 if let Some(inference_subject) = inference_subject {
                     if captures.names.contains_key(inference_subject) {
                         return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                            *span,
+                            span.clone(),
                             inference_subject.clone(),
                         ));
                     }
@@ -774,7 +780,7 @@ impl Context {
                 let expression =
                     self.check_expression(inference_subject, expression, &target_inner_type)?;
                 Ok(Arc::new(Expression::Box(
-                    *span,
+                    span.clone(),
                     captures.clone(),
                     expression,
                     target_type.clone(),
@@ -792,6 +798,8 @@ impl Context {
                 let target_dual = target_type.clone().dual(Span::None);
                 let (chan_type, expr_type) = match annotation {
                     Some(annotated_type) => {
+                        // Validate channel type annotation before using it
+                        self.type_defs.validate_type(annotated_type)?;
                         annotated_type.check_assignable(span, &target_dual, &self.type_defs)?;
                         (annotated_type.clone(), target_type) // or annotated_type.dual() ???
                     }
@@ -823,6 +831,8 @@ impl Context {
             }
 
             Expression::External(claimed_type, f, ()) => {
+                // Validate external claimed type before using it
+                self.type_defs.validate_type(claimed_type)?;
                 let typ = claimed_type.clone();
                 typ.check_assignable(&Span::None, target_type, &self.type_defs)?;
                 Ok(Arc::new(Expression::External(
@@ -873,7 +883,7 @@ impl Context {
                 if let Some(inference_subject) = inference_subject {
                     if captures.names.contains_key(inference_subject) {
                         return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                            *span,
+                            span.clone(),
                             inference_subject.clone(),
                         ));
                     }
@@ -881,10 +891,10 @@ impl Context {
                 let mut context = self.split();
                 self.capture(inference_subject, captures, true, &mut context)?;
                 let (expression, typ) = self.infer_expression(inference_subject, expression)?;
-                let typ = Type::Box(*span, Box::new(typ.clone()));
+                let typ = Type::Box(span.clone(), Box::new(typ.clone()));
                 Ok((
                     Arc::new(Expression::Box(
-                        *span,
+                        span.clone(),
                         captures.clone(),
                         expression,
                         typ.clone(),
@@ -905,6 +915,8 @@ impl Context {
                 self.capture(inference_subject, captures, false, &mut context)?;
                 let (process, typ) = match annotation {
                     Some(typ) => {
+                        // Validate channel type annotation before using it
+                        self.type_defs.validate_type(typ)?;
                         context.put(span, channel.clone(), typ.clone())?;
                         (context.check_process(process)?, typ.clone())
                     }
@@ -938,6 +950,8 @@ impl Context {
             }
 
             Expression::External(claimed_type, f, ()) => {
+                // Validate external claimed type before using it
+                self.type_defs.validate_type(claimed_type)?;
                 let typ = claimed_type.clone();
                 Ok((
                     Arc::new(Expression::External(claimed_type.clone(), *f, typ.clone())),

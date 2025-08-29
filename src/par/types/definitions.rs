@@ -1,4 +1,4 @@
-use crate::location::{FileName, Span};
+use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
 use crate::par::types::{Type, TypeError};
 use indexmap::{IndexMap, IndexSet};
@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct TypeDefs {
-    pub globals: Arc<IndexMap<GlobalName, (Span, FileName, Vec<LocalName>, Type)>>,
+    pub globals: Arc<IndexMap<GlobalName, (Span, Vec<LocalName>, Type)>>,
     pub vars: IndexSet<LocalName>,
 }
 
@@ -21,25 +21,16 @@ impl Default for TypeDefs {
 
 impl TypeDefs {
     pub fn new_with_validation<'a>(
-        globals: impl Iterator<
-            Item = (
-                &'a Span,
-                &'a FileName,
-                &'a GlobalName,
-                &'a Vec<LocalName>,
-                &'a Type,
-            ),
-        >,
+        globals: impl Iterator<Item = (&'a Span, &'a GlobalName, &'a Vec<LocalName>, &'a Type)>,
     ) -> Result<Self, TypeError> {
         let mut globals_map = IndexMap::new();
-        for (span, file, name, params, typ) in globals {
-            if let Some((span1, _, _, _)) = globals_map.insert(
-                name.clone(),
-                (span.clone(), file.clone(), params.clone(), typ.clone()),
-            ) {
+        for (span, name, params, typ) in globals {
+            if let Some((span1, _, _)) =
+                globals_map.insert(name.clone(), (span.clone(), params.clone(), typ.clone()))
+            {
                 return Err(TypeError::TypeNameAlreadyDefined(
                     span.clone(),
-                    span1,
+                    span1.clone(),
                     name.clone(),
                 ));
             }
@@ -51,7 +42,7 @@ impl TypeDefs {
         };
 
         let mut deps_map: IndexMap<GlobalName, Vec<GlobalName>> = Default::default();
-        for (name, (_, _, _, typ)) in type_defs.globals.iter() {
+        for (name, (_, _, typ)) in type_defs.globals.iter() {
             deps_map.insert(name.clone(), typ.get_dependencies());
         }
 
@@ -59,25 +50,19 @@ impl TypeDefs {
             type_defs.validate_acyclic(name, &Default::default(), &deps_map)?
         }
 
-        for (_, (_, _, params, typ)) in type_defs.globals.iter() {
+        for (_, (_, params, typ)) in type_defs.globals.iter() {
             let mut type_defs = type_defs.clone();
             for param in params {
                 type_defs.vars.insert(param.clone());
             }
-            type_defs.validate_type(
-                typ,
-                &IndexSet::new(),
-                &IndexSet::new(),
-                &IndexSet::new(),
-                &IndexSet::new(),
-            )?;
+            type_defs.validate_type(typ)?;
         }
 
         Ok(type_defs)
     }
 
     pub fn get(&self, span: &Span, name: &GlobalName, args: &[Type]) -> Result<Type, TypeError> {
-        self.get_with_span(span, name, args).map(|(_, _, typ)| typ)
+        self.get_with_span(span, name, args).map(|(_, typ)| typ)
     }
 
     pub fn get_with_span(
@@ -85,9 +70,9 @@ impl TypeDefs {
         span: &Span,
         name: &GlobalName,
         args: &[Type],
-    ) -> Result<(Span, &FileName, Type), TypeError> {
+    ) -> Result<(&Span, Type), TypeError> {
         match self.globals.get(name) {
-            Some((span, file, params, typ)) => {
+            Some((span, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -97,7 +82,7 @@ impl TypeDefs {
                     ));
                 }
                 let typ = typ.clone().substitute(params.iter().zip(args).collect())?;
-                Ok((*span, file, typ))
+                Ok((span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
@@ -110,7 +95,7 @@ impl TypeDefs {
         args: &[Type],
     ) -> Result<Type, TypeError> {
         self.get_dual_with_span(span, name, args)
-            .map(|(_, _, typ)| typ)
+            .map(|(_, typ)| typ)
     }
 
     pub fn get_dual_with_span(
@@ -118,9 +103,9 @@ impl TypeDefs {
         span: &Span,
         name: &GlobalName,
         args: &[Type],
-    ) -> Result<(Span, &FileName, Type), TypeError> {
+    ) -> Result<(&Span, Type), TypeError> {
         match self.globals.get(name) {
-            Some((span, file, params, typ)) => {
+            Some((span, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -133,7 +118,7 @@ impl TypeDefs {
                     .clone()
                     .dual(Span::None)
                     .substitute(params.iter().zip(args).collect())?;
-                Ok((*span, file, typ))
+                Ok((span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
@@ -164,13 +149,25 @@ impl TypeDefs {
         Ok(())
     }
 
-    pub fn validate_type(
+    pub fn validate_type(&self, typ: &Type) -> Result<(), TypeError> {
+        self.validate_type_inner(
+            typ,
+            &IndexSet::new(),
+            &IndexSet::new(),
+            &IndexSet::new(),
+            &IndexSet::new(),
+            true,
+        )
+    }
+
+    fn validate_type_inner(
         &self,
         typ: &Type,
         self_pos: &IndexSet<Option<LocalName>>,
         self_neg: &IndexSet<Option<LocalName>>,
         unguarded_self_rec: &IndexSet<Option<LocalName>>,
         unguarded_self_iter: &IndexSet<Option<LocalName>>,
+        check_self: bool,
     ) -> Result<(), TypeError> {
         Ok(match typ {
             Type::Primitive(_, _) | Type::DualPrimitive(_, _) => (),
@@ -186,112 +183,114 @@ impl TypeDefs {
                 }
             }
             Type::Name(span, name, args) => {
+                // Dereference alias first so guarding/position checks happen in the body
+                let t = self.get(span, name, args)?;
+                self.validate_type_inner(&t, self_pos, self_neg, unguarded_self_rec, unguarded_self_iter, check_self)?;
+                // Separately validate arguments for existence/kind issues without self-guard checks
                 for arg in args {
-                    self.validate_type(
+                    self.validate_type_inner(
                         arg,
-                        self_pos,
-                        self_neg,
-                        unguarded_self_rec,
-                        unguarded_self_iter,
+                        &IndexSet::new(),
+                        &IndexSet::new(),
+                        &IndexSet::new(),
+                        &IndexSet::new(),
+                        false,
                     )?;
                 }
-                let t = self.get(span, name, args)?;
-                self.validate_type(
-                    &t,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                )?;
             }
             Type::DualName(span, name, args) => {
+                // Dereference alias first so guarding/position checks happen in the body (with polarity swapped)
+                let t = self.get(span, name, args)?;
+                self.validate_type_inner(&t, self_neg, self_pos, unguarded_self_rec, unguarded_self_iter, check_self)?;
+                // Separately validate arguments for existence/kind issues without self-guard checks
                 for arg in args {
-                    self.validate_type(
+                    self.validate_type_inner(
                         arg,
-                        self_neg,
-                        self_pos,
-                        unguarded_self_rec,
-                        unguarded_self_iter,
+                        &IndexSet::new(),
+                        &IndexSet::new(),
+                        &IndexSet::new(),
+                        &IndexSet::new(),
+                        false,
                     )?;
                 }
-                let t = self.get(span, name, args)?;
-                self.validate_type(
-                    &t,
-                    self_neg,
-                    self_pos,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                )?;
             }
 
-            Type::Box(_, body) => self.validate_type(
+            Type::Box(_, body) => self.validate_type_inner(
                 body,
                 self_pos,
                 self_neg,
                 unguarded_self_rec,
                 unguarded_self_iter,
+                check_self,
             )?,
-            Type::DualBox(_, body) => self.validate_type(
+            Type::DualBox(_, body) => self.validate_type_inner(
                 body,
                 self_neg,
                 self_pos,
                 unguarded_self_rec,
                 unguarded_self_iter,
+                check_self,
             )?,
 
             Type::Pair(_, t, u) => {
-                self.validate_type(
+                self.validate_type_inner(
                     t,
                     self_pos,
                     self_neg,
                     unguarded_self_rec,
                     unguarded_self_iter,
+                    check_self,
                 )?;
-                self.validate_type(
+                self.validate_type_inner(
                     u,
                     self_pos,
                     self_neg,
                     unguarded_self_rec,
                     unguarded_self_iter,
+                    check_self,
                 )?;
             }
             Type::Function(_, t, u) => {
-                self.validate_type(
+                self.validate_type_inner(
                     t,
                     self_neg,
                     self_pos,
                     unguarded_self_rec,
                     unguarded_self_iter,
+                    check_self,
                 )?;
-                self.validate_type(
+                self.validate_type_inner(
                     u,
                     self_pos,
                     self_neg,
                     unguarded_self_rec,
                     unguarded_self_iter,
+                    check_self,
                 )?;
             }
             Type::Either(_, branches) => {
                 let unguarded_self_rec = IndexSet::new();
                 for (_, t) in branches {
-                    self.validate_type(
+                    self.validate_type_inner(
                         t,
                         self_pos,
                         self_neg,
                         &unguarded_self_rec,
                         unguarded_self_iter,
+                        check_self,
                     )?;
                 }
             }
             Type::Choice(_, branches) => {
                 let unguarded_self_iter = IndexSet::new();
                 for (_, t) in branches {
-                    self.validate_type(
+                    self.validate_type_inner(
                         t,
                         self_pos,
                         self_neg,
                         unguarded_self_rec,
                         &unguarded_self_iter,
+                        check_self,
                     )?;
                 }
             }
@@ -314,46 +313,52 @@ impl TypeDefs {
                     }
                     _ => unreachable!(),
                 }
-                self.validate_type(
+                self.validate_type_inner(
                     body,
                     &self_pos,
                     &self_neg,
                     &unguarded_self_rec,
                     &unguarded_self_iter,
+                    check_self,
                 )?;
             }
             Type::Self_(span, label) => {
-                if self_neg.contains(label) {
-                    return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
-                }
-                if !self_pos.contains(label) {
-                    return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
-                }
-                if unguarded_self_rec.contains(label) {
-                    return Err(TypeError::UnguardedRecursiveSelf(span.clone()));
-                }
-                if unguarded_self_iter.contains(label) {
-                    return Err(TypeError::UnguardedIterativeSelf(span.clone()));
+                if check_self {
+                    if self_neg.contains(label) {
+                        return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
+                    }
+                    if !self_pos.contains(label) {
+                        return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
+                    }
+                    if unguarded_self_rec.contains(label) {
+                        return Err(TypeError::UnguardedRecursiveSelf(span.clone()));
+                    }
+                    if unguarded_self_iter.contains(label) {
+                        return Err(TypeError::UnguardedIterativeSelf(span.clone()));
+                    }
                 }
             }
             Type::DualSelf(span, label) => {
-                if self_pos.contains(label) {
-                    return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
-                }
-                if !self_neg.contains(label) {
-                    return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
+                if check_self {
+                    if self_pos.contains(label) {
+                        return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
+                    }
+                    if !self_neg.contains(label) {
+                        return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
+                    }
                 }
             }
 
             Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
                 let mut with_var = self.clone();
                 with_var.vars.insert(name.clone());
-                with_var.validate_type(
+                with_var.validate_type_inner(
                     body,
                     self_pos,
                     self_neg,
                     unguarded_self_rec,
                     unguarded_self_iter,
+                    check_self,
                 )?;
             }
         })

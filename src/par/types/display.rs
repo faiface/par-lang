@@ -1,4 +1,4 @@
-use crate::location::{FileName, Span};
+use crate::location::Span;
 use crate::par::process::NameWithType;
 use crate::par::types::{PrimitiveType, Type, TypeDefs};
 use std::fmt;
@@ -360,19 +360,18 @@ impl Type {
             Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
             Self::Var(_, _) | Self::DualVar(_, _) => {}
             Self::Name(span, name, args) | Self::DualName(span, name, args) => {
-                let (def_span, def_file, typ) = match self {
+                let (def_span, typ) = match self {
                     Self::Name(..) => type_defs.get_with_span(span, name, args),
                     _ => type_defs.get_dual_with_span(span, name, args),
                 }
-                .unwrap_or_else(|_| (Span::None, &FileName::Builtin, self.clone()));
+                .unwrap_or_else(|_| (&Span::None, self.clone()));
                 consume(
-                    *span,
+                    span.clone(),
                     NameWithType {
                         name: None,
                         typ,
-                        def_span,
-                        decl_span: def_span,
-                        def_file: def_file.clone(),
+                        def_span: def_span.clone(),
+                        decl_span: def_span.clone(),
                     },
                 );
                 for arg in args {

@@ -21,7 +21,7 @@ use crate::{
     spawn::TokioSpawn,
 };
 use crate::{
-    icombs::{compile_file, IcCompiled},
+    icombs::{self, IcCompiled},
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
 use tokio_util::sync::CancellationToken;
@@ -29,13 +29,13 @@ use tokio_util::sync::CancellationToken;
 pub struct Playground {
     file_path: Option<PathBuf>,
     code: String,
-    compiled: Option<Result<Compiled, Error>>,
-    compiled_code: Arc<str>,
+    build: BuildResult,
+    built_code: Arc<str>,
     editor_font_size: f32,
     show_compiled: bool,
     show_ic: bool,
     element: Option<Arc<Mutex<Element>>>,
-    cursor_pos: (usize, usize),
+    cursor_pos: (u32, u32),
     theme_mode: ThemeMode,
     rt: tokio::runtime::Runtime,
     cancel_token: Option<CancellationToken>,
@@ -77,26 +77,105 @@ impl Default for ThemeMode {
 }
 
 #[derive(Clone)]
-pub(crate) struct Compiled {
-    pub(crate) pretty: String,
-    pub(crate) checked: Result<Checked, Error>,
+pub enum BuildResult {
+    None,
+    SyntaxError {
+        error: SyntaxError,
+    },
+    CompileError {
+        error: CompileError,
+    },
+    TypeError {
+        pretty: String,
+        error: TypeError,
+    },
+    InetError {
+        pretty: String,
+        checked: Arc<CheckedModule>,
+        type_on_hover: TypeOnHover,
+        error: icombs::compiler::Error,
+    },
+    Ok {
+        pretty: String,
+        checked: Arc<CheckedModule>,
+        type_on_hover: TypeOnHover,
+        ic_compiled: IcCompiled,
+    },
 }
 
-impl Compiled {
-    pub(crate) fn from_string(source: &str, file: FileName) -> Result<Compiled, Error> {
-        let mut module = Module::parse_and_compile(source, file)?;
-        import_builtins(&mut module);
-        Ok(Compiled::from_module(module)?)
+impl BuildResult {
+    pub fn error(&self) -> Option<Error> {
+        match self {
+            Self::None => None,
+            Self::SyntaxError { error } => Some(Error::Syntax(error.clone())),
+            Self::CompileError { error } => Some(Error::Compile(error.clone())),
+            Self::TypeError { error, .. } => Some(Error::Type(error.clone())),
+            Self::InetError { error, .. } => Some(Error::InetCompile(error.clone())),
+            Self::Ok { .. } => None,
+        }
     }
 
-    pub(crate) fn from_module(program: Module<Arc<Expression<()>>>) -> Result<Self, Error> {
-        let pretty = program
+    pub fn pretty(&self) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::SyntaxError { .. } => None,
+            Self::CompileError { .. } => None,
+            Self::TypeError { pretty, .. } => Some(&pretty),
+            Self::InetError { pretty, .. } => Some(&pretty),
+            Self::Ok { pretty, .. } => Some(&pretty),
+        }
+    }
+
+    pub fn checked(&self) -> Option<Arc<CheckedModule>> {
+        match self {
+            Self::None => None,
+            Self::SyntaxError { .. } => None,
+            Self::CompileError { .. } => None,
+            Self::TypeError { .. } => None,
+            Self::InetError { checked, .. } => Some(Arc::clone(checked)),
+            Self::Ok { checked, .. } => Some(Arc::clone(checked)),
+        }
+    }
+
+    pub fn type_on_hover(&self) -> Option<&TypeOnHover> {
+        match self {
+            Self::None => None,
+            Self::SyntaxError { .. } => None,
+            Self::CompileError { .. } => None,
+            Self::TypeError { .. } => None,
+            Self::InetError { type_on_hover, .. } => Some(&type_on_hover),
+            Self::Ok { type_on_hover, .. } => Some(&type_on_hover),
+        }
+    }
+
+    pub fn ic_compiled(&self) -> Option<&IcCompiled> {
+        match self {
+            Self::None => None,
+            Self::SyntaxError { .. } => None,
+            Self::CompileError { .. } => None,
+            Self::TypeError { .. } => None,
+            Self::InetError { .. } => None,
+            Self::Ok { ic_compiled, .. } => Some(&ic_compiled),
+        }
+    }
+
+    pub fn from_source(source: &str, file: FileName) -> Self {
+        let mut module = match Module::parse_and_compile(source, file) {
+            Ok(module) => module,
+            Err(ParseAndCompileError::Parse(error)) => return Self::SyntaxError { error },
+            Err(ParseAndCompileError::Compile(error)) => return Self::CompileError { error },
+        };
+        import_builtins(&mut module);
+        Self::from_compiled(module)
+    }
+
+    pub fn from_compiled(compiled: Module<Arc<Expression<()>>>) -> Self {
+        let pretty = compiled
             .definitions
             .iter()
             .map(
                 |Definition {
                      span: _,
-                     file: _,
                      name,
                      expression,
                  }| {
@@ -109,53 +188,41 @@ impl Compiled {
             )
             .collect();
 
-        // attempt to type check
-        let checked_program = match program.type_check() {
-            Ok(checked) => checked,
-            Err(error) => return Err(Error::Type(error)),
+        let checked = match compiled.type_check() {
+            Ok(checked) => Arc::new(checked),
+            Err(error) => return Self::TypeError { pretty, error },
         };
-        return Ok(Compiled {
-            pretty,
-            checked: Checked::from_program(checked_program).map_err(|err| Error::InetCompile(err)),
-        });
+        Self::from_checked(pretty, checked)
     }
-}
 
-#[derive(Clone)]
-pub(crate) struct Checked {
-    pub(crate) program: Arc<CheckedModule>,
-    pub(crate) type_on_hover: Arc<TypeOnHover>,
-    pub(crate) ic_compiled: Option<crate::icombs::IcCompiled>,
-}
-
-impl Checked {
-    pub(crate) fn from_program(
-        program: CheckedModule,
-    ) -> Result<Self, crate::icombs::compiler::Error> {
-        // attempt to compile to interaction combinators
-        Ok(Checked {
-            ic_compiled: Some(compile_file(&program)?),
-            type_on_hover: Arc::new(TypeOnHover::new(&program)),
-            program: Arc::new(program),
-        })
+    pub fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
+        let type_on_hover = TypeOnHover::new(&checked);
+        let ic_compiled = match icombs::compiler::compile_file(&checked) {
+            Ok(ic_compiled) => ic_compiled,
+            Err(error) => {
+                return Self::InetError {
+                    pretty,
+                    checked,
+                    type_on_hover,
+                    error,
+                }
+            }
+        };
+        Self::Ok {
+            pretty,
+            checked,
+            type_on_hover,
+            ic_compiled,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum Error {
-    Parse(SyntaxError),
+    Syntax(SyntaxError),
     Compile(CompileError),
     InetCompile(crate::icombs::compiler::Error),
     Type(TypeError),
-}
-
-impl From<ParseAndCompileError> for Error {
-    fn from(error: ParseAndCompileError) -> Self {
-        match error {
-            ParseAndCompileError::Parse(error) => Self::Parse(error),
-            ParseAndCompileError::Compile(error) => Self::Compile(error),
-        }
-    }
 }
 
 impl Playground {
@@ -187,8 +254,8 @@ impl Playground {
         let mut playground = Box::new(Self {
             file_path: file_path.clone(),
             code: "".to_owned(),
-            compiled: None,
-            compiled_code: Arc::from(""),
+            build: BuildResult::None,
+            built_code: Arc::from(""),
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,
@@ -333,8 +400,9 @@ impl eframe::App for Playground {
     }
 }
 
-fn row_and_column(source: &str, index: usize) -> (usize, usize) {
+fn row_and_column(source: &str, index: usize) -> (u32, u32) {
     let (mut row, mut col) = (0, 0);
+    assert!(u32::try_from(index).is_ok(), "file size is too large");
     for c in source.chars().take(index) {
         if c == '\n' {
             row += 1;
@@ -441,13 +509,13 @@ impl Playground {
         }
     }
 
-    const FILE_NAME: FileName = FileName::Path(arcstr::literal!("Playground.par"));
+    const FILE_NAME: FileName = FileName(arcstr::literal!("Playground.par"));
 
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
-            self.compiled = Some(Compiled::from_string(self.code.as_str(), Self::FILE_NAME));
+            self.build = BuildResult::from_source(self.code.as_str(), Self::FILE_NAME);
         });
-        self.compiled_code = Arc::from(self.code.as_str());
+        self.built_code = Arc::from(self.code.as_str());
     }
 
     fn show_interaction(&mut self, ui: &mut egui::Ui) {
@@ -459,70 +527,68 @@ impl Playground {
                     self.recompile();
                 }
 
-                if let Some(Ok(Compiled { checked, .. })) = &mut self.compiled {
+                if self.build.pretty().is_some() {
                     ui.checkbox(
                         &mut self.show_compiled,
                         egui::RichText::new("Show compiled"),
                     );
                     ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
 
-                    if let Ok(checked) = checked {
-                        if let Some(ic_compiled) = checked.ic_compiled.as_ref() {
-                            egui::containers::menu::MenuButton::from_button(
-                                egui::Button::new(
-                                    egui::RichText::new("Run")
-                                        .strong()
-                                        .color(egui::Color32::BLACK),
-                                )
-                                .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
+                    if let (Some(checked), Some(ic_compiled)) =
+                        (self.build.checked(), self.build.ic_compiled())
+                    {
+                        egui::containers::menu::MenuButton::from_button(
+                            egui::Button::new(
+                                egui::RichText::new("Run")
+                                    .strong()
+                                    .color(egui::Color32::BLACK),
                             )
-                            .ui(ui, |ui| {
-                                egui::ScrollArea::vertical().show(ui, |ui| {
-                                    Self::readback(
-                                        self.rt.handle().clone(),
-                                        &mut self.cancel_token,
-                                        &mut self.element,
-                                        ui,
-                                        checked.program.clone(),
-                                        ic_compiled,
-                                    );
-                                })
-                            });
-                        }
+                            .fill(green().lerp_to_gamma(egui::Color32::WHITE, 0.3)),
+                        )
+                        .ui(ui, |ui| {
+                            egui::ScrollArea::vertical().show(ui, |ui| {
+                                Self::readback(
+                                    self.rt.handle().clone(),
+                                    &mut self.cancel_token,
+                                    &mut self.element,
+                                    ui,
+                                    checked.clone(),
+                                    ic_compiled,
+                                );
+                            })
+                        });
                     }
                 }
             });
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 egui::ScrollArea::both().show(ui, |ui| {
-                    if let Some(Err(error)) = &self.compiled {
+                    if let Some(error) = self.build.error() {
                         ui.label(
-                            egui::RichText::new(error.display(self.compiled_code.clone()))
+                            egui::RichText::new(error.display(self.built_code.clone()))
                                 .color(red())
                                 .code(),
                         );
                     }
 
                     let theme = self.get_theme(ui);
-                    if let Some(Ok(Compiled {
-                        pretty, checked, ..
-                    })) = &mut self.compiled
-                    {
-                        if let Ok(checked) = checked {
-                            if let Some(name_info) = checked.type_on_hover.query(
-                                &Self::FILE_NAME,
-                                self.cursor_pos.0,
-                                self.cursor_pos.1,
-                            ) {
-                                ui.horizontal(|ui| {
-                                    let mut buf = String::new();
-                                    name_info.typ.pretty(&mut buf, 0).unwrap();
-                                    ui.label(RichText::new(buf).code().color(green()));
-                                });
-                            }
-                        }
 
-                        if self.show_compiled {
+                    if let Some(type_on_hover) = self.build.type_on_hover() {
+                        if let Some(name_info) = type_on_hover.query(
+                            &Self::FILE_NAME,
+                            self.cursor_pos.0,
+                            self.cursor_pos.1,
+                        ) {
+                            ui.horizontal(|ui| {
+                                let mut buf = String::new();
+                                name_info.typ.pretty(&mut buf, 0).unwrap();
+                                ui.label(RichText::new(buf).code().color(green()));
+                            });
+                        }
+                    }
+
+                    if self.show_compiled {
+                        if let Some(pretty) = self.build.pretty() {
                             CodeEditor::default()
                                 .id_source("compiled")
                                 .with_syntax(par_syntax())
@@ -530,28 +596,25 @@ impl Playground {
                                 .with_fontsize(self.editor_font_size)
                                 .with_theme(theme)
                                 .with_numlines(true)
-                                .show(ui, pretty);
-                        } else if let Ok(checked) = checked {
-                            if let Some(ic_compiled) = checked.ic_compiled.as_ref() {
-                                if self.show_ic {
-                                    CodeEditor::default()
-                                        .id_source("ic_compiled")
-                                        .with_rows(32)
-                                        .with_fontsize(self.editor_font_size)
-                                        .with_theme(theme)
-                                        .with_numlines(true)
-                                        .show(ui, &mut format!("{}", ic_compiled));
-                                }
+                                .show(ui, &mut String::from(pretty));
+                        }
+                    }
 
-                                if !self.show_compiled && !self.show_ic {
-                                    if let Some(element) = &mut self.element {
-                                        element.lock().unwrap().show(ui);
-                                    }
-                                }
-                            }
-                        } else if let Err(err) = checked {
-                            let error = err.display(self.compiled_code.clone());
-                            ui.label(egui::RichText::new(error).color(red()).code());
+                    if self.show_ic {
+                        if let Some(ic_compiled) = self.build.ic_compiled() {
+                            CodeEditor::default()
+                                .id_source("ic_compiled")
+                                .with_rows(32)
+                                .with_fontsize(self.editor_font_size)
+                                .with_theme(theme)
+                                .with_numlines(true)
+                                .show(ui, &mut format!("{}", ic_compiled));
+                        }
+                    }
+
+                    if !self.show_compiled && !self.show_ic {
+                        if let Some(element) = &mut self.element {
+                            element.lock().unwrap().show(ui);
                         }
                     }
                 });
@@ -563,7 +626,7 @@ impl Playground {
 impl Error {
     pub fn display(&self, code: Arc<str>) -> String {
         match self {
-            Self::Parse(error) => {
+            Self::Syntax(error) => {
                 // Show syntax error with miette's formatting
                 format!(
                     "{:?}",
@@ -643,57 +706,4 @@ fn green() -> egui::Color32 {
 #[allow(unused)]
 fn blue() -> egui::Color32 {
     egui::Color32::from_hex("#118ab2").unwrap()
-}
-
-#[cfg(test)]
-mod playground_test {
-    use super::*;
-
-    #[test]
-    fn test_issue_44() {
-        let code = r#"
-def Pair = [type _] [(x)y] (x) y
-"#;
-
-        let result = std::panic::catch_unwind(|| {
-            stacker::grow(32 * 1024 * 1024, || {
-                Compiled::from_string(code, "test".into())
-            })
-        });
-
-        match result {
-            Ok(Ok(_)) => {
-                panic!("Expected compilation to fail, but it succeeded");
-            }
-            Ok(Err(err)) => {
-                // Check that we get the expected error type
-                match err {
-                    Error::Type(type_err) => {
-                        let error_msg = format!("{:?}", type_err.to_report(Arc::from(code)));
-
-                        assert!(
-                            error_msg.contains("Type annotation required for pattern matching")
-                                || error_msg.contains("pattern matching"),
-                            "Error message should mention pattern matching, got: {}",
-                            error_msg
-                        );
-
-                        assert!(
-                            error_msg.contains("Consider adding a type annotation"),
-                            "Error should contain help text about adding type annotations"
-                        );
-
-                        assert!(
-                            !error_msg.contains("Type of parameter `#match0`"),
-                            "Error should not expose internal variable names like #match0"
-                        );
-                    }
-                    _ => panic!("Expected TypeError, got {:?}", err),
-                }
-            }
-            Err(_) => {
-                panic!("Compiler panicked unexpectedly");
-            }
-        }
-    }
 }

@@ -179,7 +179,7 @@ fn get_args_polarity(
     name: &GlobalName,
     defs: &TypeDefs,
 ) -> Result<Vec<Polarity>, TypeError> {
-    let Some((_span, _, vars, body)) = defs.globals.get(name) else {
+    let Some((_span, vars, body)) = defs.globals.get(name) else {
         return Err(TypeError::GlobalNameNotDefined(span.clone(), name.clone()));
     };
 

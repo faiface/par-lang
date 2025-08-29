@@ -1,19 +1,24 @@
 use arcstr::ArcStr;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Point {
     // 0-based
-    pub offset: usize,
+    pub offset: u32,
     // 0-based
-    pub row: usize,
+    pub row: u32,
     // 0-based
-    pub column: usize,
+    pub column: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Span {
     None,
-    At { start: Point, end: Point },
+    At {
+        start: Point,
+        end: Point,
+        file: FileName,
+    },
 }
 
 impl Default for Span {
@@ -27,17 +32,24 @@ pub trait Spanning {
 }
 
 impl Span {
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u32 {
         match self {
             Self::None => 0,
-            Self::At { start, end } => end.offset - start.offset,
+            Self::At { start, end, .. } => end.offset - start.offset,
         }
     }
 
     pub fn points(&self) -> Option<(Point, Point)> {
         match self {
             Self::None => None,
-            Self::At { start, end } => Some((*start, *end)),
+            Self::At { start, end, .. } => Some((*start, *end)),
+        }
+    }
+
+    pub fn file(&self) -> Option<FileName> {
+        match self {
+            Self::None => None,
+            Self::At { file, .. } => Some(file.clone()),
         }
     }
 
@@ -50,77 +62,99 @@ impl Span {
     }
 
     pub fn only_start(&self) -> Self {
-        match self {
+        match self.clone() {
             Self::None => Self::None,
-            Self::At { start, .. } => Self::At {
-                start: *start,
-                end: *start,
+            Self::At { start, file, .. } => Self::At {
+                start,
+                end: start,
+                file,
             },
         }
     }
 
     pub fn only_end(&self) -> Self {
-        match self {
+        match self.clone() {
             Self::None => Self::None,
-            Self::At { end, .. } => Self::At {
-                start: *end,
-                end: *end,
+            Self::At { end, file, .. } => Self::At {
+                start: end,
+                end,
+                file,
             },
         }
     }
 
     pub fn join(&self, other: Self) -> Self {
-        match (self, other) {
-            (Self::None, span) | (&span, Self::None) => span,
+        match (self.clone(), other) {
+            (Self::None, span) | (span, Self::None) => span,
             (
-                &Self::At {
+                Self::At {
                     start: start1,
                     end: end1,
+                    file: file1,
                 },
                 Self::At {
                     start: start2,
                     end: end2,
+                    file: file2,
                 },
-            ) => Self::At {
-                start: if start1.offset < start2.offset {
-                    start1
-                } else {
-                    start2
-                },
-                end: if end1.offset > end2.offset {
-                    end1
-                } else {
-                    end2
-                },
-            },
+            ) => {
+                assert_eq!(file1, file2, "can't join spans from different files");
+                Self::At {
+                    start: if start1.offset < start2.offset {
+                        start1
+                    } else {
+                        start2
+                    },
+                    end: if end1.offset > end2.offset {
+                        end1
+                    } else {
+                        end2
+                    },
+                    file: file1,
+                }
+            }
         }
     }
 }
 
 impl Point {
-    pub fn point_span(&self) -> Span {
+    pub fn point_span(&self, file: FileName) -> Span {
         Span::At {
             start: *self,
             end: *self,
+            file,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum FileName {
-    Builtin,
-    Path(ArcStr),
+pub struct FileName(pub ArcStr);
+
+impl FileName {
+    pub const BUILTIN: Self = FileName(arcstr::literal!("par:Builtin"));
 }
 
 impl From<&str> for FileName {
     fn from(path: &str) -> Self {
-        FileName::Path(path.into())
+        FileName(path.into())
     }
 }
 
 impl From<String> for FileName {
     fn from(path: String) -> Self {
-        FileName::Path(path.into())
+        FileName(path.into())
+    }
+}
+
+impl From<&Path> for FileName {
+    fn from(path: &Path) -> Self {
+        (&*path.to_string_lossy()).into()
+    }
+}
+
+impl From<PathBuf> for FileName {
+    fn from(path: PathBuf) -> Self {
+        path.as_path().into()
     }
 }
 
