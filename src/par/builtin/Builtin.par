@@ -137,7 +137,7 @@ type String.Writer<errIn, errOut> = iterative choice {
   .write(String) => Result<errOut, self>,
 }
 
-type String.Reader<errIn, errOut> = recursive iterative/attempt choice {
+type String.Parser<errIn, errOut> = recursive iterative/attempt choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
   .remainder => Result<errOut, String>,
   .char => either {
@@ -171,7 +171,7 @@ type String.Pattern = recursive either {
 }
 
 dec String.Builder : String.Builder
-dec String.Reader  : [String] String.Reader<either{}, either{}>
+dec String.Parser  : [String] String.Parser<either{}, either{}>
 
 dec String.Quote : [String] String
 
@@ -201,7 +201,7 @@ type Bytes.Writer<errIn, errOut> = iterative choice {
   .write(Bytes) => Result<errOut, self>,
 }
 
-type Bytes.Reader<errIn, errOut> = recursive iterative/attempt choice {
+type Bytes.Parser<errIn, errOut> = recursive iterative/attempt choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
   .remainder => Result<errOut, Bytes>,
   .byte => either {
@@ -235,7 +235,7 @@ type Bytes.Pattern = recursive either {
 }
 
 dec Bytes.Builder : Bytes.Builder
-dec Bytes.Reader  : [Bytes] Bytes.Reader<either{}, either{}>
+dec Bytes.Parser  : [Bytes] Bytes.Parser<either{}, either{}>
 
 dec Bytes.FromString : [String] Bytes
 
@@ -274,8 +274,8 @@ type Storage.FileInfo = box choice {
   .path => Storage.PathInfo,
   .size => Nat.Nat,
 
-  .readBytes => Result<Storage.Error, Bytes.Reader<either{}, Storage.Error>>,
-  .readUTF8 => Result<Storage.Error, String.Reader<either{}, Storage.Error>>,
+  .readBytes => Result<Storage.Error, Bytes.Parser<either{}, Storage.Error>>,
+  .readUTF8 => Result<Storage.Error, String.Parser<either{}, Storage.Error>>,
 
   .overwriteBytes => Result<Storage.Error, Bytes.Writer<either{}, Storage.Error>>,
   .appendBytes => Result<Storage.Error, Bytes.Writer<either{}, Storage.Error>>,
@@ -306,3 +306,10 @@ dec Storage.CreateDir  : [String] Result<Storage.Error, Storage.DirInfo>
 /// Debug
 
 dec Debug.Log : [String] !
+
+// New streaming bytes reader (no constructor yet)
+type Bytes.Reader<errIn, errOut> =
+  iterative choice {
+    .close(Result<errIn, !>) => Result<errOut, !>,
+    .read(Nat) => Result<errOut, (Bytes) self>,
+  }

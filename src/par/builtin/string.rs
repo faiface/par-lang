@@ -22,12 +22,12 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Box::pin(string_builder(handle))
             }),
             Definition::external(
-                "Reader",
+                "Parser",
                 Type::function(
                     Type::string(),
                     Type::name(
                         None,
-                        "Reader",
+                        "Parser",
                         vec![Type::either(vec![]), Type::either(vec![])],
                     ),
                 ),
