@@ -151,7 +151,7 @@ impl Type {
             }
 
             (t1, Self::Self_(_, label2)) => {
-                if !self_labels.0.contains_key(label2) {
+                if !other_labels.0.contains_key(label2) {
                     return Ok(false);
                 }
 
