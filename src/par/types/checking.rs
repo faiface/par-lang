@@ -772,10 +772,27 @@ impl Context {
                 let mut context = self.split();
                 self.capture(inference_subject, captures, true, &mut context)?;
                 let mut target_inner_type = target_type.clone();
-                while let Type::Box(_, inner) =
-                    target_inner_type.expand_definition(&self.type_defs)?
-                {
-                    target_inner_type = *inner;
+                loop {
+                    match target_inner_type.expand_definition(&self.type_defs)? {
+                        Type::Box(_, inner) => target_inner_type = *inner,
+                        Type::Recursive {
+                            span: _,
+                            asc,
+                            label,
+                            body,
+                        } => {
+                            target_inner_type = Type::expand_recursive(&asc, &label, &body)?;
+                        }
+                        Type::Iterative {
+                            span,
+                            asc,
+                            label,
+                            body,
+                        } => {
+                            target_inner_type = Type::expand_iterative(&span, &asc, &label, &body)?;
+                        }
+                        _ => break,
+                    }
                 }
                 let expression =
                     self.check_expression(inference_subject, expression, &target_inner_type)?;
