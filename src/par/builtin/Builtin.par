@@ -279,6 +279,9 @@ type Path.Path =
     .appendBytes(Bytes) => self/append,
   }
 
+dec Path.FromString : [String] Path.Path
+dec Path.FromBytes : [Bytes] Path.Path
+
 
 /// Storage
 
