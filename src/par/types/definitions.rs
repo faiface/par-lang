@@ -185,7 +185,14 @@ impl TypeDefs {
             Type::Name(span, name, args) => {
                 // Dereference alias first so guarding/position checks happen in the body
                 let t = self.get(span, name, args)?;
-                self.validate_type_inner(&t, self_pos, self_neg, unguarded_self_rec, unguarded_self_iter, check_self)?;
+                self.validate_type_inner(
+                    &t,
+                    self_pos,
+                    self_neg,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                    check_self,
+                )?;
                 // Separately validate arguments for existence/kind issues without self-guard checks
                 for arg in args {
                     self.validate_type_inner(
@@ -201,7 +208,14 @@ impl TypeDefs {
             Type::DualName(span, name, args) => {
                 // Dereference alias first so guarding/position checks happen in the body (with polarity swapped)
                 let t = self.get(span, name, args)?;
-                self.validate_type_inner(&t, self_neg, self_pos, unguarded_self_rec, unguarded_self_iter, check_self)?;
+                self.validate_type_inner(
+                    &t,
+                    self_neg,
+                    self_pos,
+                    unguarded_self_rec,
+                    unguarded_self_iter,
+                    check_self,
+                )?;
                 // Separately validate arguments for existence/kind issues without self-guard checks
                 for arg in args {
                     self.validate_type_inner(

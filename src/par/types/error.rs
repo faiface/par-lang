@@ -48,7 +48,10 @@ pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
         .map(|start| {
             LabeledSpan::new_with_span(
                 None,
-                SourceSpan::new(SourceOffset::from(start.offset), span.len()),
+                SourceSpan::new(
+                    SourceOffset::from(start.offset as usize),
+                    span.len() as usize,
+                ),
             )
         })
         .collect()
