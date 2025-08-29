@@ -261,6 +261,25 @@ type Console = iterative choice {
 
 dec Console.Open : Console
 
+/// Path
+
+type Path.Path =
+  iterative/append
+  recursive/parent
+  box choice {
+    .stringName => String,
+    .bytesName => Bytes,
+    .stringAbsolute => String,
+    .bytesAbsolute => Bytes,
+    .stringParts => List<String>,
+    .bytesParts => List<Bytes>,
+
+    .parent => Result<!, self/parent>,
+    .appendString(String) => self/append,
+    .appendBytes(Bytes) => self/append,
+  }
+
+
 /// Storage
 
 type Storage.Error = String
