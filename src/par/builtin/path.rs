@@ -13,11 +13,11 @@ use crate::{
 };
 use arcstr::{literal, Substr};
 use byteview::ByteView;
+use futures::future::BoxFuture;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncReadExt, AsyncWriteExt},
 };
-use futures::future::BoxFuture;
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
     Module {
@@ -192,8 +192,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 "traverseDir" => match build_dir_tree(path.clone()).await {
                     Ok(nodes) => {
                         handle.signal(literal!("ok"));
-                        provide_dir_tree(&mut handle, nodes.as_slice());
-                        return handle.break_();
+                        return provide_dir_tree(handle, nodes.as_slice());
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -327,7 +326,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
             "flush" => match file.flush().await {
                 Ok(()) => {
                     handle.signal(literal!("ok"));
-                    // remain providing the same writer (self)
+                    continue;
                 }
                 Err(err) => {
                     handle.signal(literal!("err"));
@@ -339,7 +338,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
                 match file.write_all(bytes.as_ref()).await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
-                        // remain providing the same writer (self)
+                        continue;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -352,7 +351,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
                 match file.write_all(s.as_bytes()).await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
-                        // remain providing the same writer (self)
+                        continue;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -380,8 +379,7 @@ async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
     for (_, name) in entries {
         let child = base.join(Path::new(&name));
         handle.signal(literal!("item"));
-        let h = handle.send();
-        provide_path(h, child);
+        provide_path(handle.send(), child);
     }
     handle.signal(literal!("end"));
     handle.break_();
@@ -390,15 +388,16 @@ async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
 // Directory tree node used for traverseDir
 enum DirNode {
     File(PathBuf),
-    Dir { path: PathBuf, children: Vec<DirNode> },
+    Dir {
+        path: PathBuf,
+        children: Vec<DirNode>,
+    },
 }
 
 // Recursively build the full directory tree. Returns an error message if any IO fails.
 fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, String>> {
     Box::pin(async move {
-        let mut rd = fs::read_dir(&dir)
-            .await
-            .map_err(|e| format!("{}", e))?;
+        let mut rd = fs::read_dir(&dir).await.map_err(|e| format!("{}", e))?;
 
         // Collect entries first to allow deterministic sorting
         let mut items: Vec<(byteview::ByteView, DirEntry)> = Vec::new();
@@ -411,10 +410,7 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
 
         let mut result = Vec::new();
         for (_, entry) in items {
-            let ty = entry
-                .file_type()
-                .await
-                .map_err(|e| format!("{}", e))?;
+            let ty = entry.file_type().await.map_err(|e| format!("{}", e))?;
             let child_path = entry.path();
             if ty.is_dir() {
                 let children = build_dir_tree(child_path.clone()).await?;
@@ -432,28 +428,22 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
 }
 
 // Provide the recursive/tree either { .end | .file(self/append) self/tree | .dir(self/append, self/tree) self/tree }
-fn provide_dir_tree(handle: &mut Handle, nodes: &[DirNode]) {
+fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
     match nodes.split_first() {
         None => {
             handle.signal(literal!("end"));
+            handle.break_();
         }
         Some((node, tail)) => match node {
-            DirNode::File(p) => {
+            DirNode::File(path) => {
                 handle.signal(literal!("file"));
-                let h = handle.send();
-                provide_path(h, p.clone());
-                // Remainder of this directory (self/tree)
+                provide_path(handle.send(), path.clone());
                 provide_dir_tree(handle, tail);
             }
             DirNode::Dir { path, children } => {
                 handle.signal(literal!("dir"));
-                // First element of the triple: the directory path (self/append)
-                let h1 = handle.send();
-                provide_path(h1, path.clone());
-                // Second element of the triple: the subtree (self/tree)
-                let mut h2 = handle.send();
-                provide_dir_tree(&mut h2, children.as_slice());
-                // Third element of the triple: the rest of this directory (self/tree)
+                provide_path(handle.send(), path.clone());
+                provide_dir_tree(handle.send(), children.as_slice());
                 provide_dir_tree(handle, tail);
             }
         },
