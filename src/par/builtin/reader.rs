@@ -99,38 +99,12 @@ impl<'a> AsyncByteIterator for ReaderRemainderByteIterator<'a> {
 
         // Request more bytes from the underlying reader
         loop {
-            self.remainder
-                .handle
-                .as_mut()
-                .unwrap()
-                .signal(literal!("read"));
-            match self
-                .remainder
-                .handle
-                .as_mut()
-                .unwrap()
-                .case()
-                .await
-                .as_str()
-            {
-                "ok" => match self
-                    .remainder
-                    .handle
-                    .as_mut()
-                    .unwrap()
-                    .case()
-                    .await
-                    .as_str()
-                {
+            let handle = self.remainder.handle.as_mut().unwrap();
+            handle.signal(literal!("read"));
+            match handle.case().await.as_str() {
+                "ok" => match handle.case().await.as_str() {
                     "chunk" => {
-                        let chunk = self
-                            .remainder
-                            .handle
-                            .as_mut()
-                            .unwrap()
-                            .receive()
-                            .bytes()
-                            .await;
+                        let chunk = handle.receive().bytes().await;
                         assert!(
                             !chunk.is_empty(),
                             "Bytes.Reader returned an empty chunk; implementation bug"
@@ -217,21 +191,22 @@ impl BytesRemainder for ReaderRemainder {
     }
 
     async fn close(mut self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
-        self.handle.as_mut().unwrap().signal(literal!("close"));
+        let handle = self.handle.as_mut().unwrap();
+        handle.signal(literal!("close"));
         match result_in {
             Ok(()) => {
-                let mut h = self.handle.as_mut().unwrap().send();
+                let mut h = handle.send();
                 h.signal(literal!("ok"));
                 h.continue_();
             }
             Err(err_in) => {
-                let mut h = self.handle.as_mut().unwrap().send();
+                let mut h = handle.send();
                 h.signal(literal!("err"));
                 h.link(err_in);
             }
         }
-        match self.handle.as_mut().unwrap().case().await.as_str() {
-            "ok" => Ok(()),
+        match handle.case().await.as_str() {
+            "ok" => Ok(self.handle.take().unwrap().continue_(),),
             "err" => Err(self.handle.take().unwrap()),
             _ => unreachable!(),
         }
@@ -276,21 +251,22 @@ impl CharsRemainder for ReaderRemainder {
     }
 
     async fn close(mut self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
-        self.handle.as_mut().unwrap().signal(literal!("close"));
+        let handle = self.handle.as_mut().unwrap();
+        handle.signal(literal!("close"));
         match result_in {
             Ok(()) => {
-                let mut h = self.handle.as_mut().unwrap().send();
+                let mut h = handle.send();
                 h.signal(literal!("ok"));
                 h.continue_();
             }
             Err(err_in) => {
-                let mut h = self.handle.as_mut().unwrap().send();
+                let mut h = handle.send();
                 h.signal(literal!("err"));
                 h.link(err_in);
             }
         }
-        match self.handle.as_mut().unwrap().case().await.as_str() {
-            "ok" => Ok(()),
+        match handle.case().await.as_str() {
+            "ok" => Ok(self.handle.take().unwrap().continue_()),
             "err" => Err(self.handle.take().unwrap()),
             _ => unreachable!(),
         }
