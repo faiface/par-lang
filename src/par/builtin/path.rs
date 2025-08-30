@@ -1,7 +1,8 @@
-use std::{ffi::OsStr, path::{Path, PathBuf}};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
-use arcstr::Substr;
-use byteview::ByteView;
 use crate::{
     icombs::readback::Handle,
     par::{
@@ -10,6 +11,10 @@ use crate::{
         types::Type,
     },
 };
+use arcstr::{literal, Substr};
+use byteview::ByteView;
+use std::fs::File;
+use std::io::{self, Read};
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
     Module {
@@ -18,18 +23,12 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
         definitions: vec![
             Definition::external(
                 "FromString",
-                Type::function(
-                    Type::string(),
-                    Type::name(Some("Path"), "Path", vec![]),
-                ),
+                Type::function(Type::string(), Type::name(Some("Path"), "Path", vec![])),
                 |handle| Box::pin(path_from_string(handle)),
             ),
             Definition::external(
                 "FromBytes",
-                Type::function(
-                    Type::bytes(),
-                    Type::name(Some("Path"), "Path", vec![]),
-                ),
+                Type::function(Type::bytes(), Type::name(Some("Path"), "Path", vec![])),
                 |handle| Box::pin(path_from_bytes(handle)),
             ),
         ],
@@ -84,18 +83,16 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 "bytesParts" => {
                     provide_bytes_parts(handle, &path);
                 }
-                "parent" => {
-                    match path.parent() {
-                        Some(p) => {
-                            handle.signal(arcstr::literal!("ok"));
-                            provide_path(handle, p.to_path_buf());
-                        }
-                        None => {
-                            handle.signal(arcstr::literal!("err"));
-                            handle.break_();
-                        }
+                "parent" => match path.parent() {
+                    Some(p) => {
+                        handle.signal(arcstr::literal!("ok"));
+                        provide_path(handle, p.to_path_buf());
                     }
-                }
+                    None => {
+                        handle.signal(arcstr::literal!("err"));
+                        handle.break_();
+                    }
+                },
                 "appendString" => {
                     let s = handle.receive().string().await;
                     let p2 = path.join(s.as_str());
@@ -107,6 +104,16 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     let p2 = path.join(Path::new(os));
                     provide_path(handle, p2);
                 }
+                "openFile" => match File::open(&path) {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        return provide_bytes_stream_reader(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
                 _ => unreachable!(),
             }
         }
@@ -120,7 +127,9 @@ fn absolute_path(p: &Path) -> PathBuf {
             if p.is_absolute() {
                 p.to_path_buf()
             } else {
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(p)
+                std::env::current_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."))
+                    .join(p)
             }
         }
     }
@@ -167,4 +176,41 @@ fn os_to_bytes(os: &OsStr) -> ByteView {
 #[cfg(not(any(unix, windows)))]
 fn os_to_bytes(os: &OsStr) -> ByteView {
     ByteView::from(os.to_string_lossy().as_ref())
+}
+
+async fn provide_bytes_stream_reader(mut handle: Handle, mut file: File) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                // Consume the inbound Result<errIn, !>; for now errIn is either{}, so only .ok
+                handle.receive().concurrently(|mut handle| async move {
+                    match handle.case().await.as_str() {
+                        "ok" => handle.continue_(),
+                        _ => unreachable!(),
+                    }
+                });
+                handle.signal(literal!("ok"));
+                return handle.break_();
+            }
+            "read" => {
+                let n_big = handle.receive().nat().await;
+                let n_usize: usize = n_big.to_string().parse::<usize>().unwrap_or(usize::MAX);
+                let mut buf = vec![0u8; n_usize];
+                match file.read(&mut buf[..]) {
+                    Ok(read_n) => {
+                        buf.truncate(read_n);
+                        handle.signal(literal!("ok"));
+                        // Provide pair (Bytes) self. `send()` returns left handle; `handle` becomes right (self)
+                        handle.send().provide_bytes(ByteView::from(buf));
+                        continue;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 }

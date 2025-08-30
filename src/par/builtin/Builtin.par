@@ -277,7 +277,11 @@ type Path.Path =
     .parent => Result<!, self/parent>,
     .appendString(String) => self/append,
     .appendBytes(Bytes) => self/append,
+
+    .openFile => Result<Path.Error, Bytes.Reader<either{}, Path.Error>>,
   }
+
+type Path.Error = String
 
 dec Path.FromString : [String] Path.Path
 dec Path.FromBytes : [Bytes] Path.Path
