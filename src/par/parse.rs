@@ -1385,6 +1385,7 @@ fn proc_catch(input: &mut Input) -> Result<Process> {
         (
             label,
             pattern,
+            t(TokenKind::Arrow),
             t(TokenKind::LCurly),
             process,
             t(TokenKind::RCurly),
@@ -1392,7 +1393,7 @@ fn proc_catch(input: &mut Input) -> Result<Process> {
         ),
     )
     .map(
-        |(pre, (label, pattern, _, block, _, then))| Process::Catch {
+        |(pre, (label, pattern, _, _, block, _, then))| Process::Catch {
             span: pre.span.join(block.span()),
             label,
             pattern,
