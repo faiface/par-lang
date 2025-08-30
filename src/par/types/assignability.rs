@@ -3,6 +3,7 @@ use crate::par::language::LocalName;
 use crate::par::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
+use std::{env, fmt::Write as _};
 
 #[derive(Debug)]
 enum FixPointType {
@@ -78,6 +79,18 @@ impl Type {
         mut other_labels: LabelsMap,
         mut cyclic_points: HashSet<(Path, Path)>,
     ) -> Result<bool, TypeError> {
+        // Debug trace helper
+        if debug_enabled() {
+            debug_log_entry(
+                self,
+                other,
+                &self_path,
+                &other_path,
+                &self_labels,
+                &other_labels,
+                &visited,
+            );
+        }
         Ok(match (self, other) {
             (Self::Self_(_, label1), Self::Self_(_, label2)) => {
                 let (self_path, self_type, self_fixpoint_type, self_labels) = self_labels
@@ -183,6 +196,7 @@ impl Type {
                     cyclic_points,
                 )?
             }
+
             (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
                 true
             }
@@ -254,6 +268,132 @@ impl Type {
                 other_labels,
                 cyclic_points,
             )?,
+
+            (
+                typ,
+                t2 @ Self::Recursive {
+                    asc: asc2,
+                    label,
+                    body,
+                    ..
+                },
+            ) => {
+                if !asc2.is_empty() {
+                    if let Self::Recursive { asc: asc1, .. } = typ {
+                        if !asc2.is_subset(asc1) {
+                            return Ok(false);
+                        }
+                    } else {
+                        return Ok(false);
+                    }
+                }
+                visited.insert((self_path.clone(), other_path.clone()));
+                other_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        other_path.clone(),
+                        t2.clone(),
+                        FixPointType::Recursive,
+                        other_labels.clone(),
+                    )),
+                );
+                typ.is_assignable_to_internal(
+                    body,
+                    type_defs,
+                    self_path,
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
+            }
+
+            (t1 @ Self::Recursive { label, body, .. }, typ) => {
+                visited.insert((self_path.clone(), other_path.clone()));
+                self_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        self_path.clone(),
+                        t1.clone(),
+                        FixPointType::Recursive,
+                        self_labels.clone(),
+                    )),
+                );
+                body.is_assignable_to_internal(
+                    typ,
+                    type_defs,
+                    self_path.add(0),
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
+            }
+
+            (
+                t1 @ Self::Iterative {
+                    asc: asc1,
+                    label,
+                    body,
+                    ..
+                },
+                typ,
+            ) => {
+                if !asc1.is_empty() {
+                    if let Self::Iterative { asc: asc2, .. } = typ {
+                        if !asc1.is_subset(asc2) {
+                            return Ok(false);
+                        }
+                    } else {
+                        return Ok(false);
+                    }
+                }
+                visited.insert((self_path.clone(), other_path.clone()));
+                self_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        self_path.clone(),
+                        t1.clone(),
+                        FixPointType::Iterative,
+                        self_labels.clone(),
+                    )),
+                );
+                body.is_assignable_to_internal(
+                    typ,
+                    type_defs,
+                    self_path.add(0),
+                    other_path,
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
+            }
+
+            (typ, t2 @ Self::Iterative { label, body, .. }) => {
+                visited.insert((self_path.clone(), other_path.clone()));
+                other_labels.0.insert(
+                    label.clone(),
+                    Rc::new((
+                        other_path.clone(),
+                        t2.clone(),
+                        FixPointType::Iterative,
+                        other_labels.clone(),
+                    )),
+                );
+                typ.is_assignable_to_internal(
+                    body,
+                    type_defs,
+                    self_path,
+                    other_path.add(0),
+                    visited,
+                    self_labels,
+                    other_labels,
+                    cyclic_points,
+                )?
+            }
 
             (t1, Self::Box(_, t2)) if t1.is_positive(type_defs)? => t1.is_assignable_to_internal(
                 t2,
@@ -412,132 +552,6 @@ impl Type {
             (Self::Break(_), Self::Break(_)) => true,
             (Self::Continue(_), Self::Continue(_)) => true,
 
-            (
-                typ,
-                t2 @ Self::Recursive {
-                    asc: asc2,
-                    label,
-                    body,
-                    ..
-                },
-            ) => {
-                if !asc2.is_empty() {
-                    if let Self::Recursive { asc: asc1, .. } = typ {
-                        if !asc2.is_subset(asc1) {
-                            return Ok(false);
-                        }
-                    } else {
-                        return Ok(false);
-                    }
-                }
-                visited.insert((self_path.clone(), other_path.clone()));
-                other_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        other_path.clone(),
-                        t2.clone(),
-                        FixPointType::Recursive,
-                        other_labels.clone(),
-                    )),
-                );
-                typ.is_assignable_to_internal(
-                    body,
-                    type_defs,
-                    self_path,
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
-            }
-
-            (t1 @ Self::Recursive { label, body, .. }, typ) => {
-                visited.insert((self_path.clone(), other_path.clone()));
-                self_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        self_path.clone(),
-                        t1.clone(),
-                        FixPointType::Recursive,
-                        self_labels.clone(),
-                    )),
-                );
-                body.is_assignable_to_internal(
-                    typ,
-                    type_defs,
-                    self_path.add(0),
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
-            }
-
-            (
-                t1 @ Self::Iterative {
-                    asc: asc1,
-                    label,
-                    body,
-                    ..
-                },
-                typ,
-            ) => {
-                if !asc1.is_empty() {
-                    if let Self::Iterative { asc: asc2, .. } = typ {
-                        if !asc1.is_subset(asc2) {
-                            return Ok(false);
-                        }
-                    } else {
-                        return Ok(false);
-                    }
-                }
-                visited.insert((self_path.clone(), other_path.clone()));
-                self_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        self_path.clone(),
-                        t1.clone(),
-                        FixPointType::Iterative,
-                        self_labels.clone(),
-                    )),
-                );
-                body.is_assignable_to_internal(
-                    typ,
-                    type_defs,
-                    self_path.add(0),
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
-            }
-
-            (typ, t2 @ Self::Iterative { label, body, .. }) => {
-                visited.insert((self_path.clone(), other_path.clone()));
-                other_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        other_path.clone(),
-                        t2.clone(),
-                        FixPointType::Iterative,
-                        other_labels.clone(),
-                    )),
-                );
-                typ.is_assignable_to_internal(
-                    body,
-                    type_defs,
-                    self_path,
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
-            }
-
             (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
             | (Self::Forall(loc, name1, body1), Self::Forall(_, name2, body2)) => {
                 let body2 = body2.clone().substitute(BTreeMap::from([(
@@ -558,7 +572,64 @@ impl Type {
                 )?
             }
 
-            _ => false,
+            _ => {
+                if debug_enabled() {
+                    debug_log("fallback => false");
+                }
+                false
+            }
         })
     }
+}
+
+fn debug_enabled() -> bool {
+    env::var("PAR_SUBTYPE_DEBUG").is_ok()
+}
+
+fn type_to_string(t: &Type) -> String {
+    let mut s = String::new();
+    let _ = t.pretty(&mut s, 1);
+    s
+}
+
+fn path_to_string(p: &Path) -> String {
+    match p {
+        Path::Empty => String::from("/"),
+        Path::Node(i, prev) => {
+            let mut s = path_to_string(prev);
+            let _ = write!(s, ".{}", i);
+            s
+        }
+        Path::NamedNode(n, prev) => {
+            let mut s = path_to_string(prev);
+            let _ = write!(s, ".{}", n);
+            s
+        }
+    }
+}
+
+fn debug_log(msg: &str) {
+    eprintln!("[subtype] {}", msg);
+}
+
+fn debug_log_entry(
+    left: &Type,
+    right: &Type,
+    left_path: &Path,
+    right_path: &Path,
+    self_labels: &LabelsMap,
+    other_labels: &LabelsMap,
+    visited: &HashSet<(Path, Path)>,
+) {
+    let lp = path_to_string(left_path);
+    let rp = path_to_string(right_path);
+    let lt = type_to_string(left);
+    let rt = type_to_string(right);
+    eprintln!("[subtype] at {} ~ {} | L={} | R={}", lp, rp, lt, rt);
+    eprintln!(
+        "[subtype]    labels: self={} other={} visited={}",
+        self_labels.0.len(),
+        other_labels.0.len(),
+        visited.len()
+    );
 }
