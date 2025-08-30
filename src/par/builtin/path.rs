@@ -13,7 +13,10 @@ use crate::{
 };
 use arcstr::{literal, Substr};
 use byteview::ByteView;
-use tokio::{fs::File, io::AsyncReadExt};
+use tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
     Module {
@@ -107,6 +110,68 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
                         return provide_bytes_reader(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+                "createOrReplaceFile" => match OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&path)
+                    .await
+                {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        return provide_bytes_writer(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+                "createNewFile" => match OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .open(&path)
+                    .await
+                {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        return provide_bytes_writer(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+                "appendToFile" => match OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(&path)
+                    .await
+                {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        return provide_bytes_writer(handle, file).await;
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
+                "createOrAppendToFile" => match OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(&path)
+                    .await
+                {
+                    Ok(file) => {
+                        handle.signal(literal!("ok"));
+                        return provide_bytes_writer(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -208,6 +273,71 @@ async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
                     return handle.provide_string(Substr::from(err.to_string()));
                 }
             },
+            _ => unreachable!(),
+        }
+    }
+}
+
+async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                // Only 'ok' is possible for errIn = either{}
+                handle.receive().concurrently(|mut handle| async move {
+                    match handle.case().await.as_str() {
+                        "ok" => handle.continue_(),
+                        _ => unreachable!(),
+                    }
+                });
+
+                // Try to flush pending data before closing
+                match file.flush().await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+            "flush" => match file.flush().await {
+                Ok(()) => {
+                    handle.signal(literal!("ok"));
+                    // remain providing the same writer (self)
+                }
+                Err(err) => {
+                    handle.signal(literal!("err"));
+                    return handle.provide_string(Substr::from(err.to_string()));
+                }
+            },
+            "write" => {
+                let bytes = handle.receive().bytes().await;
+                match file.write_all(bytes.as_ref()).await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        // remain providing the same writer (self)
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
+            "writeString" => {
+                let s = handle.receive().string().await;
+                match file.write_all(s.as_bytes()).await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        // remain providing the same writer (self)
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                }
+            }
             _ => unreachable!(),
         }
     }

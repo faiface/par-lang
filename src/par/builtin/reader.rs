@@ -206,7 +206,7 @@ impl BytesRemainder for ReaderRemainder {
             }
         }
         match handle.case().await.as_str() {
-            "ok" => Ok(self.handle.take().unwrap().continue_(),),
+            "ok" => Ok(self.handle.take().unwrap().continue_()),
             "err" => Err(self.handle.take().unwrap()),
             _ => unreachable!(),
         }
