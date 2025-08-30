@@ -271,23 +271,30 @@ dec Console.Open : Console
 /// Path
 
 type Path = iterative/append recursive/parent box choice {
-    .stringName => String,
-    .bytesName => Bytes,
-    .stringAbsolute => String,
-    .bytesAbsolute => Bytes,
-    .stringParts => List<String>,
-    .bytesParts => List<Bytes>,
+  .stringName => String,
+  .bytesName => Bytes,
+  .stringAbsolute => String,
+  .bytesAbsolute => Bytes,
+  .stringParts => List<String>,
+  .bytesParts => List<Bytes>,
 
-    .parent => Result<!, self/parent>,
-    .appendString(String) => self/append,
-    .appendBytes(Bytes) => self/append,
+  .parent => Result<!, self/parent>,
+  .appendString(String) => self/append,
+  .appendBytes(Bytes) => self/append,
 
-    .openFile => Result<Path.Error, Bytes.Reader<either{}, Path.Error>>,
-    .createOrReplaceFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-    .createNewFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-    .appendToFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-    .createOrAppendToFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-  }
+  .openFile => Result<Path.Error, Bytes.Reader<either{}, Path.Error>>,
+  .createOrReplaceFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
+  .createNewFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
+  .appendToFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
+  .createOrAppendToFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
+
+  .listDir => Result<Path.Error, List<self/append>>,
+  .traverseDir => Result<Path.Error, recursive/tree either {
+    .end!,
+    .file(self/append) self/tree,
+    .dir(self/append, self/tree) self/tree,
+  }>,
+}
 
 type Path.Error = String
 
