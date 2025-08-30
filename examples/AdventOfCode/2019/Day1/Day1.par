@@ -2,22 +2,14 @@
 
 dec FileRead : [String] Result<!, String>
 def FileRead = [path]
-  Storage.Get(path).case {
-    .err err => .err !,
-    .ok info => info.case {
-      .dir _ => .err !,
-      .file file => file.readUTF8.case {
-        .err err => .err !,
-        .ok reader => reader.remainder.case {
-          .err err => .err !,
-          .ok contents => .ok contents,
-        },
-      },
-    },
-  }
+  catch _ => .err! in
+  let try reader = Os.PathFromString(path).openFile in
+  let parser = String.ParseReader(type either{}, Os.Error)(reader) in
+  let try contents = parser.remainder in
+  .ok contents
 
 dec StringLines : [String] List<String>
-def StringLines = [string] String.Reader(string).begin.match(.repeat.non.char '\n', .one.char '\n').case {
+def StringLines = [string] String.Parse(string).begin.match(.repeat.non.char "\n", .one.char "\n").case {
   .end err => let ! = Result.Always(type !)(err) in .end!
   .fail attempt => .item(Result.Always(type String)(attempt.remainder)).end!
   .match(line, _) reader => .item(line) reader.loop
