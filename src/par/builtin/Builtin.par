@@ -32,6 +32,7 @@ dec Nat.FromString : [String] either {
   .err!,
 }
 
+
 /// Int
 
 dec Int.Add   : [Int, Int] Int
@@ -56,12 +57,14 @@ dec Int.FromString : [String] either {
   .err!,
 }
 
+
 /// Bool
 
 type Bool = either {
   .false!,
   .true!,
 }
+
 
 /// Result
 
@@ -75,6 +78,7 @@ def Result.Always = [type a] [result] result.case {
   .ok value => value,
   .err impossible => impossible.case {},
 }
+
 
 /// List
 
@@ -99,6 +103,7 @@ def List.Builder = [type a]
     .build => append(.end!),
   }
 
+
 /// Ordering
 
 type Ordering = either {
@@ -106,6 +111,7 @@ type Ordering = either {
   .equal!,
   .greater!,
 }
+
 
 /// Char
 
@@ -124,6 +130,7 @@ type Char.Class = either {
 dec Char.Equals : [Char, Char] Bool
 dec Char.Code   : [Char] Nat
 dec Char.Is     : [Char, Char.Class] Bool
+
 
 /// String
 
@@ -177,6 +184,7 @@ dec String.Quote : [String] String
 
 dec String.FromBytes : [Bytes] String
 
+
 /// Byte
 
 type Byte.Class = either {
@@ -189,11 +197,20 @@ dec Byte.Equals : [Byte, Byte] Bool
 dec Byte.Code   : [Byte] Nat
 dec Byte.Is     : [Byte, Byte.Class] Bool
 
+
 /// Bytes
 
 type Bytes.Builder = iterative choice {
   .add(Bytes) => self,
   .build => Bytes,
+}
+
+type Bytes.Reader<errIn, errOut> = recursive choice {
+  .close(Result<errIn, !>) => Result<errOut, !>,
+  .read => Result<errOut, either {
+    .end!,
+    .chunk(Bytes) self,
+  }>,
 }
 
 type Bytes.Writer<errIn, errOut> = iterative choice {
@@ -239,17 +256,6 @@ dec Bytes.Parser  : [Bytes] Bytes.Parser<either{}, either{}>
 
 dec Bytes.FromString : [String] Bytes
 
-/// Cell (EXPERIMENTAL)
-
-type Cell<a> = iterative choice {
-  .end => ?,
-  .split(dual self) => self,
-  .take => (a) choice {
-    .put(a) => self,
-  }
-}
-
-dec Cell.Share : [type a] [a, dual Cell<a>] a
 
 /// Console
 
@@ -261,12 +267,10 @@ type Console = iterative choice {
 
 dec Console.Open : Console
 
+
 /// Path
 
-type Path.Path =
-  iterative/append
-  recursive/parent
-  box choice {
+type Path = iterative/append recursive/parent box choice {
     .stringName => String,
     .bytesName => Bytes,
     .stringAbsolute => String,
@@ -283,8 +287,8 @@ type Path.Path =
 
 type Path.Error = String
 
-dec Path.FromString : [String] Path.Path
-dec Path.FromBytes : [Bytes] Path.Path
+dec Path.FromString : [String] Path
+dec Path.FromBytes : [Bytes] Path
 
 
 /// Storage
@@ -329,13 +333,20 @@ dec Storage.Get : [String] Result<Storage.Error, either {
 dec Storage.CreateFile : [String] Result<Storage.Error, Storage.FileInfo>
 dec Storage.CreateDir  : [String] Result<Storage.Error, Storage.DirInfo>
 
+
+/// Cell (EXPERIMENTAL)
+
+type Cell<a> = iterative choice {
+  .end => ?,
+  .split(dual self) => self,
+  .take => (a) choice {
+    .put(a) => self,
+  }
+}
+
+dec Cell.Share : [type a] [a, dual Cell<a>] a
+
+
 /// Debug
 
 dec Debug.Log : [String] !
-
-// New streaming bytes reader (no constructor yet)
-type Bytes.Reader<errIn, errOut> =
-  iterative choice {
-    .close(Result<errIn, !>) => Result<errOut, !>,
-    .read(Nat) => Result<errOut, (Bytes) self>,
-  }
