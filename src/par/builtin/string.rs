@@ -6,7 +6,11 @@ use num_bigint::BigInt;
 use crate::{
     icombs::readback::Handle,
     par::{
-        builtin::{char_::CharClass, list::readback_list, reader::provide_string_reader},
+        builtin::{
+            char_::CharClass,
+            list::readback_list,
+            reader::{provide_string_reader, ReaderRemainder},
+        },
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
@@ -32,6 +36,28 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     ),
                 ),
                 |handle| Box::pin(string_reader(handle)),
+            ),
+            Definition::external(
+                "ParseReader",
+                Type::forall(
+                    "errIn",
+                    Type::forall(
+                        "errOut",
+                        Type::function(
+                            Type::name(
+                                Some("Bytes"),
+                                "Reader",
+                                vec![Type::var("errIn"), Type::var("errOut")],
+                            ),
+                            Type::name(
+                                None,
+                                "Parser",
+                                vec![Type::var("errIn"), Type::var("errOut")],
+                            ),
+                        ),
+                    ),
+                ),
+                |handle| Box::pin(string_parse_reader(handle)),
             ),
             Definition::external(
                 "Quote",
@@ -71,6 +97,11 @@ async fn string_quote(mut handle: Handle) {
 async fn string_reader(mut handle: Handle) {
     let remainder = handle.receive().string().await;
     provide_string_reader(handle, remainder).await;
+}
+
+async fn string_parse_reader(mut handle: Handle) {
+    let reader = handle.receive();
+    provide_string_reader(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn string_from_bytes(mut handle: Handle) {

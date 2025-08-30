@@ -5,7 +5,11 @@ use std::{cmp::Ordering, sync::Arc};
 use crate::{
     icombs::readback::Handle,
     par::{
-        builtin::{byte::ByteClass, list::readback_list, reader::provide_bytes_reader},
+        builtin::{
+            byte::ByteClass,
+            list::readback_list,
+            reader::{provide_bytes_reader, ReaderRemainder},
+        },
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
@@ -31,6 +35,28 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     ),
                 ),
                 |handle| Box::pin(bytes_reader(handle)),
+            ),
+            Definition::external(
+                "ParseReader",
+                Type::forall(
+                    "errIn",
+                    Type::forall(
+                        "errOut",
+                        Type::function(
+                            Type::name(
+                                None,
+                                "Reader",
+                                vec![Type::var("errIn"), Type::var("errOut")],
+                            ),
+                            Type::name(
+                                None,
+                                "Parser",
+                                vec![Type::var("errIn"), Type::var("errOut")],
+                            ),
+                        ),
+                    ),
+                ),
+                |handle| Box::pin(bytes_parse_reader(handle)),
             ),
             Definition::external(
                 "FromString",
@@ -60,6 +86,11 @@ async fn bytes_builder(mut handle: Handle) {
 async fn bytes_reader(mut handle: Handle) {
     let remainder = handle.receive().bytes().await;
     provide_bytes_reader(handle, remainder).await;
+}
+
+async fn bytes_parse_reader(mut handle: Handle) {
+    let reader = handle.receive();
+    provide_bytes_reader(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn bytes_from_string(mut handle: Handle) {

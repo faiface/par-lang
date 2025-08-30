@@ -177,12 +177,13 @@ type String.Pattern = recursive either {
   .or List<self>,
 }
 
+dec String.Quote     : [String] String
+dec String.FromBytes : [Bytes] String
+
 dec String.Builder : String.Builder
 dec String.Parser  : [String] String.Parser<either{}, either{}>
 
-dec String.Quote : [String] String
-
-dec String.FromBytes : [Bytes] String
+dec String.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] String.Parser<errIn, errOut>
 
 
 /// Byte
@@ -251,10 +252,12 @@ type Bytes.Pattern = recursive either {
   .or List<self>,
 }
 
+dec Bytes.FromString : [String] Bytes
+
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Parser  : [Bytes] Bytes.Parser<either{}, either{}>
 
-dec Bytes.FromString : [String] Bytes
+dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes.Parser<errIn, errOut>
 
 
 /// Console

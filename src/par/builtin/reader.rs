@@ -1,5 +1,6 @@
 use arcstr::{literal, Substr};
 use byteview::ByteView;
+use std::collections::VecDeque;
 
 use crate::{
     icombs::readback::Handle,
@@ -56,6 +57,268 @@ pub enum Never {}
 impl ToString for Never {
     fn to_string(&self) -> String {
         "Never".to_string()
+    }
+}
+
+// A generic remainder that adapts a runtime `Bytes.Reader<errIn, errOut>` handle
+// into the `BytesRemainder` and `CharsRemainder` traits. Errors are forwarded
+// opaquely by passing handles through without interpretation.
+pub struct ReaderRemainder {
+    handle: Option<Handle>,
+    buffer: VecDeque<u8>,
+}
+
+impl ReaderRemainder {
+    pub fn new(handle: Handle) -> Self {
+        Self {
+            handle: Some(handle),
+            buffer: VecDeque::new(),
+        }
+    }
+}
+
+pub struct ReaderRemainderByteIterator<'a> {
+    remainder: &'a mut ReaderRemainder,
+    index: usize,
+}
+
+impl<'a> AsyncByteIterator for ReaderRemainderByteIterator<'a> {
+    // Forward opaque error values via raw Handle
+    type ErrOut = Handle;
+
+    async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::ErrOut> {
+        // Serve from buffer if available
+        if let Some(b) = self.remainder.buffer.get(self.index) {
+            self.index += 1;
+            return Ok(Some((self.index - 1, *b)));
+        }
+
+        if self.remainder.handle.is_none() {
+            return Ok(None);
+        }
+
+        // Request more bytes from the underlying reader
+        loop {
+            self.remainder
+                .handle
+                .as_mut()
+                .unwrap()
+                .signal(literal!("read"));
+            match self
+                .remainder
+                .handle
+                .as_mut()
+                .unwrap()
+                .case()
+                .await
+                .as_str()
+            {
+                "ok" => match self
+                    .remainder
+                    .handle
+                    .as_mut()
+                    .unwrap()
+                    .case()
+                    .await
+                    .as_str()
+                {
+                    "chunk" => {
+                        let chunk = self
+                            .remainder
+                            .handle
+                            .as_mut()
+                            .unwrap()
+                            .receive()
+                            .bytes()
+                            .await;
+                        assert!(
+                            !chunk.is_empty(),
+                            "Bytes.Reader returned an empty chunk; implementation bug"
+                        );
+                        self.remainder.buffer.extend(chunk.as_ref());
+                        // After extending by a non-empty chunk, the current index must be valid
+                        let b = *self
+                            .remainder
+                            .buffer
+                            .get(self.index)
+                            .expect("buffer should contain data at current index");
+                        self.index += 1;
+                        return Ok(Some((self.index - 1, b)));
+                    }
+                    "end" => {
+                        // Close the provider side of the 'end' branch
+                        self.remainder.handle.take().unwrap().continue_();
+                        return Ok(None);
+                    }
+                    _ => unreachable!(),
+                },
+                "err" => {
+                    // Propagate the opaque error handle upward without receiving
+                    let err = self.remainder.handle.take().unwrap();
+                    return Err(err);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+pub struct ReaderRemainderCharIterator<'a> {
+    bytes: ReaderRemainderByteIterator<'a>,
+    tmp: Vec<u8>,
+}
+
+impl<'a> AsyncCharIterator for ReaderRemainderCharIterator<'a> {
+    // Forward opaque error values via raw Handle
+    type ErrOut = Handle;
+
+    async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::ErrOut> {
+        loop {
+            while self.tmp.len() < 4 {
+                match self.bytes.next().await? {
+                    Some((_, b)) => self.tmp.push(b),
+                    None => break,
+                }
+            }
+            if self.tmp.is_empty() {
+                return Ok(None);
+            }
+            let pos = self.bytes.index - self.tmp.len();
+            for len in 1..=self.tmp.len() {
+                if let Ok(s) = std::str::from_utf8(&self.tmp[..len]) {
+                    if let Some(c) = s.chars().next() {
+                        self.tmp.drain(..len);
+                        return Ok(Some((pos, len, c)));
+                    }
+                }
+            }
+            // Invalid UTF-8 prefix; consume one byte and return replacement char
+            self.tmp.remove(0);
+            return Ok(Some((pos, 1, char::REPLACEMENT_CHARACTER)));
+        }
+    }
+}
+
+impl BytesRemainder for ReaderRemainder {
+    type ErrIn = Handle;
+    type ErrOut = Handle;
+    type Iterator<'a>
+        = ReaderRemainderByteIterator<'a>
+    where
+        Self: 'a;
+
+    async fn read_error_in(handle: Handle) -> Self::ErrIn {
+        handle
+    }
+
+    async fn provide_error_out(handle: Handle, err_out: Self::ErrOut) {
+        // Forward the opaque error value
+        handle.link(err_out);
+    }
+
+    async fn close(mut self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
+        self.handle.as_mut().unwrap().signal(literal!("close"));
+        match result_in {
+            Ok(()) => {
+                let mut h = self.handle.as_mut().unwrap().send();
+                h.signal(literal!("ok"));
+                h.continue_();
+            }
+            Err(err_in) => {
+                let mut h = self.handle.as_mut().unwrap().send();
+                h.signal(literal!("err"));
+                h.link(err_in);
+            }
+        }
+        match self.handle.as_mut().unwrap().case().await.as_str() {
+            "ok" => Ok(()),
+            "err" => Err(self.handle.take().unwrap()),
+            _ => unreachable!(),
+        }
+    }
+
+    fn bytes(&mut self) -> Self::Iterator<'_> {
+        ReaderRemainderByteIterator {
+            remainder: self,
+            index: 0,
+        }
+    }
+
+    fn pop_bytes(&mut self, n: usize) -> ByteView {
+        self.buffer.drain(..n).collect()
+    }
+
+    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut> {
+        let mut result = Vec::new();
+        let mut iter = self.bytes();
+        while let Some((_, b)) = iter.next().await? {
+            result.push(b);
+        }
+        Ok(ByteView::from(result))
+    }
+}
+
+impl CharsRemainder for ReaderRemainder {
+    type ErrIn = Handle;
+    type ErrOut = Handle;
+    type Iterator<'a>
+        = ReaderRemainderCharIterator<'a>
+    where
+        Self: 'a;
+
+    async fn read_error_in(handle: Handle) -> Self::ErrIn {
+        handle
+    }
+
+    async fn provide_error_out(handle: Handle, err_out: Self::ErrOut) {
+        // Forward the opaque error value
+        handle.link(err_out);
+    }
+
+    async fn close(mut self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut> {
+        self.handle.as_mut().unwrap().signal(literal!("close"));
+        match result_in {
+            Ok(()) => {
+                let mut h = self.handle.as_mut().unwrap().send();
+                h.signal(literal!("ok"));
+                h.continue_();
+            }
+            Err(err_in) => {
+                let mut h = self.handle.as_mut().unwrap().send();
+                h.signal(literal!("err"));
+                h.link(err_in);
+            }
+        }
+        match self.handle.as_mut().unwrap().case().await.as_str() {
+            "ok" => Ok(()),
+            "err" => Err(self.handle.take().unwrap()),
+            _ => unreachable!(),
+        }
+    }
+
+    fn chars(&mut self) -> Self::Iterator<'_> {
+        ReaderRemainderCharIterator {
+            bytes: ReaderRemainderByteIterator {
+                remainder: self,
+                index: 0,
+            },
+            tmp: Vec::with_capacity(4),
+        }
+    }
+
+    fn pop_chars(&mut self, n: usize) -> Substr {
+        let popped = self.buffer.drain(..n).collect::<Vec<u8>>();
+        let popped = String::from_utf8_lossy(&popped[..]);
+        Substr::from(popped)
+    }
+
+    async fn remaining_chars(&mut self) -> Result<Substr, Self::ErrOut> {
+        let mut result = String::new();
+        let mut iter = self.chars();
+        while let Some((_, _, ch)) = iter.next().await? {
+            result.push(ch);
+        }
+        Ok(Substr::from(result))
     }
 }
 
