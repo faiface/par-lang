@@ -199,6 +199,16 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                         return handle.provide_string(Substr::from(err));
                     }
                 },
+                "createDir" => match fs::create_dir_all(&path).await {
+                    Ok(()) => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
+                    Err(err) => {
+                        handle.signal(literal!("err"));
+                        return handle.provide_string(Substr::from(err.to_string()));
+                    }
+                },
                 _ => unreachable!(),
             }
         }

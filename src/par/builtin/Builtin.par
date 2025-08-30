@@ -294,6 +294,7 @@ type Path = iterative/append recursive/parent box choice {
     .file(self/append) self/tree,
     .dir(self/append, self/tree) self/tree,
   }>,
+  .createDir => Result<Path.Error, !>,
 }
 
 type Path.Error = String
