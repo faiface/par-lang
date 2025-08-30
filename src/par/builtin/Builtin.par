@@ -176,7 +176,7 @@ dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
 
 dec String.Builder : String.Builder
-dec String.Parser  : [String] String.Parser<either{}, either{}>
+dec String.Parse   : [String] String.Parser<either{}, either{}>
 
 dec String.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] String.Parser<errIn, errOut>
 
@@ -252,7 +252,7 @@ type Bytes.Pattern = recursive either {
 dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
-dec Bytes.Parser  : [Bytes] Bytes.Parser<either{}, either{}>
+dec Bytes.Parse   : [Bytes] Bytes.Parser<either{}, either{}>
 
 dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes.Parser<errIn, errOut>
 
@@ -268,9 +268,13 @@ type Console = iterative choice {
 dec Console.Open : Console
 
 
-/// Path
+/// Os
 
-type Path = iterative/append recursive/parent box choice {
+type Os.Error  = String
+type Os.Reader = Bytes.Reader<either{}, Os.Error>
+type Os.Writer = Bytes.Writer<either{}, Os.Error>
+
+type Os.Path = iterative/append recursive/parent box choice {
   .stringName => String,
   .bytesName => Bytes,
   .stringAbsolute => String,
@@ -282,25 +286,23 @@ type Path = iterative/append recursive/parent box choice {
   .appendString(String) => self/append,
   .appendBytes(Bytes) => self/append,
 
-  .openFile => Result<Path.Error, Bytes.Reader<either{}, Path.Error>>,
-  .createOrReplaceFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-  .createNewFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-  .appendToFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
-  .createOrAppendToFile => Result<Path.Error, Bytes.Writer<either{}, Path.Error>>,
+  .openFile => Result<Os.Error, Os.Reader>,
+  .createOrReplaceFile => Result<Os.Error, Os.Writer>,
+  .createNewFile => Result<Os.Error, Os.Writer>,
+  .appendToFile => Result<Os.Error, Os.Writer>,
+  .createOrAppendToFile => Result<Os.Error, Os.Writer>,
 
-  .listDir => Result<Path.Error, List<self/append>>,
-  .traverseDir => Result<Path.Error, recursive/tree either {
+  .listDir => Result<Os.Error, List<self/append>>,
+  .traverseDir => Result<Os.Error, recursive/tree either {
     .end!,
     .file(self/append) self/tree,
     .dir(self/append, self/tree) self/tree,
   }>,
-  .createDir => Result<Path.Error, !>,
+  .createDir => Result<Os.Error, !>,
 }
 
-type Path.Error = String
-
-dec Path.FromString : [String] Path
-dec Path.FromBytes : [Bytes] Path
+dec Os.PathFromString : [String] Os.Path
+dec Os.PathFromBytes  : [Bytes] Os.Path
 
 
 /// Cell (EXPERIMENTAL)

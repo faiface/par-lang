@@ -9,7 +9,7 @@ use crate::{
         builtin::{
             char_::CharClass,
             list::readback_list,
-            reader::{provide_string_reader, ReaderRemainder},
+            parser::{provide_string_parser, ReaderRemainder},
         },
         process,
         program::{Definition, Module, TypeDef},
@@ -26,7 +26,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Box::pin(string_builder(handle))
             }),
             Definition::external(
-                "Parser",
+                "Parse",
                 Type::function(
                     Type::string(),
                     Type::name(
@@ -35,7 +35,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                         vec![Type::either(vec![]), Type::either(vec![])],
                     ),
                 ),
-                |handle| Box::pin(string_reader(handle)),
+                |handle| Box::pin(string_parse(handle)),
             ),
             Definition::external(
                 "ParseReader",
@@ -94,14 +94,14 @@ async fn string_quote(mut handle: Handle) {
     handle.provide_string(Substr::from(format!("{:?}", s)));
 }
 
-async fn string_reader(mut handle: Handle) {
+async fn string_parse(mut handle: Handle) {
     let remainder = handle.receive().string().await;
-    provide_string_reader(handle, remainder).await;
+    provide_string_parser(handle, remainder).await;
 }
 
 async fn string_parse_reader(mut handle: Handle) {
     let reader = handle.receive();
-    provide_string_reader(handle, ReaderRemainder::new(reader)).await;
+    provide_string_parser(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn string_from_bytes(mut handle: Handle) {

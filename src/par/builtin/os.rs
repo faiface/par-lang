@@ -25,12 +25,12 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
         declarations: vec![],
         definitions: vec![
             Definition::external(
-                "FromString",
+                "PathFromString",
                 Type::function(Type::string(), Type::name(None, "Path", vec![])),
                 |handle| Box::pin(path_from_string(handle)),
             ),
             Definition::external(
-                "FromBytes",
+                "PathFromBytes",
                 Type::function(Type::bytes(), Type::name(None, "Path", vec![])),
                 |handle| Box::pin(path_from_bytes(handle)),
             ),

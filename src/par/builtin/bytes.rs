@@ -8,7 +8,7 @@ use crate::{
         builtin::{
             byte::ByteClass,
             list::readback_list,
-            reader::{provide_bytes_reader, ReaderRemainder},
+            parser::{provide_bytes_parser, ReaderRemainder},
         },
         process,
         program::{Definition, Module, TypeDef},
@@ -25,7 +25,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Box::pin(bytes_builder(handle))
             }),
             Definition::external(
-                "Parser",
+                "Parse",
                 Type::function(
                     Type::bytes(),
                     Type::name(
@@ -34,7 +34,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                         vec![Type::either(vec![]), Type::either(vec![])],
                     ),
                 ),
-                |handle| Box::pin(bytes_reader(handle)),
+                |handle| Box::pin(bytes_parser(handle)),
             ),
             Definition::external(
                 "ParseReader",
@@ -83,14 +83,14 @@ async fn bytes_builder(mut handle: Handle) {
     }
 }
 
-async fn bytes_reader(mut handle: Handle) {
+async fn bytes_parser(mut handle: Handle) {
     let remainder = handle.receive().bytes().await;
-    provide_bytes_reader(handle, remainder).await;
+    provide_bytes_parser(handle, remainder).await;
 }
 
 async fn bytes_parse_reader(mut handle: Handle) {
     let reader = handle.receive();
-    provide_bytes_reader(handle, ReaderRemainder::new(reader)).await;
+    provide_bytes_parser(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn bytes_from_string(mut handle: Handle) {

@@ -402,7 +402,7 @@ impl<'a> AsyncCharIterator for (usize, &'a Substr) {
     }
 }
 
-pub async fn provide_bytes_reader<R: BytesRemainder>(mut handle: Handle, mut remainder: R) {
+pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
@@ -581,7 +581,7 @@ pub async fn provide_bytes_reader<R: BytesRemainder>(mut handle: Handle, mut rem
     }
 }
 
-pub async fn provide_string_reader<R: CharsRemainder>(mut handle: Handle, mut remainder: R) {
+pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
