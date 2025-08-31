@@ -1301,6 +1301,7 @@ fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
         apply_branch_recv_type,
         apply_branch_receive,
         apply_branch_continue,
+        apply_branch_try,
     ))
     .parse_next(input)
 }
@@ -1347,6 +1348,14 @@ fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch> {
         })
     })
     .parse_next(input)
+}
+
+fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch> {
+    commit_after(t(TokenKind::Try), (label, apply_branch))
+        .map(|(kw, (label, rest))| {
+            ApplyBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
+        })
+        .parse_next(input)
 }
 
 fn process(input: &mut Input) -> Result<Process> {
@@ -1683,6 +1692,7 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
         cmd_branch_continue,
         cmd_branch_recv_type,
         cmd_branch_receive,
+        cmd_branch_try,
     ))
     .parse_next(input)
 }
@@ -1773,6 +1783,14 @@ fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
         })
     })
     .parse_next(input)
+}
+
+fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch> {
+    commit_after(t(TokenKind::Try), (label, cmd_branch))
+        .map(|(kw, (label, rest))| {
+            CommandBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
+        })
+        .parse_next(input)
 }
 
 fn label(input: &mut Input) -> Result<Option<LocalName>> {

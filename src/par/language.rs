@@ -209,6 +209,7 @@ pub enum ApplyBranch {
     Receive(Span, Pattern, Box<Self>),
     Continue(Span, Expression),
     ReceiveType(Span, LocalName, Box<Self>),
+    Try(Span, Option<LocalName>, Box<Self>),
 }
 
 // span doesn't include the "then" process
@@ -266,6 +267,7 @@ pub enum CommandBranch {
     Receive(Span, Pattern, Box<Self>),
     Continue(Span, Process),
     ReceiveType(Span, LocalName, Box<Self>),
+    Try(Span, Option<LocalName>, Box<Self>),
 }
 
 impl Hash for LocalName {
@@ -718,7 +720,7 @@ impl Pattern {
             Self::Try(span, label, rest) => {
                 let catch_block = pass.use_catch(span, label)?;
                 Ok(compile_try(
-                    span.clone(),
+                    span,
                     LocalName::match_(level),
                     catch_block,
                     rest.compile_helper(level, process, pass)?,
@@ -1285,12 +1287,7 @@ impl Apply {
 
             Self::Try(span, label, apply) => {
                 let catch_block = pass.use_catch(span, label)?;
-                compile_try(
-                    span.clone(),
-                    LocalName::object(),
-                    catch_block,
-                    apply.compile(pass)?,
-                )
+                compile_try(span, LocalName::object(), catch_block, apply.compile(pass)?)
             }
         })
     }
@@ -1364,6 +1361,12 @@ impl ApplyBranch {
                     command: process::Command::ReceiveType(parameter.clone(), process),
                 })
             }
+
+            Self::Try(span, label, branch) => {
+                let catch_block = pass.use_catch(span, label)?;
+                let process = branch.compile(pass)?;
+                compile_try(span, LocalName::object(), catch_block, process)
+            }
         })
     }
 }
@@ -1374,7 +1377,8 @@ impl Spanning for ApplyBranch {
             Self::Then(span, _, _)
             | Self::Receive(span, _, _)
             | Self::Continue(span, _)
-            | Self::ReceiveType(span, _, _) => span.clone(),
+            | Self::ReceiveType(span, _, _)
+            | Self::Try(span, _, _) => span.clone(),
         }
     }
 }
@@ -1620,7 +1624,7 @@ impl Command {
             Self::Try(span, label, command) => {
                 let catch_block = pass.use_catch(span, label)?;
                 compile_try(
-                    span.clone(),
+                    span,
                     object_name.clone(),
                     catch_block,
                     command.compile(object_name, pass)?,
@@ -1631,7 +1635,7 @@ impl Command {
 }
 
 fn compile_try(
-    span: Span,
+    span: &Span,
     variable: LocalName,
     catch_block: Arc<process::Process<()>>,
     ok_process: Arc<process::Process<()>>,
@@ -1651,7 +1655,7 @@ fn compile_try(
                     name: LocalName::error(),
                     annotation: None,
                     typ: (),
-                    value: Arc::new(process::Expression::Variable(span, variable, ())),
+                    value: Arc::new(process::Expression::Variable(span.clone(), variable, ())),
                     then: catch_block,
                 }),
                 ok_process,
@@ -1730,6 +1734,12 @@ impl CommandBranch {
                     command: process::Command::ReceiveType(parameter.clone(), process),
                 })
             }
+
+            Self::Try(span, label, branch) => {
+                let catch_block = pass.use_catch(span, label)?;
+                let process = branch.compile(object_name, pass)?;
+                compile_try(span, object_name.clone(), catch_block, process)
+            }
         })
     }
 }
@@ -1741,7 +1751,8 @@ impl Spanning for CommandBranch {
             | Self::BindThen(span, _, _)
             | Self::Receive(span, _, _)
             | Self::Continue(span, _)
-            | Self::ReceiveType(span, _, _) => span.clone(),
+            | Self::ReceiveType(span, _, _)
+            | Self::Try(span, _, _) => span.clone(),
         }
     }
 }
