@@ -1,41 +1,47 @@
 def Program: ! = chan exit {
   let console = Console.Open
 
-  console.print("Welcome to Mini Grep!")
-  console.prompt("Path: ")[input]
-  input.case {
-    .err! => {
-      console.print("Failed to read input.").close
-      exit!
-    }
-    .ok path => {}
-  }
-  console.prompt("Needle: ")[input]
-  input.case {
-    .err! => {
-      console.print("Failed to read input.").close
-      exit!
-    }
-    .ok needle => {}
+  catch ! => {
+    console.print("Failed to read input.")
+    console.close
+    exit!
   }
 
-  Traverse(path).begin.case {
+  console.print("Welcome to Mini Grep!")
+  console.prompt("Directory: ")[try path]
+  console.prompt("Needle: ")[try needle]
+
+  catch e => {
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  let try paths = TraverseDirectory(Os.PathFromString(path))
+  paths.begin.case {
     .end! => {}
-    .item(fileInfo) rest => {
-      GrepFile(needle, fileInfo).begin/file.case {
-        .end! => {}
-        .item((lineNumber) lineContent) remainingLines => {
+    .item(path) => {
+      catch e => {
+        console.print("")
+        console.print(e)
+        paths.loop
+      }
+      let try reader = path.openFile
+      let lines = GrepFile(needle, reader)
+      lines.begin/file.next.case {
+        .end try! => {}
+        .item((number) content) => {
           console.print("")
           console.print(String.Builder
-            .add(fileInfo.path.absolute)
+            .add(path.stringAbsolute)
             .add(":")
-            .add(Nat.ToString(lineNumber))
+            .add(Nat.ToString(number))
             .build)
-          console.print(lineContent)
-          remainingLines.loop/file
+          console.print(content)
+          lines.loop/file
         }
       }
-      rest.loop
+      paths.loop
     }
   }
 
@@ -43,45 +49,22 @@ def Program: ! = chan exit {
   exit!
 }
 
-dec GrepFile : [String, Storage.FileInfo] List<(Nat) String>
-def GrepFile = [needle, fileInfo] fileInfo.readUTF8.case {
-  .err e => do { Debug.Log(e) } in .end!,
-  .ok reader => do {
-    let lines = Lines(type Storage.Error)(reader)
-    let lines = Enumerate1(type Storage.Error, String)(lines)
-    let lines = Filter(type Storage.Error, (Nat) String)
-                  (lines, box [(_) line] Contains(needle, line))
-  } in lines.begin.next.case {
-    .end result => do {
-      result.case {
-        .err e => { Debug.Log(e) }
-        .ok! => {}
-      }
-    } in .end!,
-    .item(line) rest => .item(line) rest.loop,
-  }
-}
-
-dec Traverse : [String] List<Storage.FileInfo>
-def Traverse = [path] Storage.Get(path).case {
-  .err e => do { Debug.Log(e) } in .end!,
-  .ok item => item.case {
-    .file info => .item(info).end!,
-    .dir info => TraverseDir(info),
-  }
-}
-
-dec TraverseDir : [Storage.DirInfo] List<Storage.FileInfo>
-def TraverseDir = [dir] dir.begin/tree.list.case {
-  .err e => do { Debug.Log(e) } in .end!,
-  .ok items => items.begin.case {
+dec TraverseDirectory : [Os.Path] Result<Os.Error, List<Os.Path>>
+def TraverseDirectory = [dirPath]
+  catch e => .err e in
+  let try tree = dirPath.traverseDir in
+  .ok tree.begin.case {
     .end! => .end!,
-    .item(it) rest => it.case {
-      .file info => .item(info) rest.loop,
-      .dir info => Concat(type Storage.FileInfo)(info.loop/tree, rest.loop),
-    }
+    .file(path) rest => .item(path) rest.loop,
+    .dir(_, nested) rest => Concat(type Os.Path)(nested.loop, rest.loop),
   }
-}
+
+dec GrepFile : [String, Os.Reader] Iterator<Os.Error, (Nat) String>
+def GrepFile = [needle, reader] do {
+  let parser = String.ParseReader(type either{}, Os.Error)(reader)
+  let lines = Lines(type Os.Error)(parser)
+  let lines = Enumerate1(type Os.Error, String)(lines)
+} in Filter(type Os.Error, (Nat) String)(lines, box [(_) line] Contains(needle, line))
 
 // ---
 
@@ -93,7 +76,7 @@ def Concat = [type a] [left, right] left.begin.case {
 
 dec Contains : [String, String] Bool
 def Contains = [needle, haystack]
-  String.Reader(haystack).match(.repeat.one.any!, .str needle).case {
+  String.Parse(haystack).match(.repeat.one.any!, .str needle).case {
     .end _ => .false!,
     .fail reader => do {
       reader.close(.ok!)
@@ -113,20 +96,20 @@ type Iterator<e, a> = recursive choice {
   }
 }
 
-dec Lines : [type e] [String.Reader<either{}, e>] Iterator<e, String>
-def Lines = [type e] [reader] do { reader.begin } in case {
-  .close => reader.close(.ok!),
+dec Lines : [type e] [String.Parser<either{}, e>] Iterator<e, String>
+def Lines = [type e] [parser] do { parser.begin } in case {
+  .close => parser.close(.ok!),
 
-  .next => reader.match(.repeat.one.any!, .str "\n").case {
+  .next => parser.match(.repeat.one.any!, .str "\n").case {
     .end result => .end result,
-    .fail reader => reader.remainder.case {
+    .fail parser => parser.remainder.case {
       .err e => .end.err e,
       .ok line => .item(line) case {
         .close => .ok!,
         .next => .end.ok!,
       },
     }
-    .match(line, _) reader => .item(line) reader.loop,
+    .match(line, _) parser => .item(line) parser.loop,
   }
 }
 
