@@ -397,11 +397,11 @@ let try/net conn = url.connect
     exit!
   }
 
-  let try writer = Os.PathFromString(dst).createOrReplaceFile
-  catch/r e =&gt; { writer.close(.ok!); throw e }
-
-  let try/r reader = Os.PathFromString(src).openFile
+  let try reader = Os.PathFromString(src).openFile
   catch/w e =&gt; { reader.close(.ok!); throw e }
+
+  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
+  catch/r e =&gt; { writer.close(.ok!); throw e }
 
   reader.begin.read.try/r.case {
     .end! =&gt; {
