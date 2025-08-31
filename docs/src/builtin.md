@@ -35,6 +35,7 @@ dec Nat.FromString : [String] either {
   .err!,
 }
 
+
 /// Int
 
 dec Int.Add   : [Int, Int] Int
@@ -59,12 +60,14 @@ dec Int.FromString : [String] either {
   .err!,
 }
 
+
 /// Bool
 
 type Bool = either {
   .false!,
   .true!,
 }
+
 
 /// Result
 
@@ -78,6 +81,7 @@ def Result.Always = [type a] [result] result.case {
   .ok value => value,
   .err impossible => impossible.case {},
 }
+
 
 /// List
 
@@ -102,6 +106,7 @@ def List.Builder = [type a]
     .build => append(.end!),
   }
 
+
 /// Ordering
 
 type Ordering = either {
@@ -109,6 +114,7 @@ type Ordering = either {
   .equal!,
   .greater!,
 }
+
 
 /// Char
 
@@ -128,6 +134,7 @@ dec Char.Equals : [Char, Char] Bool
 dec Char.Code   : [Char] Nat
 dec Char.Is     : [Char, Char.Class] Bool
 
+
 /// String
 
 type String.Builder = iterative choice {
@@ -135,12 +142,7 @@ type String.Builder = iterative choice {
   .build => String,
 }
 
-type String.Writer<errIn, errOut> = iterative choice {
-  .close(Result<errIn, !>) => Result<errOut, !>,
-  .write(String) => Result<errOut, self>,
-}
-
-type String.Reader<errIn, errOut> = recursive iterative/attempt choice {
+type String.Parser<errIn, errOut> = recursive iterative/attempt choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
   .remainder => Result<errOut, String>,
   .char => either {
@@ -173,12 +175,14 @@ type String.Pattern = recursive either {
   .or List<self>,
 }
 
-dec String.Builder : String.Builder
-dec String.Reader  : [String] String.Reader<either{}, either{}>
-
-dec String.Quote : [String] String
-
+dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
+
+dec String.Builder : String.Builder
+dec String.Parse   : [String] String.Parser<either{}, either{}>
+
+dec String.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] String.Parser<errIn, errOut>
+
 
 /// Byte
 
@@ -192,6 +196,7 @@ dec Byte.Equals : [Byte, Byte] Bool
 dec Byte.Code   : [Byte] Nat
 dec Byte.Is     : [Byte, Byte.Class] Bool
 
+
 /// Bytes
 
 type Bytes.Builder = iterative choice {
@@ -199,12 +204,22 @@ type Bytes.Builder = iterative choice {
   .build => Bytes,
 }
 
-type Bytes.Writer<errIn, errOut> = iterative choice {
+type Bytes.Reader<errIn, errOut> = recursive choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
-  .write(Bytes) => Result<errOut, self>,
+  .read => Result<errOut, either {
+    .end!,
+    .chunk(Bytes) self,
+  }>,
 }
 
-type Bytes.Reader<errIn, errOut> = recursive iterative/attempt choice {
+type Bytes.Writer<errIn, errOut> = iterative choice {
+  .close(Result<errIn, !>) => Result<errOut, !>,
+  .flush => Result<errOut, self>,
+  .write(Bytes) => Result<errOut, self>,
+  .writeString(String) => Result<errOut, self>,
+}
+
+type Bytes.Parser<errIn, errOut> = recursive iterative/attempt choice {
   .close(Result<errIn, !>) => Result<errOut, !>,
   .remainder => Result<errOut, Bytes>,
   .byte => either {
@@ -237,10 +252,61 @@ type Bytes.Pattern = recursive either {
   .or List<self>,
 }
 
-dec Bytes.Builder : Bytes.Builder
-dec Bytes.Reader  : [Bytes] Bytes.Reader<either{}, either{}>
-
 dec Bytes.FromString : [String] Bytes
+
+dec Bytes.Builder : Bytes.Builder
+dec Bytes.Parse   : [Bytes] Bytes.Parser<either{}, either{}>
+
+dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes.Parser<errIn, errOut>
+
+
+/// Console
+
+type Console = iterative choice {
+  .close => !,
+  .print(String) => self,
+  .prompt(String) => (Result<!, String>) self,
+}
+
+dec Console.Open : Console
+
+
+/// Os
+
+type Os.Error  = String
+type Os.Reader = Bytes.Reader<either{}, Os.Error>
+type Os.Writer = Bytes.Writer<either{}, Os.Error>
+
+type Os.Path = iterative/append recursive/parent box choice {
+  .stringName => String,
+  .bytesName => Bytes,
+  .stringAbsolute => String,
+  .bytesAbsolute => Bytes,
+  .stringParts => List<String>,
+  .bytesParts => List<Bytes>,
+
+  .parent => Result<!, self/parent>,
+  .appendString(String) => self/append,
+  .appendBytes(Bytes) => self/append,
+
+  .openFile => Result<Os.Error, Os.Reader>,
+  .createOrReplaceFile => Result<Os.Error, Os.Writer>,
+  .createNewFile => Result<Os.Error, Os.Writer>,
+  .appendToFile => Result<Os.Error, Os.Writer>,
+  .createOrAppendToFile => Result<Os.Error, Os.Writer>,
+
+  .listDir => Result<Os.Error, List<self/append>>,
+  .traverseDir => Result<Os.Error, recursive/tree either {
+    .end!,
+    .file(self/append) self/tree,
+    .dir(self/append, self/tree) self/tree,
+  }>,
+  .createDir => Result<Os.Error, !>,
+}
+
+dec Os.PathFromString : [String] Os.Path
+dec Os.PathFromBytes  : [Bytes] Os.Path
+
 
 /// Cell (EXPERIMENTAL)
 
@@ -254,57 +320,6 @@ type Cell<a> = iterative choice {
 
 dec Cell.Share : [type a] [a, dual Cell<a>] a
 
-/// Console
-
-type Console = iterative choice {
-  .close => !,
-  .print(String) => self,
-  .prompt(String) => (Result<!, String>) self,
-}
-
-dec Console.Open : Console
-
-/// Storage
-
-type Storage.Error = String
-
-type Storage.PathInfo = box choice {
-  .name => String,
-  .absolute => String,
-}
-
-type Storage.FileInfo = box choice {
-  .path => Storage.PathInfo,
-  .size => Nat.Nat,
-
-  .readBytes => Result<Storage.Error, Bytes.Reader<either{}, Storage.Error>>,
-  .readUTF8 => Result<Storage.Error, String.Reader<either{}, Storage.Error>>,
-
-  .overwriteBytes => Result<Storage.Error, Bytes.Writer<either{}, Storage.Error>>,
-  .appendBytes => Result<Storage.Error, Bytes.Writer<either{}, Storage.Error>>,
-
-  .overwriteUTF8 => Result<Storage.Error, String.Writer<either{}, Storage.Error>>,
-  .appendUTF8 => Result<Storage.Error, String.Writer<either{}, Storage.Error>>,
-}
-
-type Storage.DirInfo = recursive box choice {
-  .path => Storage.PathInfo,
-
-  .list => Result<Storage.Error, List<either {
-    .file Storage.FileInfo,
-    .dir self,
-  }>>,
-
-  .createFile(String) => Result<Storage.Error, Storage.FileInfo>,
-}
-
-dec Storage.Get : [String] Result<Storage.Error, either {
-  .file Storage.FileInfo,
-  .dir Storage.DirInfo,
-}>
-
-dec Storage.CreateFile : [String] Result<Storage.Error, Storage.FileInfo>
-dec Storage.CreateDir  : [String] Result<Storage.Error, Storage.DirInfo>
 
 /// Debug
 
