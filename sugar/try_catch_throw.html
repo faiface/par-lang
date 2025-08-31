@@ -383,31 +383,41 @@ let try/net conn = url.connect
 </code></pre>
 <h2 id="throwing-to-a-previous-catch-layered-cleanup"><a class="header" href="#throwing-to-a-previous-catch-layered-cleanup">Throwing to a previous <code>catch</code> (layered cleanup)</a></h2>
 <p>Nested catches are great for local cleanup before delegating to an outer handler. Example: copy a file, ensuring both handles are closed on any failure:</p>
-<pre><code class="language-par">let console = Console.Open
-catch e =&gt; {
-  console.print(e)
-  console.close
-  exit!
-}
+<pre><code class="language-par">def Main: ! = chan exit {
+    let console = Console.Open
 
-let try writer = dst.createOrReplaceFile
-let try reader = src.openFile
+    catch ! =&gt; { console.print("Failed to read input.").close; exit! }
+    console.prompt("Src path: ")[try src]
+    console.prompt("Dst path: ")[try dst]
 
-// If reading fails, also close writer, then rethrow to the outer catch
-catch/r e =&gt; { writer.close(.ok!); throw e }
+    catch e: Os.Error =&gt; {
+      console.print("An error occurred:")
+      console.print(e)
+      console.close
+      exit!
+    }
 
-// If writing fails, also close reader, then rethrow to the outer catch
-catch/w e =&gt; { reader.close(.ok!); throw e }
+    let try writer = Os.PathFromString(dst).createOrReplaceFile
 
-reader.begin.read.try/r.case {
-  .end! =&gt; {
-    writer.close(.ok!).try
-    exit!
-  }
-  .chunk(bytes) =&gt; {
-    writer.write(bytes).try/w
-    reader.loop
-  }
+    // If reading fails, also close writer, then rethrow to the outer catch
+    catch/r e =&gt; { writer.close(.ok!); throw e }
+
+    let try/r reader = Os.PathFromString(src).openFile
+
+    // If writing fails, also close reader, then rethrow to the outer catch
+    catch/w e =&gt; { reader.close(.ok!); throw e }
+
+    reader.begin.read.try/r.case {
+      .end! =&gt; {
+        writer.close(.ok!).try
+        console.close
+        exit!
+      }
+      .chunk(bytes) =&gt; {
+        writer.write(bytes).try/w
+        reader.loop
+      }
+    }
 }
 </code></pre>
 
