@@ -1492,8 +1492,8 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
 }
 
 fn cmd_then(input: &mut Input) -> Result<Option<Command>> {
-    opt(process)
-        .map(|opt| opt.map(|process| Command::Then(Box::new(process))))
+    (opt(t(TokenKind::Semicolon)), opt(process))
+        .map(|(_, opt)| opt.map(|process| Command::Then(Box::new(process))))
         .parse_next(input)
 }
 
