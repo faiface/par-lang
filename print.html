@@ -828,6 +828,7 @@ dec Nat.FromString : [String] either {
   .err!,
 }
 
+
 /// Int
 
 dec Int.Add   : [Int, Int] Int
@@ -852,12 +853,14 @@ dec Int.FromString : [String] either {
   .err!,
 }
 
+
 /// Bool
 
 type Bool = either {
   .false!,
   .true!,
 }
+
 
 /// Result
 
@@ -871,6 +874,7 @@ def Result.Always = [type a] [result] result.case {
   .ok value =&gt; value,
   .err impossible =&gt; impossible.case {},
 }
+
 
 /// List
 
@@ -895,6 +899,7 @@ def List.Builder = [type a]
     .build =&gt; append(.end!),
   }
 
+
 /// Ordering
 
 type Ordering = either {
@@ -902,6 +907,7 @@ type Ordering = either {
   .equal!,
   .greater!,
 }
+
 
 /// Char
 
@@ -921,6 +927,7 @@ dec Char.Equals : [Char, Char] Bool
 dec Char.Code   : [Char] Nat
 dec Char.Is     : [Char, Char.Class] Bool
 
+
 /// String
 
 type String.Builder = iterative choice {
@@ -928,12 +935,7 @@ type String.Builder = iterative choice {
   .build =&gt; String,
 }
 
-type String.Writer&lt;errIn, errOut&gt; = iterative choice {
-  .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .write(String) =&gt; Result&lt;errOut, self&gt;,
-}
-
-type String.Reader&lt;errIn, errOut&gt; = recursive iterative/attempt choice {
+type String.Parser&lt;errIn, errOut&gt; = recursive iterative/attempt choice {
   .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
   .remainder =&gt; Result&lt;errOut, String&gt;,
   .char =&gt; either {
@@ -966,12 +968,14 @@ type String.Pattern = recursive either {
   .or List&lt;self&gt;,
 }
 
-dec String.Builder : String.Builder
-dec String.Reader  : [String] String.Reader&lt;either{}, either{}&gt;
-
-dec String.Quote : [String] String
-
+dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
+
+dec String.Builder : String.Builder
+dec String.Parse   : [String] String.Parser&lt;either{}, either{}&gt;
+
+dec String.ParseReader : [type errIn, errOut] [Bytes.Reader&lt;errIn, errOut&gt;] String.Parser&lt;errIn, errOut&gt;
+
 
 /// Byte
 
@@ -985,6 +989,7 @@ dec Byte.Equals : [Byte, Byte] Bool
 dec Byte.Code   : [Byte] Nat
 dec Byte.Is     : [Byte, Byte.Class] Bool
 
+
 /// Bytes
 
 type Bytes.Builder = iterative choice {
@@ -992,12 +997,22 @@ type Bytes.Builder = iterative choice {
   .build =&gt; Bytes,
 }
 
-type Bytes.Writer&lt;errIn, errOut&gt; = iterative choice {
+type Bytes.Reader&lt;errIn, errOut&gt; = recursive choice {
   .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .write(Bytes) =&gt; Result&lt;errOut, self&gt;,
+  .read =&gt; Result&lt;errOut, either {
+    .end!,
+    .chunk(Bytes) self,
+  }&gt;,
 }
 
-type Bytes.Reader&lt;errIn, errOut&gt; = recursive iterative/attempt choice {
+type Bytes.Writer&lt;errIn, errOut&gt; = iterative choice {
+  .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
+  .flush =&gt; Result&lt;errOut, self&gt;,
+  .write(Bytes) =&gt; Result&lt;errOut, self&gt;,
+  .writeString(String) =&gt; Result&lt;errOut, self&gt;,
+}
+
+type Bytes.Parser&lt;errIn, errOut&gt; = recursive iterative/attempt choice {
   .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
   .remainder =&gt; Result&lt;errOut, Bytes&gt;,
   .byte =&gt; either {
@@ -1030,10 +1045,61 @@ type Bytes.Pattern = recursive either {
   .or List&lt;self&gt;,
 }
 
-dec Bytes.Builder : Bytes.Builder
-dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either{}, either{}&gt;
-
 dec Bytes.FromString : [String] Bytes
+
+dec Bytes.Builder : Bytes.Builder
+dec Bytes.Parse   : [Bytes] Bytes.Parser&lt;either{}, either{}&gt;
+
+dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader&lt;errIn, errOut&gt;] Bytes.Parser&lt;errIn, errOut&gt;
+
+
+/// Console
+
+type Console = iterative choice {
+  .close =&gt; !,
+  .print(String) =&gt; self,
+  .prompt(String) =&gt; (Result&lt;!, String&gt;) self,
+}
+
+dec Console.Open : Console
+
+
+/// Os
+
+type Os.Error  = String
+type Os.Reader = Bytes.Reader&lt;either{}, Os.Error&gt;
+type Os.Writer = Bytes.Writer&lt;either{}, Os.Error&gt;
+
+type Os.Path = iterative/append recursive/parent box choice {
+  .stringName =&gt; String,
+  .bytesName =&gt; Bytes,
+  .stringAbsolute =&gt; String,
+  .bytesAbsolute =&gt; Bytes,
+  .stringParts =&gt; List&lt;String&gt;,
+  .bytesParts =&gt; List&lt;Bytes&gt;,
+
+  .parent =&gt; Result&lt;!, self/parent&gt;,
+  .appendString(String) =&gt; self/append,
+  .appendBytes(Bytes) =&gt; self/append,
+
+  .openFile =&gt; Result&lt;Os.Error, Os.Reader&gt;,
+  .createOrReplaceFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
+  .createNewFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
+  .appendToFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
+  .createOrAppendToFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
+
+  .listDir =&gt; Result&lt;Os.Error, List&lt;self/append&gt;&gt;,
+  .traverseDir =&gt; Result&lt;Os.Error, recursive/tree either {
+    .end!,
+    .file(self/append) self/tree,
+    .dir(self/append, self/tree) self/tree,
+  }&gt;,
+  .createDir =&gt; Result&lt;Os.Error, !&gt;,
+}
+
+dec Os.PathFromString : [String] Os.Path
+dec Os.PathFromBytes  : [Bytes] Os.Path
+
 
 /// Cell (EXPERIMENTAL)
 
@@ -1047,57 +1113,6 @@ type Cell&lt;a&gt; = iterative choice {
 
 dec Cell.Share : [type a] [a, dual Cell&lt;a&gt;] a
 
-/// Console
-
-type Console = iterative choice {
-  .close =&gt; !,
-  .print(String) =&gt; self,
-  .prompt(String) =&gt; (Result&lt;!, String&gt;) self,
-}
-
-dec Console.Open : Console
-
-/// Storage
-
-type Storage.Error = String
-
-type Storage.PathInfo = box choice {
-  .name =&gt; String,
-  .absolute =&gt; String,
-}
-
-type Storage.FileInfo = box choice {
-  .path =&gt; Storage.PathInfo,
-  .size =&gt; Nat.Nat,
-
-  .readBytes =&gt; Result&lt;Storage.Error, Bytes.Reader&lt;either{}, Storage.Error&gt;&gt;,
-  .readUTF8 =&gt; Result&lt;Storage.Error, String.Reader&lt;either{}, Storage.Error&gt;&gt;,
-
-  .overwriteBytes =&gt; Result&lt;Storage.Error, Bytes.Writer&lt;either{}, Storage.Error&gt;&gt;,
-  .appendBytes =&gt; Result&lt;Storage.Error, Bytes.Writer&lt;either{}, Storage.Error&gt;&gt;,
-
-  .overwriteUTF8 =&gt; Result&lt;Storage.Error, String.Writer&lt;either{}, Storage.Error&gt;&gt;,
-  .appendUTF8 =&gt; Result&lt;Storage.Error, String.Writer&lt;either{}, Storage.Error&gt;&gt;,
-}
-
-type Storage.DirInfo = recursive box choice {
-  .path =&gt; Storage.PathInfo,
-
-  .list =&gt; Result&lt;Storage.Error, List&lt;either {
-    .file Storage.FileInfo,
-    .dir self,
-  }&gt;&gt;,
-
-  .createFile(String) =&gt; Result&lt;Storage.Error, Storage.FileInfo&gt;,
-}
-
-dec Storage.Get : [String] Result&lt;Storage.Error, either {
-  .file Storage.FileInfo,
-  .dir Storage.DirInfo,
-}&gt;
-
-dec Storage.CreateFile : [String] Result&lt;Storage.Error, Storage.FileInfo&gt;
-dec Storage.CreateDir  : [String] Result&lt;Storage.Error, Storage.DirInfo&gt;
 
 /// Debug
 
@@ -3323,6 +3338,256 @@ Re-binding of the rest of the list is not needed here, either.</li>
 Constructing lists generator-style is just one of the use-cases.<br />
 Whenever it feels more appropriate to <em>become a value</em> instead of constructing it from parts, <code>chan</code> and
 duality come to the task!</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h1>
+<p>Error handling is everywhere: reading input, parsing, filesystem, networking. Languages
+approach this differently (exceptions, checked results, monads, panic/abort). Par’s
+situation is unique thanks to its linear type system, so we wanted a style that
+fits: convenient to write, flexible in use, and still precise enough for the type checker
+to ensure everything is handled as it should.</p>
+<p>The result is small sugar over the pre‑defined <code>Result</code> type that keeps semantics
+transparent while making everyday code pleasant.</p>
+<pre><code class="language-par">type Result&lt;e, a&gt; = either {
+  .err e,
+  .ok a,
+}
+</code></pre>
+<p>This chapter introduces lightweight sugar that makes <code>Result</code>-based error handling concise:
+<code>try</code>, <code>catch</code>, and <code>throw</code>. The sugar does not change semantics — it desugars to <code>.case</code>
+on <code>Result</code> — but it can make code dramatically clearer.</p>
+<p>To make ideas concrete, examples use I/O from the <code>Os</code> module (where <code>Result</code>s are common),
+but the constructs are general and work for any <code>Result</code>.</p>
+<h2 id="before-the-sugar-explicit-case"><a class="header" href="#before-the-sugar-explicit-case">Before the sugar: explicit case</a></h2>
+<p>Consider writing two lines to a file and then closing it. Without sugar we must
+handle every <code>Result</code> explicitly:</p>
+<pre><code class="language-par">def Main: ! = chan exit {
+  let console = Console.Open
+
+  let path = Os.PathFromString("logs.txt")
+  path.createOrAppendToFile.case {
+    .err e =&gt; { console.print(e); console.close; exit! }
+    .ok writer =&gt; {}
+  }
+
+  writer.writeString("[INFO] First new log\n").case {
+    .err e =&gt; { console.print(e); console.close; exit! }
+    .ok =&gt; {}
+  }
+
+  writer.writeString("[INFO] Second new log\n").case {
+    .err e =&gt; { console.print(e); console.close; exit! }
+    .ok =&gt; {}
+  }
+
+  writer.close(.ok!).case {
+    .err e =&gt; { console.print(e); console.close; exit! }
+    .ok! =&gt; {}
+  }
+
+  console.close
+  exit!
+}
+</code></pre>
+<p>This style is explicit but noisy. Let’s add the sugar!</p>
+<h2 id="the-sugar-at-a-glance"><a class="header" href="#the-sugar-at-a-glance">The sugar at a glance</a></h2>
+<ul>
+<li><code>try</code> (commands): <code>x.y(...).try</code> propagates <code>.err e =&gt; { throw e }</code>, otherwise continues.</li>
+<li><code>try</code> (patterns): <code>let try x = E</code> binds on ok, <code>throw</code>s on err. Works in nested patterns and receives: <code>recv[try x]</code>.</li>
+<li><code>catch</code> (statement): <code>catch e =&gt; { &lt;handler process&gt; }</code> introduces a handler scope for subsequent <code>throw</code>s.</li>
+<li><code>catch</code> (expression): <code>catch e =&gt; H in E</code> evaluates <code>E</code> with a handler and returns a value (often a <code>Result</code>); <code>try</code>/<code>throw</code> must occur before any part of the final value is constructed.</li>
+<li><code>throw</code>: jumps to the nearest matching <code>catch</code> (by label; see <a href="sugar/try_catch_throw.html#labels">Labels</a> below).</li>
+</ul>
+<p>Rewriting the earlier example with sugar:</p>
+<pre><code class="language-par">def Main: ! = chan exit {
+  let console = Console.Open
+
+  catch e =&gt; {
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  let path = Os.PathFromString("logs.txt")
+  let try writer = path.createOrAppendToFile
+  writer.writeString("[INFO] First new log\n").try
+  writer.writeString("[INFO] Second new log\n").try
+  writer.close(.ok!).try
+
+  console.close
+  exit!
+}
+</code></pre>
+<h2 id="catch-statement"><a class="header" href="#catch-statement"><code>catch</code> (statement)</a></h2>
+<p>Statement‑form <code>catch</code> establishes an error handler for the subsequent process:</p>
+<pre><code class="language-par">catch e =&gt; {
+  &lt;handler process&gt;
+}
+// ... code that may `throw` e or use `try` ...
+</code></pre>
+<p>Rules:</p>
+<ul>
+<li><strong>Same‑process condition:</strong> all <code>try</code>/<code>.try</code>/<code>throw</code> that target this <code>catch</code> must live in the same process — not inside nested processes or sub‑expressions. (See <a href="sugar/try_catch_throw.html#why-sameprocess">“Same‑process, explained”</a> below.)</li>
+<li><strong>Handler termination:</strong> the handler must end the surrounding process (e.g. with <code>exit!</code>, linking, or looping to completion). It may also <code>throw</code> to an outer <code>catch</code> (see <a href="sugar/try_catch_throw.html#throwing-to-a-previous-catch-layered-cleanup">Throwing to a previous catch</a>).</li>
+<li>Scope and shadowing: a <code>catch</code> applies to the following process; later catches shadow earlier ones.</li>
+<li>Error type: inferred from uses of <code>try</code>/<code>throw</code> in the scope, or explicitly specified via an annotation.</li>
+</ul>
+<p>Simple throw:</p>
+<pre><code class="language-par">catch e =&gt; {
+  Debug.Log(e)
+  exit!
+}
+throw "Total meltdown"    // handled by the catch above
+</code></pre>
+<h2 id="try-in-commands"><a class="header" href="#try-in-commands"><code>try</code> in commands</a></h2>
+<p>Postfix <code>.try</code> on a <code>Result</code>‑typed command (or value) expands to a <code>.case</code> that throws on error and continues on success. Start with the simplest shape:</p>
+<pre><code class="language-par">writer.writeString("hello").try
+
+// desugars to
+writer.writeString("hello").case {
+  .err e =&gt; { throw e }
+  .ok =&gt; {}
+}
+</code></pre>
+<p>You can also apply <code>.try</code> to a <code>Result</code> you already have in a variable:</p>
+<pre><code class="language-par">let res = path.createOrReplaceFile
+res.try
+
+// desugars to
+res.case {
+  .err e =&gt; { throw e }
+  .ok =&gt; {}
+}
+</code></pre>
+<h2 id="why-sameprocess"><a class="header" href="#why-sameprocess">Why same‑process?</a></h2>
+<p>It’s tempting to write something like:</p>
+<pre><code class="language-par">// This looks neat, but it is rejected on purpose
+let writer = path.createOrAppendToFile.try
+</code></pre>
+<p>But there is a problem: Par uses concurrent evaluation. That means <code>path.createOrAppendToFile</code>
+is evaluated concurrently with the process that performs the <code>let</code>. If the inner expression were allowed to <code>throw</code> via <code>.try</code>, the outer process might
+already be running other commands.</p>
+<p>There is no sound way to “rewind” and absorb that failure after the fact. To keep control
+flow explicit and linear, <code>try</code>/<code>.try</code>/<code>throw</code> are restricted to the same process as their
+<code>catch</code>.</p>
+<p>The above doesn’t work, but there is another way: <strong><code>try</code> in patterns!</strong></p>
+<h2 id="try-in-patterns"><a class="header" href="#try-in-patterns"><code>try</code> in patterns</a></h2>
+<p><code>let try x = E</code> binds <code>x</code> on <code>.ok</code> and throws on <code>.err</code>. It stays in the current process, which is crucial in Par’s concurrent evaluation model.</p>
+<pre><code class="language-par">let try writer = path.createOrAppendToFile
+
+// ≡
+
+let writer = path.createOrAppendToFile
+writer.case {
+  .err e =&gt; { throw e }
+  .ok =&gt; {}
+}
+</code></pre>
+<p>It works in composite patterns:</p>
+<pre><code class="language-par">let (try left, try right)! = (leftPath.openFile, rightPath.openFile)!
+</code></pre>
+<p>And in receives:</p>
+<pre><code class="language-par">let console = Console.Open
+catch ! =&gt; {
+  console.print("Failed to read input.")
+  console.close
+  exit!
+}
+
+console.prompt("Name: ")[try name]
+console.prompt("Address: ")[try address]
+</code></pre>
+<p>Here’s another example of using <code>try</code> in a pattern when receiving:</p>
+<pre><code class="language-par">type Poll&lt;e, a&gt; = iterative choice {
+  .close =&gt; Result&lt;e, !&gt;,
+  .poll =&gt; Result&lt;e, (a) self&gt;,
+}
+
+// source : Poll&lt;Os.Error, String&gt;
+source.poll.try[value]
+// here `value` becomes `String`, and source keeps its type for the next iteration
+</code></pre>
+<h2 id="catch-expression"><a class="header" href="#catch-expression">catch (expression)</a></h2>
+<p>Expression‑form <code>catch</code> evaluates an expression with a local handler and returns a value (often a <code>Result</code>):</p>
+<pre><code class="language-par">catch e =&gt; &lt;err result&gt; in &lt;expression using try or throw&gt;
+</code></pre>
+<p>Restrictions:</p>
+<ul>
+<li>As with statements, <code>try</code>/<code>throw</code> must live in the same process — not in nested processes created by subexpressions.</li>
+<li>Additionally, within the <code>catch ... in</code> expression, <code>try</code>/<code>throw</code> may only occur before any part of the final value is constructed.</li>
+</ul>
+<p>Invalid (uses <code>try</code> in a nested expression):</p>
+<pre><code class="language-par">// result : Result&lt;String, Int&gt;
+catch e =&gt; .err e in
+.ok Int.Add(result.try, 1)
+</code></pre>
+<p>Still invalid (the outer <code>.ok</code> is too early):</p>
+<pre><code class="language-par">catch e =&gt; .err e in
+.ok let try value = result in Int.Add(value, 1)
+</code></pre>
+<p>Correct: delay construction until after all <code>try</code>s:</p>
+<pre><code class="language-par">catch e =&gt; .err e in
+let try value = result in
+.ok Int.Add(value, 1)
+</code></pre>
+<p><strong>Some useful patterns:</strong></p>
+<ul>
+<li>
+<p>Map the error (add context):</p>
+<pre><code class="language-par">catch e =&gt; .err Decorate(e) in
+let try x = result in .ok x
+</code></pre>
+</li>
+<li>
+<p>Map the ok value:</p>
+<pre><code class="language-par">catch e =&gt; .err e in
+let try x = result in .ok Transform(x)
+</code></pre>
+</li>
+<li>
+<p>Unwrap with a default:</p>
+<pre><code class="language-par">catch ! =&gt; Default in result.try
+</code></pre>
+</li>
+</ul>
+<h2 id="labels"><a class="header" href="#labels">Labels</a></h2>
+<p>Like <code>begin</code>/<code>loop</code>, <code>catch</code> blocks can be labelled, and then referenced by <code>try/label</code> and <code>throw/label</code>.</p>
+<p>Selection is purely by label and proximity: the nearest (most recent) <code>catch</code> with the
+same label (or with no label, if you didn’t use one) is chosen. The error’s type is not
+used to decide which <code>catch</code> to pick; types are checked only after a <code>catch</code> has been selected.</p>
+<pre><code class="language-par">catch/fs e =&gt; { /* handle filesystem error */ }
+catch/net e =&gt; { /* handle network error */ }
+
+let try/fs writer = path.createOrReplaceFile
+let try/net conn = url.connect
+</code></pre>
+<h2 id="throwing-to-a-previous-catch-layered-cleanup"><a class="header" href="#throwing-to-a-previous-catch-layered-cleanup">Throwing to a previous <code>catch</code> (layered cleanup)</a></h2>
+<p>Nested catches are great for local cleanup before delegating to an outer handler. Example: copy a file, ensuring both handles are closed on any failure:</p>
+<pre><code class="language-par">let console = Console.Open
+catch e =&gt; {
+  console.print(e)
+  console.close
+  exit!
+}
+
+let try writer = dst.createOrReplaceFile
+let try reader = src.openFile
+
+// If reading fails, also close writer, then rethrow to the outer catch
+catch/r e =&gt; { writer.close(.ok!); throw e }
+
+// If writing fails, also close reader, then rethrow to the outer catch
+catch/w e =&gt; { reader.close(.ok!); throw e }
+
+reader.begin.read.try/r.case {
+  .end! =&gt; {
+    writer.close(.ok!).try
+    exit!
+  }
+  .chunk(bytes) =&gt; {
+    writer.write(bytes).try/w
+    reader.loop
+  }
+}
+</code></pre>
 
                     </main>
 

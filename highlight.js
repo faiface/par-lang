@@ -60,12 +60,12 @@ hljs.registerLanguage("par", function(hljs) {
       name: "Par",
       aliases: ["par"],
       keywords: {
-          keyword: "type dual either choice case recursive iterative begin loop self trait for impl let derive in chan do pass todo dec def unfounded box",
+          keyword: "type dual either choice case recursive iterative begin loop self trait for impl let derive in chan do pass todo dec def unfounded box try catch throw",
           literal: ""
       },
       illegal: "",
       contains: [
-          hljs.C_LINE_COMMENT_MODE, 
+          hljs.C_LINE_COMMENT_MODE,
           hljs.COMMENT(
               "/\\*", 
               "\\*/", 
