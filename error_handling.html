@@ -1,0 +1,586 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Error Handling - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/error_handling.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h1>
+<p>Programs that interact with the real world must handle errors gracefully. Files don’t exist, networks disconnect, users type unexpected input. Most errors occur at I/O boundaries where your program meets external systems beyond its control.</p>
+<p>Par takes a structured approach to error handling that builds on its linear type system. At its core, Par uses explicit Result types — but adds lightweight syntax sugar that makes working with errors feel natural while keeping the underlying semantics transparent.</p>
+<h2 id="why-par-needs-unique-error-handling"><a class="header" href="#why-par-needs-unique-error-handling">Why Par Needs Unique Error Handling</a></h2>
+<p>Par’s linear type system together with its concurrent evaluation creates a unique situation for error handling. Traditional approaches don’t work for Par:</p>
+<p><strong>Exceptions</strong> propagate across call stacks, unwinding through multiple function calls automatically. But Par’s concurrent execution model has no call stacks! Instead, it has processes that communicate via channels. Any error must be explicitly passed via a channel, making something like a <code>Result</code> type necessary for error handling.</p>
+<p><strong>Rust’s <code>?</code> operator</strong> works by dropping remaining owned values when propagating errors. This implicit cleanup doesn’t translate to Par’s linear types, where each value must be consumed according to its specific type and context.</p>
+<p>Par needs error handling that makes cleanup fully explicit while remaining convenient to use. The <code>try</code>/<code>catch</code>/<code>throw</code> syntax sugar introduced here achieves this balance — borrowing familiar keywords from exception handling while operating very differently. Unlike traditional exceptions, Par’s error handling is purely local syntax sugar over <code>Result</code> types, with no hidden control flow or stack unwinding.</p>
+<h2 id="working-with-files-error-handling-without-sugar"><a class="header" href="#working-with-files-error-handling-without-sugar">Working with Files: Error Handling Without Sugar</a></h2>
+<p>Let’s start with a concrete example using Par’s file system operations through the <a href="./builtin.html"><code>Os</code> module</a>. The <code>Os.Path</code> type provides methods for working with the filesystem — creating files, reading directories, and so on. Most of these operations can fail, so they return <code>Result</code> values.</p>
+<p>Here’s what error handling looks like without any syntax sugar. We’ll write a program that creates a log file and writes some entries to it:</p>
+<pre><code class="language-par">def Main: ! = chan exit {
+  let console = Console.Open
+
+  let path = Os.PathFromString("logs.txt")
+  path.createOrAppendToFile.case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok writer =&gt; {}
+  }
+  // ...
+</code></pre>
+<p>A few things to note about this pattern:</p>
+<p>The <code>chan exit</code> creates a channel called <code>exit</code> of type <code>?</code> — <a href="./processes/duality.html">the continuation type</a>, which is dual to our <code>Main</code> function’s return type <code>!</code>. The <code>exit!</code> syntax is the <em>break</em> command applied to this continuation, which ends the process.</p>
+<p>After the <code>.case</code> block, the <code>writer</code> variable is available in the surrounding scope. This is how process-scoped variables work in Par — variables bound in <code>.case</code> branches continue to exist after the case analysis.</p>
+<pre><code class="language-par">  writer.writeString("[INFO] First new log\n").case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok =&gt; {}
+  }
+</code></pre>
+<p>In <a href="./process_syntax.html">process syntax</a>, when we use <code>.ok =&gt;</code>, the subject of the command (<code>writer</code>) gets updated to the payload of the .ok branch. Since <code>.writeString</code> returns the same <code>Os.Writer</code> type on success, <code>writer</code> remains usable.</p>
+<pre><code class="language-par">  writer.writeString("[INFO] Second new log\n").case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok =&gt; {}
+  }
+</code></pre>
+<p>And finish by closing the file:</p>
+<pre><code class="language-par">  writer.close(.ok!).case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok! =&gt; {}
+  }
+  exit!
+}
+</code></pre>
+<p>Note the <code>.ok!</code> pattern here — after closing, the writer becomes a unit value <code>!</code>.</p>
+<p>Here’s the complete program:</p>
+<pre><code class="language-par">def Main: ! = chan exit {
+  let console = Console.Open
+
+  let path = Os.PathFromString("logs.txt")
+  path.createOrAppendToFile.case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok writer =&gt; {}
+  }
+  
+  writer.writeString("[INFO] First new log\n").case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok =&gt; {}
+  }
+  writer.writeString("[INFO] Second new log\n").case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok =&gt; {}
+  }
+
+  writer.close(.ok!).case {
+    .err e =&gt; {
+      console.print(e)
+      console.close
+      exit!
+    }
+    .ok! =&gt; {}
+  }
+
+  console.close
+  exit!
+}
+</code></pre>
+<p>This is extremely verbose! The same error handling code is repeated for every operation that might fail. Let’s see how Par’s error handling sugar can clean this up.</p>
+<h2 id="the-same-program-with-trycatch"><a class="header" href="#the-same-program-with-trycatch">The Same Program with <code>try</code>/<code>catch</code></a></h2>
+<p>Here’s the exact same functionality using Par’s error handling syntax:</p>
+<pre><code class="language-par">def Main: ! = chan exit {
+  let console = Console.Open
+
+  catch e =&gt; {
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  let path = Os.PathFromString("logs.txt")
+  let try writer = path.createOrAppendToFile
+  
+  writer.writeString("[INFO] First new log\n").try
+  writer.writeString("[INFO] Second new log\n").try
+
+  writer.close(.ok!).try
+  console.close
+  exit!
+}
+</code></pre>
+<p>Significantly shorter and more readable! The error handling is declared once and applies to all subsequent operations.</p>
+<h2 id="how-trycatchthrow-work-in-process-syntax"><a class="header" href="#how-trycatchthrow-work-in-process-syntax">How <code>try</code>/<code>catch</code>/<code>throw</code> Work in Process Syntax</a></h2>
+<p>Par’s error handling sugar is built around three keywords that desugar to explicit <code>Result</code> handling. Let’s understand how they work.</p>
+<h3 id="the-catch-statement"><a class="header" href="#the-catch-statement">The <code>catch</code> Statement</a></h3>
+<p>Before you can use <code>try</code> or <code>throw</code>, you must define a <code>catch</code> block in the same process. This restriction is crucial — the corresponding <code>try</code> and <code>throw</code> commands must be in the same sequential process as their <code>catch</code>, not in nested processes or expressions.</p>
+<pre><code class="language-par">catch &lt;pattern&gt; =&gt; {
+  &lt;process&gt;
+}
+</code></pre>
+<p>The <code>&lt;pattern&gt;</code> can be any pattern like those used in <code>let</code> statements or function parameters. Usually this is a simple variable name, but you can use more complex patterns when needed.</p>
+<p>For example, if the error type is unit:</p>
+<pre><code class="language-par">catch ! =&gt; { ... }
+</code></pre>
+<p>You can also include type annotations:</p>
+<pre><code class="language-par">catch e: Os.Error =&gt; { ... }
+</code></pre>
+<p>The <code>&lt;process&gt;</code> inside a <code>catch</code> block must end with a process-ending command:</p>
+<ul>
+<li><em>break:</em> <code>continuation!</code></li>
+<li><em>linking:</em> <code>left &lt;&gt; right</code></li>
+<li><code>.loop</code> to return to a .begin that’s outside the catch block, useful for retrying operations</li>
+<li><code>throw</code> to jump to another <code>catch</code> block</li>
+</ul>
+<h3 id="the-throw-command"><a class="header" href="#the-throw-command">The <code>throw</code> Command</a></h3>
+<p><code>throw</code> jumps directly to a <code>catch</code> block with an error value:</p>
+<pre><code class="language-par">catch e =&gt; {
+  console.print(e)
+  console.close
+  exit!
+}
+
+throw "Total meltdown"
+</code></pre>
+<p>This is equivalent to executing the catch block directly:</p>
+<pre><code class="language-par">console.print("Total meltdown")
+console.close
+exit!
+</code></pre>
+<p><code>throw</code> is useful for creating custom error conditions in your logic.</p>
+<h2 id="the-try-patterns-and-commands"><a class="header" href="#the-try-patterns-and-commands">The <code>try</code> Patterns and Commands</a></h2>
+<p>The real power comes from <code>try</code>, which provides conditional error handling based on <code>Result</code> values:</p>
+<pre><code class="language-par">type Result&lt;e, a&gt; = either {
+  .err e,
+  .ok a,
+}
+</code></pre>
+<p><code>try</code> appears in two contexts: <em>patterns</em> and <em>commands.</em></p>
+<h3 id="try-in-commands"><a class="header" href="#try-in-commands"><code>.try</code> in Commands</a></h3>
+<p>The <code>.try</code> postfix transforms verbose <code>Result</code> case analysis into clean linear code. Remember our original verbose version:</p>
+<pre><code class="language-par">writer.writeString("[INFO] First new log\n").case {
+  .err e =&gt; {
+    console.print(e)
+    console.close
+    exit!
+  }
+  .ok =&gt; {}
+}
+</code></pre>
+<p>With <code>.try</code>, this becomes:</p>
+<pre><code class="language-par">writer.writeString("[INFO] First new log\n").try
+</code></pre>
+<p>The <code>.try</code> postfix desugars any command or expression returning a <code>Result</code>:</p>
+<pre><code class="language-par">variable.try
+</code></pre>
+<p>becomes:</p>
+<pre><code class="language-par">variable.case {
+  .err e =&gt; {
+    throw e
+  }
+  .ok =&gt; {}
+}
+</code></pre>
+<p>This works for more complex command chains too. Consider this type for polling data with possible errors:</p>
+<pre><code class="language-par">type Poll&lt;e, a&gt; = iterative choice {
+  .close =&gt; Result&lt;e, !&gt;,
+  .poll =&gt; Result&lt;e, (a) self&gt;,
+}
+</code></pre>
+<p>You can poll an element and handle errors seamlessly:</p>
+<pre><code class="language-par">// source : Poll&lt;Os.Error, String&gt;
+source.poll.try[value]
+</code></pre>
+<p>After this command, <code>source</code> maintains its <code>Poll&lt;Os.Error, String&gt;</code> type and value contains the successfully polled <code>String</code>.</p>
+<h3 id="the-concurrent-evaluation-restriction"><a class="header" href="#the-concurrent-evaluation-restriction">The Concurrent Evaluation Restriction</a></h3>
+<p>You might think this would work:</p>
+<pre><code class="language-par">let writer = path.createOrAppendToFile.try
+</code></pre>
+<p>However, this causes a type error. The reason reveals something fundamental about Par’s evaluation model.</p>
+<p>Par evaluates expressions concurrently with the processes that use them. When you write:</p>
+<pre><code class="language-par">let writer = path.createOrAppendToFile.try
+</code></pre>
+<p>The expression <code>path.createOrAppendToFile</code> runs concurrently with the process doing the <code>let</code>. If the expression were to fail on <code>.try</code>, the main process might already be executing other commands — there’s no sound way to “rewind” that execution.</p>
+<p>This is why <code>try</code> and <code>throw</code> can only be used in the same process as their corresponding <code>catch</code>, not in nested expressions or processes.</p>
+<h3 id="try-in-patterns"><a class="header" href="#try-in-patterns"><code>try</code> in Patterns</a></h3>
+<p>The solution is to use <code>try</code> in the pattern itself:</p>
+<pre><code class="language-par">let try writer = path.createOrAppendToFile
+</code></pre>
+<p>This moves the error handling into the correct process. The desugaring is:</p>
+<pre><code class="language-par">let writer = path.createOrAppendToFile
+writer.case {
+  .err e =&gt; {
+    throw e
+  }
+  .ok =&gt; {}
+}
+</code></pre>
+<p>Since <code>try</code> is part of the pattern, it works in nested patterns too:</p>
+<pre><code class="language-par">let (try leftReader, try rightReader)! = (
+  leftPath.openFile,
+  rightPath.openFile,
+)!
+</code></pre>
+<p>And it works in receive commands, too. The <code>Console</code> type demonstrates this well:</p>
+<pre><code class="language-par">type Console = iterative choice {
+  .close =&gt; !,
+  .print(String) =&gt; self,
+  .prompt(String) =&gt; (Result&lt;!, String&gt;) self,
+}
+</code></pre>
+<p>The <code>.prompt</code> method returns a <code>Result</code> while keeping the console alive for more operations:</p>
+<pre><code class="language-par">let console = Console.Open
+
+catch ! =&gt; {
+  console.print("Failed to read input.")
+  console.close
+  exit!
+}
+
+console.prompt("What's your name?")[try name]
+console.prompt("What's your address?")[try address]
+</code></pre>
+<h2 id="error-handling-in-expression-syntax"><a class="header" href="#error-handling-in-expression-syntax">Error Handling in Expression Syntax</a></h2>
+<p>Par also supports <code>try</code>/<code>catch</code> directly in expressions, with syntax adapted for expression contexts:</p>
+<pre><code class="language-par">catch &lt;pattern&gt; =&gt; &lt;err result&gt; in &lt;expression using try/throw&gt;
+</code></pre>
+<p>The same concurrent evaluation restrictions apply, with an additional constraint: <code>try</code>/<code>throw</code> can only be used before any part of the result is constructed.</p>
+<p>This is invalid because <code>result.try</code> appears in a nested expression, which runs as a separate concurrent process:</p>
+<pre><code class="language-par">// result : Result&lt;String, Int&gt;
+catch e =&gt; .err e in
+.ok Int.Add(result.try, 1)
+</code></pre>
+<p>This fix attempts to work around the nested expression issue but still fails — the outer <code>.ok</code> constructs part of the result before <code>try</code> executes:</p>
+<pre><code class="language-par">catch e =&gt; .err e in
+.ok let try value = result in
+Int.Add(value, 1)
+</code></pre>
+<p>Here’s the correct version:</p>
+<pre><code class="language-par">catch e =&gt; .err e in
+let try value = result in
+.ok Int.Add(value, 1)
+</code></pre>
+<p>This ensures all error handling completes before constructing the result.</p>
+<h3 id="useful-expression-patterns"><a class="header" href="#useful-expression-patterns">Useful Expression Patterns</a></h3>
+<p>Expression-form <code>catch</code> enables several common patterns:</p>
+<h4 id="mapping-the-error-adding-context"><a class="header" href="#mapping-the-error-adding-context">Mapping the error (adding context):</a></h4>
+<pre><code class="language-par">catch e =&gt; .err String.Builder.add("Failed to process file: ").add(e).build in
+let try content = file.readAll in 
+.ok ProcessContent(content)
+</code></pre>
+<h4 id="mapping-the-success-value"><a class="header" href="#mapping-the-success-value">Mapping the success value:</a></h4>
+<pre><code class="language-par">catch e =&gt; .err e in
+let try rawData = source.fetch in 
+.ok Encode(rawData)
+</code></pre>
+<h4 id="unwrapping-with-a-default-value"><a class="header" href="#unwrapping-with-a-default-value">Unwrapping with a default value:</a></h4>
+<pre><code class="language-par">catch ! =&gt; "Unknown" in 
+config.getUserName.try
+</code></pre>
+<h2 id="labels-and-layered-error-handling"><a class="header" href="#labels-and-layered-error-handling">Labels and Layered Error Handling</a></h2>
+<p>Like <code>begin</code>/<code>loop</code>, <code>catch</code> blocks can be labeled for precise control:</p>
+<pre><code class="language-par">catch/label e =&gt; { ... }
+</code></pre>
+<p>The corresponding <code>try</code> and <code>throw</code> commands reference the same label:</p>
+<pre><code class="language-par">let try/label value = result
+throw/label "Custom error"
+</code></pre>
+<p>Labels are selected by proximity and name, not by error type. The nearest <code>catch</code> with the matching label (or no label) is chosen. This allows different error types to be routed to different handlers:</p>
+<pre><code class="language-par">catch/fs e =&gt; { /* handle file system errors */ }
+catch/net e =&gt; { /* handle network errors */ }
+
+let try/fs writer = path.createFile
+let try/net conn = url.connect
+</code></pre>
+<h3 id="throwing-to-previous-catch-blocks"><a class="header" href="#throwing-to-previous-catch-blocks">Throwing to Previous <code>catch</code> Blocks</a></h3>
+<p>A powerful pattern is using nested <code>catch</code> blocks for resource cleanup while delegating to outer blocks for shared error handling.</p>
+<p>Here’s a simple example showing the basic pattern:</p>
+<pre><code class="language-par">catch e =&gt; {
+  Debug.Log("Main error handler")
+  Debug.Log(e)
+  exit!
+}
+
+let try resource = AcquireResource
+catch e =&gt; {
+  resource.cleanup
+  throw e  // delegate to the main handler above
+}
+
+// use resource, but error might occur elsewhere
+let try otherData = SomeOtherOperation  // this might fail
+ProcessTogether(resource, otherData)
+</code></pre>
+<p>The inner <code>catch</code> handles cleanup of the specific resource, then <code>throw</code>s to the outer <code>catch</code> for shared error reporting logic. The key point is that the error occurs in <code>SomeOtherOperation</code>, not in the resource itself, so the resource is still valid and needs proper cleanup.</p>
+<p>Here’s this pattern in a more complex, real-world example — copying a file with proper resource management:</p>
+<pre><code class="language-par">def Main: ! = chan exit {
+  let console = Console.Open
+
+  catch ! =&gt; { console.print("Failed to read input.").close; exit! }
+  console.prompt("Src path: ")[try src]
+  console.prompt("Dst path: ")[try dst]
+
+  catch e: Os.Error =&gt; {
+    console.print("An error occurred:")
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  let try reader = Os.PathFromString(src).openFile
+  catch/w e =&gt; { reader.close(.ok!); throw e }
+
+  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
+  catch/r e =&gt; { writer.close(.ok!); throw e }
+
+  reader.begin.read.try/r.case {
+    .end! =&gt; {
+      writer.close(.ok!).try
+      console.close
+      exit!
+    }
+    .chunk(bytes) =&gt; {
+      writer.write(bytes).try/w
+      reader.loop
+    }
+  }
+}
+</code></pre>
+<p>Here, the <code>catch/r</code> and <code>catch/w</code> blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.</p>
+<p>This layered approach allows you to build sophisticated error handling hierarchies while keeping each level focused and clear.</p>
+<h2 id="propagating-errors-in-functions"><a class="header" href="#propagating-errors-in-functions">Propagating Errors in Functions</a></h2>
+<p>The examples so far have shown terminal error handling — printing errors and exiting. But often you want to propagate errors up to the caller. Here’s a utility function that reads an entire file’s contents:</p>
+<pre><code class="language-par">dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
+def ReadAll = [path] chan return {
+  catch e =&gt; { return &lt;&gt; .err e }
+  let try reader = path.openFile
+  let parser = Bytes.ParseReader(type either{}, Os.Error)(reader)
+  let try contents = parser.remainder
+  return &lt;&gt; .ok contents
+}
+</code></pre>
+<p>This function uses <code>Bytes.ParseReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="processes/duality.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="processes/duality.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
