@@ -29,4 +29,4 @@
     - [Receiving, Where It Shines](./processes/commands/receiving_where_it_shines.md)
   - [Channels & Linking](./processes/chan_expression.md)
   - [Construction by Destruction](./processes/duality.md)
-- [Error Handling](./sugar/try_catch_throw.md)
+- [Error Handling](./error_handling.md)
