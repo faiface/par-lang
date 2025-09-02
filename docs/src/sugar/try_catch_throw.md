@@ -291,39 +291,35 @@ Nested catches are great for local cleanup before delegating to an outer handler
 
 ```par
 def Main: ! = chan exit {
-    let console = Console.Open
+  let console = Console.Open
 
-    catch ! => { console.print("Failed to read input.").close; exit! }
-    console.prompt("Src path: ")[try src]
-    console.prompt("Dst path: ")[try dst]
+  catch ! => { console.print("Failed to read input.").close; exit! }
+  console.prompt("Src path: ")[try src]
+  console.prompt("Dst path: ")[try dst]
 
-    catch e: Os.Error => {
-      console.print("An error occurred:")
-      console.print(e)
+  catch e: Os.Error => {
+    console.print("An error occurred:")
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  let try reader = Os.PathFromString(src).openFile
+  catch/w e => { reader.close(.ok!); throw e }
+
+  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
+  catch/r e => { writer.close(.ok!); throw e }
+
+  reader.begin.read.try/r.case {
+    .end! => {
+      writer.close(.ok!).try
       console.close
       exit!
     }
-
-    let try writer = Os.PathFromString(dst).createOrReplaceFile
-
-    // If reading fails, also close writer, then rethrow to the outer catch
-    catch/r e => { writer.close(.ok!); throw e }
-
-    let try/r reader = Os.PathFromString(src).openFile
-
-    // If writing fails, also close reader, then rethrow to the outer catch
-    catch/w e => { reader.close(.ok!); throw e }
-
-    reader.begin.read.try/r.case {
-      .end! => {
-        writer.close(.ok!).try
-        console.close
-        exit!
-      }
-      .chunk(bytes) => {
-        writer.write(bytes).try/w
-        reader.loop
-      }
+    .chunk(bytes) => {
+      writer.write(bytes).try/w
+      reader.loop
     }
+  }
 }
 ```
