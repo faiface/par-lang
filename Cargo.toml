@@ -4,14 +4,18 @@ version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/faiface/par-lang"
 
+[features]
+default = ["playground"]
+playground = ["eframe", "egui_code_editor", "rfd"]
+
 [dependencies]
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-eframe = { version = "0.32.0", features = ["default", "__screenshot"] }
-egui_code_editor = "0.2.17"
+eframe = { version = "0.32.0", features = ["default", "__screenshot"], optional = true }
+egui_code_editor = { version = "0.2.17", optional = true }
 indexmap = "2.7.0"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
 stacker = "0.1.19"
-rfd = "0.15.2"
+rfd = { version = "0.15.2", optional = true }
 winnow = { version = "0.7.4", features = [
     #"unstable-doc", # build docs locally
     #"debug" # debug output/state of parser
