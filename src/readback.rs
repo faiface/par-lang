@@ -6,7 +6,7 @@ use crate::{
     par::{parse::parse_bytes, primitive::Primitive},
 };
 use arcstr::{ArcStr, Substr};
-use byteview::ByteView;
+use bytes::Bytes;
 use core::fmt::Debug;
 use eframe::egui::{self, RichText, Ui};
 use futures::{
@@ -22,7 +22,7 @@ enum Request {
     String(String, Box<dyn Send + FnOnce(Substr)>),
     Char(String, Box<dyn Send + FnOnce(char)>),
     Byte(String, Box<dyn Send + FnOnce(u8)>),
-    Bytes(String, Box<dyn Send + FnOnce(ByteView)>),
+    Bytes(String, Box<dyn Send + FnOnce(Bytes)>),
     Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr)>),
 }
 
@@ -43,8 +43,8 @@ pub enum Event {
     CharRequest(char),
     Byte(u8),
     ByteRequest(u8),
-    Bytes(ByteView),
-    BytesRequest(ByteView),
+    Bytes(Bytes),
+    BytesRequest(Bytes),
 
     #[allow(unused)]
     Unreadable {
@@ -295,7 +295,7 @@ impl Element {
                                     })
                                     .inner;
                                 if entered {
-                                    let bytes = ByteView::from(input_bytes.unwrap());
+                                    let bytes = Bytes::from(input_bytes.unwrap());
                                     self.history.push(Event::BytesRequest(bytes.clone()));
                                     callback(bytes);
                                 } else {
@@ -390,9 +390,11 @@ impl Element {
                     }
                     Event::Byte(b) | Event::ByteRequest(b) => {
                         ui.label(
-                            RichText::from(Primitive::Bytes(ByteView::new(&[*b])).pretty_string())
-                                .strong()
-                                .code(),
+                            RichText::from(
+                                Primitive::Bytes(Bytes::copy_from_slice(&[*b])).pretty_string(),
+                            )
+                            .strong()
+                            .code(),
                         );
                     }
                     Event::Bytes(b) | Event::BytesRequest(b) => {

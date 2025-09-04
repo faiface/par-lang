@@ -305,6 +305,18 @@ dec Os.PathFromString : [String] Os.Path
 dec Os.PathFromBytes  : [Bytes] Os.Path
 
 
+/// Http
+
+type Http.Error  = String
+type Http.Reader = Bytes.Reader<either{}, Http.Error>
+type Http.Writer = Bytes.Writer<either{}, Http.Error>
+
+dec Http.Request :
+  [String, String, List<(String) String>]
+  [[Http.Writer] Result<Http.Error, !>]
+  Result<Http.Error, (Nat, List<(String) String>) Http.Reader>
+
+
 /// Cell (EXPERIMENTAL)
 
 type Cell<a> = iterative choice {

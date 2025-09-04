@@ -4,6 +4,7 @@ pub mod cell;
 pub mod char_;
 pub mod console;
 pub mod debug;
+pub mod http;
 pub mod int;
 pub mod list;
 pub mod nat;
@@ -35,5 +36,6 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Cell"), cell::external_module());
     module.import(Some("Console"), console::external_module());
     module.import(Some("Os"), os::external_module());
+    module.import(Some("Http"), http::external_module());
     module.import(Some("Test"), test::external_module());
 }

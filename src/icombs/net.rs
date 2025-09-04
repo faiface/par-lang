@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use arcstr::{ArcStr, Substr};
-use byteview::ByteView;
+use bytes::Bytes;
 use futures::channel::{mpsc, oneshot};
 use futures::future::RemoteHandle;
 use futures::task::{Spawn, SpawnExt};
@@ -53,7 +53,7 @@ pub enum Tree {
     Primitive(Primitive),
     IntRequest(oneshot::Sender<BigInt>),
     StringRequest(oneshot::Sender<Substr>),
-    BytesRequest(oneshot::Sender<ByteView>),
+    BytesRequest(oneshot::Sender<Bytes>),
 
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
     ExternalBox(Arc<dyn Send + Sync + Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>>),

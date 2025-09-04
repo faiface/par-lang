@@ -1,4 +1,4 @@
-use byteview::ByteView;
+use bytes::Bytes;
 use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
 
@@ -75,7 +75,7 @@ async fn bytes_builder(mut handle: Handle) {
                 buf.extend(handle.receive().bytes().await.as_ref());
             }
             "build" => {
-                handle.provide_bytes(ByteView::from(buf));
+                handle.provide_bytes(Bytes::from(buf));
                 break;
             }
             _ => unreachable!(),
@@ -95,7 +95,7 @@ async fn bytes_parse_reader(mut handle: Handle) {
 
 async fn bytes_from_string(mut handle: Handle) {
     let string = handle.receive().string().await;
-    handle.provide_bytes(ByteView::from(string.as_str()))
+    handle.provide_bytes(Bytes::copy_from_slice(string.as_bytes()))
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +105,7 @@ pub(crate) enum BytesPattern {
     Empty,
     Min(BigInt),
     Max(BigInt),
-    Bytes(ByteView),
+    Bytes(Bytes),
     One(ByteClass),
     Non(ByteClass),
     Concat(Box<Self>, Box<Self>),

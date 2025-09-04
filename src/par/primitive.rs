@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use arcstr::Substr;
-use byteview::ByteView;
+use bytes::Bytes;
 use num_bigint::BigInt;
 
 use super::types::Type;
@@ -10,7 +10,7 @@ use super::types::Type;
 pub enum Primitive {
     Int(BigInt),
     String(Substr),
-    Bytes(ByteView),
+    Bytes(Bytes),
 }
 
 impl Primitive {

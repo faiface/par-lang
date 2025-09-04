@@ -923,14 +923,14 @@ impl Expression {
                 then: expression,
             } => {
                 let expression = expression.compile(pass)?;
-                let body = process.compile(Passes::new().set_fallthrough(Some(Arc::new(
-                    process::Process::Do {
-                        span: span.clone(),
-                        name: LocalName::result(),
-                        typ: (),
-                        command: process::Command::Link(expression),
-                    },
-                )))?)?;
+                pass.set_fallthrough(Some(Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::result(),
+                    typ: (),
+                    command: process::Command::Link(expression),
+                })))?;
+                let body = process.compile(pass)?;
+                pass.unset_fallthrough()?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),

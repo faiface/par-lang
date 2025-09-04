@@ -1,5 +1,5 @@
 use arcstr::{ArcStr, Substr};
-use byteview::ByteView;
+use bytes::Bytes;
 use futures::channel::{mpsc, oneshot};
 use num_bigint::BigInt;
 use std::sync::atomic::AtomicUsize;
@@ -115,14 +115,14 @@ pub enum TypedReadback {
     String(Substr),
     Char(char),
     Byte(u8),
-    Bytes(ByteView),
+    Bytes(Bytes),
 
     NatRequest(Box<dyn Send + FnOnce(BigInt)>),
     IntRequest(Box<dyn Send + FnOnce(BigInt)>),
     StringRequest(Box<dyn Send + FnOnce(Substr)>),
     CharRequest(Box<dyn Send + FnOnce(char)>),
     ByteRequest(Box<dyn Send + FnOnce(u8)>),
-    BytesRequest(Box<dyn Send + FnOnce(ByteView)>),
+    BytesRequest(Box<dyn Send + FnOnce(Bytes)>),
 
     Times(TypedHandle, TypedHandle),
     Par(TypedHandle, TypedHandle),
@@ -276,13 +276,13 @@ impl Handle {
     pub fn provide_byte(self, value: u8) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::Primitive(Primitive::Bytes(ByteView::new(&[value]))),
+            Tree::Primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value]))),
             self.tree.unwrap(),
         );
         locked.notify_reducer();
     }
 
-    pub async fn bytes(self) -> ByteView {
+    pub async fn bytes(self) -> Bytes {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -293,7 +293,7 @@ impl Handle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_bytes(self, value: ByteView) {
+    pub fn provide_bytes(self, value: Bytes) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(Primitive::Bytes(value)), self.tree.unwrap());
         locked.notify_reducer();
@@ -606,13 +606,13 @@ impl TypedHandle {
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::Primitive(Primitive::Bytes(ByteView::new(&[value]))),
+            Tree::Primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value]))),
             self.tree.tree,
         );
         locked.notify_reducer();
     }
 
-    pub async fn bytes(mut self) -> ByteView {
+    pub async fn bytes(mut self) -> Bytes {
         self.prepare_for_readback();
         let Type::Primitive(_, PrimitiveType::Bytes) = self.tree.ty else {
             panic!("Incorrect type for `bytes`: {:?}", self.tree.ty);
@@ -628,7 +628,7 @@ impl TypedHandle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_bytes(mut self, value: ByteView) {
+    pub fn provide_bytes(mut self, value: Bytes) {
         self.prepare_for_readback();
         let Type::DualPrimitive(_, PrimitiveType::Bytes) = self.tree.ty else {
             panic!("Incorrect type for `provide_bytes`: {:?}", self.tree.ty);

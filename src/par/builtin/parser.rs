@@ -1,5 +1,5 @@
 use arcstr::{literal, Substr};
-use byteview::ByteView;
+use bytes::Bytes;
 use std::collections::VecDeque;
 
 use crate::{
@@ -22,8 +22,8 @@ pub trait BytesRemainder {
 
     async fn close(self, result_in: Result<(), Self::ErrIn>) -> Result<(), Self::ErrOut>;
     fn bytes(&mut self) -> Self::Iterator<'_>;
-    fn pop_bytes(&mut self, n: usize) -> ByteView;
-    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut>;
+    fn pop_bytes(&mut self, n: usize) -> Bytes;
+    async fn remaining_bytes(&mut self) -> Result<Bytes, Self::ErrOut>;
 }
 
 pub trait CharsRemainder {
@@ -219,17 +219,17 @@ impl BytesRemainder for ReaderRemainder {
         }
     }
 
-    fn pop_bytes(&mut self, n: usize) -> ByteView {
+    fn pop_bytes(&mut self, n: usize) -> Bytes {
         self.buffer.drain(..n).collect()
     }
 
-    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut> {
+    async fn remaining_bytes(&mut self) -> Result<Bytes, Self::ErrOut> {
         let mut result = Vec::new();
         let mut iter = self.bytes();
         while let Some((_, b)) = iter.next().await? {
             result.push(b);
         }
-        Ok(ByteView::from(result))
+        Ok(Bytes::from(result))
     }
 }
 
@@ -298,11 +298,11 @@ impl CharsRemainder for ReaderRemainder {
     }
 }
 
-impl BytesRemainder for ByteView {
+impl BytesRemainder for Bytes {
     type ErrIn = Never;
     type ErrOut = Never;
     type Iterator<'a>
-        = (usize, &'a ByteView)
+        = (usize, &'a Bytes)
     where
         Self: 'a;
 
@@ -324,18 +324,18 @@ impl BytesRemainder for ByteView {
         (0, self)
     }
 
-    fn pop_bytes(&mut self, n: usize) -> ByteView {
+    fn pop_bytes(&mut self, n: usize) -> Bytes {
         let popped = self.slice(..n);
         *self = self.slice(n..);
         popped
     }
 
-    async fn remaining_bytes(&mut self) -> Result<ByteView, Self::ErrOut> {
+    async fn remaining_bytes(&mut self) -> Result<Bytes, Self::ErrOut> {
         Ok(self.clone())
     }
 }
 
-impl<'a> AsyncByteIterator for (usize, &'a ByteView) {
+impl<'a> AsyncByteIterator for (usize, &'a Bytes) {
     type ErrOut = Never;
 
     async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::ErrOut> {

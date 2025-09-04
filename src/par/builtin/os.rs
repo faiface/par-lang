@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use arcstr::{literal, Substr};
-use byteview::ByteView;
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
@@ -60,15 +60,15 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 "stringName" => {
                     let s = path
                         .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "".to_string());
+                        .map(|n| Substr::from(n.to_string_lossy()))
+                        .unwrap_or_else(|| Substr::new());
                     handle.provide_string(Substr::from(s));
                 }
                 "bytesName" => {
                     let bytes = path
                         .file_name()
                         .map(|n| os_to_bytes(n))
-                        .unwrap_or_else(|| ByteView::from(&b""[..]));
+                        .unwrap_or_else(|| Bytes::new());
                     handle.provide_bytes(bytes);
                 }
                 "stringAbsolute" => {
@@ -251,9 +251,9 @@ fn provide_bytes_parts(mut handle: Handle, p: &Path) {
 }
 
 #[cfg(unix)]
-fn os_to_bytes(os: &OsStr) -> ByteView {
+fn os_to_bytes(os: &OsStr) -> Bytes {
     use std::os::unix::ffi::OsStrExt;
-    ByteView::from(os.as_bytes())
+    Bytes::copy_from_slice(os.as_bytes())
 }
 
 #[cfg(windows)]
@@ -296,7 +296,9 @@ async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
                     }
                     handle.signal(literal!("ok"));
                     handle.signal(literal!("chunk"));
-                    handle.send().provide_bytes(ByteView::from(&buf[..n]));
+                    handle
+                        .send()
+                        .provide_bytes(Bytes::copy_from_slice(&buf[..n]));
                     continue;
                 }
                 Err(err) => {
@@ -376,7 +378,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
 
 // Provide List<self/append> for the directory entries of `base` using a pre-opened ReadDir.
 async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
-    let mut entries: Vec<(byteview::ByteView, std::ffi::OsString)> = Vec::new();
+    let mut entries: Vec<(Bytes, std::ffi::OsString)> = Vec::new();
     while let Ok(Some(entry)) = rd.next_entry().await {
         let name = entry.file_name();
         // Sort key: raw bytes if available, fallback to lossy string
@@ -410,7 +412,7 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
         let mut rd = fs::read_dir(&dir).await.map_err(|e| format!("{}", e))?;
 
         // Collect entries first to allow deterministic sorting
-        let mut items: Vec<(byteview::ByteView, DirEntry)> = Vec::new();
+        let mut items: Vec<(Bytes, DirEntry)> = Vec::new();
         while let Ok(Some(entry)) = rd.next_entry().await {
             let name = entry.file_name();
             let key = os_to_bytes(&name);
@@ -437,7 +439,6 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
     })
 }
 
-// Provide the recursive/tree either { .end | .file(self/append) self/tree | .dir(self/append, self/tree) self/tree }
 fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
     match nodes.split_first() {
         None => {
