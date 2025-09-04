@@ -321,12 +321,19 @@ dec Http.Request :
 
 type Map<k, v> = iterative choice {
   .list => List<(k) v>,
+
   .put(k, v) => (Result<v, !>) self,
   .delete(k) => (Result<!, v>) self,
-  .get(k, box v) => (v) choice {
+
+  .get(k) => Result<self, (v) choice {
     .put(v) => self,
     .delete => self,
-  }
+  }>,
+
+  .getOr(k, box v) => (v) choice {
+    .put(v) => self,
+    .delete => self,
+  },
 }
 
 dec Map.String : [type v] [List<(String) box v>] Map<String, v>

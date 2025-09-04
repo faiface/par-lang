@@ -143,6 +143,27 @@ async fn provide_map<K: Ord, F: Future<Output = K>>(
             }
             "get" => {
                 let key = read_key(handle.receive()).await;
+                match map.remove(&key) {
+                    Some(value) => {
+                        handle.signal(literal!("ok"));
+                        handle.send().link(value);
+                        match handle.case().await.as_str() {
+                            "put" => {
+                                let new_value = handle.receive();
+                                map.insert(key, new_value);
+                            }
+                            "delete" => {}
+                            _ => unreachable!(),
+                        }
+                    }
+                    None => {
+                        handle.signal(literal!("err"));
+                    }
+                }
+                continue;
+            }
+            "getOr" => {
+                let key = read_key(handle.receive()).await;
                 let default_box = handle.receive();
                 let value = match map.remove(&key) {
                     Some(value) => {
