@@ -480,6 +480,23 @@ dec Http.Request :
   Result&lt;Http.Error, (Nat, List&lt;(String) String&gt;) Http.Reader&gt;
 
 
+/// Map
+
+type Map&lt;k, v&gt; = iterative choice {
+  .list =&gt; List&lt;(k) v&gt;,
+  .put(k, v) =&gt; (Result&lt;v, !&gt;) self,
+  .delete(k) =&gt; (Result&lt;!, v&gt;) self,
+  .get(k, box v) =&gt; (v) choice {
+    .put(v) =&gt; self,
+    .delete =&gt; self,
+  }
+}
+
+dec Map.String : [type v] [List&lt;(String) box v&gt;] Map&lt;String, v&gt;
+dec Map.Int    : [type v] [List&lt;(Int) box v&gt;]    Map&lt;Int, v&gt;
+dec Map.Nat    : [type v] [List&lt;(Nat) box v&gt;]    Map&lt;Nat, v&gt;
+
+
 /// Cell (EXPERIMENTAL)
 
 type Cell&lt;a&gt; = iterative choice {
