@@ -72,7 +72,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 async fn map_new<K: Ord, F: Future<Output = K>>(
     mut handle: Handle,
     read_key: impl Fn(Handle) -> F,
-    provide_key: fn(Handle, K),
+    provide_key: impl Fn(Handle, K),
 ) {
     let entries = readback_list(handle.receive(), |mut handle| async {
         let key = read_key(handle.receive()).await;
@@ -94,7 +94,7 @@ async fn provide_map<K: Ord, F: Future<Output = K>>(
     mut handle: Handle,
     mut map: BTreeMap<K, Handle>,
     read_key: impl Fn(Handle) -> F,
-    provide_key: fn(Handle, K),
+    provide_key: impl Fn(Handle, K),
 ) {
     loop {
         match handle.case().await.as_str() {
