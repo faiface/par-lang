@@ -147,6 +147,12 @@ impl Handle {
         }
     }
 
+    pub fn erase(self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(self.tree.unwrap(), Tree::Era);
+        locked.notify_reducer();
+    }
+
     pub fn link(self, dual: Handle) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(self.tree.unwrap(), dual.tree.unwrap());

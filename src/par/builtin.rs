@@ -7,6 +7,7 @@ pub mod debug;
 pub mod http;
 pub mod int;
 pub mod list;
+pub mod map;
 pub mod nat;
 pub mod os;
 pub mod parser;
@@ -36,6 +37,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Cell"), cell::external_module());
     module.import(Some("Console"), console::external_module());
     module.import(Some("Os"), os::external_module());
+    module.import(Some("Map"), map::external_module());
     module.import(Some("Http"), http::external_module());
     module.import(Some("Test"), test::external_module());
 }
