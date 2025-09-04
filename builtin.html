@@ -488,10 +488,10 @@ type Map&lt;k, v&gt; = iterative choice {
   .put(k, v) =&gt; (Result&lt;v, !&gt;) self,
   .delete(k) =&gt; (Result&lt;!, v&gt;) self,
 
-  .get(k) =&gt; Result&lt;self, (v) choice {
+  .get(k) =&gt; (Result&lt;!, v&gt;) choice {
     .put(v) =&gt; self,
     .delete =&gt; self,
-  }&gt;,
+  },
 
   .getOr(k, box v) =&gt; (v) choice {
     .put(v) =&gt; self,
