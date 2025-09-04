@@ -105,8 +105,8 @@ async fn http_request(mut handle: Handle) {
     });
 
     let client = match reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(10))
         .build()
     {
         Ok(c) => c,
