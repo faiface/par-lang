@@ -143,22 +143,26 @@ async fn provide_map<K: Ord, F: Future<Output = K>>(
             }
             "get" => {
                 let key = read_key(handle.receive()).await;
-                match map.remove(&key) {
-                    Some(value) => {
-                        handle.signal(literal!("ok"));
-                        handle.send().link(value);
-                        match handle.case().await.as_str() {
-                            "put" => {
-                                let new_value = handle.receive();
-                                map.insert(key, new_value);
-                            }
-                            "delete" => {}
-                            _ => unreachable!(),
+                let removed = map.remove(&key);
+                handle.send().concurrently(|mut handle| async move {
+                    match removed {
+                        Some(value) => {
+                            handle.signal(literal!("ok"));
+                            handle.link(value);
+                        }
+                        None => {
+                            handle.signal(literal!("err"));
+                            handle.break_();
                         }
                     }
-                    None => {
-                        handle.signal(literal!("err"));
+                });
+                match handle.case().await.as_str() {
+                    "put" => {
+                        let new_value = handle.receive();
+                        map.insert(key, new_value);
                     }
+                    "delete" => {}
+                    _ => unreachable!(),
                 }
                 continue;
             }

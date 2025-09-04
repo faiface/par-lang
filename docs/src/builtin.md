@@ -328,10 +328,10 @@ type Map<k, v> = iterative choice {
   .put(k, v) => (Result<v, !>) self,
   .delete(k) => (Result<!, v>) self,
 
-  .get(k) => Result<self, (v) choice {
+  .get(k) => (Result<!, v>) choice {
     .put(v) => self,
     .delete => self,
-  }>,
+  },
 
   .getOr(k, box v) => (v) choice {
     .put(v) => self,
