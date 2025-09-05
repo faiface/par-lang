@@ -467,6 +467,9 @@ type Os.Path = iterative/append recursive/parent box choice {
 dec Os.PathFromString : [String] Os.Path
 dec Os.PathFromBytes  : [Bytes] Os.Path
 
+dec Os.Stdin  : Os.Reader
+dec Os.Stdout : Os.Writer
+
 
 /// Http
 
