@@ -16,7 +16,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
@@ -34,6 +34,12 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
                 Type::function(Type::bytes(), Type::name(None, "Path", vec![])),
                 |handle| Box::pin(path_from_bytes(handle)),
             ),
+            Definition::external("Stdin", Type::name(None, "Reader", vec![]), |handle| {
+                Box::pin(stdin_reader(handle))
+            }),
+            Definition::external("Stdout", Type::name(None, "Writer", vec![]), |handle| {
+                Box::pin(stdout_writer(handle))
+            }),
         ],
     }
 }
@@ -110,7 +116,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 "openFile" => match File::open(&path).await {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_reader(handle, file).await;
+                        return provide_bytes_reader_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -126,7 +132,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -141,7 +147,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -156,7 +162,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -172,7 +178,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
@@ -273,7 +279,7 @@ fn os_to_bytes(os: &OsStr) -> ByteView {
     ByteView::from(os.to_string_lossy().as_ref())
 }
 
-async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
+async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl AsyncRead + Unpin) {
     let mut buf = vec![0u8; 512];
     loop {
         match handle.case().await.as_str() {
@@ -287,7 +293,7 @@ async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
                 handle.signal(literal!("ok"));
                 return handle.break_();
             }
-            "read" => match file.read(&mut buf[..]).await {
+            "read" => match reader.read(&mut buf[..]).await {
                 Ok(n) => {
                     if n == 0 {
                         handle.signal(literal!("ok"));
@@ -311,7 +317,7 @@ async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
     }
 }
 
-async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
+async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl AsyncWrite + Unpin) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
@@ -324,7 +330,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
                 });
 
                 // Try to flush pending data before closing
-                match file.flush().await {
+                match writer.flush().await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
                         return handle.break_();
@@ -335,7 +341,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
                     }
                 }
             }
-            "flush" => match file.flush().await {
+            "flush" => match writer.flush().await {
                 Ok(()) => {
                     handle.signal(literal!("ok"));
                     continue;
@@ -347,7 +353,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
             },
             "write" => {
                 let bytes = handle.receive().bytes().await;
-                match file.write_all(bytes.as_ref()).await {
+                match writer.write_all(bytes.as_ref()).await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
                         continue;
@@ -360,7 +366,7 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
             }
             "writeString" => {
                 let s = handle.receive().string().await;
-                match file.write_all(s.as_bytes()).await {
+                match writer.write_all(s.as_bytes()).await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
                         continue;
@@ -459,4 +465,12 @@ fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
             }
         },
     }
+}
+
+async fn stdin_reader(handle: Handle) {
+    provide_bytes_reader_from_async(handle, tokio::io::stdin()).await;
+}
+
+async fn stdout_writer(handle: Handle) {
+    provide_bytes_writer_from_async(handle, tokio::io::stdout()).await;
 }
