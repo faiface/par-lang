@@ -263,7 +263,7 @@ fn os_to_bytes(os: &OsStr) -> Bytes {
 }
 
 #[cfg(windows)]
-fn os_to_bytes(os: &OsStr) -> ByteView {
+fn os_to_bytes(os: &OsStr) -> Bytes {
     use std::os::windows::ffi::OsStrExt;
     let wide: Vec<u16> = os.encode_wide().collect();
     let mut bytes = Vec::with_capacity(wide.len() * 2);
@@ -271,12 +271,12 @@ fn os_to_bytes(os: &OsStr) -> ByteView {
         bytes.push((w & 0xFF) as u8);
         bytes.push((w >> 8) as u8);
     }
-    ByteView::from(bytes)
+    Bytes::from(bytes)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn os_to_bytes(os: &OsStr) -> ByteView {
-    ByteView::from(os.to_string_lossy().as_ref())
+fn os_to_bytes(os: &OsStr) -> Bytes {
+    Bytes::from(os.to_string_lossy().as_ref())
 }
 
 async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl AsyncRead + Unpin) {
