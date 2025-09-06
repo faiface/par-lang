@@ -63,6 +63,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(Type::string(), Type::bytes()),
                 |handle| Box::pin(bytes_from_string(handle)),
             ),
+            Definition::external(
+                "Length",
+                Type::function(Type::bytes(), Type::nat()),
+                |handle| Box::pin(bytes_length(handle)),
+            ),
         ],
     }
 }
@@ -96,6 +101,11 @@ async fn bytes_parse_reader(mut handle: Handle) {
 async fn bytes_from_string(mut handle: Handle) {
     let string = handle.receive().string().await;
     handle.provide_bytes(Bytes::copy_from_slice(string.as_bytes()))
+}
+
+async fn bytes_length(mut handle: Handle) {
+    let bytes = handle.receive().bytes().await;
+    handle.provide_nat(BigInt::from(bytes.len()))
 }
 
 #[derive(Debug, Clone)]

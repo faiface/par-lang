@@ -253,6 +253,7 @@ dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Parse   : [Bytes] Bytes.Parser<either{}, either{}>
+dec Bytes.Length  : [Bytes] Nat
 
 dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes.Parser<errIn, errOut>
 
