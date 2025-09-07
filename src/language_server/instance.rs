@@ -1,6 +1,5 @@
 use super::io::IO;
-use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
-use crate::location::{FileName, Span};
+use crate::location::FileName;
 use crate::playground::BuildResult;
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
@@ -270,141 +269,9 @@ impl Instance {
         }))
     }
 
-    // todo: caching
-    pub fn provide_semantic_tokens(
-        &self,
-        params: &lsp::SemanticTokensParams,
-    ) -> Option<lsp::SemanticTokensResult> {
-        tracing::info!("Handling semantic tokens request with params: {:?}", params);
-        let Some(checked) = self.build.checked() else {
-            return None;
-        };
-
-        let mut semantic_tokens = Vec::new();
-
-        for (name, _) in checked.type_defs.globals.as_ref() {
-            if let Some(start) = name.span.start() {
-                semantic_tokens.push(lsp::SemanticToken {
-                    delta_line: start.row as u32,
-                    delta_start: start.column as u32,
-                    length: name.span.len() as u32,
-                    token_type: semantic_token_types::TYPE,
-                    token_modifiers_bitset: 0u32,
-                });
-            }
-        }
-
-        for (name, _) in &checked.declarations {
-            if let Some(start) = name.span.start() {
-                semantic_tokens.push(lsp::SemanticToken {
-                    delta_line: start.row as u32,
-                    delta_start: start.column as u32,
-                    length: name.span.len() as u32,
-                    token_type: semantic_token_types::FUNCTION,
-                    token_modifiers_bitset: semantic_token_modifiers::DECLARATION
-                        | semantic_token_modifiers::READONLY,
-                });
-            }
-        }
-
-        for (name, _) in &checked.definitions {
-            if let Some(start) = name.span.start() {
-                semantic_tokens.push(lsp::SemanticToken {
-                    delta_line: start.row as u32,
-                    delta_start: start.column as u32,
-                    length: name.span.len() as u32,
-                    token_type: semantic_token_types::FUNCTION,
-                    token_modifiers_bitset: semantic_token_modifiers::DEFINITION
-                        | semantic_token_modifiers::READONLY,
-                });
-            }
-        }
-
-        semantic_tokens.sort_by(|a, b| a.delta_line.cmp(&b.delta_line));
-        let mut line = 0;
-        let mut start = 0;
-        for token in &mut semantic_tokens {
-            token.delta_line -= line;
-            if token.delta_line == 0 {
-                token.delta_start -= start;
-                start += token.delta_start;
-            } else {
-                start = 0;
-            }
-            line += token.delta_line;
-        }
-
-        let result = Some(lsp::SemanticTokensResult::Tokens(lsp::SemanticTokens {
-            result_id: None,
-            data: semantic_tokens,
-        }));
-        tracing::info!("Providing semantic tokens: {:?}", result);
-        result
-    }
-
-    pub fn provide_code_lens(&self, params: &lsp::CodeLensParams) -> Option<Vec<lsp::CodeLens>> {
-        tracing::debug!("Handling code lens request with params: {:?}", params);
-        let Some(checked) = self.build.checked() else {
-            return None;
-        };
-
-        Some(
-            checked
-                .definitions
-                .iter()
-                .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
-                .map(|((start, end), name, _)| lsp::CodeLens {
-                    range: lsp::Range {
-                        start: start.into(),
-                        end: end.into(),
-                    },
-                    command: Some(lsp::Command {
-                        title: "$(play) Run".to_owned(),
-                        command: "run".to_owned(),
-                        arguments: Some(vec![self.uri.to_string().into(), name.to_string().into()]),
-                    }),
-                    data: None,
-                })
-                .collect(),
-        )
-    }
-
-    pub fn provide_inlay_hints(
-        &self,
-        params: &lsp::InlayHintParams,
-    ) -> Option<Vec<lsp::InlayHint>> {
-        tracing::debug!("Handling inlay hints request with params: {:?}", params);
-        let Some(checked) = self.build.checked() else {
-            return None;
-        };
-
-        Some(
-            checked
-                .definitions
-                .iter()
-                .filter(|(name, _)| !checked.declarations.contains_key(*name))
-                .filter_map(|(name, def)| name.span.points().map(|pts| (pts, name, def)))
-                .map(|((_, end), _, definition)| {
-                    let mut label = ": ".to_owned();
-                    definition
-                        .expression
-                        .get_type()
-                        .pretty_compact(&mut label)
-                        .unwrap();
-
-                    lsp::InlayHint {
-                        position: end.into(),
-                        label: lsp::InlayHintLabel::String(label),
-                        kind: Some(lsp::InlayHintKind::TYPE),
-                        text_edits: None,
-                        tooltip: None,
-                        padding_left: None,
-                        padding_right: None,
-                        data: None,
-                    }
-                })
-                .collect(),
-        )
+    /// Last compile/type error, if any
+    pub fn last_error(&self) -> Option<CompileError> {
+        self.build.error().map(CompileError::Compile)
     }
 
     pub fn run_in_playground(&self, def_name: &str) -> Option<serde_json::Value> {
@@ -442,22 +309,11 @@ impl Instance {
             BuildResult::from_source(&code.unwrap(), self.file.clone())
         });
         tracing::info!("Compiled!");
+        // reset dirty flag after successful compile attempt
+        self.dirty = false;
     }
 
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
-}
-
-fn is_inside(pos: lsp::Position, span: &Span) -> bool {
-    let Some((start, end)) = span.points() else {
-        return false;
-    };
-
-    let pos_row = pos.line;
-    let pos_column = pos.character;
-
-    !(pos_row < start.row || pos_row > end.row)
-        && !(pos_row == start.row && pos_column < start.column)
-        && !(pos_row == end.row && pos_column > end.column)
 }

@@ -1,12 +1,10 @@
 use super::io::IO;
-use crate::language_server::data::{SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
 use crate::language_server::feedback::{diagnostic_for_error, FeedbackBookKeeper};
 use crate::language_server::instance::Instance;
 use lsp_server::Connection;
 use lsp_types::notification::DidSaveTextDocument;
 use lsp_types::request::{
-    CodeLensRequest, DocumentSymbolRequest, ExecuteCommand, GotoDeclaration, GotoDefinition,
-    InlayHintRequest, SemanticTokensFullRequest,
+    DocumentSymbolRequest, ExecuteCommand, GotoDeclaration, GotoDefinition,
 };
 use lsp_types::{self as lsp, InitializeParams, Uri};
 use std::collections::HashMap;
@@ -16,7 +14,7 @@ type Instances = HashMap<Uri, Instance>;
 
 pub struct LanguageServer<'c> {
     connection: &'c Connection,
-    initialize_params: InitializeParams,
+    _initialize_params: InitializeParams,
     instances: Instances,
     feedback: FeedbackBookKeeper,
     io: IO,
@@ -27,7 +25,7 @@ impl<'c> LanguageServer<'c> {
         let initialize_params = initialize_lsp(connection);
         Self {
             connection,
-            initialize_params,
+            _initialize_params: initialize_params,
             instances: HashMap::new(),
             feedback: FeedbackBookKeeper::new(),
             io: IO::new(),
@@ -88,25 +86,6 @@ impl<'c> LanguageServer<'c> {
                     |instance| instance.handle_goto_definition(&params),
                 )
             }
-            /*SemanticTokensFullRequest::METHOD => {
-                let params = extract_request::<SemanticTokensFullRequest>(request);
-                self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
-                    instance.provide_semantic_tokens(&params)
-                })
-            }
-            // don't really work yet
-            CodeLensRequest::METHOD => {
-                let params = extract_request::<CodeLensRequest>(request);
-                self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
-                    instance.provide_code_lens(&params)
-                })
-            }
-            InlayHintRequest::METHOD => {
-                let params = extract_request::<InlayHintRequest>(request);
-                self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
-                    instance.provide_inlay_hints(&params)
-                })
-            }*/
             ExecuteCommand::METHOD => {
                 let params = extract_request::<ExecuteCommand>(request);
                 match params.command.as_str() {
@@ -165,7 +144,11 @@ impl<'c> LanguageServer<'c> {
             DidChangeTextDocument::METHOD => {
                 let params = extract_notification::<DidChangeTextDocument>(notification);
                 if let Some(last_change) = params.content_changes.into_iter().last() {
-                    self.cache_file(&params.text_document.uri, last_change.text);
+                    let uri = &params.text_document.uri;
+                    self.cache_file(uri, last_change.text);
+                    // compile on change to keep diagnostics up-to-date
+                    self.compile(uri);
+                    self.publish_feedback();
                 }
             }
             DidSaveTextDocument::METHOD => {
@@ -222,9 +205,25 @@ impl<'c> LanguageServer<'c> {
     }
 
     fn compile(&mut self, uri: &Uri) {
-        let instance = self.instance_for(uri);
-        let compile_result = instance.compile();
+        // Compile and capture last error while holding the instance borrow
+        let err = {
+            let instance = self.instance_for(uri);
+            instance.compile();
+            instance.last_error()
+        };
+
+        // Now update feedback/diagnostics
         let feedback = self.feedback.cleanup();
+        if let Some(err) = err {
+            // Use the latest cached text for accurate spans
+            let code = self
+                .io
+                .read(uri)
+                .map(|s| std::sync::Arc::from(s.into_boxed_str()))
+                .unwrap_or_else(|| std::sync::Arc::from("") );
+            let diagnostic = diagnostic_for_error(&err, code);
+            feedback.add_diagnostic(uri.clone(), diagnostic);
+        }
     }
 
     fn cache_file(&mut self, uri: &Uri, text: String) {
@@ -250,43 +249,11 @@ fn initialize_lsp(connection: &Connection) -> InitializeParams {
         document_symbol_provider: Some(lsp::OneOf::Left(true)),
         declaration_provider: Some(lsp::DeclarationCapability::Simple(true)),
         definition_provider: Some(lsp::OneOf::Left(true)),
-        // must be enabled in vs code (depends on color theme. Works with "Dark Modern" for example)
-        semantic_tokens_provider: Some(
-            lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(
-                lsp::SemanticTokensOptions {
-                    work_done_progress_options: Default::default(),
-                    legend: lsp::SemanticTokensLegend {
-                        token_types: Vec::from(SEMANTIC_TOKEN_TYPES),
-                        token_modifiers: Vec::from(SEMANTIC_TOKEN_MODIFIERS),
-                    },
-                    range: None,
-                    full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
-                },
-            ),
-        ),
-        code_lens_provider: Some(lsp::CodeLensOptions {
-            resolve_provider: None,
-        }),
         execute_command_provider: Some(lsp::ExecuteCommandOptions {
             commands: vec!["run".to_owned()],
             work_done_progress_options: Default::default(),
         }),
-        inlay_hint_provider: Some(lsp::OneOf::Left(true)),
-        /* todo:
-        language:
-        goto type definition
-        goto implementation (?)
-        find references
-        inlay hints
-        completion
-        diagnostic provider (response to request, not push)
-        signature help?
-        code actions
-        formatting
-        rename / linked editing (?)
-        workspace:
-        workspace symbols?
-         */
+
         ..lsp::ServerCapabilities::default()
     };
     let server_capabilities_json = serde_json::to_value(&server_capabilities).unwrap();
