@@ -3,9 +3,7 @@ use crate::language_server::feedback::{diagnostic_for_error, FeedbackBookKeeper}
 use crate::language_server::instance::Instance;
 use lsp_server::Connection;
 use lsp_types::notification::DidSaveTextDocument;
-use lsp_types::request::{
-    DocumentSymbolRequest, ExecuteCommand, GotoDeclaration, GotoDefinition,
-};
+use lsp_types::request::{DocumentSymbolRequest, ExecuteCommand, GotoDeclaration, GotoDefinition};
 use lsp_types::{self as lsp, InitializeParams, Uri};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -220,7 +218,7 @@ impl<'c> LanguageServer<'c> {
                 .io
                 .read(uri)
                 .map(|s| std::sync::Arc::from(s.into_boxed_str()))
-                .unwrap_or_else(|| std::sync::Arc::from("") );
+                .unwrap_or_else(|| std::sync::Arc::from(""));
             let diagnostic = diagnostic_for_error(&err, code);
             feedback.add_diagnostic(uri.clone(), diagnostic);
         }
