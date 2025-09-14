@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::par::types::Type;
+    use crate::par::types::{Type, TypeDefs};
 
     #[test]
     fn test_iterative_box_choice() {
@@ -82,5 +82,23 @@ mod tests {
             }
             _ => panic!("Expected Iterative types"),
         }
+    }
+
+    #[test]
+    fn test_empty_either_subtype_of_any() {
+        let type_defs = TypeDefs::default();
+        let empty_either = Type::either(vec![]);
+        let any_type = Type::string();
+        
+        assert!(empty_either.is_assignable_to(&any_type, &type_defs).unwrap());
+    }
+
+    #[test]
+    fn test_any_subtype_of_empty_choice() {
+        let type_defs = TypeDefs::default();
+        let any_type = Type::int();
+        let empty_choice = Type::choice(vec![]);
+        
+        assert!(any_type.is_assignable_to(&empty_choice, &type_defs).unwrap());
     }
 }
