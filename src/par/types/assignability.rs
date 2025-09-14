@@ -509,6 +509,7 @@ impl Type {
                     cyclic_points,
                 )?
             }
+            (Self::Either(_, branches1), _) if branches1.is_empty() => true,
             (Self::Either(_, branches1), Self::Either(_, branches2)) => {
                 for (branch, t1) in branches1 {
                     let Some(t2) = branches2.get(branch) else {
@@ -529,6 +530,7 @@ impl Type {
                 }
                 true
             }
+            (_, Self::Choice(_, branches2)) if branches2.is_empty() => true,
             (Self::Choice(_, branches1), Self::Choice(_, branches2)) => {
                 for (branch, t2) in branches2 {
                     let Some(t1) = branches1.get(branch) else {
