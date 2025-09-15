@@ -705,6 +705,7 @@ fn pattern(input: &mut Input) -> Result<Pattern> {
         pattern_receive_type,
         pattern_receive,
         pattern_continue,
+        pattern_default,
         pattern_try,
     ))
     .parse_next(input)
@@ -749,6 +750,17 @@ fn pattern_try(input: &mut Input) -> Result<Pattern> {
     commit_after(t(TokenKind::Try), (label, pattern))
         .map(|(pre, (label, rest))| Pattern::Try(pre.span.join(rest.span()), label, Box::new(rest)))
         .parse_next(input)
+}
+
+fn pattern_default(input: &mut Input) -> Result<Pattern> {
+    commit_after(
+        (t(TokenKind::Default), t(TokenKind::LParen)),
+        (expression, t(TokenKind::RParen), pattern),
+    )
+    .map(|((pre, _), (expr, _, rest))| {
+        Pattern::Default(pre.span.join(rest.span()), Box::new(expr), Box::new(rest))
+    })
+    .parse_next(input)
 }
 
 fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
@@ -1190,6 +1202,7 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
         apply_case,
         apply_send_type,
         apply_send,
+        apply_default,
         apply_try,
     )))
     .parse_next(input)
@@ -1316,6 +1329,26 @@ fn apply_try(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
+fn apply_default(input: &mut Input) -> Result<Apply> {
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Default)),
+        (
+            t(TokenKind::LParen),
+            expression,
+            t(TokenKind::RParen),
+            apply,
+        ),
+    )
+    .map(|((_, pre), (_, expr, close, then))| {
+        let then = match then {
+            Some(apply) => apply,
+            None => Apply::Noop(close.span.only_end()),
+        };
+        Apply::Default(pre.span.join(then.span()), Box::new(expr), Box::new(then))
+    })
+    .parse_next(input)
+}
+
 fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
     alt((
         apply_branch_then,
@@ -1323,6 +1356,7 @@ fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
         apply_branch_receive,
         apply_branch_continue,
         apply_branch_try,
+        apply_branch_default,
     ))
     .parse_next(input)
 }
@@ -1377,6 +1411,17 @@ fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch> {
             ApplyBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
         })
         .parse_next(input)
+}
+
+fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch> {
+    commit_after(
+        (t(TokenKind::Default), t(TokenKind::LParen)),
+        (expression, t(TokenKind::RParen), apply_branch),
+    )
+    .map(|((kw, _), (expr, _, rest))| {
+        ApplyBranch::Default(kw.span.join(rest.span()), Box::new(expr), Box::new(rest))
+    })
+    .parse_next(input)
 }
 
 fn process(input: &mut Input) -> Result<Process> {
@@ -1504,6 +1549,7 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
             cmd_recv_type,
             cmd_receive,
             cmd_try,
+            cmd_default,
         ))
         .map(Some),
         cmd_then,
@@ -1702,6 +1748,27 @@ fn cmd_try(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
+fn cmd_default(input: &mut Input) -> Result<Command> {
+    (
+        t(TokenKind::Dot),
+        (
+            t(TokenKind::Default),
+            t(TokenKind::LParen),
+            expression,
+            t(TokenKind::RParen),
+            cmd,
+        ),
+    )
+        .map(|(_, (kw, _, expr, close, cmd))| {
+            let cmd = match cmd {
+                Some(cmd) => cmd,
+                None => noop_cmd(close.span.only_end()),
+            };
+            Command::Default(kw.span.join(cmd.span()), Box::new(expr), Box::new(cmd))
+        })
+        .parse_next(input)
+}
+
 fn pass_process(input: &mut Input) -> Result<Process> {
     alt((proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
@@ -1714,6 +1781,7 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
         cmd_branch_recv_type,
         cmd_branch_receive,
         cmd_branch_try,
+        cmd_branch_default,
     ))
     .parse_next(input)
 }
@@ -1812,6 +1880,17 @@ fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch> {
             CommandBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
         })
         .parse_next(input)
+}
+
+fn cmd_branch_default(input: &mut Input) -> Result<CommandBranch> {
+    commit_after(
+        (t(TokenKind::Default), t(TokenKind::LParen)),
+        (expression, t(TokenKind::RParen), cmd_branch),
+    )
+    .map(|((kw, _), (expr, _, rest))| {
+        CommandBranch::Default(kw.span.join(rest.span()), Box::new(expr), Box::new(rest))
+    })
+    .parse_next(input)
 }
 
 fn label(input: &mut Input) -> Result<Option<LocalName>> {

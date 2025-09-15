@@ -59,6 +59,7 @@ pub enum TokenKind {
     Telltypes,
     Throw,
     Try,
+    Default,
     Type,
     Unfounded,
 
@@ -142,6 +143,7 @@ impl TokenKind {
             TokenKind::Telltypes => "telltypes",
             TokenKind::Throw => "throw",
             TokenKind::Try => "try",
+            TokenKind::Default => "default",
             TokenKind::Type => "type",
             TokenKind::Unfounded => "unfounded",
 
@@ -253,6 +255,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                         "telltypes" => TokenKind::Telltypes,
                         "throw" => TokenKind::Throw,
                         "try" => TokenKind::Try,
+                        "default" => TokenKind::Default,
                         "type" => TokenKind::Type,
                         "unfounded" => TokenKind::Unfounded,
                         raw => {

@@ -112,6 +112,7 @@ pub enum Pattern {
     Continue(Span),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
+    Default(Span, Box<Expression>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +199,7 @@ pub enum Apply {
     Loop(Span, Option<LocalName>),
     SendType(Span, Type, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
+    Default(Span, Box<Expression>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -210,6 +212,7 @@ pub enum ApplyBranch {
     Continue(Span, Expression),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
+    Default(Span, Box<Expression>, Box<Self>),
 }
 
 // span doesn't include the "then" process
@@ -255,6 +258,7 @@ pub enum Command {
     SendType(Span, Type, Box<Self>),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
+    Default(Span, Box<Expression>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -268,6 +272,7 @@ pub enum CommandBranch {
     Continue(Span, Process),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
+    Default(Span, Box<Expression>, Box<Self>),
 }
 
 impl Hash for LocalName {
@@ -726,6 +731,16 @@ impl Pattern {
                     rest.compile_helper(level, process, pass)?,
                 ))
             }
+
+            Self::Default(span, expr, rest) => {
+                let default_expr = expr.compile(pass)?;
+                Ok(compile_default(
+                    span,
+                    LocalName::match_(level),
+                    default_expr,
+                    rest.compile_helper(level, process, pass)?,
+                ))
+            }
         }
     }
 
@@ -747,6 +762,7 @@ impl Pattern {
                 ))
             }
             Self::Try(_, _, _) => None,
+            Self::Default(_, _, rest) => rest.annotation(),
         }
     }
 }
@@ -758,7 +774,8 @@ impl Spanning for Pattern {
             | Self::Continue(span)
             | Self::Receive(span, _, _)
             | Self::ReceiveType(span, _, _)
-            | Self::Try(span, _, _) => span.clone(),
+            | Self::Try(span, _, _)
+            | Self::Default(span, _, _) => span.clone(),
         }
     }
 }
@@ -1285,6 +1302,12 @@ impl Apply {
                 })
             }
 
+            Self::Default(span, expr, apply) => {
+                let default_expr = expr.compile(pass)?;
+                let ok_process = apply.compile(pass)?;
+                compile_default(span, LocalName::object(), default_expr, ok_process)
+            }
+
             Self::Try(span, label, apply) => {
                 let catch_block = pass.use_catch(span, label)?;
                 compile_try(span, LocalName::object(), catch_block, apply.compile(pass)?)
@@ -1303,7 +1326,8 @@ impl Spanning for Apply {
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
             | Self::Noop(span)
-            | Self::Try(span, _, _) => span.clone(),
+            | Self::Try(span, _, _)
+            | Self::Default(span, _, _) => span.clone(),
         }
     }
 }
@@ -1367,6 +1391,12 @@ impl ApplyBranch {
                 let process = branch.compile(pass)?;
                 compile_try(span, LocalName::object(), catch_block, process)
             }
+
+            Self::Default(span, expr, branch) => {
+                let default_expr = expr.compile(pass)?;
+                let ok_process = branch.compile(pass)?;
+                compile_default(span, LocalName::object(), default_expr, ok_process)
+            }
         })
     }
 }
@@ -1378,7 +1408,8 @@ impl Spanning for ApplyBranch {
             | Self::Receive(span, _, _)
             | Self::Continue(span, _)
             | Self::ReceiveType(span, _, _)
-            | Self::Try(span, _, _) => span.clone(),
+            | Self::Try(span, _, _)
+            | Self::Default(span, _, _) => span.clone(),
         }
     }
 }
@@ -1630,6 +1661,11 @@ impl Command {
                     command.compile(object_name, pass)?,
                 )
             }
+            Self::Default(span, expr, command) => {
+                let default_expr = expr.compile(pass)?;
+                let ok_process = command.compile(object_name, pass)?;
+                compile_default(span, object_name.clone(), default_expr, ok_process)
+            }
         })
     }
 }
@@ -1664,6 +1700,36 @@ fn compile_try(
     })
 }
 
+fn compile_default(
+    span: &Span,
+    variable: LocalName,
+    default_expr: Arc<process::Expression<()>>,
+    ok_process: Arc<process::Process<()>>,
+) -> Arc<process::Process<()>> {
+    Arc::new(process::Process::Do {
+        span: span.clone(),
+        name: variable.clone(),
+        typ: (),
+        command: process::Command::Case(
+            Arc::from([
+                LocalName::from(literal!("err")),
+                LocalName::from(literal!("ok")),
+            ]),
+            Box::from([
+                Arc::new(process::Process::Let {
+                    span: span.clone(),
+                    name: variable.clone(),
+                    annotation: None,
+                    typ: (),
+                    value: default_expr,
+                    then: ok_process.clone(),
+                }),
+                ok_process,
+            ]),
+        ),
+    })
+}
+
 impl Spanning for Command {
     fn span(&self) -> Span {
         match self {
@@ -1678,7 +1744,8 @@ impl Spanning for Command {
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
             | Self::ReceiveType(span, _, _)
-            | Self::Try(span, _, _) => span.clone(),
+            | Self::Try(span, _, _)
+            | Self::Default(span, _, _) => span.clone(),
 
             Self::Then(process) => process.span(),
         }
@@ -1740,6 +1807,11 @@ impl CommandBranch {
                 let process = branch.compile(object_name, pass)?;
                 compile_try(span, object_name.clone(), catch_block, process)
             }
+            Self::Default(span, expr, branch) => {
+                let default_expr = expr.compile(pass)?;
+                let ok_process = branch.compile(object_name, pass)?;
+                compile_default(span, object_name.clone(), default_expr, ok_process)
+            }
         })
     }
 }
@@ -1752,7 +1824,8 @@ impl Spanning for CommandBranch {
             | Self::Receive(span, _, _)
             | Self::Continue(span, _)
             | Self::ReceiveType(span, _, _)
-            | Self::Try(span, _, _) => span.clone(),
+            | Self::Try(span, _, _)
+            | Self::Default(span, _, _) => span.clone(),
         }
     }
 }
