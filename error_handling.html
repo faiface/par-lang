@@ -289,7 +289,7 @@
 </code></pre>
 <p>Significantly shorter and more readable! The error handling is declared once and applies to all subsequent operations.</p>
 <h2 id="how-trycatchthrow-work-in-process-syntax"><a class="header" href="#how-trycatchthrow-work-in-process-syntax">How <code>try</code>/<code>catch</code>/<code>throw</code> Work in Process Syntax</a></h2>
-<p>Par’s error handling sugar is built around three keywords that desugar to explicit <code>Result</code> handling. Let’s understand how they work.</p>
+<p>Par’s error handling sugar is built around small, local keywords that desugar to explicit <code>Result</code> handling. Let’s understand how they work.</p>
 <h3 id="the-catch-statement"><a class="header" href="#the-catch-statement">The <code>catch</code> Statement</a></h3>
 <p>Before you can use <code>try</code> or <code>throw</code>, you must define a <code>catch</code> block in the same process. This restriction is crucial — the corresponding <code>try</code> and <code>throw</code> commands must be in the same sequential process as their <code>catch</code>, not in nested processes or expressions.</p>
 <pre><code class="language-par">catch &lt;pattern&gt; =&gt; {
@@ -370,6 +370,7 @@ exit!
 source.poll.try[value]
 </code></pre>
 <p>After this command, <code>source</code> maintains its <code>Poll&lt;Os.Error, String&gt;</code> type and value contains the successfully polled <code>String</code>.</p>
+<!-- moved `default` to the end of this chapter -->
 <h3 id="the-concurrent-evaluation-restriction"><a class="header" href="#the-concurrent-evaluation-restriction">The Concurrent Evaluation Restriction</a></h3>
 <p>You might think this would work:</p>
 <pre><code class="language-par">let writer = path.createOrAppendToFile.try
@@ -538,6 +539,41 @@ def ReadAll = [path] chan return {
 }
 </code></pre>
 <p>This function uses <code>Bytes.ParseReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
+<h2 id="providing-defaults-with-default"><a class="header" href="#providing-defaults-with-default">Providing defaults with <code>default</code></a></h2>
+<p>Sometimes you don’t want to propagate an error — you want to replace it with a fallback and keep going. The <code>default</code> sugar does exactly that, and unlike <code>try</code>, it is completely standalone: it does not require a surrounding <code>catch</code>, and it is valid even in nested expression positions.</p>
+<ul>
+<li>
+<p>Postfix form (expressions/commands):</p>
+<pre><code class="language-par">let r1: Result&lt;!, Int&gt; = .ok 7
+let r2: Result&lt;!, Int&gt; = .err!
+
+let x = r1.default(0)   // x = 7
+let y = r2.default(0)   // y = 0
+</code></pre>
+<p>This desugars to a <code>.case</code> on the subject: on <code>.ok</code> it continues with the unwrapped value, on <code>.err</code> it evaluates the fallback expression and uses that value instead. Because it is a local rewrite, it can be used directly in <code>let</code> bindings and other expression contexts.</p>
+</li>
+<li>
+<p>Pattern form (including in receives):</p>
+<pre><code class="language-par">let default(0) n = Nat.FromString("oops")
+</code></pre>
+<p>The pattern binds on <code>.ok</code>, and binds the fallback expression on <code>.err</code>.</p>
+<p>Here’s a practical example that shows why the pattern form is particularly useful with receive commands. It counts word occurrences using a map; when a key is missing, it starts from <code>0</code>:</p>
+<pre><code class="language-par">dec Counts : [List&lt;String&gt;] List&lt;(String) Nat&gt;
+def Counts = [words] do {
+  let counts = Map.String(type Nat)(*())
+  words.begin.case {
+    .end! =&gt; {}
+    .item(word) =&gt; {
+      counts.get(word)[default(0) count]
+      counts.put(Nat.Add(count, 1))
+      words.loop
+    }
+  }
+} in counts.list
+</code></pre>
+<p>In the <code>.item</code> branch, <code>counts.get(word)</code> returns a <code>Result&lt;!, Nat&gt;</code> via a receive; <code>default(0)</code> seamlessly handles the missing case and binds <code>count</code> to <code>0</code>.</p>
+</li>
+</ul>
 
                     </main>
 
