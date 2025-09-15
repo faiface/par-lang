@@ -108,40 +108,7 @@ async fn provide_map<K: Ord, F: Future<Output = K>>(
                 handle.signal(literal!("end"));
                 return handle.break_();
             }
-            "put" => {
-                let key = read_key(handle.receive()).await;
-                let value = handle.receive();
-                match map.insert(key, value) {
-                    Some(old) => {
-                        let mut res = handle.send();
-                        res.signal(literal!("err"));
-                        res.link(old);
-                    }
-                    None => {
-                        let mut res = handle.send();
-                        res.signal(literal!("ok"));
-                        res.break_();
-                    }
-                }
-                continue;
-            }
-            "delete" => {
-                let key = read_key(handle.receive()).await;
-                match map.remove(&key) {
-                    Some(old) => {
-                        let mut res = handle.send();
-                        res.signal(literal!("ok"));
-                        res.link(old);
-                    }
-                    None => {
-                        let mut res = handle.send();
-                        res.signal(literal!("err"));
-                        res.break_();
-                    }
-                }
-                continue;
-            }
-            "get" => {
+            "entry" => {
                 let key = read_key(handle.receive()).await;
                 let removed = map.remove(&key);
                 handle.send().concurrently(|mut handle| async move {
@@ -156,27 +123,6 @@ async fn provide_map<K: Ord, F: Future<Output = K>>(
                         }
                     }
                 });
-                match handle.case().await.as_str() {
-                    "put" => {
-                        let new_value = handle.receive();
-                        map.insert(key, new_value);
-                    }
-                    "delete" => {}
-                    _ => unreachable!(),
-                }
-                continue;
-            }
-            "getOr" => {
-                let key = read_key(handle.receive()).await;
-                let default_box = handle.receive();
-                let value = match map.remove(&key) {
-                    Some(value) => {
-                        default_box.erase();
-                        value
-                    }
-                    None => default_box,
-                };
-                handle.send().link(value);
                 match handle.case().await.as_str() {
                     "put" => {
                         let new_value = handle.receive();
