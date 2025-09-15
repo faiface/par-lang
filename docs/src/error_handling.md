@@ -162,7 +162,7 @@ Significantly shorter and more readable! The error handling is declared once and
 
 ## How `try`/`catch`/`throw` Work in Process Syntax
 
-Par's error handling sugar is built around three keywords that desugar to explicit `Result` handling. Let's understand how they work.
+Par's error handling sugar is built around small, local keywords that desugar to explicit `Result` handling. Let's understand how they work.
 
 ### The `catch` Statement
 
@@ -287,6 +287,8 @@ source.poll.try[value]
 ```
 
 After this command, `source` maintains its `Poll<Os.Error, String>` type and value contains the successfully polled `String`.
+
+<!-- moved `default` to the end of this chapter -->
 
 ### The Concurrent Evaluation Restriction
 
@@ -533,3 +535,46 @@ def ReadAll = [path] chan return {
 ```
 
 This function uses `Bytes.ParseReader` to convert the chunked `Bytes.Reader` from `path.openFile` into a parser that provides a convenient `.remainder` method for reading all contents at once. The `catch` block propagates any errors by linking them into an `.err` result, while success links the contents into an `.ok` result.
+
+## Providing defaults with `default`
+
+Sometimes you don’t want to propagate an error — you want to replace it with a fallback and keep going. The `default` sugar does exactly that, and unlike `try`, it is completely standalone: it does not require a surrounding `catch`, and it is valid even in nested expression positions.
+
+- Postfix form (expressions/commands):
+
+  ```par
+  let r1: Result<!, Int> = .ok 7
+  let r2: Result<!, Int> = .err!
+
+  let x = r1.default(0)   // x = 7
+  let y = r2.default(0)   // y = 0
+  ```
+
+  This desugars to a `.case` on the subject: on `.ok` it continues with the unwrapped value, on `.err` it evaluates the fallback expression and uses that value instead. Because it is a local rewrite, it can be used directly in `let` bindings and other expression contexts.
+
+- Pattern form (including in receives):
+
+  ```par
+  let default(0) n = Nat.FromString("oops")
+  ```
+
+  The pattern binds on `.ok`, and binds the fallback expression on `.err`.
+
+  Here’s a practical example that shows why the pattern form is particularly useful with receive commands. It counts word occurrences using a map; when a key is missing, it starts from `0`:
+
+  ```par
+  dec Counts : [List<String>] List<(String) Nat>
+  def Counts = [words] do {
+    let counts = Map.String(type Nat)(*())
+    words.begin.case {
+      .end! => {}
+      .item(word) => {
+        counts.get(word)[default(0) count]
+        counts.put(Nat.Add(count, 1))
+        words.loop
+      }
+    }
+  } in counts.list
+  ```
+
+  In the `.item` branch, `counts.get(word)` returns a `Result<!, Nat>` via a receive; `default(0)` seamlessly handles the missing case and binds `count` to `0`.
