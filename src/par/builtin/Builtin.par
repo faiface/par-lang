@@ -325,16 +325,7 @@ dec Http.Request :
 
 type Map<k, v> = iterative choice {
   .list => List<(k) v>,
-
-  .put(k, v) => (Result<v, !>) self,
-  .delete(k) => (Result<!, v>) self,
-
-  .get(k) => (Result<!, v>) choice {
-    .put(v) => self,
-    .delete => self,
-  },
-
-  .getOr(k, box v) => (v) choice {
+  .entry(k) => (Result<!, v>) choice {
     .put(v) => self,
     .delete => self,
   },

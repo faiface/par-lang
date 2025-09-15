@@ -569,7 +569,7 @@ Sometimes you don’t want to propagate an error — you want to replace it with
     words.begin.case {
       .end! => {}
       .item(word) => {
-        counts.get(word)[default(0) count]
+        counts.entry(word)[default(0) count]
         counts.put(Nat.Add(count, 1))
         words.loop
       }
@@ -577,4 +577,4 @@ Sometimes you don’t want to propagate an error — you want to replace it with
   } in counts.list
   ```
 
-  In the `.item` branch, `counts.get(word)` returns a `Result<!, Nat>` via a receive; `default(0)` seamlessly handles the missing case and binds `count` to `0`.
+  In the `.item` branch, `counts.entry(word)` returns a `Result<!, Nat>` via a receive; `default(0)` seamlessly handles the missing case and binds `count` to `0`.
