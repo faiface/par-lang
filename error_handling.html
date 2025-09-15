@@ -564,14 +564,14 @@ def Counts = [words] do {
   words.begin.case {
     .end! =&gt; {}
     .item(word) =&gt; {
-      counts.get(word)[default(0) count]
+      counts.entry(word)[default(0) count]
       counts.put(Nat.Add(count, 1))
       words.loop
     }
   }
 } in counts.list
 </code></pre>
-<p>In the <code>.item</code> branch, <code>counts.get(word)</code> returns a <code>Result&lt;!, Nat&gt;</code> via a receive; <code>default(0)</code> seamlessly handles the missing case and binds <code>count</code> to <code>0</code>.</p>
+<p>In the <code>.item</code> branch, <code>counts.entry(word)</code> returns a <code>Result&lt;!, Nat&gt;</code> via a receive; <code>default(0)</code> seamlessly handles the missing case and binds <code>count</code> to <code>0</code>.</p>
 </li>
 </ul>
 
