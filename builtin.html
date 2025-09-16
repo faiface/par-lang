@@ -416,6 +416,7 @@ dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Parse   : [Bytes] Bytes.Parser&lt;either{}, either{}&gt;
+dec Bytes.Length  : [Bytes] Nat
 
 dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader&lt;errIn, errOut&gt;] Bytes.Parser&lt;errIn, errOut&gt;
 
@@ -487,16 +488,7 @@ dec Http.Request :
 
 type Map&lt;k, v&gt; = iterative choice {
   .list =&gt; List&lt;(k) v&gt;,
-
-  .put(k, v) =&gt; (Result&lt;v, !&gt;) self,
-  .delete(k) =&gt; (Result&lt;!, v&gt;) self,
-
-  .get(k) =&gt; (Result&lt;!, v&gt;) choice {
-    .put(v) =&gt; self,
-    .delete =&gt; self,
-  },
-
-  .getOr(k, box v) =&gt; (v) choice {
+  .entry(k) =&gt; (Result&lt;!, v&gt;) choice {
     .put(v) =&gt; self,
     .delete =&gt; self,
   },
@@ -507,7 +499,21 @@ dec Map.Int    : [type v] [List&lt;(Int) box v&gt;]    Map&lt;Int, v&gt;
 dec Map.Nat    : [type v] [List&lt;(Nat) box v&gt;]    Map&lt;Nat, v&gt;
 
 
-/// Cell (EXPERIMENTAL)
+/// BoxMap
+
+type BoxMap&lt;k, v&gt; = iterative box choice {
+  .list =&gt; List&lt;(k) box v&gt;,
+  .get(k) =&gt; Result&lt;!, box v&gt;,
+  .put(k, box v) =&gt; self,
+  .delete(k) =&gt; self,
+}
+
+dec BoxMap.String : [type v] [List&lt;(String) box v&gt;] BoxMap&lt;String, v&gt;
+dec BoxMap.Int    : [type v] [List&lt;(Int) box v&gt;]    BoxMap&lt;Int, v&gt;
+dec BoxMap.Nat    : [type v] [List&lt;(Nat) box v&gt;]    BoxMap&lt;Nat, v&gt;
+
+
+/// Cell
 
 type Cell&lt;a&gt; = iterative choice {
   .end =&gt; ?,
