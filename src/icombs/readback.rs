@@ -159,9 +159,6 @@ impl Handle {
         locked.notify_reducer();
     }
 
-    /// Duplicate this handle into two independent handles using the Dup combinator.
-    /// Consumes the original handle.
-    /// Duplicate this handle in place, updating `self` to one branch and returning the other.
     pub fn duplicate(&mut self) -> Handle {
         let mut locked = self.net.lock().expect("lock failed");
         let (a0, a1) = locked.create_wire();
