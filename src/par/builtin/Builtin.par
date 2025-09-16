@@ -336,7 +336,21 @@ dec Map.Int    : [type v] [List<(Int) box v>]    Map<Int, v>
 dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
 
 
-/// Cell (EXPERIMENTAL)
+/// BoxMap
+
+type BoxMap<k, v> = iterative box choice {
+  .list => List<(k) box v>,
+  .get(k) => Result<!, box v>,
+  .put(k, box v) => self,
+  .delete(k) => self,
+}
+
+dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
+dec BoxMap.Int    : [type v] [List<(Int) box v>]    BoxMap<Int, v>
+dec BoxMap.Nat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v>
+
+
+/// Cell
 
 type Cell<a> = iterative choice {
   .end => ?,

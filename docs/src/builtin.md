@@ -256,6 +256,7 @@ dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Parse   : [Bytes] Bytes.Parser<either{}, either{}>
+dec Bytes.Length  : [Bytes] Nat
 
 dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes.Parser<errIn, errOut>
 
@@ -327,16 +328,7 @@ dec Http.Request :
 
 type Map<k, v> = iterative choice {
   .list => List<(k) v>,
-
-  .put(k, v) => (Result<v, !>) self,
-  .delete(k) => (Result<!, v>) self,
-
-  .get(k) => (Result<!, v>) choice {
-    .put(v) => self,
-    .delete => self,
-  },
-
-  .getOr(k, box v) => (v) choice {
+  .entry(k) => (Result<!, v>) choice {
     .put(v) => self,
     .delete => self,
   },
@@ -347,7 +339,21 @@ dec Map.Int    : [type v] [List<(Int) box v>]    Map<Int, v>
 dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
 
 
-/// Cell (EXPERIMENTAL)
+/// BoxMap
+
+type BoxMap<k, v> = iterative box choice {
+  .list => List<(k) box v>,
+  .get(k) => Result<!, box v>,
+  .put(k, box v) => self,
+  .delete(k) => self,
+}
+
+dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
+dec BoxMap.Int    : [type v] [List<(Int) box v>]    BoxMap<Int, v>
+dec BoxMap.Nat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v>
+
+
+/// Cell
 
 type Cell<a> = iterative choice {
   .end => ?,

@@ -148,15 +148,35 @@ impl Handle {
     }
 
     pub fn erase(self) {
+        println!("ERASE A");
         let mut locked = self.net.lock().expect("lock failed");
+        println!("ERASE B");
         locked.link(self.tree.unwrap(), Tree::Era);
+        println!("ERASE C");
         locked.notify_reducer();
+        println!("ERASE D");
     }
 
     pub fn link(self, dual: Handle) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(self.tree.unwrap(), dual.tree.unwrap());
         locked.notify_reducer();
+    }
+
+    /// Duplicate this handle into two independent handles using the Dup combinator.
+    /// Consumes the original handle.
+    /// Duplicate this handle in place, updating `self` to one branch and returning the other.
+    pub fn duplicate(&mut self) -> Handle {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (a0, a1) = locked.create_wire();
+        let (b0, b1) = locked.create_wire();
+        locked.link(Tree::Dup(Box::new(a0), Box::new(b0)), self.tree.take().unwrap());
+        locked.notify_reducer();
+        self.tree = Some(a1);
+        Handle {
+            net: self.net.clone(),
+            tree: Some(b1),
+        }
     }
 
     pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
