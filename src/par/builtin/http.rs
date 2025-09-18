@@ -41,10 +41,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                                 Type::name(
                                     Some("Bytes"),
                                     "Writer",
-                                    vec![
-                                        Type::either(vec![]),                      // errIn = either{}
-                                        Type::name(Some("Http"), "Error", vec![]), // errOut = Http.Error
-                                    ],
+                                    vec![Type::name(Some("Http"), "Error", vec![])],
                                 ),
                                 Type::either(vec![
                                     ("ok", Type::break_()),
@@ -67,10 +64,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                                             Type::name(
                                                 Some("Bytes"),
                                                 "Reader",
-                                                vec![
-                                                    Type::either(vec![]),                      // errIn
-                                                    Type::name(Some("Http"), "Error", vec![]), // errOut
-                                                ],
+                                                vec![Type::name(Some("Http"), "Error", vec![])],
                                             ),
                                         ),
                                     ),
@@ -164,13 +158,6 @@ async fn provide_body_reader(mut handle: Handle, response: reqwest::Response) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                // Only 'ok' is possible for errIn = either{}
-                handle.receive().concurrently(|mut h| async move {
-                    match h.case().await.as_str() {
-                        "ok" => h.continue_(),
-                        _ => unreachable!(),
-                    }
-                });
                 handle.signal(literal!("ok"));
                 return handle.break_();
             }
@@ -219,14 +206,6 @@ async fn provide_http_writer(
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                // Only 'ok' is possible for errIn = either{}
-                handle.receive().concurrently(|mut h| async move {
-                    match h.case().await.as_str() {
-                        "ok" => h.continue_(),
-                        _ => unreachable!(),
-                    }
-                });
-
                 // Closing the channel signals end of body
                 tx.disconnect();
                 handle.signal(literal!("ok"));

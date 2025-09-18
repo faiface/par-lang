@@ -10,13 +10,13 @@ def Main: ! = chan exit {
   }
 
   // If writer fails, it's consumed; close reader and delegate
-  catch/w e => { reader.close(.ok!); throw e }
+  catch/w e => { reader.close; throw e }
   // If reader fails, it's consumed; close writer and delegate
-  catch/r e => { writer.close(.ok!); throw e }
+  catch/r e => { writer.close; throw e }
 
   reader.begin.read.try/r.case {
     .end! => {
-      writer.close(.ok!).try
+      writer.close.try
       exit!
     }
     .chunk(bytes) => {

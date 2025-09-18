@@ -31,7 +31,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     Type::name(
                         None,
                         "Parser",
-                        vec![Type::either(vec![]), Type::either(vec![])],
+                        vec![Type::either(vec![])],
                     ),
                 ),
                 |handle| Box::pin(bytes_parser(handle)),
@@ -39,20 +39,17 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             Definition::external(
                 "ParseReader",
                 Type::forall(
-                    "errIn",
-                    Type::forall(
-                        "errOut",
-                        Type::function(
-                            Type::name(
-                                None,
-                                "Reader",
-                                vec![Type::var("errIn"), Type::var("errOut")],
-                            ),
-                            Type::name(
-                                None,
-                                "Parser",
-                                vec![Type::var("errIn"), Type::var("errOut")],
-                            ),
+                    "e",
+                    Type::function(
+                        Type::name(
+                            None,
+                            "Reader",
+                            vec![Type::var("e")],
+                        ),
+                        Type::name(
+                            None,
+                            "Parser",
+                            vec![Type::var("e")],
                         ),
                     ),
                 ),

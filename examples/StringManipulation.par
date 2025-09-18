@@ -18,7 +18,7 @@ def Trim = [s: String, c: Char.Class] chan ret {
   r.matchEnd(.repeat.one.any!, .repeat.one c).case {
     .end _ => { ret <> "" }
     .fail => {
-      r.close(.ok!)
+      r.close
       ret <> ""
     }
     .match(trimmed, _)! => {
@@ -33,7 +33,7 @@ dec Find : [String, String.Pattern] either {
 }
 def Find = [s, p] String.Parse(s).match(.repeat.one.any!, p).case {
   .end _ => .none!,
-  .fail r => do { r.close(.ok!) } in .none!,
+  .fail r => do { r.close } in .none!,
   .match(before, found) r =>
     .some(before, found, Result.Always(type String)(r.remainder))!
 }
@@ -44,7 +44,7 @@ def Split = [s, c] chan yield {
   r.begin.match(.repeat.one c, .repeat1.non c).case {
     .end _ => { yield.end! }
     .fail => {
-       r.close(.ok!)
+       r.close
        yield.end!
     }
     .match(_, part) => {

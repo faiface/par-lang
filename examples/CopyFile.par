@@ -13,14 +13,14 @@ def Main: ! = chan exit {
   }
 
   let try reader = Os.PathFromString(src).openFile
-  catch/w e => { reader.close(.ok!); throw e }
+  catch/w e => { reader.close; throw e }
 
   let try/w writer = Os.PathFromString(dst).createOrReplaceFile
-  catch/r e => { writer.close(.ok!); throw e }
+  catch/r e => { writer.close; throw e }
 
   reader.begin.read.try/r.case {
     .end! => {
-      writer.close(.ok!).try
+      writer.close.try
       console.close
       exit!
     }

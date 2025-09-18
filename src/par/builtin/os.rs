@@ -284,12 +284,6 @@ async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl As
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.receive().concurrently(|mut handle| async move {
-                    match handle.case().await.as_str() {
-                        "ok" => handle.continue_(),
-                        _ => unreachable!(),
-                    }
-                });
                 handle.signal(literal!("ok"));
                 return handle.break_();
             }
@@ -321,14 +315,6 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                // Only 'ok' is possible for errIn = either{}
-                handle.receive().concurrently(|mut handle| async move {
-                    match handle.case().await.as_str() {
-                        "ok" => handle.continue_(),
-                        _ => unreachable!(),
-                    }
-                });
-
                 // Try to flush pending data before closing
                 match writer.flush().await {
                     Ok(()) => {

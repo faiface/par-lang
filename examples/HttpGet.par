@@ -5,9 +5,9 @@ def Main: ! =
       "GET",                        // method
       "https://httpbin.org/get",    // URL
       *(),                          // no headers
-      [writer] writer.close(.ok!),  // empty body
+      [writer] writer.close,        // empty body
     )
-    body.close(.ok!).try            // not interested
+    body.close.try                  // not interested
     console.print(Nat.ToString(status))
     console.close
   } in !

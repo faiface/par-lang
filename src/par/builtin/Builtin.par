@@ -79,6 +79,8 @@ def Result.Always = [type a] [result] result.case {
   .err impossible => impossible.case {},
 }
 
+type Option<a> = Result<!, a>
+
 
 /// List
 
@@ -96,10 +98,7 @@ dec List.Builder : [type a] List.Builder<a>
 def List.Builder = [type a]
   let append: [List<a>] List<a> = [xs] xs
   in begin case {
-    .add(x) =>
-      let append: [List<a>] List<a>
-        = [xs] append(.item(x) xs)
-      in loop,
+    .add(x) => let append = [xs: List<a>] append(.item(x) xs) in loop,
     .build => append(.end!),
   }
 
@@ -139,20 +138,20 @@ type String.Builder = iterative choice {
   .build => String,
 }
 
-type String.Parser<errIn, errOut> = recursive iterative/attempt choice {
-  .close(Result<errIn, !>) => Result<errOut, !>,
-  .remainder => Result<errOut, String>,
+type String.Parser<e> = recursive iterative/attempt choice {
+  .close => Result<e, !>,
+  .remainder => Result<e, String>,
   .char => either {
-    .end Result<errOut, !>,
+    .end Result<e, !>,
     .char(Char) self,
   },
   .match(String.Pattern, String.Pattern) => either {
-    .end Result<errOut, !>,
+    .end Result<e, !>,
     .fail self/attempt,
     .match(String, String) self,
   },
   .matchEnd(String.Pattern, String.Pattern) => either {
-    .end Result<errOut, !>,
+    .end Result<e, !>,
     .fail self/attempt,
     .match(String, String)!,
   },
@@ -176,9 +175,9 @@ dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
 
 dec String.Builder : String.Builder
-dec String.Parse   : [String] String.Parser<either{}, either{}>
+dec String.Parse   : [String] String.Parser<either {}>
 
-dec String.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] String.Parser<errIn, errOut>
+dec String.ParseReader : [type e] [Bytes.Reader<e>] String.Parser<e>
 
 
 /// Byte
@@ -201,35 +200,35 @@ type Bytes.Builder = iterative choice {
   .build => Bytes,
 }
 
-type Bytes.Reader<errIn, errOut> = recursive choice {
-  .close(Result<errIn, !>) => Result<errOut, !>,
-  .read => Result<errOut, either {
+type Bytes.Reader<e> = recursive choice {
+  .close => Result<e, !>,
+  .read => Result<e, either {
     .end!,
     .chunk(Bytes) self,
   }>,
 }
 
-type Bytes.Writer<errIn, errOut> = iterative choice {
-  .close(Result<errIn, !>) => Result<errOut, !>,
-  .flush => Result<errOut, self>,
-  .write(Bytes) => Result<errOut, self>,
-  .writeString(String) => Result<errOut, self>,
+type Bytes.Writer<e> = iterative choice {
+  .close => Result<e, !>,
+  .flush => Result<e, self>,
+  .write(Bytes) => Result<e, self>,
+  .writeString(String) => Result<e, self>,
 }
 
-type Bytes.Parser<errIn, errOut> = recursive iterative/attempt choice {
-  .close(Result<errIn, !>) => Result<errOut, !>,
-  .remainder => Result<errOut, Bytes>,
+type Bytes.Parser<e> = recursive iterative/attempt choice {
+  .close => Result<e, !>,
+  .remainder => Result<e, Bytes>,
   .byte => either {
-    .end Result<errOut, !>,
+    .end Result<e, !>,
     .byte(Byte) self,
   },
   .match(Bytes.Pattern, Bytes.Pattern) => either {
-    .end Result<errOut, !>,
+    .end Result<e, !>,
     .fail self/attempt,
     .match(Bytes, Bytes) self,
   },
   .matchEnd(Bytes.Pattern, Bytes.Pattern) => either {
-    .end Result<errOut, !>,
+    .end Result<e, !>,
     .fail self/attempt,
     .match(Bytes, Bytes)!,
   },
@@ -252,10 +251,10 @@ type Bytes.Pattern = recursive either {
 dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
-dec Bytes.Parse   : [Bytes] Bytes.Parser<either{}, either{}>
+dec Bytes.Parse   : [Bytes] Bytes.Parser<either {}>
 dec Bytes.Length  : [Bytes] Nat
 
-dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes.Parser<errIn, errOut>
+dec Bytes.ParseReader : [type e] [Bytes.Reader<e>] Bytes.Parser<e>
 
 
 /// Console
@@ -263,7 +262,7 @@ dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader<errIn, errOut>] Bytes
 type Console = iterative choice {
   .close => !,
   .print(String) => self,
-  .prompt(String) => (Result<!, String>) self,
+  .prompt(String) => (Option<String>) self,
 }
 
 dec Console.Open : Console
@@ -272,8 +271,8 @@ dec Console.Open : Console
 /// Os
 
 type Os.Error  = String
-type Os.Reader = Bytes.Reader<either{}, Os.Error>
-type Os.Writer = Bytes.Writer<either{}, Os.Error>
+type Os.Reader = Bytes.Reader<Os.Error>
+type Os.Writer = Bytes.Writer<Os.Error>
 
 type Os.Path = iterative/append recursive/parent box choice {
   .stringName => String,
@@ -283,7 +282,7 @@ type Os.Path = iterative/append recursive/parent box choice {
   .stringParts => List<String>,
   .bytesParts => List<Bytes>,
 
-  .parent => Result<!, self/parent>,
+  .parent => Option<self/parent>,
   .appendString(String) => self/append,
   .appendBytes(Bytes) => self/append,
 
@@ -312,8 +311,8 @@ dec Os.Stdout : Os.Writer
 /// Http
 
 type Http.Error  = String
-type Http.Reader = Bytes.Reader<either{}, Http.Error>
-type Http.Writer = Bytes.Writer<either{}, Http.Error>
+type Http.Reader = Bytes.Reader<Http.Error>
+type Http.Writer = Bytes.Writer<Http.Error>
 
 dec Http.Request :
   [String, String, List<(String) String>]
@@ -325,7 +324,7 @@ dec Http.Request :
 
 type Map<k, v> = iterative choice {
   .list => List<(k) v>,
-  .entry(k) => (Result<!, v>) choice {
+  .entry(k) => (Option<v>) choice {
     .put(v) => self,
     .delete => self,
   },
@@ -340,7 +339,7 @@ dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
 
 type BoxMap<k, v> = iterative box choice {
   .list => List<(k) box v>,
-  .get(k) => Result<!, box v>,
+  .get(k) => Option<box v>,
   .put(k, box v) => self,
   .delete(k) => self,
 }

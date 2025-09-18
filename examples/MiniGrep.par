@@ -61,7 +61,7 @@ def TraverseDirectory = [dirPath]
 
 dec GrepFile : [String, Os.Reader] Iterator<Os.Error, (Nat) String>
 def GrepFile = [needle, reader] do {
-  let parser = String.ParseReader(type either{}, Os.Error)(reader)
+  let parser = String.ParseReader(type Os.Error)(reader)
   let lines = Lines(type Os.Error)(parser)
   let lines = Enumerate1(type Os.Error, String)(lines)
 } in Filter(type Os.Error, (Nat) String)(lines, box [(_) line] Contains(needle, line))
@@ -79,10 +79,10 @@ def Contains = [needle, haystack]
   String.Parse(haystack).match(.repeat.one.any!, .str needle).case {
     .end _ => .false!,
     .fail reader => do {
-      reader.close(.ok!)
+      reader.close
     } in .false!,
     .match(_, _) reader => do {
-      reader.close(.ok!)
+      reader.close
     } in .true!,
   }
 
@@ -96,9 +96,9 @@ type Iterator<e, a> = recursive choice {
   }
 }
 
-dec Lines : [type e] [String.Parser<either{}, e>] Iterator<e, String>
+dec Lines : [type e] [String.Parser<e>] Iterator<e, String>
 def Lines = [type e] [parser] do { parser.begin } in case {
-  .close => parser.close(.ok!),
+  .close => parser.close,
 
   .next => parser.match(.repeat.one.any!, .str "\n").case {
     .end result => .end result,
