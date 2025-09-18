@@ -1,3 +1,4 @@
+use arcstr::literal;
 use bytes::Bytes;
 use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
@@ -61,6 +62,22 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 |handle| Box::pin(bytes_from_string(handle)),
             ),
             Definition::external(
+                "Reader",
+                Type::function(
+                    Type::bytes(),
+                    Type::name(None, "Reader", vec![Type::either(vec![])]),
+                ),
+                |handle| Box::pin(bytes_reader(handle)),
+            ),
+            Definition::external(
+                "ReaderFromString",
+                Type::function(
+                    Type::string(),
+                    Type::name(None, "Reader", vec![Type::either(vec![])]),
+                ),
+                |handle| Box::pin(bytes_reader_from_string(handle)),
+            ),
+            Definition::external(
                 "Length",
                 Type::function(Type::bytes(), Type::nat()),
                 |handle| Box::pin(bytes_length(handle)),
@@ -98,6 +115,43 @@ async fn bytes_parser_from_reader(mut handle: Handle) {
 async fn bytes_from_string(mut handle: Handle) {
     let string = handle.receive().string().await;
     handle.provide_bytes(Bytes::copy_from_slice(string.as_bytes()))
+}
+
+async fn bytes_reader(mut handle: Handle) {
+    let bytes = handle.receive().bytes().await;
+    provide_bytes_reader_from_bytes(handle, bytes).await;
+}
+
+async fn bytes_reader_from_string(mut handle: Handle) {
+    let string = handle.receive().string().await;
+    let bytes = Bytes::copy_from_slice(string.as_bytes());
+    provide_bytes_reader_from_bytes(handle, bytes).await;
+}
+
+async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {
+    let mut offset = 0usize;
+    let len = bytes.len();
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                handle.signal(literal!("ok"));
+                return handle.break_();
+            }
+            "read" => {
+                if offset >= len {
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("end"));
+                    return handle.break_();
+                }
+                let chunk = bytes.slice(offset..len);
+                offset = len;
+                handle.signal(literal!("ok"));
+                handle.signal(literal!("chunk"));
+                handle.send().provide_bytes(chunk);
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 async fn bytes_length(mut handle: Handle) {
