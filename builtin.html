@@ -242,6 +242,8 @@ def Result.Always = [type a] [result] result.case {
   .err impossible =&gt; impossible.case {},
 }
 
+type Option&lt;a&gt; = Result&lt;!, a&gt;
+
 
 /// List
 
@@ -259,10 +261,7 @@ dec List.Builder : [type a] List.Builder&lt;a&gt;
 def List.Builder = [type a]
   let append: [List&lt;a&gt;] List&lt;a&gt; = [xs] xs
   in begin case {
-    .add(x) =&gt;
-      let append: [List&lt;a&gt;] List&lt;a&gt;
-        = [xs] append(.item(x) xs)
-      in loop,
+    .add(x) =&gt; let append = [xs: List&lt;a&gt;] append(.item(x) xs) in loop,
     .build =&gt; append(.end!),
   }
 
@@ -302,20 +301,20 @@ type String.Builder = iterative choice {
   .build =&gt; String,
 }
 
-type String.Parser&lt;errIn, errOut&gt; = recursive iterative/attempt choice {
-  .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .remainder =&gt; Result&lt;errOut, String&gt;,
+type String.Parser&lt;e&gt; = recursive iterative/attempt choice {
+  .close =&gt; Result&lt;e, !&gt;,
+  .remainder =&gt; Result&lt;e, String&gt;,
   .char =&gt; either {
-    .end Result&lt;errOut, !&gt;,
+    .end Result&lt;e, !&gt;,
     .char(Char) self,
   },
   .match(String.Pattern, String.Pattern) =&gt; either {
-    .end Result&lt;errOut, !&gt;,
+    .end Result&lt;e, !&gt;,
     .fail self/attempt,
     .match(String, String) self,
   },
   .matchEnd(String.Pattern, String.Pattern) =&gt; either {
-    .end Result&lt;errOut, !&gt;,
+    .end Result&lt;e, !&gt;,
     .fail self/attempt,
     .match(String, String)!,
   },
@@ -339,9 +338,9 @@ dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
 
 dec String.Builder : String.Builder
-dec String.Parse   : [String] String.Parser&lt;either{}, either{}&gt;
+dec String.Parser  : [String] String.Parser&lt;either {}&gt;
 
-dec String.ParseReader : [type errIn, errOut] [Bytes.Reader&lt;errIn, errOut&gt;] String.Parser&lt;errIn, errOut&gt;
+dec String.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] String.Parser&lt;e&gt;
 
 
 /// Byte
@@ -364,35 +363,35 @@ type Bytes.Builder = iterative choice {
   .build =&gt; Bytes,
 }
 
-type Bytes.Reader&lt;errIn, errOut&gt; = recursive choice {
-  .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .read =&gt; Result&lt;errOut, either {
+type Bytes.Reader&lt;e&gt; = recursive choice {
+  .close =&gt; Result&lt;e, !&gt;,
+  .read =&gt; Result&lt;e, either {
     .end!,
     .chunk(Bytes) self,
   }&gt;,
 }
 
-type Bytes.Writer&lt;errIn, errOut&gt; = iterative choice {
-  .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .flush =&gt; Result&lt;errOut, self&gt;,
-  .write(Bytes) =&gt; Result&lt;errOut, self&gt;,
-  .writeString(String) =&gt; Result&lt;errOut, self&gt;,
+type Bytes.Writer&lt;e&gt; = iterative choice {
+  .close =&gt; Result&lt;e, !&gt;,
+  .flush =&gt; Result&lt;e, self&gt;,
+  .write(Bytes) =&gt; Result&lt;e, self&gt;,
+  .writeString(String) =&gt; Result&lt;e, self&gt;,
 }
 
-type Bytes.Parser&lt;errIn, errOut&gt; = recursive iterative/attempt choice {
-  .close(Result&lt;errIn, !&gt;) =&gt; Result&lt;errOut, !&gt;,
-  .remainder =&gt; Result&lt;errOut, Bytes&gt;,
+type Bytes.Parser&lt;e&gt; = recursive iterative/attempt choice {
+  .close =&gt; Result&lt;e, !&gt;,
+  .remainder =&gt; Result&lt;e, Bytes&gt;,
   .byte =&gt; either {
-    .end Result&lt;errOut, !&gt;,
+    .end Result&lt;e, !&gt;,
     .byte(Byte) self,
   },
   .match(Bytes.Pattern, Bytes.Pattern) =&gt; either {
-    .end Result&lt;errOut, !&gt;,
+    .end Result&lt;e, !&gt;,
     .fail self/attempt,
     .match(Bytes, Bytes) self,
   },
   .matchEnd(Bytes.Pattern, Bytes.Pattern) =&gt; either {
-    .end Result&lt;errOut, !&gt;,
+    .end Result&lt;e, !&gt;,
     .fail self/attempt,
     .match(Bytes, Bytes)!,
   },
@@ -415,10 +414,10 @@ type Bytes.Pattern = recursive either {
 dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
-dec Bytes.Parse   : [Bytes] Bytes.Parser&lt;either{}, either{}&gt;
+dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
 dec Bytes.Length  : [Bytes] Nat
 
-dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader&lt;errIn, errOut&gt;] Bytes.Parser&lt;errIn, errOut&gt;
+dec Bytes.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
 
 
 /// Console
@@ -426,7 +425,7 @@ dec Bytes.ParseReader : [type errIn, errOut] [Bytes.Reader&lt;errIn, errOut&gt;]
 type Console = iterative choice {
   .close =&gt; !,
   .print(String) =&gt; self,
-  .prompt(String) =&gt; (Result&lt;!, String&gt;) self,
+  .prompt(String) =&gt; (Option&lt;String&gt;) self,
 }
 
 dec Console.Open : Console
@@ -435,8 +434,8 @@ dec Console.Open : Console
 /// Os
 
 type Os.Error  = String
-type Os.Reader = Bytes.Reader&lt;either{}, Os.Error&gt;
-type Os.Writer = Bytes.Writer&lt;either{}, Os.Error&gt;
+type Os.Reader = Bytes.Reader&lt;Os.Error&gt;
+type Os.Writer = Bytes.Writer&lt;Os.Error&gt;
 
 type Os.Path = iterative/append recursive/parent box choice {
   .stringName =&gt; String,
@@ -446,7 +445,7 @@ type Os.Path = iterative/append recursive/parent box choice {
   .stringParts =&gt; List&lt;String&gt;,
   .bytesParts =&gt; List&lt;Bytes&gt;,
 
-  .parent =&gt; Result&lt;!, self/parent&gt;,
+  .parent =&gt; Option&lt;self/parent&gt;,
   .appendString(String) =&gt; self/append,
   .appendBytes(Bytes) =&gt; self/append,
 
@@ -475,8 +474,8 @@ dec Os.Stdout : Os.Writer
 /// Http
 
 type Http.Error  = String
-type Http.Reader = Bytes.Reader&lt;either{}, Http.Error&gt;
-type Http.Writer = Bytes.Writer&lt;either{}, Http.Error&gt;
+type Http.Reader = Bytes.Reader&lt;Http.Error&gt;
+type Http.Writer = Bytes.Writer&lt;Http.Error&gt;
 
 dec Http.Request :
   [String, String, List&lt;(String) String&gt;]
@@ -488,7 +487,7 @@ dec Http.Request :
 
 type Map&lt;k, v&gt; = iterative choice {
   .list =&gt; List&lt;(k) v&gt;,
-  .entry(k) =&gt; (Result&lt;!, v&gt;) choice {
+  .entry(k) =&gt; (Option&lt;v&gt;) choice {
     .put(v) =&gt; self,
     .delete =&gt; self,
   },
@@ -503,7 +502,7 @@ dec Map.Nat    : [type v] [List&lt;(Nat) box v&gt;]    Map&lt;Nat, v&gt;
 
 type BoxMap&lt;k, v&gt; = iterative box choice {
   .list =&gt; List&lt;(k) box v&gt;,
-  .get(k) =&gt; Result&lt;!, box v&gt;,
+  .get(k) =&gt; Option&lt;box v&gt;,
   .put(k, box v) =&gt; self,
   .delete(k) =&gt; self,
 }
