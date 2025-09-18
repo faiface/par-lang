@@ -26,7 +26,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Box::pin(string_builder(handle))
             }),
             Definition::external(
-                "Parse",
+                "Parser",
                 Type::function(
                     Type::string(),
                     Type::name(
@@ -35,10 +35,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                         vec![Type::either(vec![])],
                     ),
                 ),
-                |handle| Box::pin(string_parse(handle)),
+                |handle| Box::pin(string_parser(handle)),
             ),
             Definition::external(
-                "ParseReader",
+                "ParserFromReader",
                 Type::forall(
                     "e",
                     Type::function(
@@ -54,7 +54,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                         ),
                     ),
                 ),
-                |handle| Box::pin(string_parse_reader(handle)),
+                |handle| Box::pin(string_parser_from_reader(handle)),
             ),
             Definition::external(
                 "Quote",
@@ -91,12 +91,12 @@ async fn string_quote(mut handle: Handle) {
     handle.provide_string(Substr::from(format!("{:?}", s)));
 }
 
-async fn string_parse(mut handle: Handle) {
+async fn string_parser(mut handle: Handle) {
     let remainder = handle.receive().string().await;
     provide_string_parser(handle, remainder).await;
 }
 
-async fn string_parse_reader(mut handle: Handle) {
+async fn string_parser_from_reader(mut handle: Handle) {
     let reader = handle.receive();
     provide_string_parser(handle, ReaderRemainder::new(reader)).await;
 }

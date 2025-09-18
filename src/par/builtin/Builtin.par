@@ -175,9 +175,9 @@ dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
 
 dec String.Builder : String.Builder
-dec String.Parse   : [String] String.Parser<either {}>
+dec String.Parser  : [String] String.Parser<either {}>
 
-dec String.ParseReader : [type e] [Bytes.Reader<e>] String.Parser<e>
+dec String.ParserFromReader : [type e] [Bytes.Reader<e>] String.Parser<e>
 
 
 /// Byte
@@ -251,10 +251,10 @@ type Bytes.Pattern = recursive either {
 dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
-dec Bytes.Parse   : [Bytes] Bytes.Parser<either {}>
+dec Bytes.Parser  : [Bytes] Bytes.Parser<either {}>
 dec Bytes.Length  : [Bytes] Nat
 
-dec Bytes.ParseReader : [type e] [Bytes.Reader<e>] Bytes.Parser<e>
+dec Bytes.ParserFromReader : [type e] [Bytes.Reader<e>] Bytes.Parser<e>
 
 
 /// Console

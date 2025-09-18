@@ -25,7 +25,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Box::pin(bytes_builder(handle))
             }),
             Definition::external(
-                "Parse",
+                "Parser",
                 Type::function(
                     Type::bytes(),
                     Type::name(
@@ -37,7 +37,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 |handle| Box::pin(bytes_parser(handle)),
             ),
             Definition::external(
-                "ParseReader",
+                "ParserFromReader",
                 Type::forall(
                     "e",
                     Type::function(
@@ -53,7 +53,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                         ),
                     ),
                 ),
-                |handle| Box::pin(bytes_parse_reader(handle)),
+                |handle| Box::pin(bytes_parser_from_reader(handle)),
             ),
             Definition::external(
                 "FromString",
@@ -90,7 +90,7 @@ async fn bytes_parser(mut handle: Handle) {
     provide_bytes_parser(handle, remainder).await;
 }
 
-async fn bytes_parse_reader(mut handle: Handle) {
+async fn bytes_parser_from_reader(mut handle: Handle) {
     let reader = handle.receive();
     provide_bytes_parser(handle, ReaderRemainder::new(reader)).await;
 }

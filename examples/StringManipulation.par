@@ -9,7 +9,7 @@ def TestSplit = Split("  Some   more words .", .whitespace!)
 
 dec Trim : [String, Char.Class] String
 def Trim = [s: String, c: Char.Class] chan ret {
-  let r = String.Parse(s)
+  let r = String.Parser(s)
   r.match(.empty!, .repeat.one c).case {
     .end _ => { ret <> "" }
     .fail => {}
@@ -31,7 +31,7 @@ dec Find : [String, String.Pattern] either {
   .none!,
   .some(String, String, String)!,
 }
-def Find = [s, p] String.Parse(s).match(.repeat.one.any!, p).case {
+def Find = [s, p] String.Parser(s).match(.repeat.one.any!, p).case {
   .end _ => .none!,
   .fail r => do { r.close } in .none!,
   .match(before, found) r =>
@@ -40,7 +40,7 @@ def Find = [s, p] String.Parse(s).match(.repeat.one.any!, p).case {
 
 dec Split : [String, Char.Class] List<String>
 def Split = [s, c] chan yield {
-  let r = String.Parse(s)
+  let r = String.Parser(s)
   r.begin.match(.repeat.one c, .repeat1.non c).case {
     .end _ => { yield.end! }
     .fail => {
