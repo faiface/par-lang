@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, sync::Arc};
 
-use arcstr::Substr;
+use arcstr::{literal, Substr};
 use num_bigint::BigInt;
 
 use crate::{
@@ -66,6 +66,28 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(Type::bytes(), Type::string()),
                 |handle| Box::pin(string_from_bytes(handle)),
             ),
+            Definition::external(
+                "Equals",
+                Type::function(
+                    Type::string(),
+                    Type::function(
+                        Type::string(),
+                        Type::name(Some("Bool"), "Bool", vec![]),
+                    ),
+                ),
+                |handle| Box::pin(string_equals(handle)),
+            ),
+            Definition::external(
+                "Compare",
+                Type::function(
+                    Type::string(),
+                    Type::function(
+                        Type::string(),
+                        Type::name(Some("Ordering"), "Ordering", vec![]),
+                    ),
+                ),
+                |handle| Box::pin(string_compare(handle)),
+            ),
         ],
     }
 }
@@ -104,6 +126,28 @@ async fn string_parser_from_reader(mut handle: Handle) {
 async fn string_from_bytes(mut handle: Handle) {
     let bytes = handle.receive().bytes().await;
     handle.provide_string(Substr::from(String::from_utf8_lossy(&bytes)))
+}
+
+async fn string_equals(mut handle: Handle) {
+    let left = handle.receive().string().await;
+    let right = handle.receive().string().await;
+    if left == right {
+        handle.signal(literal!("true"));
+    } else {
+        handle.signal(literal!("false"));
+    }
+    handle.break_();
+}
+
+async fn string_compare(mut handle: Handle) {
+    let left = handle.receive().string().await;
+    let right = handle.receive().string().await;
+    match left.cmp(&right) {
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.signal(literal!("less")),
+    }
+    handle.break_();
 }
 
 #[derive(Debug, Clone)]
