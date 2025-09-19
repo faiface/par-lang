@@ -1,3 +1,4 @@
+pub mod boxmap;
 pub mod byte;
 pub mod bytes;
 pub mod cell;
@@ -8,7 +9,6 @@ pub mod http;
 pub mod int;
 pub mod list;
 pub mod map;
-pub mod boxmap;
 pub mod nat;
 pub mod os;
 pub mod parser;

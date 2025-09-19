@@ -1,4 +1,7 @@
-use std::{future::Future, sync::{Arc, Mutex}};
+use std::{
+    future::Future,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     icombs::readback::Handle,

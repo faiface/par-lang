@@ -353,18 +353,16 @@ impl<'a> AsyncCharIterator for (usize, &'a Substr) {
 pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
-            "close" => {
-                match remainder.close().await {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        return handle.break_();
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return R::provide_err(handle, err).await;
-                    }
+            "close" => match remainder.close().await {
+                Ok(()) => {
+                    handle.signal(literal!("ok"));
+                    return handle.break_();
                 }
-            }
+                Err(err) => {
+                    handle.signal(literal!("err"));
+                    return R::provide_err(handle, err).await;
+                }
+            },
 
             "byte" => {
                 let mut bytes = remainder.bytes();
@@ -521,18 +519,16 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
 pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
-            "close" => {
-                match remainder.close().await {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        return handle.break_();
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return R::provide_err(handle, err).await;
-                    }
+            "close" => match remainder.close().await {
+                Ok(()) => {
+                    handle.signal(literal!("ok"));
+                    return handle.break_();
                 }
-            }
+                Err(err) => {
+                    handle.signal(literal!("err"));
+                    return R::provide_err(handle, err).await;
+                }
+            },
 
             "char" => {
                 let mut chars = remainder.chars();

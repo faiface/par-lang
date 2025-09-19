@@ -29,11 +29,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 "Parser",
                 Type::function(
                     Type::string(),
-                    Type::name(
-                        None,
-                        "Parser",
-                        vec![Type::either(vec![])],
-                    ),
+                    Type::name(None, "Parser", vec![Type::either(vec![])]),
                 ),
                 |handle| Box::pin(string_parser(handle)),
             ),
@@ -42,16 +38,8 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::forall(
                     "e",
                     Type::function(
-                        Type::name(
-                            Some("Bytes"),
-                            "Reader",
-                            vec![Type::var("e")],
-                        ),
-                        Type::name(
-                            None,
-                            "Parser",
-                            vec![Type::var("e")],
-                        ),
+                        Type::name(Some("Bytes"), "Reader", vec![Type::var("e")]),
+                        Type::name(None, "Parser", vec![Type::var("e")]),
                     ),
                 ),
                 |handle| Box::pin(string_parser_from_reader(handle)),
@@ -70,10 +58,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 "Equals",
                 Type::function(
                     Type::string(),
-                    Type::function(
-                        Type::string(),
-                        Type::name(Some("Bool"), "Bool", vec![]),
-                    ),
+                    Type::function(Type::string(), Type::name(Some("Bool"), "Bool", vec![])),
                 ),
                 |handle| Box::pin(string_equals(handle)),
             ),

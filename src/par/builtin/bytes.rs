@@ -1,7 +1,15 @@
 use arcstr::literal;
 use bytes::Bytes;
+use futures::{channel::mpsc, StreamExt};
 use num_bigint::BigInt;
-use std::{cmp::Ordering, sync::Arc};
+use std::{
+    cmp::Ordering,
+    sync::{
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+        Arc, Mutex,
+    },
+};
+use tokio::sync::Notify;
 
 use crate::{
     icombs::readback::Handle,
@@ -29,11 +37,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 "Parser",
                 Type::function(
                     Type::bytes(),
-                    Type::name(
-                        None,
-                        "Parser",
-                        vec![Type::either(vec![])],
-                    ),
+                    Type::name(None, "Parser", vec![Type::either(vec![])]),
                 ),
                 |handle| Box::pin(bytes_parser(handle)),
             ),
@@ -42,16 +46,8 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::forall(
                     "e",
                     Type::function(
-                        Type::name(
-                            None,
-                            "Reader",
-                            vec![Type::var("e")],
-                        ),
-                        Type::name(
-                            None,
-                            "Parser",
-                            vec![Type::var("e")],
-                        ),
+                        Type::name(None, "Reader", vec![Type::var("e")]),
+                        Type::name(None, "Parser", vec![Type::var("e")]),
                     ),
                 ),
                 |handle| Box::pin(bytes_parser_from_reader(handle)),
@@ -76,6 +72,20 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                     Type::name(None, "Reader", vec![Type::either(vec![])]),
                 ),
                 |handle| Box::pin(bytes_reader_from_string(handle)),
+            ),
+            Definition::external(
+                "PipeReader",
+                Type::forall(
+                    "e",
+                    Type::function(
+                        Type::function(
+                            Type::name(None, "Writer", vec![Type::break_()]),
+                            Type::either(vec![("ok", Type::break_()), ("err", Type::var("e"))]),
+                        ),
+                        Type::name(None, "Reader", vec![Type::var("e")]),
+                    ),
+                ),
+                |handle| Box::pin(bytes_pipe_reader(handle)),
             ),
             Definition::external(
                 "Length",
@@ -149,6 +159,203 @@ async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {
                 handle.signal(literal!("chunk"));
                 handle.send().provide_bytes(chunk);
             }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum PipeMessage {
+    Chunk(Bytes),
+}
+
+struct PipeReaderState {
+    sender: Mutex<Option<mpsc::UnboundedSender<PipeMessage>>>,
+    reader_closed: AtomicBool,
+    result_ready: AtomicBool,
+    error: Mutex<Option<Handle>>,
+    notify: Notify,
+}
+
+impl PipeReaderState {
+    fn new(sender: mpsc::UnboundedSender<PipeMessage>) -> Arc<Self> {
+        Arc::new(Self {
+            sender: Mutex::new(Some(sender)),
+            reader_closed: AtomicBool::new(false),
+            result_ready: AtomicBool::new(false),
+            error: Mutex::new(None),
+            notify: Notify::new(),
+        })
+    }
+
+    fn take_sender(&self) -> Option<mpsc::UnboundedSender<PipeMessage>> {
+        self.sender.lock().expect("lock failed").take()
+    }
+
+    fn reader_closed(&self) -> bool {
+        self.reader_closed.load(AtomicOrdering::SeqCst)
+    }
+
+    fn mark_reader_closed(&self) {
+        if !self.reader_closed.swap(true, AtomicOrdering::SeqCst) {
+            self.take_sender();
+        }
+    }
+
+    fn error_present(&self) -> bool {
+        self.error.lock().expect("lock failed").is_some()
+    }
+
+    fn set_result_ok(&self) {
+        self.result_ready.store(true, AtomicOrdering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    fn set_result_err(&self, err: Handle) {
+        {
+            let mut guard = self.error.lock().expect("lock failed");
+            if guard.is_none() {
+                *guard = Some(err);
+            } else {
+                err.erase();
+            }
+        }
+        self.result_ready.store(true, AtomicOrdering::SeqCst);
+        self.notify.notify_waiters();
+        self.take_sender();
+    }
+
+    async fn wait_result(&self) {
+        while !self.result_ready.load(AtomicOrdering::SeqCst) && !self.error_present() {
+            self.notify.notified().await;
+        }
+    }
+
+    fn take_error(&self) -> Option<Handle> {
+        self.error.lock().expect("lock failed").take()
+    }
+}
+
+async fn bytes_pipe_reader(mut handle: Handle) {
+    let mut closure = handle.receive();
+
+    let (tx, rx) = mpsc::unbounded::<PipeMessage>();
+    let state = PipeReaderState::new(tx);
+
+    let writer_state = Arc::clone(&state);
+    closure.send().concurrently(move |handle| async move {
+        provide_pipe_reader_writer(handle, writer_state).await;
+    });
+
+    let result_state = Arc::clone(&state);
+    closure.concurrently(move |mut handle| async move {
+        match handle.case().await.as_str() {
+            "ok" => {
+                result_state.set_result_ok();
+                handle.break_();
+            }
+            "err" => {
+                result_state.set_result_err(handle);
+            }
+            _ => unreachable!(),
+        }
+    });
+
+    provide_pipe_reader_output(handle, rx, state).await;
+}
+
+async fn provide_pipe_reader_writer(mut handle: Handle, state: Arc<PipeReaderState>) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                if state.reader_closed() || state.error_present() {
+                    handle.signal(literal!("err"));
+                    return handle.break_();
+                }
+                state.take_sender();
+                handle.signal(literal!("ok"));
+                return handle.break_();
+            }
+            "flush" => {
+                if state.reader_closed() || state.error_present() {
+                    handle.signal(literal!("err"));
+                    return handle.break_();
+                }
+                handle.signal(literal!("ok"));
+            }
+            "write" => {
+                let bytes = handle.receive().bytes().await;
+                if write_chunk(&state, bytes) {
+                    handle.signal(literal!("ok"));
+                    continue;
+                }
+                handle.signal(literal!("err"));
+                return handle.break_();
+            }
+            "writeString" => {
+                let string = handle.receive().string().await;
+                let bytes = Bytes::copy_from_slice(string.as_bytes());
+                if write_chunk(&state, bytes) {
+                    handle.signal(literal!("ok"));
+                    continue;
+                }
+                handle.signal(literal!("err"));
+                return handle.break_();
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn write_chunk(state: &PipeReaderState, bytes: Bytes) -> bool {
+    if state.reader_closed() || state.error_present() {
+        return false;
+    }
+    match state.sender.lock().expect("lock failed").as_ref() {
+        Some(sender) => sender.unbounded_send(PipeMessage::Chunk(bytes)).is_ok(),
+        None => false,
+    }
+}
+
+async fn provide_pipe_reader_output(
+    mut handle: Handle,
+    mut rx: mpsc::UnboundedReceiver<PipeMessage>,
+    state: Arc<PipeReaderState>,
+) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                state.mark_reader_closed();
+                state.wait_result().await;
+                if let Some(err) = state.take_error() {
+                    handle.signal(literal!("err"));
+                    handle.link(err);
+                    return;
+                } else {
+                    handle.signal(literal!("ok"));
+                    return handle.break_();
+                }
+            }
+            "read" => match rx.next().await {
+                Some(PipeMessage::Chunk(bytes)) => {
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("chunk"));
+                    handle.send().provide_bytes(bytes);
+                }
+                None => {
+                    state.mark_reader_closed();
+                    state.wait_result().await;
+                    if let Some(err) = state.take_error() {
+                        handle.signal(literal!("err"));
+                        handle.link(err);
+                        return;
+                    } else {
+                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end"));
+                        return handle.break_();
+                    }
+                }
+            },
             _ => unreachable!(),
         }
     }

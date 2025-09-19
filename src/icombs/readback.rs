@@ -163,7 +163,10 @@ impl Handle {
         let mut locked = self.net.lock().expect("lock failed");
         let (a0, a1) = locked.create_wire();
         let (b0, b1) = locked.create_wire();
-        locked.link(Tree::Dup(Box::new(a0), Box::new(b0)), self.tree.take().unwrap());
+        locked.link(
+            Tree::Dup(Box::new(a0), Box::new(b0)),
+            self.tree.take().unwrap(),
+        );
         locked.notify_reducer();
         self.tree = Some(a1);
         Handle {

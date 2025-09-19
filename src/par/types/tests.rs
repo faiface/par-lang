@@ -89,8 +89,10 @@ mod tests {
         let type_defs = TypeDefs::default();
         let empty_either = Type::either(vec![]);
         let any_type = Type::string();
-        
-        assert!(empty_either.is_assignable_to(&any_type, &type_defs).unwrap());
+
+        assert!(empty_either
+            .is_assignable_to(&any_type, &type_defs)
+            .unwrap());
     }
 
     #[test]
@@ -98,7 +100,9 @@ mod tests {
         let type_defs = TypeDefs::default();
         let any_type = Type::int();
         let empty_choice = Type::choice(vec![]);
-        
-        assert!(any_type.is_assignable_to(&empty_choice, &type_defs).unwrap());
+
+        assert!(any_type
+            .is_assignable_to(&empty_choice, &type_defs)
+            .unwrap());
     }
 }

@@ -261,6 +261,8 @@ dec Bytes.Parser  : [Bytes] Bytes.Parser<either {}>
 dec Bytes.ReaderFromString : [String] Bytes.Reader<either {}>
 dec Bytes.ParserFromReader : [type e] [Bytes.Reader<e>] Bytes.Parser<e>
 
+dec Bytes.PipeReader : [type e] [[Bytes.Writer<!>] Result<e, !>] Bytes.Reader<e>
+
 
 /// Console
 
