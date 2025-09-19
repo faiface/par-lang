@@ -1054,6 +1054,7 @@ dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
 dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
 
+dec Bytes.EmptyReader      : Bytes.Reader&lt;either {}&gt;
 dec Bytes.ReaderFromString : [String] Bytes.Reader&lt;either {}&gt;
 dec Bytes.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
 
@@ -1114,13 +1115,19 @@ dec Os.Stdout : Os.Writer
 /// Http
 
 type Http.Error  = String
-type Http.Reader = Bytes.Reader&lt;Http.Error&gt;
-type Http.Writer = Bytes.Writer&lt;Http.Error&gt;
 
-dec Http.Request :
-  [String, String, List&lt;(String) String&gt;]
-  [[Http.Writer] Result&lt;Http.Error, !&gt;]
-  Result&lt;Http.Error, (Nat, List&lt;(String) String&gt;) Http.Reader&gt;
+type Http.Request =
+  (String)
+  (String)
+  (List&lt;(String) String&gt;)
+  Bytes.Reader&lt;Http.Error&gt;
+
+type Http.Response =
+  (Nat)
+  (List&lt;(String) String&gt;)
+  Bytes.Reader&lt;Http.Error&gt;
+
+dec Http.Fetch : [Http.Request] Result&lt;Http.Error, Http.Response&gt;
 
 
 /// Map
