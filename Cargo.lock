@@ -2782,6 +2782,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unescaper",
+ "url",
  "wild",
  "winnow",
 ]

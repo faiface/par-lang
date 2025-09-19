@@ -319,13 +319,30 @@ dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
 
 
+/// Url
+
+type Url.Error = String
+
+type Url = iterative box choice {
+  .full => String,
+  .protocol => String,
+  .host => String,
+  .path => String,
+  .query => List<(String) String>,
+  .appendPath(String) => self,
+  .addQuery(String, String) => self,
+}
+
+dec Url.FromString : [String] Result<Url.Error, Url>
+
+
 /// Http
 
 type Http.Error  = String
 
 type Http.Request =
   (String)
-  (String)
+  (Url)
   (List<(String) String>)
   Bytes.Reader<Http.Error>
 

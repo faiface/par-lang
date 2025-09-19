@@ -34,6 +34,7 @@ wild = "2.2.1"
 reqwest = { version = "0.12.8", features = ["stream", "gzip", "brotli", "deflate"] }
 bytes = "1.6.1"
 im = "15"
+url = "2.5.4"
 
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"

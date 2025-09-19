@@ -39,7 +39,10 @@ async fn http_fetch(mut handle: Handle) {
     let mut request = handle.receive();
 
     let method = request.receive().string().await;
-    let url = request.receive().string().await;
+
+    let mut url_handle = request.receive();
+    url_handle.signal(literal!("full"));
+    let url = url_handle.string().await.to_string();
 
     let header_pairs = readback_list(request.receive(), |mut handle| async move {
         let name = handle.receive().string().await;
