@@ -479,13 +479,30 @@ dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
 
 
+/// Url
+
+type Url.Error = String
+
+type Url = iterative box choice {
+  .full =&gt; String,
+  .protocol =&gt; String,
+  .host =&gt; String,
+  .path =&gt; String,
+  .query =&gt; List&lt;(String) String&gt;,
+  .appendPath(String) =&gt; self,
+  .addQuery(String, String) =&gt; self,
+}
+
+dec Url.FromString : [String] Result&lt;Url.Error, Url&gt;
+
+
 /// Http
 
 type Http.Error  = String
 
 type Http.Request =
   (String)
-  (String)
+  (Url)
   (List&lt;(String) String&gt;)
   Bytes.Reader&lt;Http.Error&gt;
 
