@@ -1,9 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{io, sync::Arc, time::Duration};
 
 use arcstr::{literal, Substr};
-use bytes::Bytes;
-use futures::{channel::mpsc, StreamExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    StreamExt,
+};
 use num_bigint::BigInt;
 
 use crate::{
@@ -21,81 +22,39 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
         type_defs: vec![],
         declarations: vec![],
         definitions: vec![Definition::external(
-            "Request",
+            "Fetch",
             Type::function(
-                // method
-                Type::string(),
-                Type::function(
-                    // url
-                    Type::string(),
-                    Type::function(
-                        // headers: List<(String) String>
-                        Type::name(
-                            Some("List"),
-                            "List",
-                            vec![Type::pair(Type::string(), Type::string())],
-                        ),
-                        Type::function(
-                            // body writer closure: [Http.Writer] Result<Http.Error, !>
-                            Type::function(
-                                Type::name(
-                                    Some("Bytes"),
-                                    "Writer",
-                                    vec![Type::name(Some("Http"), "Error", vec![])],
-                                ),
-                                Type::either(vec![
-                                    ("ok", Type::break_()),
-                                    ("err", Type::name(Some("Http"), "Error", vec![])),
-                                ]),
-                            ),
-                            // return: either { .err Http.Error, .ok ((Nat) (List<(String) String>) Http.Reader) }
-                            Type::either(vec![
-                                ("err", Type::name(Some("Http"), "Error", vec![])),
-                                (
-                                    "ok",
-                                    Type::pair(
-                                        Type::nat(),
-                                        Type::pair(
-                                            Type::name(
-                                                Some("List"),
-                                                "List",
-                                                vec![Type::pair(Type::string(), Type::string())],
-                                            ),
-                                            Type::name(
-                                                Some("Bytes"),
-                                                "Reader",
-                                                vec![Type::name(Some("Http"), "Error", vec![])],
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                            ]),
-                        ),
-                    ),
-                ),
+                Type::name(None, "Request", vec![]),
+                Type::either(vec![
+                    ("err", Type::name(None, "Error", vec![])),
+                    ("ok", Type::name(None, "Response", vec![])),
+                ]),
             ),
-            |handle| Box::pin(http_request(handle)),
+            |handle| Box::pin(http_fetch(handle)),
         )],
     }
 }
 
-async fn http_request(mut handle: Handle) {
-    let method = handle.receive().string().await;
-    let url = handle.receive().string().await;
+async fn http_fetch(mut handle: Handle) {
+    let mut request = handle.receive();
 
-    let header_pairs = readback_list(handle.receive(), |mut handle| async move {
+    let method = request.receive().string().await;
+    let url = request.receive().string().await;
+
+    let header_pairs = readback_list(request.receive(), |mut handle| async move {
         let name = handle.receive().string().await;
         let value = handle.string().await;
         (name, value)
     })
     .await;
 
-    let mut body_closure = handle.receive();
+    let body_reader = request;
 
-    // Channel for streaming request body
     let (tx, rx) = mpsc::unbounded::<Result<bytes::Bytes, std::io::Error>>();
-    body_closure.send().concurrently(move |handle| async move {
-        provide_http_writer(handle, tx).await;
+    let (body_done_tx, body_done_rx) = oneshot::channel::<Result<(), Substr>>();
+
+    body_reader.concurrently(move |handle| async move {
+        consume_http_reader(handle, tx, body_done_tx).await;
     });
 
     let client = match reqwest::Client::builder()
@@ -126,24 +85,26 @@ async fn http_request(mut handle: Handle) {
     let request = request
         .headers(headers)
         .body(reqwest::Body::wrap_stream(rx));
-    let response = match request.send().await {
-        Ok(r) => r,
+
+    let response_result = request.send().await;
+    let body_result = body_done_rx.await.unwrap_or(Ok(()));
+
+    let response = match response_result {
+        Ok(response) => {
+            if let Err(body_err) = body_result {
+                handle.signal(literal!("err"));
+                return handle.provide_string(body_err);
+            }
+            response
+        }
         Err(err) => {
             handle.signal(literal!("err"));
+            if let Err(body_err) = body_result {
+                return handle.provide_string(body_err);
+            }
             return handle.provide_string(Substr::from(err.to_string()));
         }
     };
-
-    // Wait for the closure result; if it's an error, return .err
-    match body_closure.case().await.as_str() {
-        "ok" => body_closure.continue_(),
-        "err" => {
-            let err = body_closure.string().await;
-            handle.signal(literal!("err"));
-            return handle.provide_string(err);
-        }
-        _ => unreachable!(),
-    }
 
     handle.signal(literal!("ok"));
     handle
@@ -199,52 +160,65 @@ async fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::Hea
     handle.break_();
 }
 
-async fn provide_http_writer(
+async fn consume_http_reader(
     mut handle: Handle,
     mut tx: mpsc::UnboundedSender<Result<bytes::Bytes, std::io::Error>>,
+    done: oneshot::Sender<Result<(), Substr>>,
 ) {
+    let mut done = Some(done);
+
     loop {
+        handle.signal(literal!("read"));
         match handle.case().await.as_str() {
-            "close" => {
-                // Closing the channel signals end of body
-                tx.disconnect();
-                handle.signal(literal!("ok"));
-                return handle.break_();
-            }
-            "flush" => {
-                // Nothing to flush in channel-based streaming
-                handle.signal(literal!("ok"));
-                continue;
-            }
-            "write" => {
-                let bytes = handle.receive().bytes().await;
-                let res = tx.unbounded_send(Ok(bytes));
-                match res {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
+            "ok" => match handle.case().await.as_str() {
+                "chunk" => {
+                    let chunk = handle.receive().bytes().await;
+                    if chunk.is_empty() {
                         continue;
                     }
-                    Err(_) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from("request body stream closed"));
+                    if tx.unbounded_send(Ok(chunk)).is_err() {
+                        let result = close_reader(handle).await;
+                        if let Some(done) = done.take() {
+                            let _ = done.send(result);
+                        }
+                        return;
                     }
                 }
-            }
-            "writeString" => {
-                let s = handle.receive().string().await;
-                let res = tx.unbounded_send(Ok(Bytes::copy_from_slice(s.as_bytes())));
-                match res {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        continue;
+                "end" => {
+                    handle.continue_();
+                    tx.disconnect();
+                    if let Some(done) = done.take() {
+                        let _ = done.send(Ok(()));
                     }
-                    Err(_) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from("request body stream closed"));
-                    }
+                    return;
                 }
+                _ => unreachable!(),
+            },
+            "err" => {
+                let err = handle.string().await;
+                let io_err = io::Error::new(io::ErrorKind::Other, err.to_string());
+                let _ = tx.unbounded_send(Err(io_err));
+                if let Some(done) = done.take() {
+                    let _ = done.send(Err(err));
+                }
+                return;
             }
             _ => unreachable!(),
         }
+    }
+}
+
+async fn close_reader(mut handle: Handle) -> Result<(), Substr> {
+    handle.signal(literal!("close"));
+    match handle.case().await.as_str() {
+        "ok" => {
+            handle.continue_();
+            Ok(())
+        }
+        "err" => {
+            let err = handle.string().await;
+            Err(err)
+        }
+        _ => unreachable!(),
     }
 }

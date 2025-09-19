@@ -66,6 +66,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 |handle| Box::pin(bytes_reader(handle)),
             ),
             Definition::external(
+                "EmptyReader",
+                Type::name(None, "Reader", vec![Type::either(vec![])]),
+                |handle| Box::pin(bytes_empty_reader(handle)),
+            ),
+            Definition::external(
                 "ReaderFromString",
                 Type::function(
                     Type::string(),
@@ -130,6 +135,23 @@ async fn bytes_from_string(mut handle: Handle) {
 async fn bytes_reader(mut handle: Handle) {
     let bytes = handle.receive().bytes().await;
     provide_bytes_reader_from_bytes(handle, bytes).await;
+}
+
+async fn bytes_empty_reader(mut handle: Handle) {
+    loop {
+        match handle.case().await.as_str() {
+            "close" => {
+                handle.signal(literal!("ok"));
+                return handle.break_();
+            }
+            "read" => {
+                handle.signal(literal!("ok"));
+                handle.signal(literal!("end"));
+                return handle.break_();
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 async fn bytes_reader_from_string(mut handle: Handle) {

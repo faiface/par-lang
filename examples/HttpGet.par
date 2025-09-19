@@ -1,12 +1,12 @@
 def Main: ! =
   let console = Console.Open in
   catch e => do { console.print(e).close } in ! in do {
-    let try (status, headers) body = Http.Request(
-      "GET",                        // method
-      "https://httpbin.org/get",    // URL
-      *(),                          // no headers
-      [writer] writer.close,        // empty body
-    )
+    let request: Http.Request =
+      ("GET")                      // method
+      ("https://httpbin.org/get")  // URL
+      (*())                        // no headers
+      Bytes.EmptyReader            // empty body
+    let try (status, headers) body = Http.Fetch(request)
     body.close.try                  // not interested
     console.print(Nat.ToString(status))
     console.close
