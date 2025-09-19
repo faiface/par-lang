@@ -970,6 +970,9 @@ type String.Pattern = recursive either {
 dec String.Quote     : [String] String
 dec String.FromBytes : [Bytes] String
 
+dec String.Equals    : [String, String] Bool
+dec String.Compare   : [String, String] Ordering
+
 dec String.Builder : String.Builder
 dec String.Parser  : [String] String.Parser&lt;either {}&gt;
 
@@ -1044,13 +1047,17 @@ type Bytes.Pattern = recursive either {
   .or List&lt;self&gt;,
 }
 
+dec Bytes.Length  : [Bytes] Nat
 dec Bytes.FromString : [String] Bytes
 
 dec Bytes.Builder : Bytes.Builder
+dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
 dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
-dec Bytes.Length  : [Bytes] Nat
 
+dec Bytes.ReaderFromString : [String] Bytes.Reader&lt;either {}&gt;
 dec Bytes.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
+
+dec Bytes.PipeReader : [type e] [[Bytes.Writer&lt;!&gt;] Result&lt;e, !&gt;] Bytes.Reader&lt;e&gt;
 
 
 /// Console
