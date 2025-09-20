@@ -35,7 +35,7 @@ async fn url_from_string(mut handle: Handle) {
     match ParsedUrl::parse(input.as_str()) {
         Ok(url) => {
             handle.signal(literal!("ok"));
-            provide_url(handle, Arc::new(url));
+            provide_url_value(handle, url);
         }
         Err(err) => {
             handle.signal(literal!("err"));
@@ -44,7 +44,7 @@ async fn url_from_string(mut handle: Handle) {
     }
 }
 
-fn provide_url(handle: Handle, url: Arc<ParsedUrl>) {
+pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
     handle.provide_box(move |mut handle| {
         let url = url.clone();
         async move {
@@ -94,14 +94,14 @@ fn provide_url(handle: Handle, url: Arc<ParsedUrl>) {
                     }
                     "appendPath" => {
                         let segment = handle.receive().string().await;
-                        let updated = append_path(url.as_ref(), segment.as_str());
-                        return provide_url(handle, Arc::new(updated));
+                        let updated = append_path(&url, segment.as_str());
+                        return provide_url_value(handle, updated);
                     }
                     "addQuery" => {
                         let key = handle.receive().string().await;
                         let value = handle.receive().string().await;
-                        let updated = add_query(url.as_ref(), key.as_str(), value.as_str());
-                        return provide_url(handle, Arc::new(updated));
+                        let updated = add_query(&url, key.as_str(), value.as_str());
+                        return provide_url_value(handle, updated);
                     }
                     _ => unreachable!(),
                 }

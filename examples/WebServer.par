@@ -1,0 +1,89 @@
+def Main: ! = chan exit {
+  let console = Console.Open
+  catch e => {
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  catch/prompt ! => {
+    console.close
+    exit!
+  }
+  console.prompt("Directory to serve: ")[try/prompt root]
+
+  console.print("Starting server...")
+
+  Http.Listen("127.0.0.1:8080").begin.case {
+    .shutdown try! => {
+      console.print("Shutting down...")
+      console.close
+      exit!
+    }
+
+    .incoming(request, respond) next => {
+      let (method, url, headers) body = request
+      body.close
+      ServePath(Os.PathFromString(root), Concat(root, url.path), respond)
+      next.loop
+    }
+  }
+}
+
+dec ServePath : [Os.Path, String, [Http.Response] Result<Http.Error, !>] !
+def ServePath = [root, path, respond] Os.PathFromString(path).listDir.case {
+  .err _ => ServeFile(path, respond),
+  .ok paths => ServeDir(root, paths, respond),
+}
+
+dec ServeFile : [String, [Http.Response] Result<Http.Error, !>] !
+def ServeFile = [path, respond] chan finish {
+  catch e => { Debug.Log(e); finish! }
+  catch e => {
+    respond((404, *()) Bytes.ReaderFromString(e)).try
+    finish!
+  }
+
+  let try file = Os.PathFromString(path).openFile
+  respond((200, *(("Content-Type") "text/plain")) file)
+
+  finish!
+}
+
+dec ServeDir : [Os.Path, List<Os.Path>, [Http.Response] Result<Http.Error, !>] !
+def ServeDir = [root, paths, respond] chan finish {
+  let content = Bytes.PipeReader(type Http.Error)([w] catch ! => .ok! in do {
+    w.writeString("<ul>").try
+
+    paths.begin.case {
+      .end! => {}
+      .item(path) => {
+        w.writeString("<li>").try
+        w.writeString("<a href=\"").try
+        w.writeString(TrimPrefix(root.stringAbsolute, path.stringAbsolute)).try
+        w.writeString("\">").try
+        w.writeString(path.stringName).try
+        w.writeString("</a>").try
+        w.writeString("</li>").try
+        paths.loop
+      }
+    }
+
+    w.writeString("</ul>").try
+    w.close.try
+  } in .ok!)
+
+  respond((200, *(("Content-Type") "text/html")) content)
+  finish!
+}
+
+dec Concat : [String, String] String
+def Concat = [left, right] String.Builder.add(left).add(right).build
+
+dec TrimPrefix : [String, String] String
+def TrimPrefix = [prefix, string]
+  String.Parser(string).matchEnd(.str prefix, .repeat.one.any!).case {
+    .end _ => "",
+    .fail p => do { p.close } in "",
+    .match(_, trimmed)! => trimmed,
+  }

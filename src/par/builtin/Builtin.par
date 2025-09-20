@@ -350,6 +350,10 @@ type Http.Response =
 
 dec Http.Fetch : [Http.Request] Result<Http.Error, Http.Response>
 
+dec Http.Listen : [String] recursive either {
+  .shutdown Result<Http.Error, !>,
+  .incoming(Http.Request, [Http.Response] Result<Http.Error, !>) self,
+}
 
 /// Map
 
