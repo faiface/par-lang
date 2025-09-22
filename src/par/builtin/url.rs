@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arcstr::{literal, Substr};
+use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
 use crate::{
@@ -46,36 +47,29 @@ async fn url_from_string(mut handle: Handle) {
 
 pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
     handle.provide_box(move |mut handle| {
-        let url = url.clone();
+        let mut url = url.clone();
         async move {
             loop {
                 match handle.case().await.as_str() {
                     "full" => {
-                        let serialized = url.as_str().to_string();
-                        handle.provide_string(Substr::from(serialized));
+                        handle.provide_string(Substr::from(url.as_str()));
                         return;
                     }
                     "protocol" => {
-                        let scheme = url.scheme().to_string();
-                        handle.provide_string(Substr::from(scheme));
+                        handle.provide_string(Substr::from(url.scheme()));
                         return;
                     }
                     "host" => {
-                        let mut host = url.host_str().unwrap_or("").to_string();
-                        if let Some(port) = url.port() {
-                            if !host.is_empty() {
-                                host.push(':');
-                                host.push_str(&port.to_string());
-                            } else {
-                                host = port.to_string();
-                            }
-                        }
+                        let host = match url.port() {
+                            Some(port) => format!("{}:{}", url.host_str().unwrap_or(""), port),
+                            None => url.host_str().unwrap_or("").to_string(),
+                        };
                         handle.provide_string(Substr::from(host));
                         return;
                     }
                     "path" => {
-                        let path = url.path().to_string();
-                        handle.provide_string(Substr::from(path));
+                        let decoded = percent_decode_str(url.path()).decode_utf8_lossy();
+                        handle.provide_string(Substr::from(decoded.as_ref()));
                         return;
                     }
                     "query" => {
@@ -94,14 +88,15 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
                     }
                     "appendPath" => {
                         let segment = handle.receive().string().await;
-                        let updated = append_path(&url, segment.as_str());
-                        return provide_url_value(handle, updated);
+                        append_path(&mut url, segment.as_str());
+                        return provide_url_value(handle, url);
                     }
                     "addQuery" => {
                         let key = handle.receive().string().await;
                         let value = handle.receive().string().await;
-                        let updated = add_query(&url, key.as_str(), value.as_str());
-                        return provide_url_value(handle, updated);
+                        url.query_pairs_mut()
+                            .append_pair(key.as_str(), value.as_str());
+                        return provide_url_value(handle, url);
                     }
                     _ => unreachable!(),
                 }
@@ -110,35 +105,22 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
     });
 }
 
-fn append_path(current: &ParsedUrl, segment: &str) -> ParsedUrl {
+fn append_path(url: &mut ParsedUrl, segment: &str) {
     if segment.is_empty() {
-        return current.clone();
+        return;
     }
 
-    let mut new_url = current.clone();
     let parts: Vec<&str> = segment.split('/').filter(|part| !part.is_empty()).collect();
-    if new_url.cannot_be_a_base() {
-        let mut path = new_url.path().to_string();
-        if path.is_empty() || !path.ends_with('/') {
-            path.push('/');
-        }
-        let appended = parts.join("/");
-        path.push_str(&appended);
-        new_url.set_path(&path);
-    } else {
-        let mut segments_mut = new_url.path_segments_mut().expect("base URL");
-        for part in parts.iter() {
-            segments_mut.push(part);
-        }
+    if parts.is_empty() || url.cannot_be_a_base() {
+        return;
     }
-    if new_url.path().is_empty() {
-        new_url.set_path("/");
-    }
-    new_url
-}
 
-fn add_query(current: &ParsedUrl, key: &str, value: &str) -> ParsedUrl {
-    let mut new_url = current.clone();
-    new_url.query_pairs_mut().append_pair(key, value);
-    new_url
+    if url.path().is_empty() {
+        url.set_path("/");
+    }
+
+    let mut segments = url.path_segments_mut().expect("base URL");
+    for part in parts {
+        segments.push(part);
+    }
 }

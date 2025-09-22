@@ -2783,6 +2783,7 @@ dependencies = [
  "miette",
  "num-bigint",
  "num-traits",
+ "percent-encoding",
  "reqwest",
  "rfd",
  "scopeguard",
