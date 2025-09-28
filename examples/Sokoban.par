@@ -1,0 +1,394 @@
+dec Main : !
+def Main = chan exit {
+  let console = Console.Open
+
+  let clearScreen = "\x1b[2J\x1b[H"
+  let inputHelp1 = "╭──────────┬──────────┬───────────┬────────┬──────────┬──────────╮"
+  let inputHelp2 = "│ Exit [x] │ Left [a] │ Right [d] │ Up [w] │ Down [s] │ Undo [u] │"
+  let inputHelp3 = "╰──────────┴──────────┴───────────┴────────┴──────────┴──────────╯"
+  // There probably is multiline string syntax, but this works
+  let inputHelp = StringJoin(*(inputHelp1, inputHelp2, inputHelp3), "\n")
+
+  let state = State
+  let undoStack: List<State> = .end!
+  Nat.Repeat(10000).begin.case {
+    .step step => {
+      state.render[picture]
+      console.print(picture)
+
+      state.checkWin[win]
+      win.case {
+        .true! => {
+          console.print("You Win!")
+          CloseUndoStack(undoStack)
+          state.close
+          console.close
+          exit!
+        },
+        .false! => {},
+      }
+
+      console.print(inputHelp)
+      console.prompt("Input: ")[line]
+      console.print(clearScreen)
+      line.case {
+        .err! => {
+          console.print("Could not read input")
+          step.loop
+        },
+        .ok line => {},
+      }
+      String.Parser(line).char.case {
+        .end _ => {
+          console.print("Empty input")
+          step.loop
+        },
+        .char (char) rest => {
+          rest.close
+          Char.Equals(char, "x").case {
+            .true! => {
+              CloseUndoStack(undoStack)
+              state.close
+              console.close
+              exit!
+            },
+            .false! => {},
+          }
+          Char.Equals(char, "a").case {
+            .true! => {
+              state.copy[copy]
+              let undoStack: List<State> = .item(copy) undoStack
+              state.playerPosition[position]
+              let (playerX, playerY)! = position
+              state.tryMove(.left!)
+            },
+            .false! => {},
+          }
+          Char.Equals(char, "d").case {
+            .true! => {
+              state.copy[copy]
+              let undoStack: List<State> = .item(copy) undoStack
+              state.playerPosition[position]
+              let (playerX, playerY)! = position
+              state.tryMove(.right!)
+            },
+            .false! => {},
+          }
+          Char.Equals(char, "w").case {
+            .true! => {
+              state.copy[copy]
+              let undoStack: List<State> = .item(copy) undoStack
+              state.playerPosition[position]
+              let (playerX, playerY)! = position
+              state.tryMove(.up!)
+            },
+            .false! => {},
+          }
+          Char.Equals(char, "s").case {
+            .true! => {
+              state.copy[copy]
+              let undoStack: List<State> = .item(copy) undoStack
+              state.playerPosition[position]
+              let (playerX, playerY)! = position
+              state.tryMove(.down!)
+            },
+            .false! => {},
+          }
+          Char.Equals(char, "u").case {
+            .true! => {
+              undoStack.case {
+                .item(copy) undoStack => {
+                  state.close
+                  let state = copy
+                },
+                .end! => { let undoStack: List<State> = .end! },
+              }
+            },
+            .false! => {},
+          }
+        }
+      }
+      step.loop
+    },
+    .end! => {},
+  }
+  state.render[picture]
+  console.print(picture)
+  console.print("You couldn't win in 10000 moves...")
+  CloseUndoStack(undoStack)
+  state.close
+  console.close
+  exit!
+}
+
+type State = iterative choice {
+  .close => !,
+  .copy => (self) self,
+  .lastDirection => (Direction) self,
+  .playerPosition => (Coord) self,
+  .pegs => (List<Coord>) self,
+  .tryMove(Direction) => self,
+  .render => (String) self,
+  .checkWin => (Bool) self,
+}
+
+type Tile = either {
+  .ground!,
+  .wall!,
+  .hole!,
+}
+
+type Coord = (Int, Int)!
+
+type Direction = either {
+  .left!,
+  .right!,
+  .up!,
+  .down!,
+}
+
+dec State : State
+def State =
+  let lastDirection: Direction = .right! in
+  let playerPosition: (Int, Int)! = (0, -1)! in
+  let pegs: List<Coord> = *((-2, 0)!, (-1, 0)!, (0, 0)!, (1, 0)!) in
+  begin case {
+    .close => !,
+    .copy => (loop) loop,
+    .lastDirection => (lastDirection) loop,
+    .playerPosition => (playerPosition) loop,
+    .pegs => (pegs) loop,
+    .tryMove(direction) =>
+      let lastDirection = direction in
+      let nextPosition = AdjacentCoord(playerPosition, direction) in
+      CoordListIndex(pegs, nextPosition).case {
+        .ok index =>
+          let nextBoxPosition = AdjacentCoord(nextPosition, direction) in
+          CoordListContains(pegs, nextBoxPosition).case {
+            .true! => loop,
+            .false! => Maze(nextBoxPosition).case {
+              .err! => loop,
+              .ok tile => tile.case {
+                .ground! => let pegs = MovePegInList(pegs, index, direction) in let playerPosition = nextPosition in loop,
+                .wall! => loop,
+                .hole! => let pegs = MovePegInList(pegs, index, direction) in let playerPosition = nextPosition in loop,
+              },
+            },
+          }
+        .err! => Maze(nextPosition).case {
+          .err! => loop,
+          .ok tile => tile.case {
+            .ground! => let playerPosition = nextPosition in loop,
+            .wall! => loop,
+            .hole! => let playerPosition = nextPosition in loop,
+          },
+        }
+      }
+    .render =>
+      let (playerX, playerY)! = playerPosition in
+      let picture =
+        StringJoin(
+          ListMap(type Int, String)(Int.Range(-10, 11), box [y]
+            StringFromList(
+              ListMap(type Int, Char)(Int.Range(-10, 11), box [x] chan return {
+                Int.Equals(x, playerX).case {
+                  .true! => {
+                    Int.Equals(y, playerY).case {
+                      .true => { return <> PictureOfPlayer(lastDirection) },
+                      .false! => {},
+                    }
+                  },
+                  .false! => {},
+                }
+                CoordListContains(pegs, (x, y)!).case {
+                  .true! => { return <> PictureOfPeg },
+                  .false! => {},
+                }
+                return <> Maze((x, y)!).case {
+                  .err! => "▒",
+                  .ok tile => tile.case {
+                    .ground! => " ",
+                    .wall! => "█",
+                    .hole! => "○",
+                  },
+                }
+              }),
+            ),
+          ),
+          "\n",
+        )
+      in
+      (picture) loop
+    .checkWin =>
+      let hasWon: Bool = pegs.begin.case {
+        .item(peg) rest => Maze(peg).case {
+          .err! => .false!,
+          .ok tile => tile.case {
+            .ground! => .false!,
+            .wall! => .false!,
+            .hole! => rest.loop,
+          },
+        },
+        .end! => .true!,
+      } in
+      (hasWon) loop,
+  }
+
+dec CloseUndoStack : [List<State>] !
+def CloseUndoStack = [stack] stack.begin.case {
+  .item(state) stack => let ! = state.close in stack.loop,
+  .end! => !,
+}
+
+dec MovePegInList : [List<Coord>, Nat, Direction] List<Coord>
+def MovePegInList = [pegs, index, direction]
+  let n = 0 in
+  pegs.begin.case {
+    .item(peg) pegs => Nat.Equals(index, n).case {
+      .true! => .item(AdjacentCoord(peg, direction)) pegs,
+      .false! => let n = Nat.Add(n, 1) in .item(peg) pegs.loop,
+    },
+    .end! => .end!,
+  }
+
+dec AdjacentCoord : [Coord, Direction] Coord
+def AdjacentCoord = [(x, y)!, direction] direction.case {
+  .left! => (Int.Sub(x, 1), y)!,
+  .right! => (Int.Add(x, 1), y)!,
+  .up! => (x, Int.Sub(y, 1))!,
+  .down! => (x, Int.Add(y, 1))!,
+}
+
+dec PictureOfPlayer : [Direction] Char
+def PictureOfPlayer = [direction] direction.case {
+  .left! => "◀",
+  .right! => "▶",
+  .up! => "▲",
+  .down! => "▼",
+}
+
+dec PictureOfPeg : Char
+def PictureOfPeg = "●"
+
+dec Maze : [Coord] Result<!, Tile>
+def Maze = [(x, y)!] chan return {
+  Nat.Compare(Int.Abs(x), 4).case {
+    .less! => {},
+    .equal! => {},
+    .greater! => { return <> .err! },
+  }
+  Nat.Compare(Int.Abs(y), 4).case {
+    .less! => {},
+    .equal! => {},
+    .greater! => { return <> .err! },
+  }
+  Nat.Equals(Int.Abs(x), 4).case {
+    .true! => { return <> .ok .wall! },
+    .false! => {},
+  }
+  Nat.Equals(Int.Abs(y), 4).case {
+    .true! => { return <> .ok .wall! },
+    .false! => {},
+  }
+  Int.Equals(x, 2).case {
+    .true! => {
+      Int.Compare(y, 0).case {
+        .less! => {},
+        .equal! => { return <> .ok .wall! },
+        .greater! => { return <> .ok .wall! },
+      }
+    },
+    .false! => {},
+  }
+  Int.Equals(x, 3).case {
+    .true! => {
+      Int.Compare(y, 0).case {
+        .less! => {},
+        .equal! => { return <> .ok .hole! },
+        .greater! => { return <> .ok .hole! },
+      }
+    },
+    .false! => {},
+  }
+  return <> .ok .ground!
+}
+
+// Helpers
+
+dec StringFromList : [List<Char>] String
+def StringFromList = [list] StringJoin(list, "")
+
+dec StringJoin : [List<String>, String] String
+def StringJoin = [strings, separator]
+  strings.case {
+    .item(first) strings => strings.case {
+      .item(second) strings =>
+        let builder = String.Builder.add(first).add(separator).add(second) in
+        strings.begin.case {
+          .item(string) strings =>
+            let builder = builder.add(separator).add(string) in
+            strings.loop,
+          .end! => builder.build,
+        },
+      .end! => first,
+    },
+    .end! => "",
+  }
+
+dec CoordListIndex : [List<Coord>, Coord] Result<!, Nat>
+def CoordListIndex = [list, (x, y)!]
+  let index = 0 in
+  list.begin.case {
+    .item((otherX, otherY)!) list =>
+      let result = index in
+      let index = Nat.Add(index, 1) in
+      Int.Equals(otherX, x).case {
+        .true! => Int.Equals(otherY, y).case {
+          .true! => .ok result,
+          .false! => list.loop,
+        },
+        .false! => list.loop,
+      },
+    .end! => .err!,
+  }
+
+dec CoordListContains : [List<Coord>, Coord] Bool
+def CoordListContains = [list, (x, y)!] list.begin.case {
+  .item((otherX, otherY)!) list => Int.Equals(otherX, x).case {
+    .true! => Int.Equals(otherY, y).case {
+      .true! => .true!,
+      .false! => list.loop,
+    },
+    .false! => list.loop,
+  },
+  .end! => .false!,
+}
+
+dec ListMap : [type a, b] [List<a>, box [a] b] List<b>
+def ListMap = [type a, b] [list, func] chan yield {
+  list.begin.case {
+    .item(x) list => {
+      yield.item(func(x))
+      list.loop
+    },
+    .end! => { yield.end! },
+  }
+}
+
+dec ListFlatMap : [type a, b] [List<a>, box [a] List<b>] List<b>
+def ListFlatMap = [type a, b] [list, func] chan yield {
+  list.begin/outer.case {
+    .item(x) list => {
+      let ys = func(x)
+      ys.begin/inner.case {
+        .item(y) ys => {
+          yield.item(y)
+          ys.loop/inner
+        },
+        .end! => {},
+      }
+      list.loop/outer
+    },
+    .end! => { yield.end! },
+  }
+}
