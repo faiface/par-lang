@@ -165,10 +165,12 @@ impl Polarity {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_positive(self) -> bool {
         matches!(self, Polarity::Positive | Polarity::Both)
     }
 
+    #[allow(dead_code)]
     pub fn is_negative(self) -> bool {
         matches!(self, Polarity::Negative | Polarity::Both)
     }
