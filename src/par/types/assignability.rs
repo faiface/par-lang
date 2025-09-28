@@ -79,12 +79,18 @@ impl BitAnd for SubtypeResult {
                     (min_right2, size_right2)
                 };
                 let ttl = max(ttl1, ttl2);
-                Cycle {
-                    min_left,
-                    size_left,
-                    min_right,
-                    size_right,
-                    ttl,
+                if !matches!(min_left, Type::Recursive { .. })
+                    && !matches!(min_right, Type::Iterative { .. })
+                {
+                    InCompatible
+                } else {
+                    Cycle {
+                        min_left,
+                        size_left,
+                        min_right,
+                        size_right,
+                        ttl,
+                    }
                 }
             }
             (_, InCompatible) => InCompatible,
@@ -177,7 +183,7 @@ impl Type {
             if debug_enabled() {
                 debug_log_stack(&ctx);
             }
-            let min_first = ctx
+            let min_left = ctx
                 .visited
                 .iter()
                 .skip(ind)
@@ -185,7 +191,7 @@ impl Type {
                 .filter(|t1| t1.is_fixpoint())
                 .min_by_key(|t1| t1.size(ctx.type_defs).unwrap())
                 .expect("minimum should exist");
-            let min_second = ctx
+            let min_right = ctx
                 .visited
                 .iter()
                 .skip(ind)
@@ -194,14 +200,19 @@ impl Type {
                 .min_by_key(|t2| t2.size(ctx.type_defs).unwrap())
                 .expect("minimum should exist");
             if debug_enabled() {
-                eprintln!("min_first: {:}", min_first);
-                eprintln!("min_second: {:}", min_second);
+                eprintln!("min_left: {:}", min_left);
+                eprintln!("min_right: {:}", min_right);
+            }
+            if !matches!(min_left, Type::Recursive { .. })
+                && !matches!(min_right, Type::Iterative { .. })
+            {
+                return Ok(InCompatible);
             }
             return Ok(Cycle {
-                min_left: min_first.clone(),
-                size_left: min_first.size(ctx.type_defs)?,
-                min_right: min_second.clone(),
-                size_right: min_second.size(ctx.type_defs)?,
+                min_left: min_left.clone(),
+                size_left: min_left.size(ctx.type_defs)?,
+                min_right: min_right.clone(),
+                size_right: min_right.size(ctx.type_defs)?,
                 ttl: ctx.visited.len(),
             });
         }
