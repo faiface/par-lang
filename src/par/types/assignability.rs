@@ -1,5 +1,5 @@
 use crate::location::Span;
-use crate::par::types::assignability::SubtypeResult::{Compatible, Cycle, InCompatible};
+use crate::par::types::assignability::SubtypeResult::{Compatible, Cycle, Incompatible};
 use crate::par::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use indexmap::IndexSet;
 use std::cmp::max;
@@ -35,12 +35,20 @@ impl<'a> SubtypeContext<'a> {
 
 enum SubtypeResult {
     Compatible,
-    InCompatible,
+    Incompatible,
     Cycle {
         min_left: Type,
         size_left: u32,
         min_right: Type,
         size_right: u32,
+        /**
+        Time To Live. To avoid merging cycles that don't intersect, as we bubble up the recursive call stack,
+        we want to keep the cycle only until its starting point, then simplify it to Compatible.
+        Any cycles encountered before that do not intersect it.
+
+        In order to do that, we set ttl to the length of the cycle at creation, and decrease it at any return.
+        Once it reaches 0, we simplify it to Compatible.
+        */
         ttl: usize,
     },
 }
@@ -82,7 +90,7 @@ impl BitAnd for SubtypeResult {
                 if !matches!(min_left, Type::Recursive { .. })
                     && !matches!(min_right, Type::Iterative { .. })
                 {
-                    InCompatible
+                    Incompatible
                 } else {
                     Cycle {
                         min_left,
@@ -93,8 +101,7 @@ impl BitAnd for SubtypeResult {
                     }
                 }
             }
-            (_, InCompatible) => InCompatible,
-            (InCompatible, _) => InCompatible,
+            (_, Incompatible)|(Incompatible, _) => Incompatible,
         }
     }
 }
@@ -136,7 +143,7 @@ impl Type {
         match Type::is_subtype_helper(self.clone(), other.clone(), SubtypeContext::new(type_defs))?
         {
             Compatible => Ok(true),
-            InCompatible => Ok(false),
+            Incompatible => Ok(false),
             Cycle {
                 min_left,
                 min_right,
@@ -206,7 +213,7 @@ impl Type {
             if !matches!(min_left, Type::Recursive { .. })
                 && !matches!(min_right, Type::Iterative { .. })
             {
-                return Ok(InCompatible);
+                return Ok(Incompatible);
             }
             return Ok(Cycle {
                 min_left: min_left.clone(),
@@ -226,10 +233,10 @@ impl Type {
                     if asc1.is_subset(asc2) {
                         Ok(Compatible)
                     } else {
-                        Ok(InCompatible)
+                        Ok(Incompatible)
                     }
                 } else {
-                    Ok(InCompatible)
+                    Ok(Incompatible)
                 };
             }
         }
@@ -240,21 +247,21 @@ impl Type {
                     if asc2.is_subset(asc1) {
                         Ok(Compatible)
                     } else {
-                        Ok(InCompatible)
+                        Ok(Incompatible)
                     }
                 } else {
-                    Ok(InCompatible)
+                    Ok(Incompatible)
                 };
             }
         }
 
         if let Type::Recursive { .. } | Type::Iterative { .. } = &type1 {
-            let type1 = Type::expand_fixpoint_unsafe(&type1)?;
+            let type1 = Type::expand_fixpoint_unfounded(&type1)?;
             return Ok(Type::is_subtype_helper(type1, type2.clone(), ctx.clone())?.ttl_dec());
         }
 
         if let Type::Recursive { .. } | Type::Iterative { .. } = &type2 {
-            let type2 = Type::expand_fixpoint_unsafe(&type2)?;
+            let type2 = Type::expand_fixpoint_unfounded(&type2)?;
             return Ok(Type::is_subtype_helper(type1.clone(), type2, ctx.clone())?.ttl_dec());
         }
 
@@ -273,7 +280,7 @@ impl Type {
                 if p1 == p2 {
                     Compatible
                 } else {
-                    InCompatible
+                    Incompatible
                 }
             }
             (
@@ -292,7 +299,7 @@ impl Type {
                 if p1 == p2 {
                     Compatible
                 } else {
-                    InCompatible
+                    Incompatible
                 }
             }
 
@@ -300,14 +307,14 @@ impl Type {
                 if name1 == name2 {
                     Compatible
                 } else {
-                    InCompatible
+                    Incompatible
                 }
             }
             (Self::DualVar(_, name1), Self::DualVar(_, name2)) => {
                 if name1 == name2 {
                     Compatible
                 } else {
-                    InCompatible
+                    Incompatible
                 }
             }
 
@@ -344,7 +351,7 @@ impl Type {
                 let mut res = Compatible;
                 for (branch, t1) in branches1 {
                     let Some(t2) = branches2.get(&branch) else {
-                        return Ok(InCompatible);
+                        return Ok(Incompatible);
                     };
                     res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?
                 }
@@ -355,7 +362,7 @@ impl Type {
                 let mut res = Compatible;
                 for (branch, t2) in branches2 {
                     let Some(t1) = branches1.get(&branch) else {
-                        return Ok(InCompatible);
+                        return Ok(Incompatible);
                     };
                     res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?;
                 }
@@ -379,7 +386,7 @@ impl Type {
                     debug_log("fallback => false");
                     debug_log_stack(&ctx);
                 }
-                InCompatible
+                Incompatible
             }
         };
         Ok(res.ttl_dec())

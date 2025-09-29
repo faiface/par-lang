@@ -141,7 +141,7 @@ impl Type {
     }
 
     // This variant does not make sure iterative's asc isn't empty
-    pub fn expand_fixpoint_unsafe(&self) -> Result<Self, TypeError> {
+    pub fn expand_fixpoint_unfounded(&self) -> Result<Self, TypeError> {
         match self {
             Type::Recursive {
                 asc, label, body, ..
