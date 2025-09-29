@@ -270,21 +270,23 @@ impl Type {
             }
 
             Self::Either(_, branches) => {
-                let branches = branches
-                    .iter()
-                    .map(|(branch, _)| format!(".{branch}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "either {{ {branches} }}")
+                write!(f, "either {{")?;
+                for (branch, typ) in branches {
+                    write!(f, ".{} ", branch)?;
+                    typ.pretty_compact(f)?;
+                    write!(f, ",")?;
+                }
+                write!(f, "}}")
             }
 
             Self::Choice(_, branches) => {
-                let branches = branches
-                    .iter()
-                    .map(|(branch, _)| format!(".{branch}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "choice {{ {branches} }}")
+                write!(f, "choice {{")?;
+                for (branch, typ) in branches {
+                    write!(f, ".{} => ", branch)?;
+                    typ.pretty_compact(f)?;
+                    write!(f, ",")?;
+                }
+                write!(f, "}}")
             }
 
             Self::Break(_) => write!(f, "!"),
@@ -413,6 +415,12 @@ impl Type {
                 body.types_at_spans(type_defs, consume);
             }
         }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.pretty_compact(f)
     }
 }
 

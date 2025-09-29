@@ -1,33 +1,126 @@
 use crate::location::Span;
-use crate::par::language::LocalName;
+use crate::par::types::assignability::SubtypeResult::{Compatible, Cycle, Incompatible};
 use crate::par::types::{PrimitiveType, Type, TypeDefs, TypeError};
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::rc::Rc;
-use std::{env, fmt::Write as _};
+use indexmap::IndexSet;
+use std::cmp::max;
+use std::collections::BTreeMap;
+use std::env;
+use std::ops::BitAnd;
 
-#[derive(Debug)]
-enum FixPointType {
-    Recursive,
-    Iterative,
+#[derive(Clone)]
+struct SubtypeContext<'a> {
+    type_defs: &'a TypeDefs,
+    visited: IndexSet<(Type, Type)>,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-enum Path {
-    Empty,
-    Node(usize, Rc<Path>),
-    NamedNode(LocalName, Rc<Path>),
-}
-impl Path {
-    fn add(&self, index: usize) -> Self {
-        Path::Node(index, Rc::new(self.clone()))
+impl<'a> SubtypeContext<'a> {
+    fn new<'b>(type_defs: &'b TypeDefs) -> SubtypeContext<'b> {
+        SubtypeContext {
+            type_defs,
+            visited: Default::default(),
+        }
     }
-
-    fn add_name(&self, name: LocalName) -> Self {
-        Path::NamedNode(name, Rc::new(self.clone()))
+    fn normalize(&mut self, typ: Type) -> Result<Type, TypeError> {
+        Ok(match typ {
+            Type::Name(span, name, args) => {
+                self.normalize(self.type_defs.get(&span, &name, &args)?)?
+            }
+            Type::DualName(span, name, args) => {
+                self.normalize(self.type_defs.get(&span, &name, &args)?.dual(Span::None))?
+            }
+            t => t,
+        })
     }
 }
-#[derive(Clone, Debug)]
-struct LabelsMap(HashMap<Option<LocalName>, Rc<(Path, Type, FixPointType, LabelsMap)>>);
+
+enum SubtypeResult {
+    Compatible,
+    Incompatible,
+    Cycle {
+        min_left: Type,
+        size_left: u32,
+        min_right: Type,
+        size_right: u32,
+        /**
+        Time To Live. To avoid merging cycles that don't intersect, as we bubble up the recursive call stack,
+        we want to keep the cycle only until its starting point, then simplify it to Compatible.
+        Any cycles encountered before that do not intersect it.
+
+        In order to do that, we set ttl to the length of the cycle at creation, and decrease it at any return.
+        Once it reaches 0, we simplify it to Compatible.
+        */
+        ttl: usize,
+    },
+}
+
+impl BitAnd for SubtypeResult {
+    type Output = SubtypeResult;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Compatible, Compatible) => Compatible,
+            (c @ Cycle { .. }, Compatible) | (Compatible, c @ Cycle { .. }) => c,
+            (
+                Cycle {
+                    min_left: min_left1,
+                    size_left: size_left1,
+                    min_right: min_right1,
+                    size_right: size_right1,
+                    ttl: ttl1,
+                },
+                Cycle {
+                    min_left: min_left2,
+                    size_left: size_left2,
+                    min_right: min_right2,
+                    size_right: size_right2,
+                    ttl: ttl2,
+                },
+            ) => {
+                let (min_left, size_left) = if size_left1 <= size_left2 {
+                    (min_left1, size_left1)
+                } else {
+                    (min_left2, size_left2)
+                };
+                let (min_right, size_right) = if size_right1 <= size_right2 {
+                    (min_right1, size_right1)
+                } else {
+                    (min_right2, size_right2)
+                };
+                let ttl = max(ttl1, ttl2);
+                if !matches!(min_left, Type::Recursive { .. })
+                    && !matches!(min_right, Type::Iterative { .. })
+                {
+                    Incompatible
+                } else {
+                    Cycle {
+                        min_left,
+                        size_left,
+                        min_right,
+                        size_right,
+                        ttl,
+                    }
+                }
+            }
+            (_, Incompatible)|(Incompatible, _) => Incompatible,
+        }
+    }
+}
+
+impl SubtypeResult {
+    fn ttl_dec(mut self) -> Self {
+        match &mut self {
+            Cycle { ttl, .. } => {
+                if *ttl == 0 {
+                    Compatible
+                } else {
+                    *ttl -= 1;
+                    self
+                }
+            }
+            _ => self,
+        }
+    }
+}
 
 impl Type {
     pub fn check_assignable(
@@ -47,540 +140,256 @@ impl Type {
     }
 
     pub fn is_assignable_to(&self, other: &Self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
-        self.is_assignable_to_internal(
-            other,
-            type_defs,
-            Path::Empty,
-            Path::Empty,
-            &mut Default::default(),
-            LabelsMap(HashMap::new()),
-            LabelsMap(HashMap::new()),
-            HashSet::new(),
-        )
+        match Type::is_subtype_helper(self.clone(), other.clone(), SubtypeContext::new(type_defs))?
+        {
+            Compatible => Ok(true),
+            Incompatible => Ok(false),
+            Cycle {
+                min_left,
+                min_right,
+                ..
+            } => {
+                if matches!(min_left, Type::Recursive { .. }) {
+                    Ok(true)
+                } else if matches!(min_right, Type::Iterative { .. }) {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+        }
     }
 
     /**
     This function checks if `self` <: `other`.
 
-     This algorithm is a generalization of the algorithm presented in `Subtyping recursive types (1993)`,
-     to support both least and greatest fixpoint types.
+    The algorithm is based on the subtyping relation in `A Logical Account of Subtyping for Session Types (2023)`.
 
-     We believe it to be both complete and sound
-     with respect to their definition as an infinite union/intersection respectively.
+    The implementation takes inspiration from `Subtyping recursive types (1993)`.
     */
-    fn is_assignable_to_internal(
-        &self,
-        other: &Self,
-        type_defs: &TypeDefs,
-        self_path: Path,
-        other_path: Path,
-        visited: &mut HashSet<(Path, Path)>,
-        mut self_labels: LabelsMap,
-        mut other_labels: LabelsMap,
-        mut cyclic_points: HashSet<(Path, Path)>,
-    ) -> Result<bool, TypeError> {
+    fn is_subtype_helper(
+        mut type1: Self,
+        mut type2: Self,
+        mut ctx: SubtypeContext,
+    ) -> Result<SubtypeResult, TypeError> {
         // Debug trace helper
         if debug_enabled() {
-            debug_log_entry(
-                self,
-                other,
-                &self_path,
-                &other_path,
-                &self_labels,
-                &other_labels,
-                &visited,
-            );
+            debug_log_entry(&type1, &type2, &ctx);
         }
-        Ok(match (self, other) {
-            (Self::Self_(_, label1), Self::Self_(_, label2)) => {
-                let (self_path, self_type, self_fixpoint_type, self_labels) = self_labels
-                    .0
-                    .get(label1)
-                    .expect("Self label not found")
-                    .as_ref();
-                let (other_path, other_type, other_fixpoint_type, other_labels) = other_labels
-                    .0
-                    .get(label2)
-                    .expect("Other label not found")
-                    .as_ref();
 
-                if visited.contains(&(self_path.clone(), other_path.clone())) {
-                    if let (FixPointType::Recursive, _) | (_, FixPointType::Iterative) =
-                        (self_fixpoint_type, other_fixpoint_type)
-                    {
-                        return Ok(true);
-                    } else {
-                        if cyclic_points.contains(&(self_path.clone(), other_path.clone())) {
-                            return Ok(false);
-                        } else {
-                            cyclic_points.insert((self_path.clone(), other_path.clone()));
-                        }
-                    }
-                }
-                self_type.is_assignable_to_internal(
-                    &other_type,
-                    type_defs,
-                    self_path.clone(),
-                    other_path.clone(),
-                    visited,
-                    self_labels.clone(),
-                    other_labels.clone(),
-                    cyclic_points,
-                )?
+        type1 = ctx.normalize(type1)?;
+        type2 = ctx.normalize(type2)?;
+
+        if type1 == type2 {
+            return Ok(Compatible);
+        }
+
+        let pair = (type1, type2);
+
+        if let Some(ind) = ctx.visited.get_index_of(&pair) {
+            if debug_enabled() {
+                debug_log_stack(&ctx);
             }
-
-            (Self::Self_(_, label1), t2) => {
-                if !self_labels.0.contains_key(label1) {
-                    return Ok(false);
-                }
-
-                let (self_path, self_type, self_fixpoint_type, self_labels) = self_labels
-                    .0
-                    .get(label1)
-                    .expect("Self label not found")
-                    .as_ref();
-
-                if visited.contains(&(self_path.clone(), other_path.clone())) {
-                    if let FixPointType::Recursive = self_fixpoint_type {
-                        return Ok(true);
-                    } else {
-                        if cyclic_points.contains(&(self_path.clone(), other_path.clone())) {
-                            return Ok(false);
-                        } else {
-                            cyclic_points.insert((self_path.clone(), other_path.clone()));
-                        }
-                    }
-                }
-                self_type.is_assignable_to_internal(
-                    t2,
-                    type_defs,
-                    self_path.clone(),
-                    other_path.clone(),
-                    visited,
-                    self_labels.clone(),
-                    other_labels.clone(),
-                    cyclic_points,
-                )?
+            let min_left = ctx
+                .visited
+                .iter()
+                .skip(ind)
+                .map(|(t1, _t2)| t1)
+                .filter(|t1| t1.is_fixpoint())
+                .min_by_key(|t1| t1.size(ctx.type_defs).unwrap())
+                .expect("minimum should exist");
+            let min_right = ctx
+                .visited
+                .iter()
+                .skip(ind)
+                .map(|(_t1, t2)| t2)
+                .filter(|t2| t2.is_fixpoint())
+                .min_by_key(|t2| t2.size(ctx.type_defs).unwrap())
+                .expect("minimum should exist");
+            if debug_enabled() {
+                eprintln!("min_left: {:}", min_left);
+                eprintln!("min_right: {:}", min_right);
             }
-
-            (t1, Self::Self_(_, label2)) => {
-                if !other_labels.0.contains_key(label2) {
-                    return Ok(false);
-                }
-
-                let (other_path, other_type, other_fixpoint_type, other_labels) = other_labels
-                    .0
-                    .get(label2)
-                    .expect("Other label not found")
-                    .as_ref();
-
-                if visited.contains(&(self_path.clone(), other_path.clone())) {
-                    if let FixPointType::Iterative = other_fixpoint_type {
-                        return Ok(true);
-                    } else {
-                        if cyclic_points.contains(&(self_path.clone(), other_path.clone())) {
-                            return Ok(false);
-                        } else {
-                            cyclic_points.insert((self_path.clone(), other_path.clone()));
-                        }
-                    }
-                }
-                t1.is_assignable_to_internal(
-                    &other_type,
-                    type_defs,
-                    self_path.clone(),
-                    other_path.clone(),
-                    visited,
-                    self_labels.clone(),
-                    other_labels.clone(),
-                    cyclic_points,
-                )?
+            if !matches!(min_left, Type::Recursive { .. })
+                && !matches!(min_right, Type::Iterative { .. })
+            {
+                return Ok(Incompatible);
             }
+            return Ok(Cycle {
+                min_left: min_left.clone(),
+                size_left: min_left.size(ctx.type_defs)?,
+                min_right: min_right.clone(),
+                size_right: min_right.size(ctx.type_defs)?,
+                ttl: ctx.visited.len(),
+            });
+        }
 
+        ctx.visited.insert(pair.clone());
+        let (type1, type2) = pair;
+
+        if let Type::Iterative { asc: asc1, .. } = &type1 {
+            if !asc1.is_empty() {
+                return if let Self::Recursive { asc: asc2, .. } = &type2 {
+                    if asc1.is_subset(asc2) {
+                        Ok(Compatible)
+                    } else {
+                        Ok(Incompatible)
+                    }
+                } else {
+                    Ok(Incompatible)
+                };
+            }
+        }
+
+        if let Type::Recursive { asc: asc2, .. } = &type2 {
+            if !asc2.is_empty() {
+                return if let Self::Recursive { asc: asc1, .. } = &type1 {
+                    if asc2.is_subset(asc1) {
+                        Ok(Compatible)
+                    } else {
+                        Ok(Incompatible)
+                    }
+                } else {
+                    Ok(Incompatible)
+                };
+            }
+        }
+
+        if let Type::Recursive { .. } | Type::Iterative { .. } = &type1 {
+            let type1 = Type::expand_fixpoint_unfounded(&type1)?;
+            return Ok(Type::is_subtype_helper(type1, type2.clone(), ctx.clone())?.ttl_dec());
+        }
+
+        if let Type::Recursive { .. } | Type::Iterative { .. } = &type2 {
+            let type2 = Type::expand_fixpoint_unfounded(&type2)?;
+            return Ok(Type::is_subtype_helper(type1.clone(), type2, ctx.clone())?.ttl_dec());
+        }
+
+        let res: SubtypeResult = match (type1, type2) {
             (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
-                true
+                Compatible
             }
             (
                 Self::Primitive(_, PrimitiveType::Char),
                 Self::Primitive(_, PrimitiveType::String),
-            ) => true,
+            ) => Compatible,
             (Self::Primitive(_, PrimitiveType::Byte), Self::Primitive(_, PrimitiveType::Bytes)) => {
-                true
+                Compatible
             }
-            (Self::Primitive(_, p1), Self::Primitive(_, p2)) => p1 == p2,
+            (Self::Primitive(_, p1), Self::Primitive(_, p2)) => {
+                if p1 == p2 {
+                    Compatible
+                } else {
+                    Incompatible
+                }
+            }
             (
                 Self::DualPrimitive(_, PrimitiveType::Int),
                 Self::DualPrimitive(_, PrimitiveType::Nat),
-            ) => true,
+            ) => Compatible,
             (
                 Self::DualPrimitive(_, PrimitiveType::String),
                 Self::DualPrimitive(_, PrimitiveType::Char),
-            ) => true,
+            ) => Compatible,
             (
                 Self::DualPrimitive(_, PrimitiveType::Bytes),
                 Self::DualPrimitive(_, PrimitiveType::Byte),
-            ) => true,
-            (Self::DualPrimitive(_, p1), Self::DualPrimitive(_, p2)) => p1 == p2,
-
-            (Self::Var(_, name1), Self::Var(_, name2)) => name1 == name2,
-            (Self::DualVar(_, name1), Self::DualVar(_, name2)) => name1 == name2,
-            (Self::Name(span, name, args), t2) => {
-                type_defs.get(span, name, args)?.is_assignable_to_internal(
-                    t2,
-                    type_defs,
-                    self_path,
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
-            }
-            (t1, Self::Name(span, name, args)) => t1.is_assignable_to_internal(
-                &type_defs.get(span, name, args)?,
-                type_defs,
-                self_path,
-                other_path,
-                visited,
-                self_labels,
-                other_labels,
-                cyclic_points,
-            )?,
-            (Self::DualName(span, name, args), t2) => type_defs
-                .get_dual(span, name, args)?
-                .is_assignable_to_internal(
-                    t2,
-                    type_defs,
-                    self_path,
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?,
-            (t1, Self::DualName(span, name, args)) => t1.is_assignable_to_internal(
-                &type_defs.get_dual(span, name, args)?,
-                type_defs,
-                self_path,
-                other_path,
-                visited,
-                self_labels,
-                other_labels,
-                cyclic_points,
-            )?,
-
-            (
-                typ,
-                t2 @ Self::Recursive {
-                    asc: asc2,
-                    label,
-                    body,
-                    ..
-                },
-            ) => {
-                if !asc2.is_empty() {
-                    if let Self::Recursive { asc: asc1, .. } = typ {
-                        if !asc2.is_subset(asc1) {
-                            return Ok(false);
-                        }
-                    } else {
-                        return Ok(false);
-                    }
+            ) => Compatible,
+            (Self::DualPrimitive(_, p1), Self::DualPrimitive(_, p2)) => {
+                if p1 == p2 {
+                    Compatible
+                } else {
+                    Incompatible
                 }
-                visited.insert((self_path.clone(), other_path.clone()));
-                other_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        other_path.clone(),
-                        t2.clone(),
-                        FixPointType::Recursive,
-                        other_labels.clone(),
-                    )),
-                );
-                typ.is_assignable_to_internal(
-                    body,
-                    type_defs,
-                    self_path,
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
             }
 
-            (t1 @ Self::Recursive { label, body, .. }, typ) => {
-                visited.insert((self_path.clone(), other_path.clone()));
-                self_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        self_path.clone(),
-                        t1.clone(),
-                        FixPointType::Recursive,
-                        self_labels.clone(),
-                    )),
-                );
-                body.is_assignable_to_internal(
-                    typ,
-                    type_defs,
-                    self_path.add(0),
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
-            }
-
-            (
-                t1 @ Self::Iterative {
-                    asc: asc1,
-                    label,
-                    body,
-                    ..
-                },
-                typ,
-            ) => {
-                if !asc1.is_empty() {
-                    if let Self::Iterative { asc: asc2, .. } = typ {
-                        if !asc1.is_subset(asc2) {
-                            return Ok(false);
-                        }
-                    } else {
-                        return Ok(false);
-                    }
+            (Self::Var(_, name1), Self::Var(_, name2)) => {
+                if name1 == name2 {
+                    Compatible
+                } else {
+                    Incompatible
                 }
-                visited.insert((self_path.clone(), other_path.clone()));
-                self_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        self_path.clone(),
-                        t1.clone(),
-                        FixPointType::Iterative,
-                        self_labels.clone(),
-                    )),
-                );
-                body.is_assignable_to_internal(
-                    typ,
-                    type_defs,
-                    self_path.add(0),
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+            }
+            (Self::DualVar(_, name1), Self::DualVar(_, name2)) => {
+                if name1 == name2 {
+                    Compatible
+                } else {
+                    Incompatible
+                }
             }
 
-            (typ, t2 @ Self::Iterative { label, body, .. }) => {
-                visited.insert((self_path.clone(), other_path.clone()));
-                other_labels.0.insert(
-                    label.clone(),
-                    Rc::new((
-                        other_path.clone(),
-                        t2.clone(),
-                        FixPointType::Iterative,
-                        other_labels.clone(),
-                    )),
-                );
-                typ.is_assignable_to_internal(
-                    body,
-                    type_defs,
-                    self_path,
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+            (t1, Self::Box(_, t2)) if t1.is_positive(ctx.type_defs)? => {
+                Type::is_subtype_helper(t1, *t2, ctx)?
             }
-
-            (t1, Self::Box(_, t2)) if t1.is_positive(type_defs)? => t1.is_assignable_to_internal(
-                t2,
-                type_defs,
-                self_path,
-                other_path.add(0),
-                visited,
-                self_labels,
-                other_labels,
-                cyclic_points,
-            )?,
-            (Self::DualBox(_, t1), t2) if t1.is_positive(type_defs)? => {
-                t1.clone().dual(Span::None).is_assignable_to_internal(
-                    t2,
-                    type_defs,
-                    self_path.add(0),
-                    other_path,
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+            (Self::DualBox(_, t1), t2) if t1.is_positive(ctx.type_defs)? => {
+                Type::is_subtype_helper(t1.clone().dual(Span::None), t2, ctx)?
             }
-            (Self::Box(_, t1), Self::Box(_, t2)) => t1.is_assignable_to_internal(
-                t2,
-                type_defs,
-                self_path.add(0),
-                other_path.add(0),
-                visited,
-                self_labels,
-                other_labels,
-                cyclic_points,
-            )?,
-            (Self::Box(_, t1), t2) => t1.is_assignable_to_internal(
-                t2,
-                type_defs,
-                self_path.add(0),
-                other_path.add(0),
-                visited,
-                self_labels,
-                other_labels,
-                cyclic_points,
-            )?,
+            (Self::Box(_, t1), Self::Box(_, t2)) => Type::is_subtype_helper(*t1, *t2, ctx)?,
+            (Self::Box(_, t1), t2) => Type::is_subtype_helper(*t1, t2, ctx)?,
             (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
                 let t1 = t1.clone().dual(Span::None);
                 let t2 = t2.clone().dual(Span::None);
-                t1.is_assignable_to_internal(
-                    &t2,
-                    type_defs,
-                    self_path.add(0),
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+                Type::is_subtype_helper(t1, t2, ctx)?
             }
             (t1, Self::DualBox(_, t2)) => {
                 let t2 = t2.clone().dual(Span::None);
-                t1.is_assignable_to_internal(
-                    &t2,
-                    type_defs,
-                    self_path,
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+                Type::is_subtype_helper(t1, t2, ctx)?
             }
 
             (Self::Pair(_, t1, u1), Self::Pair(_, t2, u2)) => {
-                t1.is_assignable_to_internal(
-                    t2,
-                    type_defs,
-                    self_path.add(0),
-                    other_path.add(0),
-                    visited,
-                    self_labels.clone(),
-                    other_labels.clone(),
-                    cyclic_points.clone(),
-                )? && u1.is_assignable_to_internal(
-                    u2,
-                    type_defs,
-                    self_path.add(1),
-                    other_path.add(1),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+                Type::is_subtype_helper(*t1, *t2, ctx.clone())?
+                    & Type::is_subtype_helper(*u1, *u2, ctx)?
             }
             (Self::Function(_, t1, u1), Self::Function(_, t2, u2)) => {
                 let t1 = t1.clone().dual(Span::None);
                 let t2 = t2.clone().dual(Span::None);
-                t1.is_assignable_to_internal(
-                    &t2,
-                    type_defs,
-                    self_path.add(0),
-                    other_path.add(0),
-                    visited,
-                    self_labels.clone(),
-                    other_labels.clone(),
-                    cyclic_points.clone(),
-                )? && u1.is_assignable_to_internal(
-                    u2,
-                    type_defs,
-                    self_path.add(1),
-                    other_path.add(1),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+                Type::is_subtype_helper(t1, t2, ctx.clone())?
+                    & Type::is_subtype_helper(*u1, *u2, ctx)?
             }
-            (Self::Either(_, branches1), _) if branches1.is_empty() => true,
+            (Self::Either(_, branches1), _) if branches1.is_empty() => Compatible,
             (Self::Either(_, branches1), Self::Either(_, branches2)) => {
+                let mut res = Compatible;
                 for (branch, t1) in branches1 {
-                    let Some(t2) = branches2.get(branch) else {
-                        return Ok(false);
+                    let Some(t2) = branches2.get(&branch) else {
+                        return Ok(Incompatible);
                     };
-                    if !t1.is_assignable_to_internal(
-                        t2,
-                        type_defs,
-                        self_path.add_name(branch.clone()),
-                        other_path.add_name(branch.clone()),
-                        visited,
-                        self_labels.clone(),
-                        other_labels.clone(),
-                        cyclic_points.clone(),
-                    )? {
-                        return Ok(false);
-                    }
+                    res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?
                 }
-                true
+                res
             }
-            (_, Self::Choice(_, branches2)) if branches2.is_empty() => true,
+            (_, Self::Choice(_, branches2)) if branches2.is_empty() => Compatible,
             (Self::Choice(_, branches1), Self::Choice(_, branches2)) => {
+                let mut res = Compatible;
                 for (branch, t2) in branches2 {
-                    let Some(t1) = branches1.get(branch) else {
-                        return Ok(false);
+                    let Some(t1) = branches1.get(&branch) else {
+                        return Ok(Incompatible);
                     };
-                    if !t1.is_assignable_to_internal(
-                        t2,
-                        type_defs,
-                        self_path.add_name(branch.clone()),
-                        other_path.add_name(branch.clone()),
-                        visited,
-                        self_labels.clone(),
-                        other_labels.clone(),
-                        cyclic_points.clone(),
-                    )? {
-                        return Ok(false);
-                    }
+                    res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?;
                 }
-                true
+                res
             }
-            (Self::Break(_), Self::Break(_)) => true,
-            (Self::Continue(_), Self::Continue(_)) => true,
+            (Self::Break(_), Self::Break(_)) => Compatible,
+            (Self::Continue(_), Self::Continue(_)) => Compatible,
 
             (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
             | (Self::Forall(loc, name1, body1), Self::Forall(_, name2, body2)) => {
                 let body2 = body2.clone().substitute(BTreeMap::from([(
-                    name2,
+                    &name2,
                     &Type::Var(loc.clone(), name1.clone()),
                 )]))?;
-                let mut type_defs = type_defs.clone();
-                type_defs.vars.insert(name1.clone());
-                body1.is_assignable_to_internal(
-                    &body2,
-                    &type_defs,
-                    self_path.add(0),
-                    other_path.add(0),
-                    visited,
-                    self_labels,
-                    other_labels,
-                    cyclic_points,
-                )?
+                // type_defs.vars.insert(name1.clone());
+                Type::is_subtype_helper(*body1, body2, ctx)?
             }
 
             _ => {
                 if debug_enabled() {
                     debug_log("fallback => false");
+                    debug_log_stack(&ctx);
                 }
-                false
+                Incompatible
             }
-        })
+        };
+        Ok(res.ttl_dec())
     }
 }
 
@@ -588,50 +397,20 @@ fn debug_enabled() -> bool {
     env::var("PAR_SUBTYPE_DEBUG").is_ok()
 }
 
-fn type_to_string(t: &Type) -> String {
-    let mut s = String::new();
-    let _ = t.pretty(&mut s, 1);
-    s
-}
-
-fn path_to_string(p: &Path) -> String {
-    match p {
-        Path::Empty => String::from("/"),
-        Path::Node(i, prev) => {
-            let mut s = path_to_string(prev);
-            let _ = write!(s, ".{}", i);
-            s
-        }
-        Path::NamedNode(n, prev) => {
-            let mut s = path_to_string(prev);
-            let _ = write!(s, ".{}", n);
-            s
-        }
-    }
-}
-
 fn debug_log(msg: &str) {
     eprintln!("[subtype] {}", msg);
 }
 
-fn debug_log_entry(
-    left: &Type,
-    right: &Type,
-    left_path: &Path,
-    right_path: &Path,
-    self_labels: &LabelsMap,
-    other_labels: &LabelsMap,
-    visited: &HashSet<(Path, Path)>,
-) {
-    let lp = path_to_string(left_path);
-    let rp = path_to_string(right_path);
-    let lt = type_to_string(left);
-    let rt = type_to_string(right);
-    eprintln!("[subtype] at {} ~ {} | L={} | R={}", lp, rp, lt, rt);
-    eprintln!(
-        "[subtype]    labels: self={} other={} visited={}",
-        self_labels.0.len(),
-        other_labels.0.len(),
-        visited.len()
-    );
+fn debug_log_entry(left: &Type, right: &Type, ctx: &SubtypeContext) {
+    eprintln!("-----------------------");
+    eprintln!("[subtype] {} <= {}", left, right);
+    eprintln!("[subtype]   visited={}", ctx.visited.len());
+}
+
+fn debug_log_stack(ctx: &SubtypeContext) {
+    eprintln!("[subtype] -------Stack-------");
+    for (i, (type1, type2)) in ctx.visited.iter().rev().enumerate() {
+        eprintln!("[subtype] #{i}: {} <= {}", type1, type2);
+    }
+    eprintln!("[subtype] -------Stack-End-------");
 }

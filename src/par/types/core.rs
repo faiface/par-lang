@@ -3,7 +3,7 @@ use crate::location::{Span, Spanning};
 use crate::par::types::visit::Polarity;
 use crate::par::types::{visit, TypeDefs, TypeError};
 use arcstr::ArcStr;
-use indexmap::IndexSet;
+use im::HashSet;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,7 +19,7 @@ impl LoopId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Nat,
     Int,
@@ -43,7 +43,7 @@ pub enum Operation {
     ReceiveType,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Primitive(Span, PrimitiveType),
     DualPrimitive(Span, PrimitiveType),
@@ -65,13 +65,13 @@ pub enum Type {
         // If you `begin` on a `recursive`, and it expands, so its `self`s get replaced by new
         // `recursive`s, these new `recursive`s will have as their *ascendent* the original `recursive`.
         // This is for totality checking.
-        asc: IndexSet<LoopId>,
+        asc: HashSet<LoopId>,
         label: Option<LocalName>,
         body: Box<Self>,
     },
     Iterative {
         span: Span,
-        asc: IndexSet<LoopId>,
+        asc: HashSet<LoopId>,
         label: Option<LocalName>,
         body: Box<Self>,
     },
@@ -180,7 +180,7 @@ impl Type {
     pub fn recursive(label: Option<&'static str>, body: Self) -> Self {
         Self::Recursive {
             span: Span::None,
-            asc: IndexSet::new(),
+            asc: HashSet::new(),
             label: label.map(|label| LocalName {
                 span: Span::None,
                 string: ArcStr::from(label),
@@ -192,7 +192,7 @@ impl Type {
     pub fn iterative(label: Option<&'static str>, body: Self) -> Self {
         Self::Iterative {
             span: Span::None,
-            asc: IndexSet::new(),
+            asc: HashSet::new(),
             label: label.map(|label| LocalName {
                 span: Span::None,
                 string: ArcStr::from(label),
@@ -227,6 +227,33 @@ impl Type {
             },
             Box::new(body),
         )
+    }
+
+    pub fn is_fixpoint(&self) -> bool {
+        matches!(self, Self::Recursive { .. } | Self::Iterative { .. })
+    }
+
+    pub fn size(&self, defs: &TypeDefs) -> Result<u32, TypeError> {
+        Ok(match self {
+            Self::Primitive(_, _) | Self::DualPrimitive(_, _) => 1,
+            Self::Var(_, _) | Self::DualVar(_, _) => 1,
+            Self::Name(span, name, args) => defs.get(span, name, args)?.size(defs)?,
+            Self::DualName(span, name, args) => defs.get_dual(span, name, args)?.size(defs)?,
+            Self::Box(_, inner) | Self::DualBox(_, inner) => 1 + inner.size(defs)?,
+            Self::Pair(_, left, right) => 1 + left.size(defs)? + right.size(defs)?,
+            Self::Function(_, input, output) => 1 + input.size(defs)? + output.size(defs)?,
+            Self::Either(_, branches) | Self::Choice(_, branches) => {
+                let mut res: u32 = 1;
+                for branch in branches.values() {
+                    res += branch.size(defs)?
+                }
+                res
+            }
+            Self::Break(_) | Self::Continue(_) => 1,
+            Self::Recursive { body, .. } | Self::Iterative { body, .. } => 1 + body.size(defs)?,
+            Self::Self_(_, _) | Self::DualSelf(_, _) => 1,
+            Self::Exists(_, _, body) | Self::Forall(_, _, body) => 1 + body.size(defs)?,
+        })
     }
 }
 
