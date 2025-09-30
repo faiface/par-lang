@@ -92,6 +92,13 @@ impl LocalName {
         }
     }
 
+    pub fn temp() -> Self {
+        Self {
+            span: Span::None,
+            string: literal!("#temp"),
+        }
+    }
+
     pub fn invalid() -> Self {
         Self {
             span: Span::None,
@@ -200,6 +207,7 @@ pub enum Apply {
     SendType(Span, Type, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
     Default(Span, Box<Expression>, Box<Self>),
+    Pipe(Span, Box<Expression>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -259,6 +267,7 @@ pub enum Command {
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
     Default(Span, Box<Expression>, Box<Self>),
+    Pipe(Span, Box<Expression>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -1312,6 +1321,11 @@ impl Apply {
                 let catch_block = pass.use_catch(span, label)?;
                 compile_try(span, LocalName::object(), catch_block, apply.compile(pass)?)
             }
+
+            Self::Pipe(span, function, apply) => {
+                let function = function.compile(pass)?;
+                compile_pipe(span, LocalName::object(), function, apply.compile(pass)?)
+            }
         })
     }
 }
@@ -1327,7 +1341,8 @@ impl Spanning for Apply {
             | Self::SendType(span, _, _)
             | Self::Noop(span)
             | Self::Try(span, _, _)
-            | Self::Default(span, _, _) => span.clone(),
+            | Self::Default(span, _, _)
+            | Self::Pipe(span, _, _) => span.clone(),
         }
     }
 }
@@ -1661,10 +1676,19 @@ impl Command {
                     command.compile(object_name, pass)?,
                 )
             }
+
             Self::Default(span, expr, command) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = command.compile(object_name, pass)?;
                 compile_default(span, object_name.clone(), default_expr, ok_process)
+            }
+
+            Self::Pipe(span, function, command) => {
+                pass.disable_catches(CatchDisabledReason::DifferentProcess);
+                let function = function.compile(pass)?;
+                pass.enable_catches();
+                let process = command.compile(object_name, pass)?;
+                compile_pipe(span, object_name.clone(), function, process)
             }
         })
     }
@@ -1730,6 +1754,45 @@ fn compile_default(
     })
 }
 
+fn compile_pipe(
+    span: &Span,
+    variable: LocalName,
+    function: Arc<process::Expression<()>>,
+    then: Arc<process::Process<()>>,
+) -> Arc<process::Process<()>> {
+    Arc::new(process::Process::Let {
+        span: span.clone(),
+        name: LocalName::temp(),
+        annotation: None,
+        typ: (),
+        value: function,
+        then: Arc::new(process::Process::Do {
+            span: span.clone(),
+            name: LocalName::temp(),
+            typ: (),
+            command: process::Command::Send(
+                Arc::new(process::Expression::Variable(
+                    span.clone(),
+                    variable.clone(),
+                    (),
+                )),
+                Arc::new(process::Process::Let {
+                    span: span.clone(),
+                    name: variable,
+                    annotation: None,
+                    typ: (),
+                    value: Arc::new(process::Expression::Variable(
+                        span.clone(),
+                        LocalName::temp(),
+                        (),
+                    )),
+                    then,
+                }),
+            ),
+        }),
+    })
+}
+
 impl Spanning for Command {
     fn span(&self) -> Span {
         match self {
@@ -1745,7 +1808,8 @@ impl Spanning for Command {
             | Self::SendType(span, _, _)
             | Self::ReceiveType(span, _, _)
             | Self::Try(span, _, _)
-            | Self::Default(span, _, _) => span.clone(),
+            | Self::Default(span, _, _)
+            | Self::Pipe(span, _, _) => span.clone(),
 
             Self::Then(process) => process.span(),
         }

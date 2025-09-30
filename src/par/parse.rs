@@ -659,7 +659,7 @@ fn typ_branch(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_branch_then(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::Arrow), typ)
+    commit_after(t(TokenKind::FatArrow), typ)
         .map(|(_, typ)| typ)
         .parse_next(input)
 }
@@ -906,7 +906,7 @@ fn expr_catch(input: &mut Input) -> Result<Expression> {
         (
             label,
             pattern,
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             expression,
             t(TokenKind::In),
             expression,
@@ -1139,7 +1139,7 @@ fn cons_branch(input: &mut Input) -> Result<ConstructBranch> {
 }
 
 fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch> {
-    commit_after(t(TokenKind::Arrow), expression)
+    commit_after(t(TokenKind::FatArrow), expression)
         .map(|(pre, expression)| {
             ConstructBranch::Then(pre.span.join(expression.span()), expression)
         })
@@ -1204,6 +1204,7 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
         apply_send,
         apply_default,
         apply_try,
+        apply_pipe,
     )))
     .parse_next(input)
 }
@@ -1349,6 +1350,32 @@ fn apply_default(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
+fn apply_pipe(input: &mut Input) -> Result<Apply> {
+    commit_after(
+        t(TokenKind::ThinArrow),
+        (
+            alt((
+                global_name.map(|name| Expression::Global(name.span(), name)),
+                local_name.map(|name| Expression::Variable(name.span(), name)),
+                expr_grouped,
+            )),
+            apply,
+        ),
+    )
+    .map(|(pre, (function, then))| {
+        let then = match then {
+            Some(apply) => apply,
+            None => Apply::Noop(function.span().only_end()),
+        };
+        Apply::Pipe(
+            pre.span.join(function.span()),
+            Box::new(function),
+            Box::new(then),
+        )
+    })
+    .parse_next(input)
+}
+
 fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
     alt((
         apply_branch_then,
@@ -1362,7 +1389,7 @@ fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
 }
 
 fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch> {
-    (local_name, cut_err((t(TokenKind::Arrow), expression)))
+    (local_name, cut_err((t(TokenKind::FatArrow), expression)))
         .map(|(name, (_, expression))| {
             ApplyBranch::Then(name.span.join(expression.span()), name, expression)
         })
@@ -1384,7 +1411,7 @@ fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch> {
 }
 
 fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch> {
-    commit_after(t(TokenKind::Bang), (t(TokenKind::Arrow), expression))
+    commit_after(t(TokenKind::Bang), (t(TokenKind::FatArrow), expression))
         .map(|(token, (_, expression))| {
             ApplyBranch::Continue(token.span.join(expression.span()), expression)
         })
@@ -1460,7 +1487,7 @@ fn proc_catch(input: &mut Input) -> Result<Process> {
         (
             label,
             pattern,
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             t(TokenKind::LCurly),
             process,
             t(TokenKind::RCurly),
@@ -1550,6 +1577,7 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
             cmd_receive,
             cmd_try,
             cmd_default,
+            cmd_pipe,
         ))
         .map(Some),
         cmd_then,
@@ -1769,6 +1797,32 @@ fn cmd_default(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
+fn cmd_pipe(input: &mut Input) -> Result<Command> {
+    commit_after(
+        t(TokenKind::ThinArrow),
+        (
+            alt((
+                global_name.map(|name| Expression::Global(name.span(), name)),
+                local_name.map(|name| Expression::Variable(name.span(), name)),
+                expr_grouped,
+            )),
+            cmd,
+        ),
+    )
+    .map(|(pre, (function, cmd))| {
+        let cmd = match cmd {
+            Some(cmd) => cmd,
+            None => noop_cmd(function.span().only_end()),
+        };
+        Command::Pipe(
+            pre.span.join(function.span()),
+            Box::new(function),
+            Box::new(cmd),
+        )
+    })
+    .parse_next(input)
+}
+
 fn pass_process(input: &mut Input) -> Result<Process> {
     alt((proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
@@ -1788,7 +1842,7 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
 
 fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch> {
     commit_after(
-        t(TokenKind::Arrow),
+        t(TokenKind::FatArrow),
         (t(TokenKind::LCurly), opt(process), t(TokenKind::RCurly)),
     )
     .map(|(pre, (open, process, close))| {
@@ -1807,7 +1861,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
     (
         local_name,
         cut_err((
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             (t(TokenKind::LCurly), opt(process), t(TokenKind::RCurly)),
         )),
     )
@@ -1842,7 +1896,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch> {
     commit_after(
         t(TokenKind::Bang),
         (
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             t(TokenKind::LCurly),
             opt(process),
             t(TokenKind::RCurly),

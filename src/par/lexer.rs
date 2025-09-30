@@ -25,7 +25,8 @@ pub enum TokenKind {
     Comma,
     Dot,
     Eq,
-    Arrow,
+    FatArrow,
+    ThinArrow,
     Bang,
     Quest,
     Star,
@@ -109,7 +110,8 @@ impl TokenKind {
             TokenKind::Comma => ",",
             TokenKind::Dot => ".",
             TokenKind::Eq => "=",
-            TokenKind::Arrow => "=>",
+            TokenKind::FatArrow => "=>",
+            TokenKind::ThinArrow => "->",
             TokenKind::Bang => "!",
             TokenKind::Quest => "?",
             TokenKind::Star => "*",
@@ -198,7 +200,19 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
             let Some((raw, kind)) = (match c {
-                '0'..='9' | '-' | '+' => {
+                '-' => Some(
+                    alt((
+                        ("->").map(|raw| (raw, TokenKind::ThinArrow)),
+                        (
+                            take(1 as usize),
+                            take_while(0.., |c| matches!(c, '0'..='9' | '_')),
+                        )
+                            .take()
+                            .map(|raw| (raw, TokenKind::Integer)),
+                    ))
+                    .parse_next(input)?,
+                ),
+                '0'..='9' | '+' => {
                     let raw = (
                         take(1 as usize),
                         take_while(0.., |c| matches!(c, '0'..='9' | '_')),
@@ -350,7 +364,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                 }
                 '=' => Some(
                     alt((
-                        ("=>").map(|raw| (raw, TokenKind::Arrow)),
+                        ("=>").map(|raw| (raw, TokenKind::FatArrow)),
                         ("=").map(|raw| (raw, TokenKind::Eq)),
                     ))
                     .parse_next(input)?,
