@@ -22,7 +22,6 @@ pub fn intersect_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<Pr
     }
 }
 
-
 pub fn union_types(
     typedefs: &TypeDefs,
     span: &Span,
@@ -73,14 +72,20 @@ pub fn union_types(
             if let Some(p) = union_primitives(p1, p2) {
                 Type::Primitive(span.clone(), p)
             } else {
-                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+                return Err(TypeError::TypesCannotBeUnified(
+                    type1.clone(),
+                    type2.clone(),
+                ));
             }
         }
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
             if let Some(p) = intersect_primitives(p1, p2) {
                 Type::DualPrimitive(span.clone(), p)
             } else {
-                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+                return Err(TypeError::TypesCannotBeUnified(
+                    type1.clone(),
+                    type2.clone(),
+                ));
             }
         }
         (Type::Pair(_, left1, right1), Type::Pair(_, left2, right2)) => Type::Pair(
@@ -195,14 +200,20 @@ pub fn intersect_types(
             if let Some(p) = intersect_primitives(p1, p2) {
                 Type::Primitive(span.clone(), p)
             } else {
-                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+                return Err(TypeError::TypesCannotBeUnified(
+                    type1.clone(),
+                    type2.clone(),
+                ));
             }
         }
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
             if let Some(p) = union_primitives(p1, p2) {
                 Type::DualPrimitive(span.clone(), p)
             } else {
-                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+                return Err(TypeError::TypesCannotBeUnified(
+                    type1.clone(),
+                    type2.clone(),
+                ));
             }
         }
         (Type::Pair(_, left1, right1), Type::Pair(_, left2, right2)) => Type::Pair(
