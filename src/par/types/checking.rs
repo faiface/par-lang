@@ -4,6 +4,7 @@ use super::core::{LoopId, Operation, Type};
 use super::error::TypeError;
 use super::Context;
 use crate::location::Span;
+use crate::par::types::lattice::intersect_types;
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -276,16 +277,12 @@ impl Context {
 
                     match (inferred_type, inferred_in_branch) {
                         (None, Some(t2)) => inferred_type = Some(t2),
-                        (Some(t1), Some(t2)) if t2.is_assignable_to(&t1, &self.type_defs)? => {
-                            inferred_type = Some(t2)
-                        }
-                        (Some(t1), Some(t2)) if !t1.is_assignable_to(&t2, &self.type_defs)? => {
-                            return Err(TypeError::TypesCannotBeUnified(t1, t2))
+                        (Some(t1), Some(t2)) => {
+                            inferred_type = Some(intersect_types(&self.type_defs, span, &t1, &t2)?);
                         }
                         (t1, _) => inferred_type = t1,
                     }
                 }
-
                 (
                     Command::Case(Arc::clone(branches), Box::from(typed_processes)),
                     inferred_type,
@@ -625,24 +622,16 @@ impl Context {
                 )
             }
 
-            Command::Signal(_chosen, _process) => {
-                return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                    span.clone(),
-                    subject.clone(),
-                ));
-                /*let (process, then_type) = self.infer_process(process, subject)?;
+            Command::Signal(chosen, process) => {
+                let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Signal(chosen.clone(), process),
                     Type::Choice(span.clone(), BTreeMap::from([(chosen.clone(), then_type)])),
-                )*/
+                )
             }
 
-            Command::Case(_branches, _processes) => {
-                return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                    span.clone(),
-                    subject.clone(),
-                ));
-                /*let original_context = self.clone();
+            Command::Case(branches, processes) => {
+                let original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut branch_types = BTreeMap::new();
 
@@ -656,7 +645,7 @@ impl Context {
                 (
                     Command::Case(Arc::clone(branches), Box::from(typed_processes)),
                     Type::Either(span.clone(), branch_types),
-                )*/
+                )
             }
 
             Command::Break => {

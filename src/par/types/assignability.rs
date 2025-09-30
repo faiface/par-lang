@@ -101,7 +101,7 @@ impl BitAnd for SubtypeResult {
                     }
                 }
             }
-            (_, Incompatible)|(Incompatible, _) => Incompatible,
+            (_, Incompatible) | (Incompatible, _) => Incompatible,
         }
     }
 }
