@@ -101,7 +101,7 @@ impl BitAnd for SubtypeResult {
                     }
                 }
             }
-            (_, Incompatible)|(Incompatible, _) => Incompatible,
+            (_, Incompatible) | (Incompatible, _) => Incompatible,
         }
     }
 }
@@ -167,6 +167,15 @@ impl Type {
 
     The implementation takes inspiration from `Subtyping recursive types (1993)`.
     */
+    pub(crate) fn is_primitive_subtype(p1: &PrimitiveType, p2: &PrimitiveType) -> bool {
+        match (p1, p2) {
+            (PrimitiveType::Nat, PrimitiveType::Int) => true,
+            (PrimitiveType::Char, PrimitiveType::String) => true,
+            (PrimitiveType::Byte, PrimitiveType::Bytes) => true,
+            _ => p1 == p2,
+        }
+    }
+
     fn is_subtype_helper(
         mut type1: Self,
         mut type2: Self,
@@ -266,37 +275,15 @@ impl Type {
         }
 
         let res: SubtypeResult = match (type1, type2) {
-            (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
-                Compatible
-            }
-            (
-                Self::Primitive(_, PrimitiveType::Char),
-                Self::Primitive(_, PrimitiveType::String),
-            ) => Compatible,
-            (Self::Primitive(_, PrimitiveType::Byte), Self::Primitive(_, PrimitiveType::Bytes)) => {
-                Compatible
-            }
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => {
-                if p1 == p2 {
+                if Self::is_primitive_subtype(&p1, &p2) {
                     Compatible
                 } else {
                     Incompatible
                 }
             }
-            (
-                Self::DualPrimitive(_, PrimitiveType::Int),
-                Self::DualPrimitive(_, PrimitiveType::Nat),
-            ) => Compatible,
-            (
-                Self::DualPrimitive(_, PrimitiveType::String),
-                Self::DualPrimitive(_, PrimitiveType::Char),
-            ) => Compatible,
-            (
-                Self::DualPrimitive(_, PrimitiveType::Bytes),
-                Self::DualPrimitive(_, PrimitiveType::Byte),
-            ) => Compatible,
             (Self::DualPrimitive(_, p1), Self::DualPrimitive(_, p2)) => {
-                if p1 == p2 {
+                if Self::is_primitive_subtype(&p2, &p1) {
                     Compatible
                 } else {
                     Incompatible
