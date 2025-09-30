@@ -1,6 +1,27 @@
 use crate::location::Span;
-use crate::par::types::{Type, TypeDefs, TypeError};
+use crate::par::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use std::collections::BTreeMap;
+
+pub fn union_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {
+    if Type::is_primitive_subtype(p1, p2) {
+        Some(p2.clone())
+    } else if Type::is_primitive_subtype(p2, p1) {
+        Some(p1.clone())
+    } else {
+        None
+    }
+}
+
+pub fn intersect_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {
+    if Type::is_primitive_subtype(p1, p2) {
+        Some(p1.clone())
+    } else if Type::is_primitive_subtype(p2, p1) {
+        Some(p2.clone())
+    } else {
+        None
+    }
+}
+
 
 pub fn union_types(
     typedefs: &TypeDefs,
@@ -49,10 +70,18 @@ pub fn union_types(
         (Type::Break(_), Type::Break(_)) => Type::Break(span.clone()),
         (Type::Continue(_), Type::Continue(_)) => Type::Continue(span.clone()),
         (Type::Primitive(_, p1), Type::Primitive(_, p2)) if p1 == p2 => {
-            Type::Primitive(span.clone(), p1.clone())
+            if let Some(p) = union_primitives(p1, p2) {
+                Type::Primitive(span.clone(), p)
+            } else {
+                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+            }
         }
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
-            Type::DualPrimitive(span.clone(), p1.clone())
+            if let Some(p) = intersect_primitives(p1, p2) {
+                Type::DualPrimitive(span.clone(), p)
+            } else {
+                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+            }
         }
         (Type::Pair(_, left1, right1), Type::Pair(_, left2, right2)) => Type::Pair(
             span.clone(),
@@ -130,10 +159,10 @@ pub fn intersect_types(
     }
 
     Ok(match (type1, type2) {
-        (Type::Either(_, branches), t2) if branches.is_empty() => t2.clone(),
-        (t1, Type::Either(_, branches)) if branches.is_empty() => t1.clone(),
-        (t1 @ Type::Choice(_, branches), _t2) if branches.is_empty() => t1.clone(),
-        (_t1, t2 @ Type::Choice(_, branches)) if branches.is_empty() => t2.clone(),
+        (Type::Choice(_, branches), t2) if branches.is_empty() => t2.clone(),
+        (t1, Type::Choice(_, branches)) if branches.is_empty() => t1.clone(),
+        (t1 @ Type::Either(_, branches), _t2) if branches.is_empty() => t1.clone(),
+        (_t1, t2 @ Type::Either(_, branches)) if branches.is_empty() => t2.clone(),
         (Type::Name(span1, name1, args1), t2) => {
             intersect_types(typedefs, span, &typedefs.get(span1, name1, args1)?, t2)?
         }
@@ -163,10 +192,18 @@ pub fn intersect_types(
         (Type::Break(_), Type::Break(_)) => Type::Break(span.clone()),
         (Type::Continue(_), Type::Continue(_)) => Type::Continue(span.clone()),
         (Type::Primitive(_, p1), Type::Primitive(_, p2)) if p1 == p2 => {
-            Type::Primitive(span.clone(), p1.clone())
+            if let Some(p) = intersect_primitives(p1, p2) {
+                Type::Primitive(span.clone(), p)
+            } else {
+                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+            }
         }
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
-            Type::DualPrimitive(span.clone(), p1.clone())
+            if let Some(p) = union_primitives(p1, p2) {
+                Type::DualPrimitive(span.clone(), p)
+            } else {
+                return Err(TypeError::TypesCannotBeUnified(type1.clone(), type2.clone()));
+            }
         }
         (Type::Pair(_, left1, right1), Type::Pair(_, left2, right2)) => Type::Pair(
             span.clone(),
@@ -182,7 +219,7 @@ pub fn intersect_types(
             let mut new_branches = BTreeMap::new();
             for (name, typ1) in branches1 {
                 if let Some(typ2) = branches2.get(name) {
-                    new_branches.insert(name.clone(), union_types(typedefs, span, typ1, typ2)?);
+                    new_branches.insert(name.clone(), intersect_types(typedefs, span, typ1, typ2)?);
                 }
             }
             Type::Either(span.clone(), new_branches)
