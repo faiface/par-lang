@@ -1,12 +1,15 @@
-use arcstr::{literal, Substr};
+use arcstr::literal;
 use bytes::Bytes;
 use std::collections::VecDeque;
 
 use crate::{
     icombs::readback::Handle,
-    par::builtin::{
-        bytes::{BytesMachine, BytesPattern},
-        string::{StringMachine, StringPattern},
+    par::{
+        builtin::{
+            bytes::{BytesMachine, BytesPattern},
+            string::{StringMachine, StringPattern},
+        },
+        primitive::ParString,
     },
 };
 
@@ -34,8 +37,8 @@ pub trait CharsRemainder {
 
     async fn close(self) -> Result<(), Self::Err>;
     fn chars(&mut self) -> Self::Iterator<'_>;
-    fn pop_chars(&mut self, n: usize) -> Substr;
-    async fn remaining_chars(&mut self) -> Result<Substr, Self::Err>;
+    fn pop_chars(&mut self, n: usize) -> ParString;
+    async fn remaining_chars(&mut self) -> Result<ParString, Self::Err>;
 }
 
 pub trait AsyncByteIterator {
@@ -244,19 +247,19 @@ impl CharsRemainder for ReaderRemainder {
         }
     }
 
-    fn pop_chars(&mut self, n: usize) -> Substr {
+    fn pop_chars(&mut self, n: usize) -> ParString {
         let popped = self.buffer.drain(..n).collect::<Vec<u8>>();
         let popped = String::from_utf8_lossy(&popped[..]);
-        Substr::from(popped)
+        ParString::copy_from_slice(popped.as_bytes())
     }
 
-    async fn remaining_chars(&mut self) -> Result<Substr, Self::Err> {
+    async fn remaining_chars(&mut self) -> Result<ParString, Self::Err> {
         let mut result = String::new();
         let mut iter = self.chars();
         while let Some((_, _, ch)) = iter.next().await? {
             result.push(ch);
         }
-        Ok(Substr::from(result))
+        Ok(ParString::from(result))
     }
 }
 
@@ -305,10 +308,10 @@ impl<'a> AsyncByteIterator for (usize, &'a Bytes) {
     }
 }
 
-impl CharsRemainder for Substr {
+impl CharsRemainder for ParString {
     type Err = Never;
     type Iterator<'a>
-        = (usize, &'a Substr)
+        = (usize, &'a ParString)
     where
         Self: 'a;
 
@@ -324,18 +327,18 @@ impl CharsRemainder for Substr {
         (0, self)
     }
 
-    fn pop_chars(&mut self, n: usize) -> Substr {
+    fn pop_chars(&mut self, n: usize) -> ParString {
         let popped = self.substr(..n);
         *self = self.substr(n..);
         popped
     }
 
-    async fn remaining_chars(&mut self) -> Result<Substr, Self::Err> {
-        Ok(self.clone())
+    async fn remaining_chars(&mut self) -> Result<ParString, Self::Err> {
+        Ok(ParString::from(self.clone()))
     }
 }
 
-impl<'a> AsyncCharIterator for (usize, &'a Substr) {
+impl<'a> AsyncCharIterator for (usize, &'a ParString) {
     type Err = Never;
 
     async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::Err> {

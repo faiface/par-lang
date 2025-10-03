@@ -50,7 +50,7 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
         async move {
             match handle.case().await.as_str() {
                 "assert" => {
-                    let description = handle.receive().string().await.to_string();
+                    let description = handle.receive().string().await.as_str().to_string();
                     let mut bool_handle = handle.receive();
 
                     let passed = match bool_handle.case().await.as_str() {

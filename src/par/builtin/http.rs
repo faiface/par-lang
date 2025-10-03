@@ -1,6 +1,7 @@
 use std::{
     io,
     net::SocketAddr,
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering as AtomicOrdering},
         Arc,
@@ -8,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use arcstr::{literal, Substr};
+use arcstr::literal;
 use bytes::Bytes;
 use futures::{
     channel::{mpsc, oneshot},
@@ -31,6 +32,7 @@ use crate::{
     icombs::readback::Handle,
     par::{
         builtin::{list::readback_list, url::provide_url_value},
+        primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
@@ -101,7 +103,7 @@ async fn http_fetch(mut handle: Handle) {
 
     let mut url_handle = request.receive();
     url_handle.signal(literal!("full"));
-    let url = url_handle.string().await.to_string();
+    let url = url_handle.string().await;
 
     let header_pairs = readback_list(request.receive(), |mut handle| async move {
         let name = handle.receive().string().await;
@@ -113,7 +115,7 @@ async fn http_fetch(mut handle: Handle) {
     let body_reader = request;
 
     let (tx, rx) = mpsc::unbounded::<Result<bytes::Bytes, std::io::Error>>();
-    let (body_done_tx, body_done_rx) = oneshot::channel::<Result<(), Substr>>();
+    let (body_done_tx, body_done_rx) = oneshot::channel::<Result<(), ParString>>();
 
     body_reader.concurrently(move |handle| async move {
         consume_http_reader(handle, tx, body_done_tx).await;
@@ -127,17 +129,17 @@ async fn http_fetch(mut handle: Handle) {
         Ok(c) => c,
         Err(err) => {
             handle.signal(literal!("err"));
-            return handle.provide_string(Substr::from(err.to_string()));
+            return handle.provide_string(ParString::from(err.to_string()));
         }
     };
 
-    let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET);
+    let method = reqwest::Method::from_bytes(&method.as_bytes()).unwrap_or(reqwest::Method::GET);
 
     let mut headers = reqwest::header::HeaderMap::new();
     for (name, value) in header_pairs.iter() {
         if let (Ok(hn), Ok(hv)) = (
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
-            reqwest::header::HeaderValue::from_str(value),
+            reqwest::header::HeaderName::from_bytes(&name.as_bytes()),
+            reqwest::header::HeaderValue::from_bytes(&value.as_bytes()),
         ) {
             headers.append(hn, hv);
         }
@@ -155,16 +157,16 @@ async fn http_fetch(mut handle: Handle) {
         Ok(response) => {
             if let Err(body_err) = body_result {
                 handle.signal(literal!("err"));
-                return handle.provide_string(body_err);
+                return handle.provide_string(ParString::from(body_err));
             }
             response
         }
         Err(err) => {
             handle.signal(literal!("err"));
             if let Err(body_err) = body_result {
-                return handle.provide_string(body_err);
+                return handle.provide_string(ParString::from(body_err));
             }
-            return handle.provide_string(Substr::from(err.to_string()));
+            return handle.provide_string(ParString::from(err.to_string()));
         }
     };
 
@@ -193,7 +195,7 @@ async fn provide_body_reader(mut handle: Handle, response: reqwest::Response) {
                 }
                 Some(Err(err)) => {
                     handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(err.to_string()));
+                    return handle.provide_string(ParString::from(err.to_string()));
                 }
                 None => {
                     handle.signal(literal!("ok"));
@@ -210,12 +212,12 @@ async fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::Hea
     for (name, value) in headers {
         handle.signal(literal!("item"));
         let (name, value) = (
-            Substr::from(name.as_str()),
-            Substr::from(value.to_str().unwrap_or_default()),
+            ParString::copy_from_slice(name.as_str().as_bytes()),
+            Bytes::copy_from_slice(value.as_bytes()),
         );
         handle.send().concurrently(|mut handle| async {
             handle.send().provide_string(name);
-            handle.provide_string(value);
+            handle.provide_bytes(value);
         });
     }
     handle.signal(literal!("end"));
@@ -225,7 +227,7 @@ async fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::Hea
 async fn consume_http_reader(
     mut handle: Handle,
     mut tx: mpsc::UnboundedSender<Result<bytes::Bytes, std::io::Error>>,
-    done: oneshot::Sender<Result<(), Substr>>,
+    done: oneshot::Sender<Result<(), ParString>>,
 ) {
     let mut done = Some(done);
 
@@ -258,7 +260,7 @@ async fn consume_http_reader(
             },
             "err" => {
                 let err = handle.string().await;
-                let io_err = io::Error::new(io::ErrorKind::Other, err.to_string());
+                let io_err = io::Error::new(io::ErrorKind::Other, err.as_str().to_string());
                 let _ = tx.unbounded_send(Err(io_err));
                 if let Some(done) = done.take() {
                     let _ = done.send(Err(err));
@@ -270,17 +272,14 @@ async fn consume_http_reader(
     }
 }
 
-async fn close_reader(mut handle: Handle) -> Result<(), Substr> {
+async fn close_reader(mut handle: Handle) -> Result<(), ParString> {
     handle.signal(literal!("close"));
     match handle.case().await.as_str() {
         "ok" => {
             handle.continue_();
             Ok(())
         }
-        "err" => {
-            let err = handle.string().await;
-            Err(err)
-        }
+        "err" => Err(handle.string().await),
         _ => unreachable!(),
     }
 }
@@ -288,14 +287,13 @@ async fn close_reader(mut handle: Handle) -> Result<(), Substr> {
 // ----------
 
 async fn http_listen(mut handle: Handle) {
-    let address = handle.receive().string().await.to_string();
-
-    match start_listener(address).await {
+    let address = handle.receive().string().await;
+    match start_listener(address.as_str().to_string()).await {
         Ok(state) => provide_listener_value(handle, state).await,
         Err(err) => {
             handle.signal(literal!("shutdown"));
             handle.signal(literal!("err"));
-            handle.provide_string(Substr::from(err));
+            handle.provide_string(err);
         }
     }
 }
@@ -328,11 +326,11 @@ struct IncomingRequest {
 }
 
 #[derive(Debug, Clone)]
-struct BodyError(Substr);
+struct BodyError(ParString);
 
 impl std::fmt::Display for BodyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.0.as_str())
     }
 }
 
@@ -373,7 +371,7 @@ impl ListenerState {
     }
 }
 
-async fn start_listener(address: String) -> Result<ListenerState, String> {
+async fn start_listener(address: String) -> Result<ListenerState, ParString> {
     let socket_addr: SocketAddr = address
         .parse()
         .map_err(|err: std::net::AddrParseError| err.to_string())?;
@@ -560,7 +558,7 @@ async fn provide_listener_value(mut handle: Handle, mut state: ListenerState) {
                 }
                 Err(err) => {
                     handle.signal(literal!("err"));
-                    handle.provide_string(Substr::from(err));
+                    handle.provide_string(ParString::from(err));
                 }
             }
         }
@@ -574,7 +572,7 @@ async fn provide_http_request_value(
     headers: Vec<(String, String)>,
     body: Incoming,
 ) {
-    handle.send().provide_string(Substr::from(method));
+    handle.send().provide_string(ParString::from(method));
     provide_url_value(handle.send(), url);
     provide_header_list_value(handle.send(), headers);
     provide_request_body_reader(handle, body).await;
@@ -584,8 +582,8 @@ fn provide_header_list_value(mut handle: Handle, headers: Vec<(String, String)>)
     for (name, value) in headers {
         handle.signal(literal!("item"));
         handle.send().concurrently(|mut pair| async move {
-            pair.send().provide_string(Substr::from(name));
-            pair.provide_string(Substr::from(value));
+            pair.send().provide_string(ParString::from(name));
+            pair.provide_bytes(Bytes::from(value));
         });
     }
     handle.signal(literal!("end"));
@@ -618,7 +616,7 @@ async fn provide_request_body_reader(mut handle: Handle, mut body: Incoming) {
                 }
                 Some(Err(err)) => {
                     handle.signal(literal!("err"));
-                    handle.provide_string(Substr::from(err.to_string()));
+                    handle.provide_string(ParString::from(err.to_string()));
                     return;
                 }
                 None => {
@@ -650,7 +648,7 @@ async fn provide_responder_function(
     }
 }
 
-async fn build_response(mut handle: Handle) -> Result<Response<ResponseBody>, Substr> {
+async fn build_response(mut handle: Handle) -> Result<Response<ResponseBody>, ParString> {
     use num_traits::ToPrimitive;
 
     let status = handle
@@ -664,7 +662,7 @@ async fn build_response(mut handle: Handle) -> Result<Response<ResponseBody>, Su
 
     let headers = readback_list(handle.receive(), |mut handle| async {
         let key = handle.receive().string().await;
-        let val = handle.string().await;
+        let val = handle.bytes().await;
         (key, val)
     })
     .await;
@@ -672,13 +670,13 @@ async fn build_response(mut handle: Handle) -> Result<Response<ResponseBody>, Su
     let mut response = Response::builder()
         .status(status)
         .body(BodyExt::boxed(reader_to_body(handle)))
-        .map_err(|err| Substr::from(err.to_string()))?;
+        .map_err(|err| Bytes::from(err.to_string()))?;
 
     for (name, value) in headers {
-        let Ok(header_name) = HeaderName::from_bytes(name.as_bytes()) else {
+        let Ok(header_name) = HeaderName::from_str(name.as_str()) else {
             continue;
         };
-        let Ok(header_value) = HeaderValue::from_str(&value) else {
+        let Ok(header_value) = HeaderValue::from_bytes(&value) else {
             continue;
         };
         response.headers_mut().append(header_name, header_value);

@@ -218,7 +218,6 @@ type Bytes.Writer<e> = iterative choice {
   .close => Result<e, !>,
   .flush => Result<e, self>,
   .write(Bytes) => Result<e, self>,
-  .writeString(String) => Result<e, self>,
 }
 
 type Bytes.Parser<e> = recursive iterative/attempt choice {
@@ -255,14 +254,11 @@ type Bytes.Pattern = recursive either {
 }
 
 dec Bytes.Length  : [Bytes] Nat
-dec Bytes.FromString : [String] Bytes
-
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
 dec Bytes.Parser  : [Bytes] Bytes.Parser<either {}>
 
 dec Bytes.EmptyReader      : Bytes.Reader<either {}>
-dec Bytes.ReaderFromString : [String] Bytes.Reader<either {}>
 dec Bytes.ParserFromReader : [type e] [Bytes.Reader<e>] Bytes.Parser<e>
 
 dec Bytes.PipeReader : [type e] [[Bytes.Writer<!>] Result<e, !>] Bytes.Reader<e>
@@ -286,16 +282,12 @@ type Os.Reader = Bytes.Reader<Os.Error>
 type Os.Writer = Bytes.Writer<Os.Error>
 
 type Os.Path = iterative/append recursive/parent box choice {
-  .stringName => String,
-  .bytesName => Bytes,
-  .stringAbsolute => String,
-  .bytesAbsolute => Bytes,
-  .stringParts => List<String>,
-  .bytesParts => List<Bytes>,
+  .name => Bytes,
+  .absolute => Bytes,
+  .parts => List<Bytes>,
 
   .parent => Option<self/parent>,
-  .appendString(String) => self/append,
-  .appendBytes(Bytes) => self/append,
+  .append(Bytes) => self/append,
 
   .openFile => Result<Os.Error, Os.Reader>,
   .createOrReplaceFile => Result<Os.Error, Os.Writer>,
@@ -312,8 +304,7 @@ type Os.Path = iterative/append recursive/parent box choice {
   .createDir => Result<Os.Error, !>,
 }
 
-dec Os.PathFromString : [String] Os.Path
-dec Os.PathFromBytes  : [Bytes] Os.Path
+dec Os.Path : [Bytes] Os.Path
 
 dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
@@ -343,12 +334,12 @@ type Http.Error  = String
 type Http.Request =
   (String)
   (Url)
-  (List<(String) String>)
+  (List<(String) Bytes>)
   Bytes.Reader<Http.Error>
 
 type Http.Response =
   (Nat)
-  (List<(String) String>)
+  (List<(String) Bytes>)
   Bytes.Reader<Http.Error>
 
 dec Http.Fetch : [Http.Request] Result<Http.Error, Http.Response>

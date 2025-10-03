@@ -6,12 +6,13 @@ use std::{
 use crate::{
     icombs::readback::Handle,
     par::{
+        primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
     },
 };
-use arcstr::{literal, Substr};
+use arcstr::literal;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use tokio::{
@@ -25,12 +26,7 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
         declarations: vec![],
         definitions: vec![
             Definition::external(
-                "PathFromString",
-                Type::function(Type::string(), Type::name(None, "Path", vec![])),
-                |handle| Box::pin(path_from_string(handle)),
-            ),
-            Definition::external(
-                "PathFromBytes",
+                "Path",
                 Type::function(Type::bytes(), Type::name(None, "Path", vec![])),
                 |handle| Box::pin(path_from_bytes(handle)),
             ),
@@ -42,12 +38,6 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
             }),
         ],
     }
-}
-
-async fn path_from_string(mut handle: Handle) {
-    let s = handle.receive().string().await;
-    let p = PathBuf::from(s.as_str());
-    provide_path(handle, p);
 }
 
 async fn path_from_bytes(mut handle: Handle) {
@@ -63,33 +53,19 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
         let path = path.clone();
         async move {
             match handle.case().await.as_str() {
-                "stringName" => {
-                    let s = path
-                        .file_name()
-                        .map(|n| Substr::from(n.to_string_lossy()))
-                        .unwrap_or_else(|| Substr::new());
-                    handle.provide_string(Substr::from(s));
-                }
-                "bytesName" => {
+                "name" => {
                     let bytes = path
                         .file_name()
                         .map(|n| os_to_bytes(n))
                         .unwrap_or_else(|| Bytes::new());
                     handle.provide_bytes(bytes);
                 }
-                "stringAbsolute" => {
-                    let abs = absolute_path(&path);
-                    handle.provide_string(Substr::from(abs.to_string_lossy()));
-                }
-                "bytesAbsolute" => {
+                "absolute" => {
                     let abs = absolute_path(&path);
                     let bytes = os_to_bytes(abs.as_os_str());
                     handle.provide_bytes(bytes);
                 }
-                "stringParts" => {
-                    provide_string_parts(handle, &path);
-                }
-                "bytesParts" => {
+                "parts" => {
                     provide_bytes_parts(handle, &path);
                 }
                 "parent" => match path.parent() {
@@ -102,12 +78,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                         handle.break_();
                     }
                 },
-                "appendString" => {
-                    let s = handle.receive().string().await;
-                    let p2 = path.join(s.as_str());
-                    provide_path(handle, p2);
-                }
-                "appendBytes" => {
+                "append" => {
                     let b = handle.receive().bytes().await;
                     let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
                     let p2 = path.join(Path::new(os));
@@ -120,7 +91,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "createOrReplaceFile" => match OpenOptions::new()
@@ -136,7 +107,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "createNewFile" => match OpenOptions::new()
@@ -151,7 +122,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "appendToFile" => match OpenOptions::new()
@@ -166,7 +137,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "createOrAppendToFile" => match OpenOptions::new()
@@ -182,7 +153,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "listDir" => match fs::read_dir(&path).await {
@@ -192,7 +163,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "traverseDir" => match build_dir_tree(path.clone()).await {
@@ -202,7 +173,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err));
+                        return handle.provide_string(ParString::from(err));
                     }
                 },
                 "createDir" => match fs::create_dir_all(&path).await {
@@ -212,7 +183,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 _ => unreachable!(),
@@ -234,16 +205,6 @@ fn absolute_path(p: &Path) -> PathBuf {
             }
         }
     }
-}
-
-fn provide_string_parts(mut handle: Handle, p: &Path) {
-    for part in p.iter() {
-        handle.signal(arcstr::literal!("item"));
-        let s = part.to_string_lossy();
-        handle.send().provide_string(Substr::from(s));
-    }
-    handle.signal(arcstr::literal!("end"));
-    handle.break_();
 }
 
 fn provide_bytes_parts(mut handle: Handle, p: &Path) {
@@ -303,7 +264,7 @@ async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl As
                 }
                 Err(err) => {
                     handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(err.to_string()));
+                    return handle.provide_string(ParString::from(err.to_string()));
                 }
             },
             _ => unreachable!(),
@@ -323,7 +284,7 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 }
             }
@@ -334,7 +295,7 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
                 }
                 Err(err) => {
                     handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(err.to_string()));
+                    return handle.provide_string(ParString::from(err.to_string()));
                 }
             },
             "write" => {
@@ -346,20 +307,7 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
-                    }
-                }
-            }
-            "writeString" => {
-                let s = handle.receive().string().await;
-                match writer.write_all(s.as_bytes()).await {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        continue;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 }
             }

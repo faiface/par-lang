@@ -6,7 +6,7 @@ the _primitives._
 At the moment, Par has six primitive types:
 - **`Int`** — Integers, positive and negative whole numbers, arbitrary size.
 - **`Nat`** — Natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
-- **`String`** — UTF-8 encoded sequence of Unicode characters.
+- **`String`** — UTF-8 encoded sequence of Unicode characters. They are a subtype of `Bytes`.
 - **`Char`** — Singular Unicode character. They are a subtype of `String`.
 - **`Byte`** — Singular data unit that consists of eight bits. They are a subtype of `Bytes`.
 - **`Bytes`** — Contiguous-in-memory sequence of bytes.
@@ -232,3 +232,5 @@ def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
   .byte(b) rest => .item(b) rest.loop,
 }
 ```
+
+It's also important to remember, that `String` is a subtype of `Bytes` and so any `String` value can be used wherever `Bytes` is expected.

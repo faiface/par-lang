@@ -172,6 +172,8 @@ impl Type {
             (PrimitiveType::Nat, PrimitiveType::Int) => true,
             (PrimitiveType::Char, PrimitiveType::String) => true,
             (PrimitiveType::Byte, PrimitiveType::Bytes) => true,
+            (PrimitiveType::String, PrimitiveType::Bytes) => true,
+            (PrimitiveType::Char, PrimitiveType::Bytes) => true,
             _ => p1 == p2,
         }
     }

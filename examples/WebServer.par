@@ -24,14 +24,14 @@ def Main: ! = chan exit {
     .incoming(request, respond) next => {
       let (method, url, headers) body = request
       body.close
-      ServePath(Os.PathFromString(root), Concat(root, url.path), respond)
+      ServePath(Os.Path(root), Concat(root, url.path), respond)
       next.loop
     }
   }
 }
 
 dec ServePath : [Os.Path, String, [Http.Response] Result<Http.Error, !>] !
-def ServePath = [root, path, respond] Os.PathFromString(path).listDir.case {
+def ServePath = [root, path, respond] Os.Path(path).listDir.case {
   .err _ => ServeFile(path, respond),
   .ok paths => ServeDir(root, paths, respond),
 }
@@ -40,11 +40,11 @@ dec ServeFile : [String, [Http.Response] Result<Http.Error, !>] !
 def ServeFile = [path, respond] chan finish {
   catch e => { Debug.Log(e); finish! }
   catch e => {
-    respond((404, *()) Bytes.ReaderFromString(e)).try
+    respond((404, *()) Bytes.Reader(e)).try
     finish!
   }
 
-  let try file = Os.PathFromString(path).openFile
+  let try file = Os.Path(path).openFile
   respond((200, *(("Content-Type") "text/plain")) file)
 
   finish!
@@ -53,23 +53,23 @@ def ServeFile = [path, respond] chan finish {
 dec ServeDir : [Os.Path, List<Os.Path>, [Http.Response] Result<Http.Error, !>] !
 def ServeDir = [root, paths, respond] chan finish {
   let content = Bytes.PipeReader(type Http.Error)([w] catch ! => .ok! in do {
-    w.writeString("<ul>").try
+    w.write("<ul>").try
 
     paths.begin.case {
       .end! => {}
       .item(path) => {
-        w.writeString("<li>").try
-        w.writeString("<a href=\"").try
-        w.writeString(TrimPrefix(root.stringAbsolute, path.stringAbsolute)).try
-        w.writeString("\">").try
-        w.writeString(path.stringName).try
-        w.writeString("</a>").try
-        w.writeString("</li>").try
+        w.write("<li>").try
+        w.write("<a href=\"").try
+        w.write(TrimPrefix(root.absolute, path.absolute)).try
+        w.write("\">").try
+        w.write(path.name).try
+        w.write("</a>").try
+        w.write("</li>").try
         paths.loop
       }
     }
 
-    w.writeString("</ul>").try
+    w.write("</ul>").try
     w.close.try
   } in .ok!)
 
@@ -80,10 +80,10 @@ def ServeDir = [root, paths, respond] chan finish {
 dec Concat : [String, String] String
 def Concat = [left, right] String.Builder.add(left).add(right).build
 
-dec TrimPrefix : [String, String] String
-def TrimPrefix = [prefix, string]
-  string->String.Parser.matchEnd(.str prefix, .repeat.one.any!).case {
-    .end _ => string,
-    .fail p => do { p.close } in string,
+dec TrimPrefix : [Bytes, Bytes] Bytes
+def TrimPrefix = [prefix, bytes]
+  bytes->Bytes.Parser.matchEnd(.bytes prefix, .repeat.one.any!).case {
+    .end _ => bytes,
+    .fail p => do { p.close } in bytes,
     .match(_, trimmed)! => trimmed,
   }

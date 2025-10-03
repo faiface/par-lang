@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use arcstr::{literal, Substr};
+use arcstr::literal;
 use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
 use crate::{
     icombs::readback::Handle,
     par::{
+        primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
@@ -40,7 +41,7 @@ async fn url_from_string(mut handle: Handle) {
         }
         Err(err) => {
             handle.signal(literal!("err"));
-            handle.provide_string(Substr::from(err.to_string()));
+            handle.provide_string(ParString::from(err.to_string()));
         }
     }
 }
@@ -52,11 +53,11 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
             loop {
                 match handle.case().await.as_str() {
                     "full" => {
-                        handle.provide_string(Substr::from(url.as_str()));
+                        handle.provide_string(ParString::copy_from_slice(url.as_str().as_bytes()));
                         return;
                     }
                     "protocol" => {
-                        handle.provide_string(Substr::from(url.scheme()));
+                        handle.provide_string(ParString::copy_from_slice(url.scheme().as_bytes()));
                         return;
                     }
                     "host" => {
@@ -64,12 +65,12 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
                             Some(port) => format!("{}:{}", url.host_str().unwrap_or(""), port),
                             None => url.host_str().unwrap_or("").to_string(),
                         };
-                        handle.provide_string(Substr::from(host));
+                        handle.provide_string(ParString::from(host));
                         return;
                     }
                     "path" => {
                         let decoded = percent_decode_str(url.path()).decode_utf8_lossy();
-                        handle.provide_string(Substr::from(decoded.as_ref()));
+                        handle.provide_string(ParString::copy_from_slice(decoded.as_bytes()));
                         return;
                     }
                     "query" => {
@@ -78,8 +79,8 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
                             let key = key.into_owned();
                             let value = value.into_owned();
                             handle.send().concurrently(|mut pair| async move {
-                                pair.send().provide_string(Substr::from(key));
-                                pair.provide_string(Substr::from(value));
+                                pair.send().provide_string(ParString::from(key));
+                                pair.provide_string(ParString::from(value));
                             });
                         }
                         handle.signal(literal!("end"));

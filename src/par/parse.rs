@@ -6,13 +6,16 @@ use super::{
     lexer::{lex, Input, Token, TokenKind},
     primitive::Primitive,
 };
-use crate::location::{FileName, Span, Spanning};
 use crate::par::{
     language::LocalName,
     program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
-use arcstr::{ArcStr, Substr};
+use crate::{
+    location::{FileName, Span, Spanning},
+    par::primitive::ParString,
+};
+use arcstr::ArcStr;
 use bytes::Bytes;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
@@ -840,7 +843,7 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
         .map(|token| {
             // validated in lexer
             let value = unescaper::unescape(token.raw).unwrap();
-            Expression::Primitive(token.span(), Primitive::String(Substr::from(value)))
+            Expression::Primitive(token.span(), Primitive::String(ParString::from(value)))
         })
         .parse_next(input)
 }

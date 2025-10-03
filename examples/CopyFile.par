@@ -12,10 +12,10 @@ def Main: ! = chan exit {
     exit!
   }
 
-  let try reader = Os.PathFromString(src).openFile
+  let try reader = Os.Path(src).openFile
   catch/w e => { reader.close; throw e }
 
-  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
+  let try/w writer = Os.Path(dst).createOrReplaceFile
   catch/r e => { writer.close; throw e }
 
   reader.begin.read.try/r.case {

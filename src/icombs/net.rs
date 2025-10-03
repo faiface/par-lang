@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use arcstr::{ArcStr, Substr};
+use arcstr::ArcStr;
 use bytes::Bytes;
 use futures::channel::{mpsc, oneshot};
 use futures::future::RemoteHandle;
@@ -17,7 +17,7 @@ use futures::StreamExt;
 use indexmap::IndexMap;
 use num_bigint::BigInt;
 
-use crate::par::primitive::Primitive;
+use crate::par::primitive::{ParString, Primitive};
 
 use super::readback::{private::NetWrapper, Handle};
 
@@ -52,7 +52,7 @@ pub enum Tree {
 
     Primitive(Primitive),
     IntRequest(oneshot::Sender<BigInt>),
-    StringRequest(oneshot::Sender<Substr>),
+    StringRequest(oneshot::Sender<ParString>),
     BytesRequest(oneshot::Sender<Bytes>),
 
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
@@ -472,6 +472,10 @@ impl Net {
             }
             (Primitive::Bytes(b), Tree::BytesRequest(resp)) => {
                 resp.send(b).expect("receiver dropped");
+                self.rewrites.resp += 1;
+            }
+            (Primitive::String(s), Tree::BytesRequest(resp)) => {
+                resp.send(s.as_bytes()).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
 

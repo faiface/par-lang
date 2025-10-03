@@ -17,7 +17,7 @@ def Program: ! = chan exit {
     exit!
   }
 
-  let try paths = TraverseDirectory(Os.PathFromString(path))
+  let try paths = TraverseDirectory(Os.Path(path))
   paths.begin.case {
     .end! => {}
     .item(path) => {
@@ -33,7 +33,7 @@ def Program: ! = chan exit {
         .item((number) content) => {
           console.print("")
           console.print(String.Builder
-            .add(path.stringAbsolute)
+            .add(String.FromBytes(path.absolute))
             .add(":")
             .add(Nat.ToString(number))
             .build)

@@ -24,7 +24,7 @@ Here's what error handling looks like without any syntax sugar. We'll write a pr
 def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e => {
       console.print(e)
@@ -43,7 +43,7 @@ The `chan exit` creates a channel called `exit` of type `?` — [the continuatio
 After the `.case` block, the `writer` variable is available in the surrounding scope. This is how process-scoped variables work in Par — variables bound in `.case` branches continue to exist after the case analysis.
 
 ```par
-  writer.writeString("[INFO] First new log\n").case {
+  writer.write("[INFO] First new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -53,10 +53,10 @@ After the `.case` block, the `writer` variable is available in the surrounding s
   }
 ```
 
-In [process syntax](./process_syntax.md), when we use `.ok =>`, the subject of the command (`writer`) gets updated to the payload of the .ok branch. Since `.writeString` returns the same `Os.Writer` type on success, `writer` remains usable.
+In [process syntax](./process_syntax.md), when we use `.ok =>`, the subject of the command (`writer`) gets updated to the payload of the .ok branch. Since `.write` returns the same `Os.Writer` type on success, `writer` remains usable.
 
 ```par
-  writer.writeString("[INFO] Second new log\n").case {
+  writer.write("[INFO] Second new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -69,7 +69,7 @@ In [process syntax](./process_syntax.md), when we use `.ok =>`, the subject of t
 And finish by closing the file:
 
 ```par
-  writer.close(.ok!).case {
+  writer.close.case {
     .err e => {
       console.print(e)
       console.close
@@ -89,7 +89,7 @@ Here's the complete program:
 def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e => {
       console.print(e)
@@ -99,7 +99,7 @@ def Main: ! = chan exit {
     .ok writer => {}
   }
   
-  writer.writeString("[INFO] First new log\n").case {
+  writer.write("[INFO] First new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -107,7 +107,7 @@ def Main: ! = chan exit {
     }
     .ok => {}
   }
-  writer.writeString("[INFO] Second new log\n").case {
+  writer.write("[INFO] Second new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -116,7 +116,7 @@ def Main: ! = chan exit {
     .ok => {}
   }
 
-  writer.close(.ok!).case {
+  writer.close.case {
     .err e => {
       console.print(e)
       console.close
@@ -146,13 +146,13 @@ def Main: ! = chan exit {
     exit!
   }
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   let try writer = path.createOrAppendToFile
   
-  writer.writeString("[INFO] First new log\n").try
-  writer.writeString("[INFO] Second new log\n").try
+  writer.write("[INFO] First new log\n").try
+  writer.write("[INFO] Second new log\n").try
 
-  writer.close(.ok!).try
+  writer.close.try
   console.close
   exit!
 }
@@ -237,7 +237,7 @@ type Result<e, a> = either {
 The `.try` postfix transforms verbose `Result` case analysis into clean linear code. Remember our original verbose version:
 
 ```par
-writer.writeString("[INFO] First new log\n").case {
+writer.write("[INFO] First new log\n").case {
   .err e => {
     console.print(e)
     console.close
@@ -250,7 +250,7 @@ writer.writeString("[INFO] First new log\n").case {
 With `.try`, this becomes:
 
 ```par
-writer.writeString("[INFO] First new log\n").try
+writer.write("[INFO] First new log\n").try
 ```
 
 The `.try` postfix desugars any command or expression returning a `Result`:
@@ -495,15 +495,15 @@ def Main: ! = chan exit {
     exit!
   }
 
-  let try reader = Os.PathFromString(src).openFile
-  catch/w e => { reader.close(.ok!); throw e }
+  let try reader = Os.Path(src).openFile
+  catch/w e => { reader.close; throw e }
 
-  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
-  catch/r e => { writer.close(.ok!); throw e }
+  let try/w writer = Os.Path(dst).createOrReplaceFile
+  catch/r e => { writer.close; throw e }
 
   reader.begin.read.try/r.case {
     .end! => {
-      writer.close(.ok!).try
+      writer.close.try
       console.close
       exit!
     }
@@ -528,7 +528,7 @@ dec ReadAll : [Os.Path] Result<Os.Error, Bytes>
 def ReadAll = [path] chan return {
   catch e => { return <> .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type either{}, Os.Error)(reader)
+  let parser = Bytes.ParseReader(type Os.Error)(reader)
   let try contents = parser.remainder
   return <> .ok contents
 }
