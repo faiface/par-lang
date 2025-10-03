@@ -432,7 +432,7 @@ the <em>primitives.</em></p>
 <ul>
 <li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
 <li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
-<li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters.</li>
+<li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters. They are a subtype of <code>Bytes</code>.</li>
 <li><strong><code>Char</code></strong> — Singular Unicode character. They are a subtype of <code>String</code>.</li>
 <li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
 <li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
@@ -595,6 +595,7 @@ def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
   .byte(b) rest =&gt; .item(b) rest.loop,
 }
 </code></pre>
+<p>It’s also important to remember, that <code>String</code> is a subtype of <code>Bytes</code> and so any <code>String</code> value can be used wherever <code>Bytes</code> is expected.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-let-expression"><a class="header" href="#the-let-expression">The <code>let</code> Expression</a></h1>
 <p>Just one last stop before setting on a tour through Par’s types and their expressions: the <code>let</code>
 expression. It’s for assigning a variable and using it in another expression.</p>
@@ -1011,7 +1012,6 @@ type Bytes.Writer&lt;e&gt; = iterative choice {
   .close =&gt; Result&lt;e, !&gt;,
   .flush =&gt; Result&lt;e, self&gt;,
   .write(Bytes) =&gt; Result&lt;e, self&gt;,
-  .writeString(String) =&gt; Result&lt;e, self&gt;,
 }
 
 type Bytes.Parser&lt;e&gt; = recursive iterative/attempt choice {
@@ -1048,14 +1048,11 @@ type Bytes.Pattern = recursive either {
 }
 
 dec Bytes.Length  : [Bytes] Nat
-dec Bytes.FromString : [String] Bytes
-
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
 dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
 
 dec Bytes.EmptyReader      : Bytes.Reader&lt;either {}&gt;
-dec Bytes.ReaderFromString : [String] Bytes.Reader&lt;either {}&gt;
 dec Bytes.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
 
 dec Bytes.PipeReader : [type e] [[Bytes.Writer&lt;!&gt;] Result&lt;e, !&gt;] Bytes.Reader&lt;e&gt;
@@ -1079,16 +1076,12 @@ type Os.Reader = Bytes.Reader&lt;Os.Error&gt;
 type Os.Writer = Bytes.Writer&lt;Os.Error&gt;
 
 type Os.Path = iterative/append recursive/parent box choice {
-  .stringName =&gt; String,
-  .bytesName =&gt; Bytes,
-  .stringAbsolute =&gt; String,
-  .bytesAbsolute =&gt; Bytes,
-  .stringParts =&gt; List&lt;String&gt;,
-  .bytesParts =&gt; List&lt;Bytes&gt;,
+  .name =&gt; Bytes,
+  .absolute =&gt; Bytes,
+  .parts =&gt; List&lt;Bytes&gt;,
 
   .parent =&gt; Option&lt;self/parent&gt;,
-  .appendString(String) =&gt; self/append,
-  .appendBytes(Bytes) =&gt; self/append,
+  .append(Bytes) =&gt; self/append,
 
   .openFile =&gt; Result&lt;Os.Error, Os.Reader&gt;,
   .createOrReplaceFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
@@ -1105,8 +1098,7 @@ type Os.Path = iterative/append recursive/parent box choice {
   .createDir =&gt; Result&lt;Os.Error, !&gt;,
 }
 
-dec Os.PathFromString : [String] Os.Path
-dec Os.PathFromBytes  : [Bytes] Os.Path
+dec Os.Path : [Bytes] Os.Path
 
 dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
@@ -1136,12 +1128,12 @@ type Http.Error  = String
 type Http.Request =
   (String)
   (Url)
-  (List&lt;(String) String&gt;)
+  (List&lt;(String) Bytes&gt;)
   Bytes.Reader&lt;Http.Error&gt;
 
 type Http.Response =
   (Nat)
-  (List&lt;(String) String&gt;)
+  (List&lt;(String) Bytes&gt;)
   Bytes.Reader&lt;Http.Error&gt;
 
 dec Http.Fetch : [Http.Request] Result&lt;Http.Error, Http.Response&gt;
@@ -3435,7 +3427,7 @@ patterns less noisy.</p>
 <pre><code class="language-par">def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e =&gt; {
       console.print(e)
@@ -3449,7 +3441,7 @@ patterns less noisy.</p>
 <p>A few things to note about this pattern:</p>
 <p>The <code>chan exit</code> creates a channel called <code>exit</code> of type <code>?</code> — <a href="quality_of_life/./processes/duality.html">the continuation type</a>, which is dual to our <code>Main</code> function’s return type <code>!</code>. The <code>exit!</code> syntax is the <em>break</em> command applied to this continuation, which ends the process.</p>
 <p>After the <code>.case</code> block, the <code>writer</code> variable is available in the surrounding scope. This is how process-scoped variables work in Par — variables bound in <code>.case</code> branches continue to exist after the case analysis.</p>
-<pre><code class="language-par">  writer.writeString("[INFO] First new log\n").case {
+<pre><code class="language-par">  writer.write("[INFO] First new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3458,8 +3450,8 @@ patterns less noisy.</p>
     .ok =&gt; {}
   }
 </code></pre>
-<p>In <a href="quality_of_life/./process_syntax.html">process syntax</a>, when we use <code>.ok =&gt;</code>, the subject of the command (<code>writer</code>) gets updated to the payload of the .ok branch. Since <code>.writeString</code> returns the same <code>Os.Writer</code> type on success, <code>writer</code> remains usable.</p>
-<pre><code class="language-par">  writer.writeString("[INFO] Second new log\n").case {
+<p>In <a href="quality_of_life/./process_syntax.html">process syntax</a>, when we use <code>.ok =&gt;</code>, the subject of the command (<code>writer</code>) gets updated to the payload of the .ok branch. Since <code>.write</code> returns the same <code>Os.Writer</code> type on success, <code>writer</code> remains usable.</p>
+<pre><code class="language-par">  writer.write("[INFO] Second new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3469,7 +3461,7 @@ patterns less noisy.</p>
   }
 </code></pre>
 <p>And finish by closing the file:</p>
-<pre><code class="language-par">  writer.close(.ok!).case {
+<pre><code class="language-par">  writer.close.case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3485,7 +3477,7 @@ patterns less noisy.</p>
 <pre><code class="language-par">def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e =&gt; {
       console.print(e)
@@ -3495,7 +3487,7 @@ patterns less noisy.</p>
     .ok writer =&gt; {}
   }
   
-  writer.writeString("[INFO] First new log\n").case {
+  writer.write("[INFO] First new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3503,7 +3495,7 @@ patterns less noisy.</p>
     }
     .ok =&gt; {}
   }
-  writer.writeString("[INFO] Second new log\n").case {
+  writer.write("[INFO] Second new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3512,7 +3504,7 @@ patterns less noisy.</p>
     .ok =&gt; {}
   }
 
-  writer.close(.ok!).case {
+  writer.close.case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3537,13 +3529,13 @@ patterns less noisy.</p>
     exit!
   }
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   let try writer = path.createOrAppendToFile
   
-  writer.writeString("[INFO] First new log\n").try
-  writer.writeString("[INFO] Second new log\n").try
+  writer.write("[INFO] First new log\n").try
+  writer.write("[INFO] Second new log\n").try
 
-  writer.close(.ok!).try
+  writer.close.try
   console.close
   exit!
 }
@@ -3597,7 +3589,7 @@ exit!
 <p><code>try</code> appears in two contexts: <em>patterns</em> and <em>commands.</em></p>
 <h3 id="try-in-commands"><a class="header" href="#try-in-commands"><code>.try</code> in Commands</a></h3>
 <p>The <code>.try</code> postfix transforms verbose <code>Result</code> case analysis into clean linear code. Remember our original verbose version:</p>
-<pre><code class="language-par">writer.writeString("[INFO] First new log\n").case {
+<pre><code class="language-par">writer.write("[INFO] First new log\n").case {
   .err e =&gt; {
     console.print(e)
     console.close
@@ -3607,7 +3599,7 @@ exit!
 }
 </code></pre>
 <p>With <code>.try</code>, this becomes:</p>
-<pre><code class="language-par">writer.writeString("[INFO] First new log\n").try
+<pre><code class="language-par">writer.write("[INFO] First new log\n").try
 </code></pre>
 <p>The <code>.try</code> postfix desugars any command or expression returning a <code>Result</code>:</p>
 <pre><code class="language-par">variable.try
@@ -3767,15 +3759,15 @@ ProcessTogether(resource, otherData)
     exit!
   }
 
-  let try reader = Os.PathFromString(src).openFile
-  catch/w e =&gt; { reader.close(.ok!); throw e }
+  let try reader = Os.Path(src).openFile
+  catch/w e =&gt; { reader.close; throw e }
 
-  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
-  catch/r e =&gt; { writer.close(.ok!); throw e }
+  let try/w writer = Os.Path(dst).createOrReplaceFile
+  catch/r e =&gt; { writer.close; throw e }
 
   reader.begin.read.try/r.case {
     .end! =&gt; {
-      writer.close(.ok!).try
+      writer.close.try
       console.close
       exit!
     }
@@ -3794,7 +3786,7 @@ ProcessTogether(resource, otherData)
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type either{}, Os.Error)(reader)
+  let parser = Bytes.ParseReader(type Os.Error)(reader)
   let try contents = parser.remainder
   return &lt;&gt; .ok contents
 }

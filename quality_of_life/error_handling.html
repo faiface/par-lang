@@ -174,7 +174,7 @@
 <pre><code class="language-par">def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e =&gt; {
       console.print(e)
@@ -188,7 +188,7 @@
 <p>A few things to note about this pattern:</p>
 <p>The <code>chan exit</code> creates a channel called <code>exit</code> of type <code>?</code> — <a href="./processes/duality.html">the continuation type</a>, which is dual to our <code>Main</code> function’s return type <code>!</code>. The <code>exit!</code> syntax is the <em>break</em> command applied to this continuation, which ends the process.</p>
 <p>After the <code>.case</code> block, the <code>writer</code> variable is available in the surrounding scope. This is how process-scoped variables work in Par — variables bound in <code>.case</code> branches continue to exist after the case analysis.</p>
-<pre><code class="language-par">  writer.writeString("[INFO] First new log\n").case {
+<pre><code class="language-par">  writer.write("[INFO] First new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -197,8 +197,8 @@
     .ok =&gt; {}
   }
 </code></pre>
-<p>In <a href="./process_syntax.html">process syntax</a>, when we use <code>.ok =&gt;</code>, the subject of the command (<code>writer</code>) gets updated to the payload of the .ok branch. Since <code>.writeString</code> returns the same <code>Os.Writer</code> type on success, <code>writer</code> remains usable.</p>
-<pre><code class="language-par">  writer.writeString("[INFO] Second new log\n").case {
+<p>In <a href="./process_syntax.html">process syntax</a>, when we use <code>.ok =&gt;</code>, the subject of the command (<code>writer</code>) gets updated to the payload of the .ok branch. Since <code>.write</code> returns the same <code>Os.Writer</code> type on success, <code>writer</code> remains usable.</p>
+<pre><code class="language-par">  writer.write("[INFO] Second new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -208,7 +208,7 @@
   }
 </code></pre>
 <p>And finish by closing the file:</p>
-<pre><code class="language-par">  writer.close(.ok!).case {
+<pre><code class="language-par">  writer.close.case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -224,7 +224,7 @@
 <pre><code class="language-par">def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e =&gt; {
       console.print(e)
@@ -234,7 +234,7 @@
     .ok writer =&gt; {}
   }
   
-  writer.writeString("[INFO] First new log\n").case {
+  writer.write("[INFO] First new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -242,7 +242,7 @@
     }
     .ok =&gt; {}
   }
-  writer.writeString("[INFO] Second new log\n").case {
+  writer.write("[INFO] Second new log\n").case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -251,7 +251,7 @@
     .ok =&gt; {}
   }
 
-  writer.close(.ok!).case {
+  writer.close.case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -276,13 +276,13 @@
     exit!
   }
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   let try writer = path.createOrAppendToFile
   
-  writer.writeString("[INFO] First new log\n").try
-  writer.writeString("[INFO] Second new log\n").try
+  writer.write("[INFO] First new log\n").try
+  writer.write("[INFO] Second new log\n").try
 
-  writer.close(.ok!).try
+  writer.close.try
   console.close
   exit!
 }
@@ -336,7 +336,7 @@ exit!
 <p><code>try</code> appears in two contexts: <em>patterns</em> and <em>commands.</em></p>
 <h3 id="try-in-commands"><a class="header" href="#try-in-commands"><code>.try</code> in Commands</a></h3>
 <p>The <code>.try</code> postfix transforms verbose <code>Result</code> case analysis into clean linear code. Remember our original verbose version:</p>
-<pre><code class="language-par">writer.writeString("[INFO] First new log\n").case {
+<pre><code class="language-par">writer.write("[INFO] First new log\n").case {
   .err e =&gt; {
     console.print(e)
     console.close
@@ -346,7 +346,7 @@ exit!
 }
 </code></pre>
 <p>With <code>.try</code>, this becomes:</p>
-<pre><code class="language-par">writer.writeString("[INFO] First new log\n").try
+<pre><code class="language-par">writer.write("[INFO] First new log\n").try
 </code></pre>
 <p>The <code>.try</code> postfix desugars any command or expression returning a <code>Result</code>:</p>
 <pre><code class="language-par">variable.try
@@ -506,15 +506,15 @@ ProcessTogether(resource, otherData)
     exit!
   }
 
-  let try reader = Os.PathFromString(src).openFile
-  catch/w e =&gt; { reader.close(.ok!); throw e }
+  let try reader = Os.Path(src).openFile
+  catch/w e =&gt; { reader.close; throw e }
 
-  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
-  catch/r e =&gt; { writer.close(.ok!); throw e }
+  let try/w writer = Os.Path(dst).createOrReplaceFile
+  catch/r e =&gt; { writer.close; throw e }
 
   reader.begin.read.try/r.case {
     .end! =&gt; {
-      writer.close(.ok!).try
+      writer.close.try
       console.close
       exit!
     }
@@ -533,7 +533,7 @@ ProcessTogether(resource, otherData)
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type either{}, Os.Error)(reader)
+  let parser = Bytes.ParseReader(type Os.Error)(reader)
   let try contents = parser.remainder
   return &lt;&gt; .ok contents
 }

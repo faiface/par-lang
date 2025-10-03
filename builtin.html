@@ -378,7 +378,6 @@ type Bytes.Writer&lt;e&gt; = iterative choice {
   .close =&gt; Result&lt;e, !&gt;,
   .flush =&gt; Result&lt;e, self&gt;,
   .write(Bytes) =&gt; Result&lt;e, self&gt;,
-  .writeString(String) =&gt; Result&lt;e, self&gt;,
 }
 
 type Bytes.Parser&lt;e&gt; = recursive iterative/attempt choice {
@@ -415,14 +414,11 @@ type Bytes.Pattern = recursive either {
 }
 
 dec Bytes.Length  : [Bytes] Nat
-dec Bytes.FromString : [String] Bytes
-
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
 dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
 
 dec Bytes.EmptyReader      : Bytes.Reader&lt;either {}&gt;
-dec Bytes.ReaderFromString : [String] Bytes.Reader&lt;either {}&gt;
 dec Bytes.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
 
 dec Bytes.PipeReader : [type e] [[Bytes.Writer&lt;!&gt;] Result&lt;e, !&gt;] Bytes.Reader&lt;e&gt;
@@ -446,16 +442,12 @@ type Os.Reader = Bytes.Reader&lt;Os.Error&gt;
 type Os.Writer = Bytes.Writer&lt;Os.Error&gt;
 
 type Os.Path = iterative/append recursive/parent box choice {
-  .stringName =&gt; String,
-  .bytesName =&gt; Bytes,
-  .stringAbsolute =&gt; String,
-  .bytesAbsolute =&gt; Bytes,
-  .stringParts =&gt; List&lt;String&gt;,
-  .bytesParts =&gt; List&lt;Bytes&gt;,
+  .name =&gt; Bytes,
+  .absolute =&gt; Bytes,
+  .parts =&gt; List&lt;Bytes&gt;,
 
   .parent =&gt; Option&lt;self/parent&gt;,
-  .appendString(String) =&gt; self/append,
-  .appendBytes(Bytes) =&gt; self/append,
+  .append(Bytes) =&gt; self/append,
 
   .openFile =&gt; Result&lt;Os.Error, Os.Reader&gt;,
   .createOrReplaceFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
@@ -472,8 +464,7 @@ type Os.Path = iterative/append recursive/parent box choice {
   .createDir =&gt; Result&lt;Os.Error, !&gt;,
 }
 
-dec Os.PathFromString : [String] Os.Path
-dec Os.PathFromBytes  : [Bytes] Os.Path
+dec Os.Path : [Bytes] Os.Path
 
 dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
@@ -503,12 +494,12 @@ type Http.Error  = String
 type Http.Request =
   (String)
   (Url)
-  (List&lt;(String) String&gt;)
+  (List&lt;(String) Bytes&gt;)
   Bytes.Reader&lt;Http.Error&gt;
 
 type Http.Response =
   (Nat)
-  (List&lt;(String) String&gt;)
+  (List&lt;(String) Bytes&gt;)
   Bytes.Reader&lt;Http.Error&gt;
 
 dec Http.Fetch : [Http.Request] Result&lt;Http.Error, Http.Response&gt;

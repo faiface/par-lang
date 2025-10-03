@@ -167,7 +167,7 @@ the <em>primitives.</em></p>
 <ul>
 <li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
 <li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
-<li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters.</li>
+<li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters. They are a subtype of <code>Bytes</code>.</li>
 <li><strong><code>Char</code></strong> — Singular Unicode character. They are a subtype of <code>String</code>.</li>
 <li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
 <li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
@@ -330,6 +330,7 @@ def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
   .byte(b) rest =&gt; .item(b) rest.loop,
 }
 </code></pre>
+<p>It’s also important to remember, that <code>String</code> is a subtype of <code>Bytes</code> and so any <code>String</code> value can be used wherever <code>Bytes</code> is expected.</p>
 
                     </main>
 
