@@ -29,4 +29,6 @@
     - [Receiving, Where It Shines](./processes/commands/receiving_where_it_shines.md)
   - [Channels & Linking](./processes/chan_expression.md)
   - [Construction by Destruction](./processes/duality.md)
-- [Error Handling](./error_handling.md)
+- [Quality of Life Syntax Sugar](./quality_of_life/README.md)
+  - [Error Handling](./quality_of_life/error_handling.md)
+  - [Pipes](./quality_of_life/pipes.md)
