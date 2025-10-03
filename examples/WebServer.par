@@ -82,7 +82,7 @@ def Concat = [left, right] String.Builder.add(left).add(right).build
 
 dec TrimPrefix : [String, String] String
 def TrimPrefix = [prefix, string]
-  String.Parser(string).matchEnd(.str prefix, .repeat.one.any!).case {
+  string->String.Parser.matchEnd(.str prefix, .repeat.one.any!).case {
     .end _ => string,
     .fail p => do { p.close } in string,
     .match(_, trimmed)! => trimmed,

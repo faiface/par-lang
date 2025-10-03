@@ -158,29 +158,29 @@ def State =
     .lastDirection => (lastDirection) loop,
     .playerPosition => (playerPosition) loop,
     .pegs => (pegs) loop,
-    .tryMove(direction) =>
-      let lastDirection = direction in
-      let nextPosition = AdjacentCoord(playerPosition, direction) in
-      CoordListIndex(pegs, nextPosition).case {
+    .tryMove(direction) => do {
+        let lastDirection = direction
+        playerPosition->AdjacentCoord(direction)
+      } in pegs->CoordListIndex(playerPosition).case {
         .ok index =>
-          let nextBoxPosition = AdjacentCoord(nextPosition, direction) in
-          CoordListContains(pegs, nextBoxPosition).case {
+          let nextBoxPosition = playerPosition->AdjacentCoord(direction) in
+          pegs->CoordListContains(nextBoxPosition).case {
             .true! => loop,
             .false! => Maze(nextBoxPosition).case {
               .err! => loop,
               .ok tile => tile.case {
-                .ground! => let pegs = MovePegInList(pegs, index, direction) in let playerPosition = nextPosition in loop,
+                .ground! => do { pegs->MovePegInList(index, direction) } in loop,
                 .wall! => loop,
-                .hole! => let pegs = MovePegInList(pegs, index, direction) in let playerPosition = nextPosition in loop,
+                .hole! => do { pegs->MovePegInList(index, direction) } in loop,
               },
             },
           }
-        .err! => Maze(nextPosition).case {
+        .err! => Maze(playerPosition).case {
           .err! => loop,
           .ok tile => tile.case {
-            .ground! => let playerPosition = nextPosition in loop,
+            .ground! => loop,
             .wall! => loop,
-            .hole! => let playerPosition = nextPosition in loop,
+            .hole! => loop,
           },
         }
       }
@@ -245,18 +245,18 @@ def MovePegInList = [pegs, index, direction]
   let n = 0 in
   pegs.begin.case {
     .item(peg) pegs => Nat.Equals(index, n).case {
-      .true! => .item(AdjacentCoord(peg, direction)) pegs,
-      .false! => let n = Nat.Add(n, 1) in .item(peg) pegs.loop,
+      .true! => .item(peg->AdjacentCoord(direction)) pegs,
+      .false! => do { n->Nat.Add(1) } in .item(peg) pegs.loop,
     },
     .end! => .end!,
   }
 
 dec AdjacentCoord : [Coord, Direction] Coord
 def AdjacentCoord = [(x, y)!, direction] direction.case {
-  .left! => (Int.Sub(x, 1), y)!,
-  .right! => (Int.Add(x, 1), y)!,
-  .up! => (x, Int.Sub(y, 1))!,
-  .down! => (x, Int.Add(y, 1))!,
+  .left! => (x->Int.Sub(1), y)!,
+  .right! => (x->Int.Add(1), y)!,
+  .up! => (x, y->Int.Sub(1))!,
+  .down! => (x, y->Int.Add(1))!,
 }
 
 dec PictureOfPlayer : [Direction] Char
@@ -272,21 +272,21 @@ def PictureOfPeg = "●"
 
 dec Maze : [Coord] Result<!, Tile>
 def Maze = [(x, y)!] chan return {
-  Nat.Compare(Int.Abs(x), 4).case {
+  Int.Abs(x)->Nat.Compare(4).case {
     .less! => {},
     .equal! => {},
     .greater! => { return <> .err! },
   }
-  Nat.Compare(Int.Abs(y), 4).case {
+  Int.Abs(y)->Nat.Compare(4).case {
     .less! => {},
     .equal! => {},
     .greater! => { return <> .err! },
   }
-  Nat.Equals(Int.Abs(x), 4).case {
+  Int.Abs(x)->Nat.Equals(4).case {
     .true! => { return <> .ok .wall! },
     .false! => {},
   }
-  Nat.Equals(Int.Abs(y), 4).case {
+  Int.Abs(y)->Nat.Equals(4).case {
     .true! => { return <> .ok .wall! },
     .false! => {},
   }
@@ -316,7 +316,7 @@ def Maze = [(x, y)!] chan return {
 // Helpers
 
 dec StringFromList : [List<Char>] String
-def StringFromList = [list] StringJoin(list, "")
+def StringFromList = [list] list->StringJoin("")
 
 dec StringJoin : [List<String>, String] String
 def StringJoin = [strings, separator]
@@ -339,11 +339,11 @@ dec CoordListIndex : [List<Coord>, Coord] Result<!, Nat>
 def CoordListIndex = [list, (x, y)!]
   let index = 0 in
   list.begin.case {
-    .item((otherX, otherY)!) list =>
-      let result = index in
-      let index = Nat.Add(index, 1) in
-      Int.Equals(otherX, x).case {
-        .true! => Int.Equals(otherY, y).case {
+    .item((otherX, otherY)!) list => do {
+        let result = index
+        index->Nat.Add(1)
+      } in Int.Equals(otherX, x).case {
+        .true! => otherY->Int.Equals(y).case {
           .true! => .ok result,
           .false! => list.loop,
         },
@@ -354,8 +354,8 @@ def CoordListIndex = [list, (x, y)!]
 
 dec CoordListContains : [List<Coord>, Coord] Bool
 def CoordListContains = [list, (x, y)!] list.begin.case {
-  .item((otherX, otherY)!) list => Int.Equals(otherX, x).case {
-    .true! => Int.Equals(otherY, y).case {
+  .item((otherX, otherY)!) list => otherX->Int.Equals(x).case {
+    .true! => otherY->Int.Equals(y).case {
       .true! => .true!,
       .false! => list.loop,
     },
