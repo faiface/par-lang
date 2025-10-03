@@ -7,7 +7,7 @@ names.
 
 ## A first taste
 
-Here are two helper functions that operate on numbers:
+Here are some helper functions that operate on numbers:
 
 ```par
 def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
