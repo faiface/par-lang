@@ -30,8 +30,8 @@ let result = 3
 ```
 
 The pipe feeds the value on the left into the **first argument** of the
-function on the right. Nothing else changes. The second snippet above is
-exactly the same as the first one.
+function on the right. Nothing else changes — the two version above do
+the exact same thing.
 
 ## Expression semantics
 
@@ -114,4 +114,4 @@ without introducing special cases.
 - If the first argument is not the one you need, braces give you full control.
 
 Whenever you notice yourself inventing a `tmp` variable simply to pass it to
-another function, try a pipe—it’s often all the ceremony you actually need.
+another function, try a pipe — it’s often all the ceremony you actually need.
