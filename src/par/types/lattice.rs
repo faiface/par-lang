@@ -157,10 +157,10 @@ pub fn intersect_types(
     type2: &Type,
 ) -> Result<Type, TypeError> {
     if type1.is_assignable_to(type2, typedefs)? {
-        return Ok(type2.clone());
+        return Ok(type1.clone());
     }
     if type2.is_assignable_to(type1, typedefs)? {
-        return Ok(type1.clone());
+        return Ok(type2.clone());
     }
 
     Ok(match (type1, type2) {
@@ -236,11 +236,15 @@ pub fn intersect_types(
             Type::Either(span.clone(), new_branches)
         }
         (Type::Choice(_, branches1), Type::Choice(_, branches2)) => {
+            println!("CHOICES");
             let mut new_branches = branches1.clone();
             for (name, typ2) in branches2 {
+                println!("BRANCH: {}", &name.string);
                 if let Some(typ1) = new_branches.get(name) {
+                    println!("INTERSECTED");
                     new_branches.insert(name.clone(), intersect_types(typedefs, span, typ1, typ2)?);
                 } else {
+                    println!("INSERTED");
                     new_branches.insert(name.clone(), typ2.clone());
                 }
             }
