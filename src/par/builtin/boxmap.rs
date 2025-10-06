@@ -14,6 +14,7 @@ use crate::{
 };
 use arcstr::literal;
 use im::OrdMap;
+use num_bigint::BigInt;
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
@@ -107,44 +108,53 @@ fn provide_boxmap<K, F>(
     handle.provide_box(move |mut handle| {
         let mut map = map.clone();
         async move {
-            loop {
-                match handle.case().await.as_str() {
-                    "list" => {
-                        for (k, v) in map.iter() {
-                            handle.signal(literal!("item"));
-                            let mut pair = handle.send();
-                            provide_key(pair.send(), k.clone());
-                            pair.link(v.lock().unwrap().duplicate());
-                        }
-                        handle.signal(literal!("end"));
-                        return handle.break_();
-                    }
-                    "get" => {
-                        let key = read_key(handle.receive()).await;
-                        match map.get(&key) {
-                            Some(value) => {
-                                handle.signal(literal!("ok"));
-                                return handle.link(value.lock().unwrap().duplicate());
-                            }
-                            None => {
-                                handle.signal(literal!("err"));
-                                return handle.break_();
-                            }
-                        }
-                    }
-                    "put" => {
-                        let key = read_key(handle.receive()).await;
-                        let value = handle.receive();
-                        map.insert(key, Arc::new(Mutex::new(value)));
-                        return provide_boxmap(handle, read_key, provide_key, map);
-                    }
-                    "delete" => {
-                        let key = read_key(handle.receive()).await;
-                        map.remove(&key);
-                        return provide_boxmap(handle, read_key, provide_key, map);
-                    }
-                    _ => unreachable!(),
+            match handle.case().await.as_str() {
+                "size" => {
+                    return handle.provide_nat(BigInt::from(map.len()));
                 }
+                "keys" => {
+                    for key in map.keys() {
+                        handle.signal(literal!("item"));
+                        provide_key(handle.send(), key.clone());
+                    }
+                    handle.signal(literal!("end"));
+                    return handle.break_();
+                }
+                "list" => {
+                    for (key, value) in map.iter() {
+                        handle.signal(literal!("item"));
+                        let mut pair = handle.send();
+                        provide_key(pair.send(), key.clone());
+                        pair.link(value.lock().unwrap().duplicate());
+                    }
+                    handle.signal(literal!("end"));
+                    return handle.break_();
+                }
+                "get" => {
+                    let key = read_key(handle.receive()).await;
+                    match map.get(&key) {
+                        Some(value) => {
+                            handle.signal(literal!("ok"));
+                            return handle.link(value.lock().unwrap().duplicate());
+                        }
+                        None => {
+                            handle.signal(literal!("err"));
+                            return handle.break_();
+                        }
+                    }
+                }
+                "put" => {
+                    let key = read_key(handle.receive()).await;
+                    let value = handle.receive();
+                    map.insert(key, Arc::new(Mutex::new(value)));
+                    return provide_boxmap(handle, read_key, provide_key, map);
+                }
+                "delete" => {
+                    let key = read_key(handle.receive()).await;
+                    map.remove(&key);
+                    return provide_boxmap(handle, read_key, provide_key, map);
+                }
+                _ => unreachable!(),
             }
         }
     });

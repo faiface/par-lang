@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use arcstr::literal;
+use num_bigint::BigInt;
 use std::sync::Arc;
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -69,7 +70,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     }
 }
 
-async fn map_new<K: Ord, F: Future<Output = K>>(
+async fn map_new<K: Clone + Ord, F: Future<Output = K>>(
     mut handle: Handle,
     read_key: impl Fn(Handle) -> F,
     provide_key: impl Fn(Handle, K),
@@ -90,7 +91,7 @@ async fn map_new<K: Ord, F: Future<Output = K>>(
     provide_map(handle, map, read_key, provide_key).await;
 }
 
-async fn provide_map<K: Ord, F: Future<Output = K>>(
+async fn provide_map<K: Clone + Ord, F: Future<Output = K>>(
     mut handle: Handle,
     mut map: BTreeMap<K, Handle>,
     read_key: impl Fn(Handle) -> F,
@@ -98,6 +99,20 @@ async fn provide_map<K: Ord, F: Future<Output = K>>(
 ) {
     loop {
         match handle.case().await.as_str() {
+            "size" => {
+                handle.send().provide_nat(BigInt::from(map.len()));
+                continue;
+            }
+            "keys" => {
+                let mut keys = handle.send();
+                for key in map.keys() {
+                    keys.signal(literal!("item"));
+                    provide_key(keys.send(), key.clone());
+                }
+                keys.signal(literal!("end"));
+                keys.break_();
+                continue;
+            }
             "list" => {
                 for (key, value) in map.into_iter() {
                     handle.signal(literal!("item"));

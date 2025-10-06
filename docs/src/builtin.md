@@ -352,6 +352,8 @@ dec Http.Listen : [String] recursive either {
 /// Map
 
 type Map<k, v> = iterative choice {
+  .size => (Nat) self,
+  .keys => (List<k>) self,
   .list => List<(k) v>,
   .entry(k) => (Option<v>) choice {
     .put(v) => self,
@@ -367,6 +369,8 @@ dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
 /// BoxMap
 
 type BoxMap<k, v> = iterative box choice {
+  .size => Nat,
+  .keys => List<k>,
   .list => List<(k) box v>,
   .get(k) => Option<box v>,
   .put(k, box v) => self,
