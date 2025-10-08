@@ -19,7 +19,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     }
 }
 
-async fn time_now(mut handle: Handle) {
+async fn time_now(handle: Handle) {
     // return current time in milliseconds since epoch
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
