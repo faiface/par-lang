@@ -14,6 +14,7 @@ pub mod os;
 pub mod parser;
 pub mod string;
 pub mod test;
+pub mod time;
 pub mod url;
 
 use std::sync::Arc;
@@ -44,4 +45,5 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Url"), url::external_module());
     module.import(Some("Http"), http::external_module());
     module.import(Some("Test"), test::external_module());
+    module.import(Some("Time"), time::external_module());
 }

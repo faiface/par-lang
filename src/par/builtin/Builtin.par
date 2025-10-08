@@ -395,3 +395,8 @@ dec Cell.Share : [type a] [a, dual Cell<a>] a
 /// Debug
 
 dec Debug.Log : [String] !
+
+
+/// Time
+
+dec Time.Now : Nat
