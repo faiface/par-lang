@@ -24,6 +24,6 @@ async fn time_now(handle: Handle) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis() as u64;
+        .as_millis();
     handle.provide_nat(BigInt::from(now));
 }
