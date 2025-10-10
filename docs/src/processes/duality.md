@@ -187,20 +187,20 @@ Here's the full implementation, imperative-style:
 
 ```par
 def Flatten = [type a] [lists] chan yield {
-  lists.begin/outer.case {
+  lists.begin@outer.case {
     .end! => {
       yield.end!
     }
 
     .item(list) => {
-      list.begin/inner.case {
+      list.begin@inner.case {
         .end! => {}
         .item(value) => {
           yield.item(value)
-          list.loop/inner
+          list.loop@inner
         }
       }
-      lists.loop/outer
+      lists.loop@outer
     }
   }
 }
@@ -208,7 +208,7 @@ def Flatten = [type a] [lists] chan yield {
 
 It makes a bunch of concepts we've already covered come together.
 
-- We loop through the outer list of lists using `.begin/outer` and `.loop/outer`.
+- We loop through the outer list of lists using `.begin@outer` and `.loop@outer`.
 - If it’s `.end!`, we finish: `yield.end!`.
 - If it’s `.item(list)`, we then begin looping through the inner list.
   - We don't manually bind the remainder of the list — the communication simply continues on

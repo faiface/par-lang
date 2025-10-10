@@ -67,15 +67,15 @@ def DownloadFile = [(sourceUrl) dest] chan yield {
 
   let try (status, headers) body = Http.Fetch(("GET", sourceUrl, *()) Bytes.EmptyReader)
   let headers = BoxMap.String(type Bytes)(headers)
-  catch/clearResp err => { body.close; throw err }
+  catch@clearResp err => { body.close; throw err }
 
   Nat.Equals(status, 200).case {
-    .false! => { throw/clearResp "Bad server response" }
+    .false! => { throw@clearResp "Bad server response" }
     .true! => {}
   }
 
-  let try/clearResp file = dest.createNewFile
-  catch/clearFile err => { file.close; throw err }
+  let try@clearResp file = dest.createNewFile
+  catch@clearFile err => { file.close; throw err }
 
   let default(0) totalSize = catch ! => .err! in
     headers.get("content-length").try
@@ -86,9 +86,9 @@ def DownloadFile = [(sourceUrl) dest] chan yield {
   let bytesSinceLastEvent = 0
   let timeOfLastEvent = Time.Now(!)
 
-  body.begin.read.try/clearFile.case {
+  body.begin.read.try@clearFile.case {
     .chunk(bytes) => {
-      file.write(bytes).try/clearResp
+      file.write(bytes).try@clearResp
 
       bytesSinceLastEvent->Nat.Add(Bytes.Length(bytes))
       Nat.Compare(Time.Now(!), Nat.Add(timeOfLastEvent, 100)).case {

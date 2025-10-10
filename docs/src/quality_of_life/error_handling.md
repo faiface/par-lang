@@ -432,24 +432,24 @@ config.getUserName.try
 Like `begin`/`loop`, `catch` blocks can be labeled for precise control:
 
 ```par
-catch/label e => { ... }
+catch@label e => { ... }
 ```
 
 The corresponding `try` and `throw` commands reference the same label:
 
 ```par
-let try/label value = result
-throw/label "Custom error"
+let try@label value = result
+throw@label "Custom error"
 ```
 
 Labels are selected by proximity and name, not by error type. The nearest `catch` with the matching label (or no label) is chosen. This allows different error types to be routed to different handlers:
 
 ```par
-catch/fs e => { /* handle file system errors */ }
-catch/net e => { /* handle network errors */ }
+catch@fs e => { /* handle file system errors */ }
+catch@net e => { /* handle network errors */ }
 
-let try/fs writer = path.createFile
-let try/net conn = url.connect
+let try@fs writer = path.createFile
+let try@net conn = url.connect
 ```
 
 ### Throwing to Previous `catch` Blocks
@@ -496,26 +496,26 @@ def Main: ! = chan exit {
   }
 
   let try reader = Os.Path(src).openFile
-  catch/w e => { reader.close; throw e }
+  catch@w e => { reader.close; throw e }
 
-  let try/w writer = Os.Path(dst).createOrReplaceFile
-  catch/r e => { writer.close; throw e }
+  let try@w writer = Os.Path(dst).createOrReplaceFile
+  catch@r e => { writer.close; throw e }
 
-  reader.begin.read.try/r.case {
+  reader.begin.read.try@r.case {
     .end! => {
       writer.close.try
       console.close
       exit!
     }
     .chunk(bytes) => {
-      writer.write(bytes).try/w
+      writer.write(bytes).try@w
       reader.loop
     }
   }
 }
 ```
 
-Here, the `catch/r` and `catch/w` blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.
+Here, the `catch@r` and `catch@w` blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.
 
 This layered approach allows you to build sophisticated error handling hierarchies while keeping each level focused and clear.
 

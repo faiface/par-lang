@@ -141,7 +141,7 @@ type String.Builder = iterative choice {
   .build => String,
 }
 
-type String.Parser<e> = recursive iterative/attempt choice {
+type String.Parser<e> = recursive iterative@attempt choice {
   .close => Result<e, !>,
   .remainder => Result<e, String>,
   .char => either {
@@ -150,12 +150,12 @@ type String.Parser<e> = recursive iterative/attempt choice {
   },
   .match(String.Pattern, String.Pattern) => either {
     .end Result<e, !>,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(String, String) self,
   },
   .matchEnd(String.Pattern, String.Pattern) => either {
     .end Result<e, !>,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(String, String)!,
   },
 }
@@ -220,7 +220,7 @@ type Bytes.Writer<e> = iterative choice {
   .write(Bytes) => Result<e, self>,
 }
 
-type Bytes.Parser<e> = recursive iterative/attempt choice {
+type Bytes.Parser<e> = recursive iterative@attempt choice {
   .close => Result<e, !>,
   .remainder => Result<e, Bytes>,
   .byte => either {
@@ -229,12 +229,12 @@ type Bytes.Parser<e> = recursive iterative/attempt choice {
   },
   .match(Bytes.Pattern, Bytes.Pattern) => either {
     .end Result<e, !>,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(Bytes, Bytes) self,
   },
   .matchEnd(Bytes.Pattern, Bytes.Pattern) => either {
     .end Result<e, !>,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(Bytes, Bytes)!,
   },
 }
@@ -281,13 +281,13 @@ type Os.Error  = String
 type Os.Reader = Bytes.Reader<Os.Error>
 type Os.Writer = Bytes.Writer<Os.Error>
 
-type Os.Path = iterative/append recursive/parent box choice {
+type Os.Path = iterative@append recursive@parent box choice {
   .name => Bytes,
   .absolute => Bytes,
   .parts => List<Bytes>,
 
-  .parent => Option<self/parent>,
-  .append(Bytes) => self/append,
+  .parent => Option<self@parent>,
+  .append(Bytes) => self@append,
 
   .openFile => Result<Os.Error, Os.Reader>,
   .createOrReplaceFile => Result<Os.Error, Os.Writer>,
@@ -295,11 +295,11 @@ type Os.Path = iterative/append recursive/parent box choice {
   .appendToFile => Result<Os.Error, Os.Writer>,
   .createOrAppendToFile => Result<Os.Error, Os.Writer>,
 
-  .listDir => Result<Os.Error, List<self/append>>,
-  .traverseDir => Result<Os.Error, recursive/tree either {
+  .listDir => Result<Os.Error, List<self@append>>,
+  .traverseDir => Result<Os.Error, recursive@tree either {
     .end!,
-    .file(self/append) self/tree,
-    .dir(self/append, self/tree) self/tree,
+    .file(self@append) self@tree,
+    .dir(self@append, self@tree) self@tree,
   }>,
   .createDir => Result<Os.Error, !>,
 }

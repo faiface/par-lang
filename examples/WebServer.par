@@ -6,11 +6,11 @@ def Main: ! = chan exit {
     exit!
   }
 
-  catch/prompt ! => {
+  catch@prompt ! => {
     console.close
     exit!
   }
-  console.prompt("Directory to serve: ")[try/prompt root]
+  console.prompt("Directory to serve: ")[try@prompt root]
 
   console.print("Starting server...")
 

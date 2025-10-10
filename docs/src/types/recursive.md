@@ -73,7 +73,7 @@ type LegalList = recursive either {
 
 > **If there are nested `recursive` (or [`iterative`](./iterative.md)) types, it may be necessary to
 > distinguish between them.** For that, we can attach **labels** to `recursive` and `self`. That's
-> done with a slash: `recursive/label`, `self/label`. Any lower-case identifier can be used for the
+> done with an `@`: `recursive@label`, `self@label`. Any lower-case identifier can be used for the
 > label.
 
 The recursive type can be thought of as being equivalent to its _expansion_. That is, replacing each
@@ -334,7 +334,7 @@ def BiggerSum = SumTree(BiggerTree)  // = 20
 
 > **If there are multiple nested `.begin`/`.loop`, it may be necessary to
 > distinguish between them.** Labels can be used here too, just like with the types:
-> `.begin/label` and `.loop/label` does the job.
+> `.begin@label` and `.loop@label` does the job.
 >
 > TODO:
 > ```par

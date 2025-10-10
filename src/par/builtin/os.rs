@@ -316,7 +316,7 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
     }
 }
 
-// Provide List<self/append> for the directory entries of `base` using a pre-opened ReadDir.
+// Provide List<self@append> for the directory entries of `base` using a pre-opened ReadDir.
 async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
     let mut entries: Vec<(Bytes, std::ffi::OsString)> = Vec::new();
     while let Ok(Some(entry)) = rd.next_entry().await {

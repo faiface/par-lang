@@ -32,7 +32,7 @@ type Sequence<a> = iterative choice {
 
 > **If there are nested `iterative` (or [`recursive`](./recursive.md)) types, it may be necessary to
 > distinguish between them.** For that, we can attach **labels** to `iterative` and `self`. That's
-> done with a slash: `iterative/label`, `self/label`. Any lower-case identifier can be used for the
+> done with an `@`: `iterative@label`, `self@label`. Any lower-case identifier can be used for the
 > label.
 
 Iterative types are **always linear,** regardless of what's in their bodies. As such, they can't be
@@ -103,8 +103,8 @@ Values of iterative types are constructed using standalone `begin`/`loop` expres
 in the `self` places of the body type to go back to the corresponding `begin`.
 
 > Just like with [recursive's](./recursive.md) `.begin`/`.loop`, it's possible to use labels to
-> distinguish between nested `begin`/`loop` (and `.begin`/`.loop`) uses. Just use a slash:
-> `begin/label` and `loop/label`.
+> distinguish between nested `begin`/`loop` (and `.begin`/`.loop`) uses. Just use `@`:
+> `begin@label` and `loop@label`.
 
 Here's a simple `Sequence<Int>` that produces the number `7` forever:
 

@@ -6,14 +6,14 @@ type Move = either {
   .scissors!,
 }
 
-type Player = iterative/game choice {
+type Player = iterative@game choice {
   .stop => !,
-  .play_round => iterative/round choice {
-    .stop_round => self/game,
+  .play_round => iterative@round choice {
+    .stop_round => self@game,
     .play_move => (Move) choice {
-      .win  => self/game,
-      .lose => self/game,
-      .draw => self/round,
+      .win  => self@game,
+      .lose => self@game,
+      .draw => self@round,
     },
   },
 }
@@ -29,7 +29,7 @@ type Game = iterative choice {
   .play_round => (Outcome) self,
 }
 
-def StartGame = [p1, p2] begin/game case {
+def StartGame = [p1, p2] begin@game case {
   .stop => do {
     p1.stop?
     p2.stop?
@@ -43,7 +43,7 @@ def StartGame = [p1, p2] begin/game case {
     .end! => do {
       p1.stop_round
       p2.stop_round
-    } in (.too_long!) loop/game,
+    } in (.too_long!) loop@game,
 
     .step remaining => do {
       p1.play_move[move1]
@@ -52,12 +52,12 @@ def StartGame = [p1, p2] begin/game case {
       .first! => do {
         p1.win
         p2.lose
-      } in (.first_won!) loop/game,
+      } in (.first_won!) loop@game,
 
       .second! => do {
         p1.lose
         p2.win
-      } in (.second_won!) loop/game,
+      } in (.second_won!) loop@game,
 
       .draw! => do {
         p1.draw

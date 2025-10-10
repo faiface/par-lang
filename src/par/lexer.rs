@@ -20,6 +20,7 @@ pub enum TokenKind {
     Gt,
 
     Slash,
+    At,
     Colon,
     Semicolon,
     Comma,
@@ -105,6 +106,7 @@ impl TokenKind {
             TokenKind::Gt => ">",
 
             TokenKind::Slash => "/",
+            TokenKind::At => "@",
             TokenKind::Colon => ":",
             TokenKind::Semicolon => ";",
             TokenKind::Comma => ",",
@@ -353,6 +355,10 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                     } else {
                         Some((raw, TokenKind::Slash))
                     }
+                }
+                '@' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::At))
                 }
                 ',' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;

@@ -377,17 +377,17 @@ def ListMap = [type a, b] [list, func] chan yield {
 
 dec ListFlatMap : [type a, b] [List<a>, box [a] List<b>] List<b>
 def ListFlatMap = [type a, b] [list, func] chan yield {
-  list.begin/outer.case {
+  list.begin@outer.case {
     .item(x) list => {
       let ys = func(x)
-      ys.begin/inner.case {
+      ys.begin@inner.case {
         .item(y) ys => {
           yield.item(y)
-          ys.loop/inner
+          ys.loop@inner
         },
         .end! => {},
       }
-      list.loop/outer
+      list.loop@outer
     },
     .end! => { yield.end! },
   }

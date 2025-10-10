@@ -1951,7 +1951,7 @@ fn cmd_branch_default(input: &mut Input) -> Result<CommandBranch> {
 }
 
 fn label(input: &mut Input) -> Result<Option<LocalName>> {
-    opt(preceded(t(TokenKind::Slash), local_name)).parse_next(input)
+    opt(preceded(t(TokenKind::At), local_name)).parse_next(input)
 }
 
 #[cfg(test)]
