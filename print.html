@@ -935,7 +935,7 @@ type String.Builder = iterative choice {
   .build =&gt; String,
 }
 
-type String.Parser&lt;e&gt; = recursive iterative/attempt choice {
+type String.Parser&lt;e&gt; = recursive iterative@attempt choice {
   .close =&gt; Result&lt;e, !&gt;,
   .remainder =&gt; Result&lt;e, String&gt;,
   .char =&gt; either {
@@ -944,12 +944,12 @@ type String.Parser&lt;e&gt; = recursive iterative/attempt choice {
   },
   .match(String.Pattern, String.Pattern) =&gt; either {
     .end Result&lt;e, !&gt;,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(String, String) self,
   },
   .matchEnd(String.Pattern, String.Pattern) =&gt; either {
     .end Result&lt;e, !&gt;,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(String, String)!,
   },
 }
@@ -1014,7 +1014,7 @@ type Bytes.Writer&lt;e&gt; = iterative choice {
   .write(Bytes) =&gt; Result&lt;e, self&gt;,
 }
 
-type Bytes.Parser&lt;e&gt; = recursive iterative/attempt choice {
+type Bytes.Parser&lt;e&gt; = recursive iterative@attempt choice {
   .close =&gt; Result&lt;e, !&gt;,
   .remainder =&gt; Result&lt;e, Bytes&gt;,
   .byte =&gt; either {
@@ -1023,12 +1023,12 @@ type Bytes.Parser&lt;e&gt; = recursive iterative/attempt choice {
   },
   .match(Bytes.Pattern, Bytes.Pattern) =&gt; either {
     .end Result&lt;e, !&gt;,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(Bytes, Bytes) self,
   },
   .matchEnd(Bytes.Pattern, Bytes.Pattern) =&gt; either {
     .end Result&lt;e, !&gt;,
-    .fail self/attempt,
+    .fail self@attempt,
     .match(Bytes, Bytes)!,
   },
 }
@@ -1075,13 +1075,13 @@ type Os.Error  = String
 type Os.Reader = Bytes.Reader&lt;Os.Error&gt;
 type Os.Writer = Bytes.Writer&lt;Os.Error&gt;
 
-type Os.Path = iterative/append recursive/parent box choice {
+type Os.Path = iterative@append recursive@parent box choice {
   .name =&gt; Bytes,
   .absolute =&gt; Bytes,
   .parts =&gt; List&lt;Bytes&gt;,
 
-  .parent =&gt; Option&lt;self/parent&gt;,
-  .append(Bytes) =&gt; self/append,
+  .parent =&gt; Option&lt;self@parent&gt;,
+  .append(Bytes) =&gt; self@append,
 
   .openFile =&gt; Result&lt;Os.Error, Os.Reader&gt;,
   .createOrReplaceFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
@@ -1089,11 +1089,11 @@ type Os.Path = iterative/append recursive/parent box choice {
   .appendToFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
   .createOrAppendToFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
 
-  .listDir =&gt; Result&lt;Os.Error, List&lt;self/append&gt;&gt;,
-  .traverseDir =&gt; Result&lt;Os.Error, recursive/tree either {
+  .listDir =&gt; Result&lt;Os.Error, List&lt;self@append&gt;&gt;,
+  .traverseDir =&gt; Result&lt;Os.Error, recursive@tree either {
     .end!,
-    .file(self/append) self/tree,
-    .dir(self/append, self/tree) self/tree,
+    .file(self@append) self@tree,
+    .dir(self@append, self@tree) self@tree,
   }&gt;,
   .createDir =&gt; Result&lt;Os.Error, !&gt;,
 }
@@ -1783,7 +1783,7 @@ of occurrences of <code>self</code>: the self-reference.</p>
 <blockquote>
 <p><strong>If there are nested <code>recursive</code> (or <a href="types/./iterative.html"><code>iterative</code></a>) types, it may be necessary to
 distinguish between them.</strong> For that, we can attach <strong>labels</strong> to <code>recursive</code> and <code>self</code>. That’s
-done with a slash: <code>recursive/label</code>, <code>self/label</code>. Any lower-case identifier can be used for the
+done with an <code>@</code>: <code>recursive@label</code>, <code>self@label</code>. Any lower-case identifier can be used for the
 label.</p>
 </blockquote>
 <p>The recursive type can be thought of as being equivalent to its <em>expansion</em>. That is, replacing each
@@ -2005,7 +2005,7 @@ def BiggerSum = SumTree(BiggerTree)  // = 20
 <blockquote>
 <p><strong>If there are multiple nested <code>.begin</code>/<code>.loop</code>, it may be necessary to
 distinguish between them.</strong> Labels can be used here too, just like with the types:
-<code>.begin/label</code> and <code>.loop/label</code> does the job.</p>
+<code>.begin@label</code> and <code>.loop@label</code> does the job.</p>
 <p>TODO:</p>
 <pre><code class="language-par">type Tree&lt;a&gt; = recursive List&lt;(a) self&gt;
 </code></pre>
@@ -2196,7 +2196,7 @@ of occurrences of <code>self</code>. Notice that the pattern is the same as with
 <blockquote>
 <p><strong>If there are nested <code>iterative</code> (or <a href="types/./recursive.html"><code>recursive</code></a>) types, it may be necessary to
 distinguish between them.</strong> For that, we can attach <strong>labels</strong> to <code>iterative</code> and <code>self</code>. That’s
-done with a slash: <code>iterative/label</code>, <code>self/label</code>. Any lower-case identifier can be used for the
+done with an <code>@</code>: <code>iterative@label</code>, <code>self@label</code>. Any lower-case identifier can be used for the
 label.</p>
 </blockquote>
 <p>Iterative types are <strong>always linear,</strong> regardless of what’s in their bodies. As such, they can’t be
@@ -2263,8 +2263,8 @@ type InvalidSequence&lt;a&gt; = iterative (a) self  // Error! Unguarded `self` r
 in the <code>self</code> places of the body type to go back to the corresponding <code>begin</code>.</p>
 <blockquote>
 <p>Just like with <a href="types/./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>, it’s possible to use labels to
-distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begin</code>/<code>.loop</code>) uses. Just use a slash:
-<code>begin/label</code> and <code>loop/label</code>.</p>
+distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begin</code>/<code>.loop</code>) uses. Just use <code>@</code>:
+<code>begin@label</code> and <code>loop@label</code>.</p>
 </blockquote>
 <p>Here’s a simple <code>Sequence&lt;Int&gt;</code> that produces the number <code>7</code> forever:</p>
 <pre><code class="language-par">dec SevenForever : Sequence&lt;Int&gt;
@@ -3372,27 +3372,27 @@ a nested list:</p>
 <p>It’s a generic function, using the <a href="processes/../types/forall.html">forall</a> for polymorphism.</p>
 <p>Here’s the full implementation, imperative-style:</p>
 <pre><code class="language-par">def Flatten = [type a] [lists] chan yield {
-  lists.begin/outer.case {
+  lists.begin@outer.case {
     .end! =&gt; {
       yield.end!
     }
 
     .item(list) =&gt; {
-      list.begin/inner.case {
+      list.begin@inner.case {
         .end! =&gt; {}
         .item(value) =&gt; {
           yield.item(value)
-          list.loop/inner
+          list.loop@inner
         }
       }
-      lists.loop/outer
+      lists.loop@outer
     }
   }
 }
 </code></pre>
 <p>It makes a bunch of concepts we’ve already covered come together.</p>
 <ul>
-<li>We loop through the outer list of lists using <code>.begin/outer</code> and <code>.loop/outer</code>.</li>
+<li>We loop through the outer list of lists using <code>.begin@outer</code> and <code>.loop@outer</code>.</li>
 <li>If it’s <code>.end!</code>, we finish: <code>yield.end!</code>.</li>
 <li>If it’s <code>.item(list)</code>, we then begin looping through the inner list.
 <ul>
@@ -3715,18 +3715,18 @@ config.getUserName.try
 </code></pre>
 <h2 id="labels-and-layered-error-handling"><a class="header" href="#labels-and-layered-error-handling">Labels and Layered Error Handling</a></h2>
 <p>Like <code>begin</code>/<code>loop</code>, <code>catch</code> blocks can be labeled for precise control:</p>
-<pre><code class="language-par">catch/label e =&gt; { ... }
+<pre><code class="language-par">catch@label e =&gt; { ... }
 </code></pre>
 <p>The corresponding <code>try</code> and <code>throw</code> commands reference the same label:</p>
-<pre><code class="language-par">let try/label value = result
-throw/label "Custom error"
+<pre><code class="language-par">let try@label value = result
+throw@label "Custom error"
 </code></pre>
 <p>Labels are selected by proximity and name, not by error type. The nearest <code>catch</code> with the matching label (or no label) is chosen. This allows different error types to be routed to different handlers:</p>
-<pre><code class="language-par">catch/fs e =&gt; { /* handle file system errors */ }
-catch/net e =&gt; { /* handle network errors */ }
+<pre><code class="language-par">catch@fs e =&gt; { /* handle file system errors */ }
+catch@net e =&gt; { /* handle network errors */ }
 
-let try/fs writer = path.createFile
-let try/net conn = url.connect
+let try@fs writer = path.createFile
+let try@net conn = url.connect
 </code></pre>
 <h3 id="throwing-to-previous-catch-blocks"><a class="header" href="#throwing-to-previous-catch-blocks">Throwing to Previous <code>catch</code> Blocks</a></h3>
 <p>A powerful pattern is using nested <code>catch</code> blocks for resource cleanup while delegating to outer blocks for shared error handling.</p>
@@ -3764,25 +3764,25 @@ ProcessTogether(resource, otherData)
   }
 
   let try reader = Os.Path(src).openFile
-  catch/w e =&gt; { reader.close; throw e }
+  catch@w e =&gt; { reader.close; throw e }
 
-  let try/w writer = Os.Path(dst).createOrReplaceFile
-  catch/r e =&gt; { writer.close; throw e }
+  let try@w writer = Os.Path(dst).createOrReplaceFile
+  catch@r e =&gt; { writer.close; throw e }
 
-  reader.begin.read.try/r.case {
+  reader.begin.read.try@r.case {
     .end! =&gt; {
       writer.close.try
       console.close
       exit!
     }
     .chunk(bytes) =&gt; {
-      writer.write(bytes).try/w
+      writer.write(bytes).try@w
       reader.loop
     }
   }
 }
 </code></pre>
-<p>Here, the <code>catch/r</code> and <code>catch/w</code> blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.</p>
+<p>Here, the <code>catch@r</code> and <code>catch@w</code> blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.</p>
 <p>This layered approach allows you to build sophisticated error handling hierarchies while keeping each level focused and clear.</p>
 <h2 id="propagating-errors-in-functions"><a class="header" href="#propagating-errors-in-functions">Propagating Errors in Functions</a></h2>
 <p>The examples so far have shown terminal error handling — printing errors and exiting. But often you want to propagate errors up to the caller. Here’s a utility function that reads an entire file’s contents:</p>

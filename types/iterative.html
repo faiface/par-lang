@@ -187,7 +187,7 @@ of occurrences of <code>self</code>. Notice that the pattern is the same as with
 <blockquote>
 <p><strong>If there are nested <code>iterative</code> (or <a href="./recursive.html"><code>recursive</code></a>) types, it may be necessary to
 distinguish between them.</strong> For that, we can attach <strong>labels</strong> to <code>iterative</code> and <code>self</code>. That’s
-done with a slash: <code>iterative/label</code>, <code>self/label</code>. Any lower-case identifier can be used for the
+done with an <code>@</code>: <code>iterative@label</code>, <code>self@label</code>. Any lower-case identifier can be used for the
 label.</p>
 </blockquote>
 <p>Iterative types are <strong>always linear,</strong> regardless of what’s in their bodies. As such, they can’t be
@@ -254,8 +254,8 @@ type InvalidSequence&lt;a&gt; = iterative (a) self  // Error! Unguarded `self` r
 in the <code>self</code> places of the body type to go back to the corresponding <code>begin</code>.</p>
 <blockquote>
 <p>Just like with <a href="./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>, it’s possible to use labels to
-distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begin</code>/<code>.loop</code>) uses. Just use a slash:
-<code>begin/label</code> and <code>loop/label</code>.</p>
+distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begin</code>/<code>.loop</code>) uses. Just use <code>@</code>:
+<code>begin@label</code> and <code>loop@label</code>.</p>
 </blockquote>
 <p>Here’s a simple <code>Sequence&lt;Int&gt;</code> that produces the number <code>7</code> forever:</p>
 <pre><code class="language-par">dec SevenForever : Sequence&lt;Int&gt;

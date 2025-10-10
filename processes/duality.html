@@ -327,27 +327,27 @@ a nested list:</p>
 <p>It’s a generic function, using the <a href="../types/forall.html">forall</a> for polymorphism.</p>
 <p>Here’s the full implementation, imperative-style:</p>
 <pre><code class="language-par">def Flatten = [type a] [lists] chan yield {
-  lists.begin/outer.case {
+  lists.begin@outer.case {
     .end! =&gt; {
       yield.end!
     }
 
     .item(list) =&gt; {
-      list.begin/inner.case {
+      list.begin@inner.case {
         .end! =&gt; {}
         .item(value) =&gt; {
           yield.item(value)
-          list.loop/inner
+          list.loop@inner
         }
       }
-      lists.loop/outer
+      lists.loop@outer
     }
   }
 }
 </code></pre>
 <p>It makes a bunch of concepts we’ve already covered come together.</p>
 <ul>
-<li>We loop through the outer list of lists using <code>.begin/outer</code> and <code>.loop/outer</code>.</li>
+<li>We loop through the outer list of lists using <code>.begin@outer</code> and <code>.loop@outer</code>.</li>
 <li>If it’s <code>.end!</code>, we finish: <code>yield.end!</code>.</li>
 <li>If it’s <code>.item(list)</code>, we then begin looping through the inner list.
 <ul>

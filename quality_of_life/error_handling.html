@@ -458,18 +458,18 @@ config.getUserName.try
 </code></pre>
 <h2 id="labels-and-layered-error-handling"><a class="header" href="#labels-and-layered-error-handling">Labels and Layered Error Handling</a></h2>
 <p>Like <code>begin</code>/<code>loop</code>, <code>catch</code> blocks can be labeled for precise control:</p>
-<pre><code class="language-par">catch/label e =&gt; { ... }
+<pre><code class="language-par">catch@label e =&gt; { ... }
 </code></pre>
 <p>The corresponding <code>try</code> and <code>throw</code> commands reference the same label:</p>
-<pre><code class="language-par">let try/label value = result
-throw/label "Custom error"
+<pre><code class="language-par">let try@label value = result
+throw@label "Custom error"
 </code></pre>
 <p>Labels are selected by proximity and name, not by error type. The nearest <code>catch</code> with the matching label (or no label) is chosen. This allows different error types to be routed to different handlers:</p>
-<pre><code class="language-par">catch/fs e =&gt; { /* handle file system errors */ }
-catch/net e =&gt; { /* handle network errors */ }
+<pre><code class="language-par">catch@fs e =&gt; { /* handle file system errors */ }
+catch@net e =&gt; { /* handle network errors */ }
 
-let try/fs writer = path.createFile
-let try/net conn = url.connect
+let try@fs writer = path.createFile
+let try@net conn = url.connect
 </code></pre>
 <h3 id="throwing-to-previous-catch-blocks"><a class="header" href="#throwing-to-previous-catch-blocks">Throwing to Previous <code>catch</code> Blocks</a></h3>
 <p>A powerful pattern is using nested <code>catch</code> blocks for resource cleanup while delegating to outer blocks for shared error handling.</p>
@@ -507,25 +507,25 @@ ProcessTogether(resource, otherData)
   }
 
   let try reader = Os.Path(src).openFile
-  catch/w e =&gt; { reader.close; throw e }
+  catch@w e =&gt; { reader.close; throw e }
 
-  let try/w writer = Os.Path(dst).createOrReplaceFile
-  catch/r e =&gt; { writer.close; throw e }
+  let try@w writer = Os.Path(dst).createOrReplaceFile
+  catch@r e =&gt; { writer.close; throw e }
 
-  reader.begin.read.try/r.case {
+  reader.begin.read.try@r.case {
     .end! =&gt; {
       writer.close.try
       console.close
       exit!
     }
     .chunk(bytes) =&gt; {
-      writer.write(bytes).try/w
+      writer.write(bytes).try@w
       reader.loop
     }
   }
 }
 </code></pre>
-<p>Here, the <code>catch/r</code> and <code>catch/w</code> blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.</p>
+<p>Here, the <code>catch@r</code> and <code>catch@w</code> blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.</p>
 <p>This layered approach allows you to build sophisticated error handling hierarchies while keeping each level focused and clear.</p>
 <h2 id="propagating-errors-in-functions"><a class="header" href="#propagating-errors-in-functions">Propagating Errors in Functions</a></h2>
 <p>The examples so far have shown terminal error handling — printing errors and exiting. But often you want to propagate errors up to the caller. Here’s a utility function that reads an entire file’s contents:</p>

@@ -223,7 +223,7 @@ of occurrences of <code>self</code>: the self-reference.</p>
 <blockquote>
 <p><strong>If there are nested <code>recursive</code> (or <a href="./iterative.html"><code>iterative</code></a>) types, it may be necessary to
 distinguish between them.</strong> For that, we can attach <strong>labels</strong> to <code>recursive</code> and <code>self</code>. That’s
-done with a slash: <code>recursive/label</code>, <code>self/label</code>. Any lower-case identifier can be used for the
+done with an <code>@</code>: <code>recursive@label</code>, <code>self@label</code>. Any lower-case identifier can be used for the
 label.</p>
 </blockquote>
 <p>The recursive type can be thought of as being equivalent to its <em>expansion</em>. That is, replacing each
@@ -445,7 +445,7 @@ def BiggerSum = SumTree(BiggerTree)  // = 20
 <blockquote>
 <p><strong>If there are multiple nested <code>.begin</code>/<code>.loop</code>, it may be necessary to
 distinguish between them.</strong> Labels can be used here too, just like with the types:
-<code>.begin/label</code> and <code>.loop/label</code> does the job.</p>
+<code>.begin@label</code> and <code>.loop@label</code> does the job.</p>
 <p>TODO:</p>
 <pre><code class="language-par">type Tree&lt;a&gt; = recursive List&lt;(a) self&gt;
 </code></pre>
