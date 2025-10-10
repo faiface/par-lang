@@ -492,10 +492,6 @@ impl Net {
         }
     }
 
-    fn offset_variables(&mut self, offset: usize) {
-        self.map_vars(&mut |var_id| var_id + offset);
-    }
-
     fn dereference_package(&mut self, package: usize) -> Tree {
         let net = self
             .packages
@@ -507,7 +503,12 @@ impl Net {
 
     pub fn inject_net(&mut self, mut net: Net) -> Tree {
         // Now, we have to freshen all variables in the tree
-        net.offset_variables(self.variables.vars.len());
+        let mut allocated = HashMap::new();
+        net.map_vars(&mut |id| {
+            *allocated
+                .entry(id)
+                .or_insert_with(|| self.variables.alloc())
+        });
         self.redexes.append(&mut net.redexes);
         if self.reducer.is_some() {
             self.redexes.extend(net.waiting_for_reducer.drain(..));
@@ -515,8 +516,11 @@ impl Net {
             self.waiting_for_reducer
                 .append(&mut net.waiting_for_reducer);
         }
-        self.variables.vars.append(&mut net.variables.vars);
-        self.variables.free.append(&mut net.variables.free);
+        for (id, state) in net.variables.vars.drain(..).enumerate() {
+            if let Some(new_id) = allocated.get(&id) {
+                self.variables.vars[*new_id] = state
+            }
+        }
         self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites;
         net.ports.pop_back().unwrap()
     }
@@ -580,7 +584,19 @@ impl Net {
     }
 
     pub fn link(&mut self, a: Tree, b: Tree) {
-        if let Tree::Var(id) = a {
+        match (a, b) {
+            (Tree::Var(id), y) | (y, Tree::Var(id)) => match self.variables.remove_linked(id) {
+                Ok(x) => {
+                    self.link(x, y);
+                }
+                Err(state) => {
+                    *state = VarState::Linked(y);
+                }
+            },
+            (Tree::Era, y) | (y, Tree::Era) => self.redexes.push_front((Tree::Era, y)),
+            (x, y) => self.redexes.push_back((x, y)),
+        }
+        /*if let Tree::Var(id) = a {
             match self.variables.remove_linked(id) {
                 Ok(a) => {
                     self.link(a, b);
@@ -593,7 +609,7 @@ impl Net {
             self.link(Tree::Var(id), a)
         } else {
             self.redexes.push_back((a, b))
-        }
+        }*/
     }
 
     pub fn create_wire(&mut self) -> (Tree, Tree) {
@@ -618,9 +634,9 @@ impl Net {
                 tree.map_vars(m);
             }
         }
-        for free in &mut self.variables.free {
-            *free = m(*free);
-        }
+        //for free in &mut self.variables.free {
+        //    *free = m(*free);
+        //}
     }
 
     pub fn show(&self) -> String {
