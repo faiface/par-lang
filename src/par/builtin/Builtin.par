@@ -399,4 +399,4 @@ dec Debug.Log : [String] !
 
 /// Time
 
-dec Time.Now : Nat
+dec Time.Now : [!] Nat
