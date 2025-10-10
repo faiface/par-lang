@@ -298,6 +298,18 @@ impl Compiler {
                     }
                 }
             }
+            Tree::Box_(a, id) => {
+                let a = self.apply_safe_rules(*a);
+                Tree::Box_(Box::new(a), id)
+            }
+            Tree::Signal(signal, a) => {
+                let a = self.apply_safe_rules(*a);
+                Tree::Signal(signal, Box::new(a))
+            }
+            Tree::Choice(a, table) => {
+                let a = self.apply_safe_rules(*a);
+                Tree::Choice(Box::new(a), table)
+            }
             tree => tree,
         }
     }
