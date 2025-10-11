@@ -50,6 +50,7 @@ pub(crate) mod private {
             self.net.lock()
         }
 
+        #[cfg(feature = "playground")]
         pub(crate) fn net(&self) -> Arc<Mutex<Net>> {
             Arc::clone(&self.net)
         }
@@ -110,6 +111,7 @@ impl TypedHandle {
     }
 }
 
+#[allow(dead_code)]
 pub enum TypedReadback {
     Nat(BigInt),
     Int(BigInt),
@@ -407,6 +409,7 @@ impl TypedHandle {
         }
     }
 
+    #[cfg(feature = "playground")]
     pub fn net(&self) -> Arc<Mutex<Net>> {
         self.net.net()
     }

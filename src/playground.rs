@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeSet,
-    fmt::Write,
     fs::File,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -12,22 +11,10 @@ use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
 use crate::{
-    icombs::readback::TypedHandle,
-    location::FileName,
-    par::{
-        builtin::import_builtins,
-        program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
-    },
-    readback::Element,
-    spawn::TokioSpawn,
+    icombs::readback::TypedHandle, location::FileName, par::program::CheckedModule,
+    readback::Element, spawn::TokioSpawn,
 };
-use crate::{
-    icombs::{self, IcCompiled},
-    par::{
-        build_result::BuildResult, language::CompileError, parse::SyntaxError, process::Expression,
-        types::TypeError,
-    },
-};
+use crate::{icombs::IcCompiled, par::build_result::BuildResult};
 use core::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -80,14 +67,6 @@ impl Default for ThemeMode {
     fn default() -> Self {
         Self::System
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum Error {
-    Syntax(SyntaxError),
-    Compile(CompileError),
-    InetCompile(crate::icombs::compiler::Error),
-    Type(TypeError),
 }
 
 impl Playground {
@@ -546,28 +525,6 @@ impl Playground {
                 });
             });
         });
-    }
-}
-
-impl Error {
-    pub fn display(&self, code: Arc<str>) -> String {
-        match self {
-            Self::Syntax(error) => {
-                // Show syntax error with miette's formatting
-                format!(
-                    "{:?}",
-                    miette::Report::from(error.to_owned()).with_source_code(code)
-                )
-            }
-
-            Self::Compile(error) => format!("{:?}", error.to_report(code)),
-
-            Self::Type(error) => format!("{:?}", error.to_report(code)),
-
-            Self::InetCompile(err) => {
-                format!("inet compilation error: {:?}", err)
-            }
-        }
     }
 }
 

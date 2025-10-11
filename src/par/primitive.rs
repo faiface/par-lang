@@ -33,6 +33,7 @@ impl Primitive {
         }
     }
 
+    #[cfg(feature = "playground")]
     pub fn pretty_string(&self) -> String {
         let mut buf = String::new();
         self.pretty(&mut buf, 0).unwrap();

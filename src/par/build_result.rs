@@ -1,15 +1,13 @@
 use crate::{
-    icombs::readback::TypedHandle,
+    icombs::{self, IcCompiled},
+    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
+};
+use crate::{
     location::FileName,
     par::{
         builtin::import_builtins,
         program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
     },
-    spawn::TokioSpawn,
-};
-use crate::{
-    icombs::{self, IcCompiled},
-    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
 };
 
 use std::fmt::Write;
@@ -55,16 +53,19 @@ pub enum BuildResult {
         error: CompileError,
     },
     TypeError {
+        #[allow(dead_code)]
         pretty: String,
         error: TypeError,
     },
     InetError {
+        #[allow(dead_code)]
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
         error: icombs::compiler::Error,
     },
     Ok {
+        #[allow(dead_code)]
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
@@ -84,6 +85,7 @@ impl BuildResult {
         }
     }
 
+    #[cfg(feature = "playground")]
     pub fn pretty(&self) -> Option<&str> {
         match self {
             Self::None => None,

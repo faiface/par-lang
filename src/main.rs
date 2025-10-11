@@ -10,6 +10,7 @@ use colored::Colorize;
 use eframe::egui;
 use futures::task::SpawnExt;
 use std::fs::File;
+#[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -99,6 +100,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "playground")]
 /// String to save on crash. Used by the playground to avoid losing everything on panic.
 static CRASH_STR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 

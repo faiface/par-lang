@@ -13,6 +13,7 @@ impl TokioSpawn {
         }
     }
 
+    #[cfg(feature = "playground")]
     pub fn from_handle(handle: tokio::runtime::Handle) -> Self {
         Self { tokio: handle }
     }
