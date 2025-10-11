@@ -7,15 +7,15 @@ type Event = (Os.Path) either {  // destination
 
 def Main =
   let rootPath = Os.Path(".").append("Downloads") in
-  YieldDownloadRequests("127.0.0.1:3000", rootPath)  // : List<(Url) Os.Path>
+  YieldDownloadRequests("127.0.0.1:3000", rootPath)  // : List<(Url, Os.Path)!>
     ->Map1(box DownloadFile)                         // : List<List<Event>>
     ->FanIn1                                         // : List<Event>
     ->ShowDownloadProgress(rootPath)                 // : !
 
-def Map1 = Map(type (Url) Os.Path, List<Event>)
+def Map1 = Map(type (Url, Os.Path)!, List<Event>)
 def FanIn1 = FanIn(type Event)
 
-dec YieldDownloadRequests : [String, Os.Path] List<(Url) Os.Path>
+dec YieldDownloadRequests : [String, Os.Path] List<(Url, Os.Path)!>
 def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
   Debug.Log(Concat(*("Listening on ", listenUrl, "...")))
   catch e => {
@@ -44,7 +44,7 @@ def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
               ->Url.FromString
 
           let destination = rootPath.append(url.path->TrimStart("/"))
-          yield.item((sourceUrl) destination)
+          yield.item((sourceUrl, destination)!)
           respond((200, *()) Bytes.EmptyReader)
           next.loop
         }
@@ -57,8 +57,8 @@ def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
   }
 }
 
-dec DownloadFile : [(Url) Os.Path] List<Event>
-def DownloadFile = [(sourceUrl) dest] chan yield {
+dec DownloadFile : [(Url, Os.Path)!] List<Event>
+def DownloadFile = [(sourceUrl, dest)!] chan yield {
   catch err => {
     yield.item((dest) .failed err)
     yield.end!
@@ -73,7 +73,7 @@ def DownloadFile = [(sourceUrl) dest] chan yield {
     .true! => {}
   }
 
-  let try@clearResp file = dest.createNewFile
+  let try@clearResp file = Os.CreateNewFile(dest)
   catch@clearFile err => { file.close; throw err }
 
   let default(0) totalSize = catch ! => .err! in

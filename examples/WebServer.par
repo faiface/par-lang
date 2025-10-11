@@ -31,7 +31,7 @@ def Main: ! = chan exit {
 }
 
 dec ServePath : [Os.Path, String, [Http.Response] Result<Http.Error, !>] !
-def ServePath = [root, path, respond] Os.Path(path).listDir.case {
+def ServePath = [root, path, respond] path->Os.Path->Os.ListDir.case {
   .err _ => ServeFile(path, respond),
   .ok paths => ServeDir(root, paths, respond),
 }
@@ -44,7 +44,7 @@ def ServeFile = [path, respond] chan finish {
     finish!
   }
 
-  let try file = Os.Path(path).openFile
+  let try file = path->Os.Path->Os.OpenFile
   respond((200, *(("Content-Type") "text/plain")) file)
 
   finish!

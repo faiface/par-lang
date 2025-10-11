@@ -31,11 +31,131 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
                 |handle| Box::pin(path_from_bytes(handle)),
             ),
             Definition::external("Stdin", Type::name(None, "Reader", vec![]), |handle| {
-                Box::pin(stdin_reader(handle))
+                Box::pin(os_stdin(handle))
             }),
             Definition::external("Stdout", Type::name(None, "Writer", vec![]), |handle| {
-                Box::pin(stdout_writer(handle))
+                Box::pin(os_stdout(handle))
             }),
+            Definition::external("Stderr", Type::name(None, "Writer", vec![]), |handle| {
+                Box::pin(os_stderr(handle))
+            }),
+            Definition::external(
+                "OpenFile",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        ("ok", Type::name(None, "Reader", vec![])),
+                    ]),
+                ),
+                |handle| Box::pin(os_open_file(handle)),
+            ),
+            Definition::external(
+                "CreateOrReplaceFile",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        ("ok", Type::name(None, "Writer", vec![])),
+                    ]),
+                ),
+                |handle| Box::pin(os_create_or_replace_file(handle)),
+            ),
+            Definition::external(
+                "CreateNewFile",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        ("ok", Type::name(None, "Writer", vec![])),
+                    ]),
+                ),
+                |handle| Box::pin(os_create_new_file(handle)),
+            ),
+            Definition::external(
+                "AppendToFile",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        ("ok", Type::name(None, "Writer", vec![])),
+                    ]),
+                ),
+                |handle| Box::pin(os_append_to_file(handle)),
+            ),
+            Definition::external(
+                "CreateOrAppendToFile",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        ("ok", Type::name(None, "Writer", vec![])),
+                    ]),
+                ),
+                |handle| Box::pin(os_create_or_append_to_file(handle)),
+            ),
+            Definition::external(
+                "CreateDir",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        ("ok", Type::break_()),
+                    ]),
+                ),
+                |handle| Box::pin(os_create_dir(handle)),
+            ),
+            Definition::external(
+                "ListDir",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        (
+                            "ok",
+                            Type::name(
+                                Some("List"),
+                                "List",
+                                vec![Type::name(None, "Path", vec![])],
+                            ),
+                        ),
+                    ]),
+                ),
+                |handle| Box::pin(os_list_dir(handle)),
+            ),
+            Definition::external(
+                "TraverseDir",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::either(vec![
+                        ("err", Type::name(None, "Error", vec![])),
+                        (
+                            "ok",
+                            Type::recursive(
+                                None,
+                                Type::either(vec![
+                                    ("end", Type::break_()),
+                                    (
+                                        "file",
+                                        Type::pair(
+                                            Type::name(None, "Path", vec![]),
+                                            Type::self_(None),
+                                        ),
+                                    ),
+                                    (
+                                        "dir",
+                                        Type::pair(
+                                            Type::name(None, "Path", vec![]),
+                                            Type::pair(Type::self_(None), Type::self_(None)),
+                                        ),
+                                    ),
+                                ]),
+                            ),
+                        ),
+                    ]),
+                ),
+                |handle| Box::pin(os_traverse_dir(handle)),
+            ),
         ],
     }
 }
@@ -84,108 +204,6 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     let p2 = path.join(Path::new(os));
                     provide_path(handle, p2);
                 }
-                "openFile" => match File::open(&path).await {
-                    Ok(file) => {
-                        handle.signal(literal!("ok"));
-                        return provide_bytes_reader_from_async(handle, file).await;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
-                "createOrReplaceFile" => match OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&path)
-                    .await
-                {
-                    Ok(file) => {
-                        handle.signal(literal!("ok"));
-                        return provide_bytes_writer_from_async(handle, file).await;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
-                "createNewFile" => match OpenOptions::new()
-                    .create_new(true)
-                    .write(true)
-                    .open(&path)
-                    .await
-                {
-                    Ok(file) => {
-                        handle.signal(literal!("ok"));
-                        return provide_bytes_writer_from_async(handle, file).await;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
-                "appendToFile" => match OpenOptions::new()
-                    .write(true)
-                    .append(true)
-                    .open(&path)
-                    .await
-                {
-                    Ok(file) => {
-                        handle.signal(literal!("ok"));
-                        return provide_bytes_writer_from_async(handle, file).await;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
-                "createOrAppendToFile" => match OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .append(true)
-                    .open(&path)
-                    .await
-                {
-                    Ok(file) => {
-                        handle.signal(literal!("ok"));
-                        return provide_bytes_writer_from_async(handle, file).await;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
-                "listDir" => match fs::read_dir(&path).await {
-                    Ok(mut rd) => {
-                        handle.signal(literal!("ok"));
-                        return provide_list_dir(handle, &path, &mut rd).await;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
-                "traverseDir" => match build_dir_tree(path.clone()).await {
-                    Ok(nodes) => {
-                        handle.signal(literal!("ok"));
-                        return provide_dir_tree(handle, nodes.as_slice());
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err));
-                    }
-                },
-                "createDir" => match fs::create_dir_all(&path).await {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        return handle.break_();
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
-                    }
-                },
                 _ => unreachable!(),
             }
         }
@@ -316,7 +334,7 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
     }
 }
 
-// Provide List<self@append> for the directory entries of `base` using a pre-opened ReadDir.
+// Provide List<Os.Path> for the directory entries of `base` using a pre-opened ReadDir.
 async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
     let mut entries: Vec<(Bytes, std::ffi::OsString)> = Vec::new();
     while let Ok(Some(entry)) = rd.next_entry().await {
@@ -401,10 +419,155 @@ fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
     }
 }
 
-async fn stdin_reader(handle: Handle) {
+async fn os_stdin(handle: Handle) {
     provide_bytes_reader_from_async(handle, tokio::io::stdin()).await;
 }
 
-async fn stdout_writer(handle: Handle) {
+async fn os_stdout(handle: Handle) {
     provide_bytes_writer_from_async(handle, tokio::io::stdout()).await;
+}
+
+async fn os_stderr(handle: Handle) {
+    provide_bytes_writer_from_async(handle, tokio::io::stderr()).await;
+}
+
+async fn os_open_file(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match File::open(&path).await {
+        Ok(file) => {
+            handle.signal(literal!("ok"));
+            return provide_bytes_reader_from_async(handle, file).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_create_or_replace_file(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .await
+    {
+        Ok(file) => {
+            handle.signal(literal!("ok"));
+            return provide_bytes_writer_from_async(handle, file).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_create_new_file(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&path)
+        .await
+    {
+        Ok(file) => {
+            handle.signal(literal!("ok"));
+            return provide_bytes_writer_from_async(handle, file).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_append_to_file(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(&path)
+        .await
+    {
+        Ok(file) => {
+            handle.signal(literal!("ok"));
+            return provide_bytes_writer_from_async(handle, file).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_create_or_append_to_file(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(&path)
+        .await
+    {
+        Ok(file) => {
+            handle.signal(literal!("ok"));
+            return provide_bytes_writer_from_async(handle, file).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_create_dir(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match fs::create_dir_all(&path).await {
+        Ok(()) => {
+            handle.signal(literal!("ok"));
+            return handle.break_();
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_list_dir(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match fs::read_dir(&path).await {
+        Ok(mut rd) => {
+            handle.signal(literal!("ok"));
+            return provide_list_dir(handle, &path, &mut rd).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+async fn os_traverse_dir(mut handle: Handle) {
+    let path = pathbuf_from_os_path(handle.receive()).await;
+    match build_dir_tree(path.clone()).await {
+        Ok(nodes) => {
+            handle.signal(literal!("ok"));
+            return provide_dir_tree(handle, nodes.as_slice());
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err));
+        }
+    }
+}
+
+async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
+    handle.signal(literal!("absolute"));
+    let path_bytes = handle.bytes().await;
+    let os_str = unsafe { OsStr::from_encoded_bytes_unchecked(&path_bytes) };
+    PathBuf::from(os_str)
 }

@@ -17,7 +17,7 @@ def Program: ! = chan exit {
     exit!
   }
 
-  let try paths: List<Os.Path> = TraverseDirectory(Os.Path(path))
+  let try paths: List<Os.Path> = path->Os.Path->TraverseDirectory
   paths.begin.case {
     .end! => {}
     .item(path) => {
@@ -26,7 +26,7 @@ def Program: ! = chan exit {
         console.print(e)
         paths.loop
       }
-      let try reader = path.openFile
+      let try reader = path->Os.OpenFile
       let lines = GrepFile(needle, reader)
       lines.begin@file.next.case {
         .end try! => {}
@@ -52,7 +52,7 @@ def Program: ! = chan exit {
 dec TraverseDirectory : [Os.Path] Result<Os.Error, List<Os.Path>>
 def TraverseDirectory = [dirPath]
   catch e => .err e in
-  let try tree = dirPath.traverseDir in
+  let try tree = Os.TraverseDir(dirPath) in
   .ok tree.begin.case {
     .end! => .end!,
     .file(path) rest => .item(path) rest.loop,

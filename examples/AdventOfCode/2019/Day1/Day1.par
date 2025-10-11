@@ -3,7 +3,7 @@
 dec FileRead : [String] Result<!, String>
 def FileRead = [path]
   catch _ => .err! in
-  let try reader = Os.Path(path).openFile in
+  let try reader = path->Os.Path->Os.OpenFile in
   let parser = String.ParserFromReader(type Os.Error)(reader) in
   let try contents = parser.remainder in
   .ok contents

@@ -285,26 +285,27 @@ type Os.Path = iterative@append recursive@parent box choice {
 
   .parent => Option<self@parent>,
   .append(Bytes) => self@append,
-
-  .openFile => Result<Os.Error, Os.Reader>,
-  .createOrReplaceFile => Result<Os.Error, Os.Writer>,
-  .createNewFile => Result<Os.Error, Os.Writer>,
-  .appendToFile => Result<Os.Error, Os.Writer>,
-  .createOrAppendToFile => Result<Os.Error, Os.Writer>,
-
-  .listDir => Result<Os.Error, List<self@append>>,
-  .traverseDir => Result<Os.Error, recursive@tree either {
-    .end!,
-    .file(self@append) self@tree,
-    .dir(self@append, self@tree) self@tree,
-  }>,
-  .createDir => Result<Os.Error, !>,
 }
 
 dec Os.Path : [Bytes] Os.Path
 
 dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
+dec Os.Stderr : Os.Writer
+
+dec Os.OpenFile             : [Os.Path] Result<Os.Error, Os.Reader>
+dec Os.CreateOrReplaceFile  : [Os.Path] Result<Os.Error, Os.Writer>
+dec Os.CreateNewFile        : [Os.Path] Result<Os.Error, Os.Writer>
+dec Os.AppendToFile         : [Os.Path] Result<Os.Error, Os.Writer>
+dec Os.CreateOrAppendToFile : [Os.Path] Result<Os.Error, Os.Writer>
+
+dec Os.CreateDir   : [Os.Path] Result<Os.Error, !>
+dec Os.ListDir     : [Os.Path] Result<Os.Error, List<Os.Path>>
+dec Os.TraverseDir : [Os.Path] Result<Os.Error, recursive either {
+  .end!,
+  .file(Os.Path) self,
+  .dir(Os.Path, self) self,
+}>
 
 
 /// Url
@@ -345,6 +346,12 @@ dec Http.Listen : [String] recursive either {
   .shutdown Result<Http.Error, !>,
   .incoming(Http.Request, [Http.Response] Result<Http.Error, !>) self,
 }
+
+
+/// Time
+
+dec Time.Now : [!] Nat
+
 
 /// Map
 
@@ -395,8 +402,3 @@ dec Cell.Share : [type a] [a, dual Cell<a>] a
 /// Debug
 
 dec Debug.Log : [String] !
-
-
-/// Time
-
-dec Time.Now : [!] Nat
