@@ -1,0 +1,89 @@
+def Main: ! = chan exit {
+  let console = Console.Open
+  catch e => {
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  catch@prompt ! => {
+    console.close
+    exit!
+  }
+  console.prompt("Directory to serve: ")[try@prompt root]
+
+  console.print("Starting server...")
+
+  Http.Listen("127.0.0.1:8080").begin.case {
+    .shutdown try! => {
+      console.print("Shutting down...")
+      console.close
+      exit!
+    }
+
+    .incoming(request, respond) next => {
+      let (method, url, headers) body = request
+      body.close
+      ServePath(Os.Path(root), Concat(root, url.path), respond)
+      next.loop
+    }
+  }
+}
+
+dec ServePath : [Os.Path, String, [Http.Response] Result<Http.Error, !>] !
+def ServePath = [root, path, respond] Os.Path(path).listDir.case {
+  .err _ => ServeFile(path, respond),
+  .ok paths => ServeDir(root, paths, respond),
+}
+
+dec ServeFile : [String, [Http.Response] Result<Http.Error, !>] !
+def ServeFile = [path, respond] chan finish {
+  catch e => { Debug.Log(e); finish! }
+  catch e => {
+    respond((404, *()) Bytes.Reader(e)).try
+    finish!
+  }
+
+  let try file = Os.Path(path).openFile
+  respond((200, *(("Content-Type") "text/plain")) file)
+
+  finish!
+}
+
+dec ServeDir : [Os.Path, List<Os.Path>, [Http.Response] Result<Http.Error, !>] !
+def ServeDir = [root, paths, respond] chan finish {
+  let content = Bytes.PipeReader(type Http.Error)([w] catch ! => .ok! in do {
+    w.write("<ul>").try
+
+    paths.begin.case {
+      .end! => {}
+      .item(path) => {
+        w.write("<li>").try
+        w.write("<a href=\"").try
+        w.write(TrimPrefix(root.absolute, path.absolute)).try
+        w.write("\">").try
+        w.write(path.name).try
+        w.write("</a>").try
+        w.write("</li>").try
+        paths.loop
+      }
+    }
+
+    w.write("</ul>").try
+    w.close.try
+  } in .ok!)
+
+  respond((200, *(("Content-Type") "text/html")) content)
+  finish!
+}
+
+dec Concat : [String, String] String
+def Concat = [left, right] String.Builder.add(left).add(right).build
+
+dec TrimPrefix : [Bytes, Bytes] Bytes
+def TrimPrefix = [prefix, bytes]
+  bytes->Bytes.Parser.matchEnd(.bytes prefix, .repeat.one.any!).case {
+    .end _ => bytes,
+    .fail p => do { p.close } in bytes,
+    .match(_, trimmed)! => trimmed,
+  }

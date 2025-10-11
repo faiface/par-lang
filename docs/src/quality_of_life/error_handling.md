@@ -24,7 +24,7 @@ Here's what error handling looks like without any syntax sugar. We'll write a pr
 def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e => {
       console.print(e)
@@ -43,7 +43,7 @@ The `chan exit` creates a channel called `exit` of type `?` — [the continuatio
 After the `.case` block, the `writer` variable is available in the surrounding scope. This is how process-scoped variables work in Par — variables bound in `.case` branches continue to exist after the case analysis.
 
 ```par
-  writer.writeString("[INFO] First new log\n").case {
+  writer.write("[INFO] First new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -53,10 +53,10 @@ After the `.case` block, the `writer` variable is available in the surrounding s
   }
 ```
 
-In [process syntax](./process_syntax.md), when we use `.ok =>`, the subject of the command (`writer`) gets updated to the payload of the .ok branch. Since `.writeString` returns the same `Os.Writer` type on success, `writer` remains usable.
+In [process syntax](./process_syntax.md), when we use `.ok =>`, the subject of the command (`writer`) gets updated to the payload of the .ok branch. Since `.write` returns the same `Os.Writer` type on success, `writer` remains usable.
 
 ```par
-  writer.writeString("[INFO] Second new log\n").case {
+  writer.write("[INFO] Second new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -69,7 +69,7 @@ In [process syntax](./process_syntax.md), when we use `.ok =>`, the subject of t
 And finish by closing the file:
 
 ```par
-  writer.close(.ok!).case {
+  writer.close.case {
     .err e => {
       console.print(e)
       console.close
@@ -89,7 +89,7 @@ Here's the complete program:
 def Main: ! = chan exit {
   let console = Console.Open
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   path.createOrAppendToFile.case {
     .err e => {
       console.print(e)
@@ -99,7 +99,7 @@ def Main: ! = chan exit {
     .ok writer => {}
   }
   
-  writer.writeString("[INFO] First new log\n").case {
+  writer.write("[INFO] First new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -107,7 +107,7 @@ def Main: ! = chan exit {
     }
     .ok => {}
   }
-  writer.writeString("[INFO] Second new log\n").case {
+  writer.write("[INFO] Second new log\n").case {
     .err e => {
       console.print(e)
       console.close
@@ -116,7 +116,7 @@ def Main: ! = chan exit {
     .ok => {}
   }
 
-  writer.close(.ok!).case {
+  writer.close.case {
     .err e => {
       console.print(e)
       console.close
@@ -146,13 +146,13 @@ def Main: ! = chan exit {
     exit!
   }
 
-  let path = Os.PathFromString("logs.txt")
+  let path = Os.Path("logs.txt")
   let try writer = path.createOrAppendToFile
   
-  writer.writeString("[INFO] First new log\n").try
-  writer.writeString("[INFO] Second new log\n").try
+  writer.write("[INFO] First new log\n").try
+  writer.write("[INFO] Second new log\n").try
 
-  writer.close(.ok!).try
+  writer.close.try
   console.close
   exit!
 }
@@ -162,7 +162,7 @@ Significantly shorter and more readable! The error handling is declared once and
 
 ## How `try`/`catch`/`throw` Work in Process Syntax
 
-Par's error handling sugar is built around three keywords that desugar to explicit `Result` handling. Let's understand how they work.
+Par's error handling sugar is built around small, local keywords that desugar to explicit `Result` handling. Let's understand how they work.
 
 ### The `catch` Statement
 
@@ -237,7 +237,7 @@ type Result<e, a> = either {
 The `.try` postfix transforms verbose `Result` case analysis into clean linear code. Remember our original verbose version:
 
 ```par
-writer.writeString("[INFO] First new log\n").case {
+writer.write("[INFO] First new log\n").case {
   .err e => {
     console.print(e)
     console.close
@@ -250,7 +250,7 @@ writer.writeString("[INFO] First new log\n").case {
 With `.try`, this becomes:
 
 ```par
-writer.writeString("[INFO] First new log\n").try
+writer.write("[INFO] First new log\n").try
 ```
 
 The `.try` postfix desugars any command or expression returning a `Result`:
@@ -287,6 +287,8 @@ source.poll.try[value]
 ```
 
 After this command, `source` maintains its `Poll<Os.Error, String>` type and value contains the successfully polled `String`.
+
+<!-- moved `default` to the end of this chapter -->
 
 ### The Concurrent Evaluation Restriction
 
@@ -430,24 +432,24 @@ config.getUserName.try
 Like `begin`/`loop`, `catch` blocks can be labeled for precise control:
 
 ```par
-catch/label e => { ... }
+catch@label e => { ... }
 ```
 
 The corresponding `try` and `throw` commands reference the same label:
 
 ```par
-let try/label value = result
-throw/label "Custom error"
+let try@label value = result
+throw@label "Custom error"
 ```
 
 Labels are selected by proximity and name, not by error type. The nearest `catch` with the matching label (or no label) is chosen. This allows different error types to be routed to different handlers:
 
 ```par
-catch/fs e => { /* handle file system errors */ }
-catch/net e => { /* handle network errors */ }
+catch@fs e => { /* handle file system errors */ }
+catch@net e => { /* handle network errors */ }
 
-let try/fs writer = path.createFile
-let try/net conn = url.connect
+let try@fs writer = path.createFile
+let try@net conn = url.connect
 ```
 
 ### Throwing to Previous `catch` Blocks
@@ -493,27 +495,27 @@ def Main: ! = chan exit {
     exit!
   }
 
-  let try reader = Os.PathFromString(src).openFile
-  catch/w e => { reader.close(.ok!); throw e }
+  let try reader = Os.Path(src).openFile
+  catch@w e => { reader.close; throw e }
 
-  let try/w writer = Os.PathFromString(dst).createOrReplaceFile
-  catch/r e => { writer.close(.ok!); throw e }
+  let try@w writer = Os.Path(dst).createOrReplaceFile
+  catch@r e => { writer.close; throw e }
 
-  reader.begin.read.try/r.case {
+  reader.begin.read.try@r.case {
     .end! => {
-      writer.close(.ok!).try
+      writer.close.try
       console.close
       exit!
     }
     .chunk(bytes) => {
-      writer.write(bytes).try/w
+      writer.write(bytes).try@w
       reader.loop
     }
   }
 }
 ```
 
-Here, the `catch/r` and `catch/w` blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.
+Here, the `catch@r` and `catch@w` blocks provide resource-specific cleanup (closing file handles) but then throw to the main error handler for shared logic like printing the error and exiting.
 
 This layered approach allows you to build sophisticated error handling hierarchies while keeping each level focused and clear.
 
@@ -526,10 +528,53 @@ dec ReadAll : [Os.Path] Result<Os.Error, Bytes>
 def ReadAll = [path] chan return {
   catch e => { return <> .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type either{}, Os.Error)(reader)
+  let parser = Bytes.ParseReader(type Os.Error)(reader)
   let try contents = parser.remainder
   return <> .ok contents
 }
 ```
 
 This function uses `Bytes.ParseReader` to convert the chunked `Bytes.Reader` from `path.openFile` into a parser that provides a convenient `.remainder` method for reading all contents at once. The `catch` block propagates any errors by linking them into an `.err` result, while success links the contents into an `.ok` result.
+
+## Providing defaults with `default`
+
+Sometimes you don’t want to propagate an error — you want to replace it with a fallback and keep going. The `default` sugar does exactly that, and unlike `try`, it is completely standalone: it does not require a surrounding `catch`, and it is valid even in nested expression positions.
+
+- Postfix form (expressions/commands):
+
+  ```par
+  let r1: Result<!, Int> = .ok 7
+  let r2: Result<!, Int> = .err!
+
+  let x = r1.default(0)   // x = 7
+  let y = r2.default(0)   // y = 0
+  ```
+
+  This desugars to a `.case` on the subject: on `.ok` it continues with the unwrapped value, on `.err` it evaluates the fallback expression and uses that value instead. Because it is a local rewrite, it can be used directly in `let` bindings and other expression contexts.
+
+- Pattern form (including in receives):
+
+  ```par
+  let default(0) n = Nat.FromString("oops")
+  ```
+
+  The pattern binds on `.ok`, and binds the fallback expression on `.err`.
+
+  Here’s a practical example that shows why the pattern form is particularly useful with receive commands. It counts word occurrences using a map; when a key is missing, it starts from `0`:
+
+  ```par
+  dec Counts : [List<String>] List<(String) Nat>
+  def Counts = [words] do {
+    let counts = Map.String(type Nat)(*())
+    words.begin.case {
+      .end! => {}
+      .item(word) => {
+        counts.entry(word)[default(0) count]
+        counts.put(Nat.Add(count, 1))
+        words.loop
+      }
+    }
+  } in counts.list
+  ```
+
+  In the `.item` branch, `counts.entry(word)` returns a `Result<!, Nat>` via a receive; `default(0)` seamlessly handles the missing case and binds `count` to `0`.

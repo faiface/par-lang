@@ -157,20 +157,13 @@ impl Polarity {
             Polarity::Neither => Polarity::Neither,
         }
     }
+
     pub fn xor(self, other: Self) -> Self {
         match self {
             Polarity::Positive => other,
             Polarity::Negative => other.dual(),
             Polarity::Both | Polarity::Neither => self,
         }
-    }
-
-    pub fn is_positive(self) -> bool {
-        matches!(self, Polarity::Positive | Polarity::Both)
-    }
-
-    pub fn is_negative(self) -> bool {
-        matches!(self, Polarity::Negative | Polarity::Both)
     }
 }
 

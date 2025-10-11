@@ -1,0 +1,14 @@
+def Main: ! =
+  let console = Console.Open in
+  catch e => do { console.print(e).close } in ! in do {
+    let try url = Url.FromString("https://httpbin.org/get")
+    let try (status, headers) body = Http.Fetch(
+      ("GET")                // method
+      (url)                  // URL
+      (*())                  // no headers
+      Bytes.EmptyReader      // empty body
+    )
+    body.close.try           // not interested
+    console.print(Nat.ToString(status))
+    console.close
+  } in !

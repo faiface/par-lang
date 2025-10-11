@@ -6,17 +6,18 @@ use std::{
 use crate::{
     icombs::readback::Handle,
     par::{
+        primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
     },
 };
-use arcstr::{literal, Substr};
-use byteview::ByteView;
+use arcstr::literal;
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
@@ -25,23 +26,18 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
         declarations: vec![],
         definitions: vec![
             Definition::external(
-                "PathFromString",
-                Type::function(Type::string(), Type::name(None, "Path", vec![])),
-                |handle| Box::pin(path_from_string(handle)),
-            ),
-            Definition::external(
-                "PathFromBytes",
+                "Path",
                 Type::function(Type::bytes(), Type::name(None, "Path", vec![])),
                 |handle| Box::pin(path_from_bytes(handle)),
             ),
+            Definition::external("Stdin", Type::name(None, "Reader", vec![]), |handle| {
+                Box::pin(stdin_reader(handle))
+            }),
+            Definition::external("Stdout", Type::name(None, "Writer", vec![]), |handle| {
+                Box::pin(stdout_writer(handle))
+            }),
         ],
     }
-}
-
-async fn path_from_string(mut handle: Handle) {
-    let s = handle.receive().string().await;
-    let p = PathBuf::from(s.as_str());
-    provide_path(handle, p);
 }
 
 async fn path_from_bytes(mut handle: Handle) {
@@ -57,33 +53,19 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
         let path = path.clone();
         async move {
             match handle.case().await.as_str() {
-                "stringName" => {
-                    let s = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "".to_string());
-                    handle.provide_string(Substr::from(s));
-                }
-                "bytesName" => {
+                "name" => {
                     let bytes = path
                         .file_name()
                         .map(|n| os_to_bytes(n))
-                        .unwrap_or_else(|| ByteView::from(&b""[..]));
+                        .unwrap_or_else(|| Bytes::new());
                     handle.provide_bytes(bytes);
                 }
-                "stringAbsolute" => {
-                    let abs = absolute_path(&path);
-                    handle.provide_string(Substr::from(abs.to_string_lossy()));
-                }
-                "bytesAbsolute" => {
+                "absolute" => {
                     let abs = absolute_path(&path);
                     let bytes = os_to_bytes(abs.as_os_str());
                     handle.provide_bytes(bytes);
                 }
-                "stringParts" => {
-                    provide_string_parts(handle, &path);
-                }
-                "bytesParts" => {
+                "parts" => {
                     provide_bytes_parts(handle, &path);
                 }
                 "parent" => match path.parent() {
@@ -96,12 +78,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                         handle.break_();
                     }
                 },
-                "appendString" => {
-                    let s = handle.receive().string().await;
-                    let p2 = path.join(s.as_str());
-                    provide_path(handle, p2);
-                }
-                "appendBytes" => {
+                "append" => {
                     let b = handle.receive().bytes().await;
                     let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
                     let p2 = path.join(Path::new(os));
@@ -110,11 +87,11 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 "openFile" => match File::open(&path).await {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_reader(handle, file).await;
+                        return provide_bytes_reader_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "createOrReplaceFile" => match OpenOptions::new()
@@ -126,11 +103,11 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "createNewFile" => match OpenOptions::new()
@@ -141,11 +118,11 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "appendToFile" => match OpenOptions::new()
@@ -156,11 +133,11 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "createOrAppendToFile" => match OpenOptions::new()
@@ -172,11 +149,11 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 {
                     Ok(file) => {
                         handle.signal(literal!("ok"));
-                        return provide_bytes_writer(handle, file).await;
+                        return provide_bytes_writer_from_async(handle, file).await;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "listDir" => match fs::read_dir(&path).await {
@@ -186,7 +163,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 "traverseDir" => match build_dir_tree(path.clone()).await {
@@ -196,7 +173,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err));
+                        return handle.provide_string(ParString::from(err));
                     }
                 },
                 "createDir" => match fs::create_dir_all(&path).await {
@@ -206,7 +183,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 },
                 _ => unreachable!(),
@@ -230,16 +207,6 @@ fn absolute_path(p: &Path) -> PathBuf {
     }
 }
 
-fn provide_string_parts(mut handle: Handle, p: &Path) {
-    for part in p.iter() {
-        handle.signal(arcstr::literal!("item"));
-        let s = part.to_string_lossy();
-        handle.send().provide_string(Substr::from(s));
-    }
-    handle.signal(arcstr::literal!("end"));
-    handle.break_();
-}
-
 fn provide_bytes_parts(mut handle: Handle, p: &Path) {
     for part in p.iter() {
         handle.signal(arcstr::literal!("item"));
@@ -251,13 +218,13 @@ fn provide_bytes_parts(mut handle: Handle, p: &Path) {
 }
 
 #[cfg(unix)]
-fn os_to_bytes(os: &OsStr) -> ByteView {
+fn os_to_bytes(os: &OsStr) -> Bytes {
     use std::os::unix::ffi::OsStrExt;
-    ByteView::from(os.as_bytes())
+    Bytes::copy_from_slice(os.as_bytes())
 }
 
 #[cfg(windows)]
-fn os_to_bytes(os: &OsStr) -> ByteView {
+fn os_to_bytes(os: &OsStr) -> Bytes {
     use std::os::windows::ffi::OsStrExt;
     let wide: Vec<u16> = os.encode_wide().collect();
     let mut bytes = Vec::with_capacity(wide.len() * 2);
@@ -265,29 +232,23 @@ fn os_to_bytes(os: &OsStr) -> ByteView {
         bytes.push((w & 0xFF) as u8);
         bytes.push((w >> 8) as u8);
     }
-    ByteView::from(bytes)
+    Bytes::from(bytes)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn os_to_bytes(os: &OsStr) -> ByteView {
-    ByteView::from(os.to_string_lossy().as_ref())
+fn os_to_bytes(os: &OsStr) -> Bytes {
+    Bytes::from(os.to_string_lossy().as_ref())
 }
 
-async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
+async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl AsyncRead + Unpin) {
     let mut buf = vec![0u8; 512];
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.receive().concurrently(|mut handle| async move {
-                    match handle.case().await.as_str() {
-                        "ok" => handle.continue_(),
-                        _ => unreachable!(),
-                    }
-                });
                 handle.signal(literal!("ok"));
                 return handle.break_();
             }
-            "read" => match file.read(&mut buf[..]).await {
+            "read" => match reader.read(&mut buf[..]).await {
                 Ok(n) => {
                     if n == 0 {
                         handle.signal(literal!("ok"));
@@ -296,12 +257,14 @@ async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
                     }
                     handle.signal(literal!("ok"));
                     handle.signal(literal!("chunk"));
-                    handle.send().provide_bytes(ByteView::from(&buf[..n]));
+                    handle
+                        .send()
+                        .provide_bytes(Bytes::copy_from_slice(&buf[..n]));
                     continue;
                 }
                 Err(err) => {
                     handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(err.to_string()));
+                    return handle.provide_string(ParString::from(err.to_string()));
                 }
             },
             _ => unreachable!(),
@@ -309,63 +272,42 @@ async fn provide_bytes_reader(mut handle: Handle, mut file: File) {
     }
 }
 
-async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
+async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl AsyncWrite + Unpin) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                // Only 'ok' is possible for errIn = either{}
-                handle.receive().concurrently(|mut handle| async move {
-                    match handle.case().await.as_str() {
-                        "ok" => handle.continue_(),
-                        _ => unreachable!(),
-                    }
-                });
-
                 // Try to flush pending data before closing
-                match file.flush().await {
+                match writer.flush().await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
                         return handle.break_();
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 }
             }
-            "flush" => match file.flush().await {
+            "flush" => match writer.flush().await {
                 Ok(()) => {
                     handle.signal(literal!("ok"));
                     continue;
                 }
                 Err(err) => {
                     handle.signal(literal!("err"));
-                    return handle.provide_string(Substr::from(err.to_string()));
+                    return handle.provide_string(ParString::from(err.to_string()));
                 }
             },
             "write" => {
                 let bytes = handle.receive().bytes().await;
-                match file.write_all(bytes.as_ref()).await {
+                match writer.write_all(bytes.as_ref()).await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
                         continue;
                     }
                     Err(err) => {
                         handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
-                    }
-                }
-            }
-            "writeString" => {
-                let s = handle.receive().string().await;
-                match file.write_all(s.as_bytes()).await {
-                    Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        continue;
-                    }
-                    Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(Substr::from(err.to_string()));
+                        return handle.provide_string(ParString::from(err.to_string()));
                     }
                 }
             }
@@ -374,9 +316,9 @@ async fn provide_bytes_writer(mut handle: Handle, mut file: File) {
     }
 }
 
-// Provide List<self/append> for the directory entries of `base` using a pre-opened ReadDir.
+// Provide List<self@append> for the directory entries of `base` using a pre-opened ReadDir.
 async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
-    let mut entries: Vec<(byteview::ByteView, std::ffi::OsString)> = Vec::new();
+    let mut entries: Vec<(Bytes, std::ffi::OsString)> = Vec::new();
     while let Ok(Some(entry)) = rd.next_entry().await {
         let name = entry.file_name();
         // Sort key: raw bytes if available, fallback to lossy string
@@ -410,7 +352,7 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
         let mut rd = fs::read_dir(&dir).await.map_err(|e| format!("{}", e))?;
 
         // Collect entries first to allow deterministic sorting
-        let mut items: Vec<(byteview::ByteView, DirEntry)> = Vec::new();
+        let mut items: Vec<(Bytes, DirEntry)> = Vec::new();
         while let Ok(Some(entry)) = rd.next_entry().await {
             let name = entry.file_name();
             let key = os_to_bytes(&name);
@@ -437,7 +379,6 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
     })
 }
 
-// Provide the recursive/tree either { .end | .file(self/append) self/tree | .dir(self/append, self/tree) self/tree }
 fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
     match nodes.split_first() {
         None => {
@@ -458,4 +399,12 @@ fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
             }
         },
     }
+}
+
+async fn stdin_reader(handle: Handle) {
+    provide_bytes_reader_from_async(handle, tokio::io::stdin()).await;
+}
+
+async fn stdout_writer(handle: Handle) {
+    provide_bytes_writer_from_async(handle, tokio::io::stdout()).await;
 }

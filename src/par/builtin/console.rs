@@ -3,11 +3,12 @@ use std::{
     sync::Arc,
 };
 
-use arcstr::{literal, Substr};
+use arcstr::literal;
 
 use crate::{
     icombs::readback::Handle,
     par::{
+        primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
@@ -35,12 +36,12 @@ async fn console_open(mut handle: Handle) {
             }
 
             "print" => {
-                println!("{}", handle.receive().string().await);
+                println!("{}", handle.receive().string().await.as_str(),);
             }
 
             "prompt" => {
                 let prompt = handle.receive().string().await;
-                print!("{}", prompt);
+                print!("{}", prompt.as_str());
                 let _ = stdout().flush();
                 let mut buf = String::new();
                 let result = stdin().read_line(&mut buf);
@@ -48,7 +49,9 @@ async fn console_open(mut handle: Handle) {
                 handle.send().concurrently(|mut handle| async move {
                     match result {
                         Ok(n) if n > 0 => {
-                            let string = Substr::from(buf.trim_end_matches(&['\n', '\r']));
+                            let string = ParString::copy_from_slice(
+                                buf.trim_end_matches(&['\n', '\r']).as_bytes(),
+                            );
                             handle.signal(literal!("ok"));
                             handle.provide_string(string);
                         }

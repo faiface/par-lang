@@ -3,10 +3,13 @@ use crate::{
         readback::{TypedHandle, TypedReadback},
         Net,
     },
-    par::{parse::parse_bytes, primitive::Primitive},
+    par::{
+        parse::parse_bytes,
+        primitive::{ParString, Primitive},
+    },
 };
-use arcstr::{ArcStr, Substr};
-use byteview::ByteView;
+use arcstr::ArcStr;
+use bytes::Bytes;
 use core::fmt::Debug;
 use eframe::egui::{self, RichText, Ui};
 use futures::{
@@ -19,10 +22,10 @@ use std::sync::{Arc, Mutex};
 enum Request {
     Nat(String, Box<dyn Send + FnOnce(BigInt)>),
     Int(String, Box<dyn Send + FnOnce(BigInt)>),
-    String(String, Box<dyn Send + FnOnce(Substr)>),
+    String(String, Box<dyn Send + FnOnce(ParString)>),
     Char(String, Box<dyn Send + FnOnce(char)>),
     Byte(String, Box<dyn Send + FnOnce(u8)>),
-    Bytes(String, Box<dyn Send + FnOnce(ByteView)>),
+    Bytes(String, Box<dyn Send + FnOnce(Bytes)>),
     Choice(Vec<ArcStr>, Box<dyn Send + FnOnce(ArcStr)>),
 }
 
@@ -37,14 +40,14 @@ pub enum Event {
     NatRequest(BigInt),
     Int(BigInt),
     IntRequest(BigInt),
-    String(Substr),
-    StringRequest(Substr),
+    String(String),
+    StringRequest(String),
     Char(char),
     CharRequest(char),
     Byte(u8),
     ByteRequest(u8),
-    Bytes(ByteView),
-    BytesRequest(ByteView),
+    Bytes(Bytes),
+    BytesRequest(Bytes),
 
     #[allow(unused)]
     Unreadable {
@@ -218,9 +221,8 @@ impl Element {
                                     })
                                     .inner;
                                 if entered {
-                                    let string = Substr::from(input);
-                                    self.history.push(Event::StringRequest(string.clone()));
-                                    callback(string);
+                                    self.history.push(Event::StringRequest(input.clone()));
+                                    callback(ParString::from(input));
                                 } else {
                                     self.request = Some(Request::String(input, callback));
                                 }
@@ -295,7 +297,7 @@ impl Element {
                                     })
                                     .inner;
                                 if entered {
-                                    let bytes = ByteView::from(input_bytes.unwrap());
+                                    let bytes = Bytes::from(input_bytes.unwrap());
                                     self.history.push(Event::BytesRequest(bytes.clone()));
                                     callback(bytes);
                                 } else {
@@ -390,9 +392,11 @@ impl Element {
                     }
                     Event::Byte(b) | Event::ByteRequest(b) => {
                         ui.label(
-                            RichText::from(Primitive::Bytes(ByteView::new(&[*b])).pretty_string())
-                                .strong()
-                                .code(),
+                            RichText::from(
+                                Primitive::Bytes(Bytes::copy_from_slice(&[*b])).pretty_string(),
+                            )
+                            .strong()
+                            .code(),
                         );
                     }
                     Event::Bytes(b) | Event::BytesRequest(b) => {
@@ -458,7 +462,7 @@ async fn handle_coroutine(
 
             TypedReadback::String(value) => {
                 let mut lock = element.lock().expect("lock failed");
-                lock.history.push(Event::String(value));
+                lock.history.push(Event::String(value.as_str().to_string()));
                 refresh();
                 break;
             }

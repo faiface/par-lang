@@ -13,7 +13,7 @@ futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
 eframe = { version = "0.32.0", features = ["default", "__screenshot"], optional = true }
 egui_code_editor = { version = "0.2.17", optional = true }
 indexmap = "2.7.0"
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
 stacker = "0.1.19"
 rfd = { version = "0.15.2", optional = true }
 winnow = { version = "0.7.4", features = [
@@ -30,12 +30,21 @@ serde = { version = "1.0.218", features = ["derive"] }
 clap = { version = "4.5.34", features = ["cargo"] }
 colored = "3.0.0"
 arcstr = "1.2.0"
-byteview = "0.7.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
 tokio-util = "0.7.15"
 scopeguard = "1.2.0"
 wild = "2.2.1"
+reqwest = { version = "0.12.8", features = ["stream", "gzip", "brotli", "deflate"] }
+bytes = "1.6.1"
+im = "15"
+url = "2.5.4"
+hyper = { version = "1.7.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.6", features = ["tokio"] }
+http-body-util = "0.1.2"
+http-body = "1.0.1"
+num-traits = "0.2.19"
+percent-encoding = "2.3.1"
 
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"

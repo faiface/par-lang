@@ -1,5 +1,5 @@
-use arcstr::{ArcStr, Substr};
-use byteview::ByteView;
+use arcstr::ArcStr;
+use bytes::Bytes;
 use futures::channel::{mpsc, oneshot};
 use num_bigint::BigInt;
 use std::sync::atomic::AtomicUsize;
@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::par::primitive::ParString;
 use crate::{
     location::Span,
     par::{
@@ -112,17 +113,17 @@ impl TypedHandle {
 pub enum TypedReadback {
     Nat(BigInt),
     Int(BigInt),
-    String(Substr),
+    String(ParString),
     Char(char),
     Byte(u8),
-    Bytes(ByteView),
+    Bytes(Bytes),
 
     NatRequest(Box<dyn Send + FnOnce(BigInt)>),
     IntRequest(Box<dyn Send + FnOnce(BigInt)>),
-    StringRequest(Box<dyn Send + FnOnce(Substr)>),
+    StringRequest(Box<dyn Send + FnOnce(ParString)>),
     CharRequest(Box<dyn Send + FnOnce(char)>),
     ByteRequest(Box<dyn Send + FnOnce(u8)>),
-    BytesRequest(Box<dyn Send + FnOnce(ByteView)>),
+    BytesRequest(Box<dyn Send + FnOnce(Bytes)>),
 
     Times(TypedHandle, TypedHandle),
     Par(TypedHandle, TypedHandle),
@@ -147,10 +148,32 @@ impl Handle {
         }
     }
 
+    pub fn erase(self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(self.tree.unwrap(), Tree::Era);
+        locked.notify_reducer();
+    }
+
     pub fn link(self, dual: Handle) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(self.tree.unwrap(), dual.tree.unwrap());
         locked.notify_reducer();
+    }
+
+    pub fn duplicate(&mut self) -> Handle {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (a0, a1) = locked.create_wire();
+        let (b0, b1) = locked.create_wire();
+        locked.link(
+            Tree::Dup(Box::new(a0), Box::new(b0)),
+            self.tree.take().unwrap(),
+        );
+        locked.notify_reducer();
+        self.tree = Some(a1);
+        Handle {
+            net: self.net.clone(),
+            tree: Some(b1),
+        }
     }
 
     pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
@@ -214,7 +237,7 @@ impl Handle {
         locked.notify_reducer();
     }
 
-    pub async fn string(self) -> Substr {
+    pub async fn string(self) -> ParString {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -225,7 +248,7 @@ impl Handle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_string(self, value: Substr) {
+    pub fn provide_string(self, value: ParString) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
             Tree::Primitive(Primitive::String(value)),
@@ -243,7 +266,7 @@ impl Handle {
             rx
         };
         let value = rx.await.expect("sender dropped");
-        let mut chars = value.chars();
+        let mut chars = value.as_str().chars();
         let char = chars.next().unwrap();
         assert!(chars.next().is_none());
         char
@@ -252,8 +275,8 @@ impl Handle {
     pub fn provide_char(self, value: char) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::Primitive(Primitive::String(Substr::from(
-                value.encode_utf8(&mut [0u8; 4]),
+            Tree::Primitive(Primitive::String(ParString::copy_from_slice(
+                value.encode_utf8(&mut [0u8; 4]).as_bytes(),
             ))),
             self.tree.unwrap(),
         );
@@ -276,13 +299,13 @@ impl Handle {
     pub fn provide_byte(self, value: u8) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::Primitive(Primitive::Bytes(ByteView::new(&[value]))),
+            Tree::Primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value]))),
             self.tree.unwrap(),
         );
         locked.notify_reducer();
     }
 
-    pub async fn bytes(self) -> ByteView {
+    pub async fn bytes(self) -> Bytes {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -293,7 +316,7 @@ impl Handle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_bytes(self, value: ByteView) {
+    pub fn provide_bytes(self, value: Bytes) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(Primitive::Bytes(value)), self.tree.unwrap());
         locked.notify_reducer();
@@ -515,7 +538,7 @@ impl TypedHandle {
         locked.notify_reducer();
     }
 
-    pub async fn string(mut self) -> Substr {
+    pub async fn string(mut self) -> ParString {
         self.prepare_for_readback();
         let Type::Primitive(_, PrimitiveType::String) = self.tree.ty else {
             panic!("Incorrect type for `string`: {:?}", self.tree.ty);
@@ -532,9 +555,10 @@ impl TypedHandle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_string(mut self, value: Substr) {
+    pub fn provide_string(mut self, value: ParString) {
         self.prepare_for_readback();
-        let Type::DualPrimitive(_, PrimitiveType::String) = self.tree.ty else {
+        let Type::DualPrimitive(_, PrimitiveType::String | PrimitiveType::Bytes) = self.tree.ty
+        else {
             panic!("Incorrect type for `provide_string`: {:?}", self.tree.ty);
         };
 
@@ -558,7 +582,7 @@ impl TypedHandle {
         };
 
         let value = rx.await.expect("sender dropped");
-        let mut chars = value.chars();
+        let mut chars = value.as_str().chars();
         let char = chars.next().unwrap();
         assert!(chars.next().is_none());
         char
@@ -566,14 +590,18 @@ impl TypedHandle {
 
     pub fn provide_char(mut self, value: char) {
         self.prepare_for_readback();
-        let Type::DualPrimitive(_, PrimitiveType::Char) = self.tree.ty else {
+        let Type::DualPrimitive(
+            _,
+            PrimitiveType::Char | PrimitiveType::String | PrimitiveType::Bytes,
+        ) = self.tree.ty
+        else {
             panic!("Incorrect type for `provide_char`: {:?}", self.tree.ty);
         };
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::Primitive(Primitive::String(Substr::from(
-                value.encode_utf8(&mut [0u8; 4]),
+            Tree::Primitive(Primitive::String(ParString::copy_from_slice(
+                value.encode_utf8(&mut [0u8; 4]).as_bytes(),
             ))),
             self.tree.tree,
         );
@@ -606,15 +634,15 @@ impl TypedHandle {
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::Primitive(Primitive::Bytes(ByteView::new(&[value]))),
+            Tree::Primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value]))),
             self.tree.tree,
         );
         locked.notify_reducer();
     }
 
-    pub async fn bytes(mut self) -> ByteView {
+    pub async fn bytes(mut self) -> Bytes {
         self.prepare_for_readback();
-        let Type::Primitive(_, PrimitiveType::Bytes) = self.tree.ty else {
+        let Type::Primitive(_, PrimitiveType::Bytes | PrimitiveType::String) = self.tree.ty else {
             panic!("Incorrect type for `bytes`: {:?}", self.tree.ty);
         };
 
@@ -628,7 +656,7 @@ impl TypedHandle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_bytes(mut self, value: ByteView) {
+    pub fn provide_bytes(mut self, value: Bytes) {
         self.prepare_for_readback();
         let Type::DualPrimitive(_, PrimitiveType::Bytes) = self.tree.ty else {
             panic!("Incorrect type for `provide_bytes`: {:?}", self.tree.ty);

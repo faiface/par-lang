@@ -1,10 +1,11 @@
-use arcstr::{literal, Substr};
+use arcstr::literal;
 use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
     icombs::readback::Handle,
     par::{
+        primitive::ParString,
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
@@ -253,7 +254,7 @@ async fn nat_range(mut handle: Handle) {
 
 async fn nat_to_string(mut handle: Handle) {
     let x = handle.receive().nat().await;
-    handle.provide_string(Substr::from(x.to_str_radix(10)))
+    handle.provide_string(ParString::from(x.to_str_radix(10)))
 }
 
 async fn nat_from_string(mut handle: Handle) {

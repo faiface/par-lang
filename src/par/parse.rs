@@ -6,14 +6,17 @@ use super::{
     lexer::{lex, Input, Token, TokenKind},
     primitive::Primitive,
 };
-use crate::location::{FileName, Span, Spanning};
 use crate::par::{
     language::LocalName,
     program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
-use arcstr::{ArcStr, Substr};
-use byteview::ByteView;
+use crate::{
+    location::{FileName, Span, Spanning},
+    par::primitive::ParString,
+};
+use arcstr::ArcStr;
+use bytes::Bytes;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
@@ -106,7 +109,18 @@ macro_rules! tn {
     };
 }
 
-fn list<'i, P, O>(item: P) -> impl Parser<Input<'i>, Vec<O>, Error> + use<'i, P, O>
+fn list0<'i, P, O>(item: P) -> impl Parser<Input<'i>, Vec<O>, Error> + use<'i, P, O>
+where
+    P: Parser<Input<'i>, O, Error>,
+    Vec<O>: Accumulate<O>,
+{
+    terminated(
+        separated(0.., item, t(TokenKind::Comma)),
+        opt(t(TokenKind::Comma)),
+    )
+}
+
+fn list1<'i, P, O>(item: P) -> impl Parser<Input<'i>, Vec<O>, Error> + use<'i, P, O>
 where
     P: Parser<Input<'i>, O, Error>,
     Vec<O>: Accumulate<O>,
@@ -491,25 +505,31 @@ fn typ_chan(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_send(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::LParen), (list(typ), t(TokenKind::RParen), typ))
-        .map(|(open, (args, _, then))| {
-            let span = open.span.join(then.span());
-            args.into_iter().rfold(then, |then, arg| {
-                Type::Pair(span.clone(), Box::new(arg), Box::new(then))
-            })
+    commit_after(
+        t(TokenKind::LParen),
+        (list1(typ), t(TokenKind::RParen), typ),
+    )
+    .map(|(open, (args, _, then))| {
+        let span = open.span.join(then.span());
+        args.into_iter().rfold(then, |then, arg| {
+            Type::Pair(span.clone(), Box::new(arg), Box::new(then))
         })
-        .parse_next(input)
+    })
+    .parse_next(input)
 }
 
 fn typ_receive(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::LBrack), (list(typ), t(TokenKind::RBrack), typ))
-        .map(|(open, (args, _, then))| {
-            let span = open.span.join(then.span());
-            args.into_iter().rfold(then, |then, arg| {
-                Type::Function(span.clone(), Box::new(arg), Box::new(then))
-            })
+    commit_after(
+        t(TokenKind::LBrack),
+        (list1(typ), t(TokenKind::RBrack), typ),
+    )
+    .map(|(open, (args, _, then))| {
+        let span = open.span.join(then.span());
+        args.into_iter().rfold(then, |then, arg| {
+            Type::Function(span.clone(), Box::new(arg), Box::new(then))
         })
-        .parse_next(input)
+    })
+    .parse_next(input)
 }
 
 fn typ_either(input: &mut Input) -> Result<Type> {
@@ -586,7 +606,7 @@ fn typ_send_type<'s>(input: &mut Input) -> Result<Type> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (
-            list(local_name).context(StrContext::Label("list of type names to send")),
+            list1(local_name).context(StrContext::Label("list of type names to send")),
             t(TokenKind::RParen),
             typ,
         ),
@@ -604,7 +624,7 @@ fn typ_recv_type(input: &mut Input) -> Result<Type> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
         (
-            list(local_name).context(StrContext::Label("list of type names to receive")),
+            list1(local_name).context(StrContext::Label("list of type names to receive")),
             t(TokenKind::RBrack),
             typ,
         ),
@@ -621,7 +641,7 @@ fn typ_recv_type(input: &mut Input) -> Result<Type> {
 fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
     opt(commit_after(
         t(TokenKind::Lt),
-        (list(local_name), t(TokenKind::Gt)),
+        (list1(local_name), t(TokenKind::Gt)),
     ))
     .map(|opt| opt.map(|(open, (names, close))| (open.span.join(close.span()), names)))
     .parse_next(input)
@@ -630,7 +650,7 @@ fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
 fn type_args<'s>(input: &mut Input) -> Result<Option<(Span, Vec<Type>)>> {
     opt(commit_after(
         t(TokenKind::Lt),
-        (list(typ), t(TokenKind::Gt)),
+        (list1(typ), t(TokenKind::Gt)),
     ))
     .map(|opt| opt.map(|(open, (types, close))| (open.span.join(close.span()), types)))
     .parse_next(input)
@@ -642,7 +662,7 @@ fn typ_branch(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_branch_then(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::Arrow), typ)
+    commit_after(t(TokenKind::FatArrow), typ)
         .map(|(_, typ)| typ)
         .parse_next(input)
 }
@@ -650,7 +670,7 @@ fn typ_branch_then(input: &mut Input) -> Result<Type> {
 fn typ_branch_receive(input: &mut Input) -> Result<Type> {
     commit_after(
         t(TokenKind::LParen),
-        (list(typ), t(TokenKind::RParen), typ_branch),
+        (list1(typ), t(TokenKind::RParen), typ_branch),
     )
     .map(|(open, (args, _, then))| {
         let span = open.span.join(then.span());
@@ -664,7 +684,7 @@ fn typ_branch_receive(input: &mut Input) -> Result<Type> {
 fn typ_branch_recv_type(input: &mut Input) -> Result<Type> {
     (
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        cut_err((list(local_name), t(TokenKind::RParen), typ_branch)),
+        cut_err((list1(local_name), t(TokenKind::RParen), typ_branch)),
     )
         .map(|((open, _), (names, _, then))| {
             let span = open.span.join(then.span());
@@ -688,6 +708,7 @@ fn pattern(input: &mut Input) -> Result<Pattern> {
         pattern_receive_type,
         pattern_receive,
         pattern_continue,
+        pattern_default,
         pattern_try,
     ))
     .parse_next(input)
@@ -711,7 +732,7 @@ fn pattern_name(input: &mut Input) -> Result<Pattern> {
 fn pattern_receive(input: &mut Input) -> Result<Pattern> {
     commit_after(
         t(TokenKind::LParen),
-        (list(pattern), t(TokenKind::RParen), pattern),
+        (list1(pattern), t(TokenKind::RParen), pattern),
     )
     .map(|(open, (patterns, _, rest))| {
         let span = open.span.join(rest.span());
@@ -734,10 +755,21 @@ fn pattern_try(input: &mut Input) -> Result<Pattern> {
         .parse_next(input)
 }
 
+fn pattern_default(input: &mut Input) -> Result<Pattern> {
+    commit_after(
+        (t(TokenKind::Default), t(TokenKind::LParen)),
+        (expression, t(TokenKind::RParen), pattern),
+    )
+    .map(|((pre, _), (expr, _, rest))| {
+        Pattern::Default(pre.span.join(rest.span()), Box::new(expr), Box::new(rest))
+    })
+    .parse_next(input)
+}
+
 fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(local_name), t(TokenKind::RParen), pattern),
+        (list1(local_name), t(TokenKind::RParen), pattern),
     )
     .map(|((open, _), (names, _, rest))| {
         let span = open.span.join(rest.span());
@@ -781,7 +813,11 @@ fn expr_literal(input: &mut Input) -> Result<Expression> {
 fn expr_list(input: &mut Input) -> Result<Expression> {
     commit_after(
         t(TokenKind::Star),
-        (t(TokenKind::LParen), list(expression), t(TokenKind::RParen)),
+        (
+            t(TokenKind::LParen),
+            list0(expression),
+            t(TokenKind::RParen),
+        ),
     )
     .map(|(pre, (_, items, post))| Expression::List(pre.span.join(post.span()), items))
     .parse_next(input)
@@ -807,7 +843,7 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
         .map(|token| {
             // validated in lexer
             let value = unescaper::unescape(token.raw).unwrap();
-            Expression::Primitive(token.span(), Primitive::String(Substr::from(value)))
+            Expression::Primitive(token.span(), Primitive::String(ParString::from(value)))
         })
         .parse_next(input)
 }
@@ -820,7 +856,7 @@ fn expr_literal_bytes(input: &mut Input) -> Result<Expression> {
     .map(|((pre, _), (bytes, _, post))| {
         Expression::Primitive(
             pre.span.join(post.span()),
-            Primitive::Bytes(ByteView::new(&bytes)),
+            Primitive::Bytes(Bytes::from(bytes)),
         )
     })
     .parse_next(input)
@@ -873,7 +909,7 @@ fn expr_catch(input: &mut Input) -> Result<Expression> {
         (
             label,
             pattern,
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             expression,
             t(TokenKind::In),
             expression,
@@ -989,7 +1025,7 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
 fn cons_send(input: &mut Input) -> Result<Construct> {
     commit_after(
         t(TokenKind::LParen),
-        (list(expression), t(TokenKind::RParen), construction),
+        (list1(expression), t(TokenKind::RParen), construction),
     )
     .map(|(open, (args, _, then))| {
         let span = open.span.join(then.span());
@@ -1003,7 +1039,7 @@ fn cons_send(input: &mut Input) -> Result<Construct> {
 fn cons_receive(input: &mut Input) -> Result<Construct> {
     commit_after(
         t(TokenKind::LBrack),
-        (list(pattern), t(TokenKind::RBrack), construction),
+        (list1(pattern), t(TokenKind::RBrack), construction),
     )
     .map(|(open, (patterns, _, then))| {
         let span = open.span.join(then.span());
@@ -1076,7 +1112,7 @@ fn cons_loop(input: &mut Input) -> Result<Construct> {
 fn cons_send_type(input: &mut Input) -> Result<Construct> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(typ), t(TokenKind::RParen), construction),
+        (list1(typ), t(TokenKind::RParen), construction),
     )
     .map(|((open, _), (types, _, then))| {
         let span = open.span.join(then.span());
@@ -1090,7 +1126,7 @@ fn cons_send_type(input: &mut Input) -> Result<Construct> {
 fn cons_recv_type(input: &mut Input) -> Result<Construct> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
-        (list(local_name), t(TokenKind::RBrack), construction),
+        (list1(local_name), t(TokenKind::RBrack), construction),
     )
     .map(|((open, _), (names, _, then))| {
         let span = open.span.join(then.span());
@@ -1106,7 +1142,7 @@ fn cons_branch(input: &mut Input) -> Result<ConstructBranch> {
 }
 
 fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch> {
-    commit_after(t(TokenKind::Arrow), expression)
+    commit_after(t(TokenKind::FatArrow), expression)
         .map(|(pre, expression)| {
             ConstructBranch::Then(pre.span.join(expression.span()), expression)
         })
@@ -1116,7 +1152,7 @@ fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch> {
 fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch> {
     commit_after(
         t(TokenKind::LParen),
-        (list(pattern), t(TokenKind::RParen), cons_branch),
+        (list1(pattern), t(TokenKind::RParen), cons_branch),
     )
     .map(|(open, (patterns, _, rest))| {
         let span = open.span.join(rest.span());
@@ -1130,7 +1166,7 @@ fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch> {
 fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(local_name), t(TokenKind::RParen), cons_branch),
+        (list1(local_name), t(TokenKind::RParen), cons_branch),
     )
     .map(|((open, _), (names, _, rest))| {
         let span = open.span.join(rest.span());
@@ -1169,7 +1205,9 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
         apply_case,
         apply_send_type,
         apply_send,
+        apply_default,
         apply_try,
+        apply_pipe,
     )))
     .parse_next(input)
 }
@@ -1177,7 +1215,7 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
 fn apply_send(input: &mut Input) -> Result<Apply> {
     commit_after(
         t(TokenKind::LParen),
-        (list(expression), t(TokenKind::RParen), apply),
+        (list1(expression), t(TokenKind::RParen), apply),
     )
     .map(|(open, (args, close, then))| {
         let then = match then {
@@ -1268,7 +1306,7 @@ fn apply_loop(input: &mut Input) -> Result<Apply> {
 fn apply_send_type(input: &mut Input) -> Result<Apply> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(typ), t(TokenKind::RParen), apply),
+        (list1(typ), t(TokenKind::RParen), apply),
     )
     .map(|((open, _), (types, close, then))| {
         let then = match then {
@@ -1295,6 +1333,52 @@ fn apply_try(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
+fn apply_default(input: &mut Input) -> Result<Apply> {
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Default)),
+        (
+            t(TokenKind::LParen),
+            expression,
+            t(TokenKind::RParen),
+            apply,
+        ),
+    )
+    .map(|((_, pre), (_, expr, close, then))| {
+        let then = match then {
+            Some(apply) => apply,
+            None => Apply::Noop(close.span.only_end()),
+        };
+        Apply::Default(pre.span.join(then.span()), Box::new(expr), Box::new(then))
+    })
+    .parse_next(input)
+}
+
+fn apply_pipe(input: &mut Input) -> Result<Apply> {
+    commit_after(
+        t(TokenKind::ThinArrow),
+        (
+            alt((
+                global_name.map(|name| Expression::Global(name.span(), name)),
+                local_name.map(|name| Expression::Variable(name.span(), name)),
+                expr_grouped,
+            )),
+            apply,
+        ),
+    )
+    .map(|(pre, (function, then))| {
+        let then = match then {
+            Some(apply) => apply,
+            None => Apply::Noop(function.span().only_end()),
+        };
+        Apply::Pipe(
+            pre.span.join(function.span()),
+            Box::new(function),
+            Box::new(then),
+        )
+    })
+    .parse_next(input)
+}
+
 fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
     alt((
         apply_branch_then,
@@ -1302,12 +1386,13 @@ fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
         apply_branch_receive,
         apply_branch_continue,
         apply_branch_try,
+        apply_branch_default,
     ))
     .parse_next(input)
 }
 
 fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch> {
-    (local_name, cut_err((t(TokenKind::Arrow), expression)))
+    (local_name, cut_err((t(TokenKind::FatArrow), expression)))
         .map(|(name, (_, expression))| {
             ApplyBranch::Then(name.span.join(expression.span()), name, expression)
         })
@@ -1317,7 +1402,7 @@ fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch> {
 fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch> {
     commit_after(
         t(TokenKind::LParen),
-        (list(pattern), t(TokenKind::RParen), apply_branch),
+        (list1(pattern), t(TokenKind::RParen), apply_branch),
     )
     .map(|(open, (patterns, _, rest))| {
         let span = open.span.join(rest.span());
@@ -1329,7 +1414,7 @@ fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch> {
 }
 
 fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch> {
-    commit_after(t(TokenKind::Bang), (t(TokenKind::Arrow), expression))
+    commit_after(t(TokenKind::Bang), (t(TokenKind::FatArrow), expression))
         .map(|(token, (_, expression))| {
             ApplyBranch::Continue(token.span.join(expression.span()), expression)
         })
@@ -1339,7 +1424,7 @@ fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch> {
 fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(local_name), t(TokenKind::RParen), apply_branch),
+        (list1(local_name), t(TokenKind::RParen), apply_branch),
     )
     .map(|((open, _), (names, _, rest))| {
         let span = open.span.join(rest.span());
@@ -1356,6 +1441,17 @@ fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch> {
             ApplyBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
         })
         .parse_next(input)
+}
+
+fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch> {
+    commit_after(
+        (t(TokenKind::Default), t(TokenKind::LParen)),
+        (expression, t(TokenKind::RParen), apply_branch),
+    )
+    .map(|((kw, _), (expr, _, rest))| {
+        ApplyBranch::Default(kw.span.join(rest.span()), Box::new(expr), Box::new(rest))
+    })
+    .parse_next(input)
 }
 
 fn process(input: &mut Input) -> Result<Process> {
@@ -1394,7 +1490,7 @@ fn proc_catch(input: &mut Input) -> Result<Process> {
         (
             label,
             pattern,
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             t(TokenKind::LCurly),
             process,
             t(TokenKind::RCurly),
@@ -1483,6 +1579,8 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
             cmd_recv_type,
             cmd_receive,
             cmd_try,
+            cmd_default,
+            cmd_pipe,
         ))
         .map(Some),
         cmd_then,
@@ -1508,7 +1606,7 @@ fn cmd_link(input: &mut Input) -> Result<Command> {
 fn cmd_send(input: &mut Input) -> Result<Command> {
     commit_after(
         t(TokenKind::LParen),
-        (list(expression), t(TokenKind::RParen), cmd),
+        (list1(expression), t(TokenKind::RParen), cmd),
     )
     .map(|(open, (expressions, close, cmd))| {
         let cmd = match cmd {
@@ -1526,7 +1624,7 @@ fn cmd_send(input: &mut Input) -> Result<Command> {
 fn cmd_receive(input: &mut Input) -> Result<Command> {
     commit_after(
         t(TokenKind::LBrack),
-        (list(pattern), t(TokenKind::RBrack), cmd),
+        (list1(pattern), t(TokenKind::RBrack), cmd),
     )
     .map(|(open, (patterns, close, cmd))| {
         let cmd = match cmd {
@@ -1636,7 +1734,7 @@ fn cmd_loop(input: &mut Input) -> Result<Command> {
 fn cmd_send_type(input: &mut Input) -> Result<Command> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(typ), t(TokenKind::RParen), cmd),
+        (list1(typ), t(TokenKind::RParen), cmd),
     )
     .map(|((open, _), (types, close, cmd))| {
         let cmd = match cmd {
@@ -1654,7 +1752,7 @@ fn cmd_send_type(input: &mut Input) -> Result<Command> {
 fn cmd_recv_type(input: &mut Input) -> Result<Command> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
-        (list(local_name), t(TokenKind::RBrack), cmd),
+        (list1(local_name), t(TokenKind::RBrack), cmd),
     )
     .map(|((open, _), (names, close, cmd))| {
         let cmd = match cmd {
@@ -1681,6 +1779,53 @@ fn cmd_try(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
+fn cmd_default(input: &mut Input) -> Result<Command> {
+    (
+        t(TokenKind::Dot),
+        (
+            t(TokenKind::Default),
+            t(TokenKind::LParen),
+            expression,
+            t(TokenKind::RParen),
+            cmd,
+        ),
+    )
+        .map(|(_, (kw, _, expr, close, cmd))| {
+            let cmd = match cmd {
+                Some(cmd) => cmd,
+                None => noop_cmd(close.span.only_end()),
+            };
+            Command::Default(kw.span.join(cmd.span()), Box::new(expr), Box::new(cmd))
+        })
+        .parse_next(input)
+}
+
+fn cmd_pipe(input: &mut Input) -> Result<Command> {
+    commit_after(
+        t(TokenKind::ThinArrow),
+        (
+            alt((
+                global_name.map(|name| Expression::Global(name.span(), name)),
+                local_name.map(|name| Expression::Variable(name.span(), name)),
+                expr_grouped,
+            )),
+            cmd,
+        ),
+    )
+    .map(|(pre, (function, cmd))| {
+        let cmd = match cmd {
+            Some(cmd) => cmd,
+            None => noop_cmd(function.span().only_end()),
+        };
+        Command::Pipe(
+            pre.span.join(function.span()),
+            Box::new(function),
+            Box::new(cmd),
+        )
+    })
+    .parse_next(input)
+}
+
 fn pass_process(input: &mut Input) -> Result<Process> {
     alt((proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
@@ -1693,13 +1838,14 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
         cmd_branch_recv_type,
         cmd_branch_receive,
         cmd_branch_try,
+        cmd_branch_default,
     ))
     .parse_next(input)
 }
 
 fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch> {
     commit_after(
-        t(TokenKind::Arrow),
+        t(TokenKind::FatArrow),
         (t(TokenKind::LCurly), opt(process), t(TokenKind::RCurly)),
     )
     .map(|(pre, (open, process, close))| {
@@ -1718,7 +1864,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
     (
         local_name,
         cut_err((
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             (t(TokenKind::LCurly), opt(process), t(TokenKind::RCurly)),
         )),
     )
@@ -1738,7 +1884,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
 fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch> {
     commit_after(
         t(TokenKind::LParen),
-        (list(pattern), t(TokenKind::RParen), cmd_branch),
+        (list1(pattern), t(TokenKind::RParen), cmd_branch),
     )
     .map(|(open, (patterns, _, rest))| {
         let span = open.span.join(rest.span());
@@ -1753,7 +1899,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch> {
     commit_after(
         t(TokenKind::Bang),
         (
-            t(TokenKind::Arrow),
+            t(TokenKind::FatArrow),
             t(TokenKind::LCurly),
             opt(process),
             t(TokenKind::RCurly),
@@ -1774,7 +1920,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch> {
 fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list(local_name), t(TokenKind::RParen), cmd_branch),
+        (list1(local_name), t(TokenKind::RParen), cmd_branch),
     )
     .map(|((open, _), (names, _, rest))| {
         let span = open.span.join(rest.span());
@@ -1793,8 +1939,19 @@ fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch> {
         .parse_next(input)
 }
 
+fn cmd_branch_default(input: &mut Input) -> Result<CommandBranch> {
+    commit_after(
+        (t(TokenKind::Default), t(TokenKind::LParen)),
+        (expression, t(TokenKind::RParen), cmd_branch),
+    )
+    .map(|((kw, _), (expr, _, rest))| {
+        CommandBranch::Default(kw.span.join(rest.span()), Box::new(expr), Box::new(rest))
+    })
+    .parse_next(input)
+}
+
 fn label(input: &mut Input) -> Result<Option<LocalName>> {
-    opt(preceded(t(TokenKind::Slash), local_name)).parse_next(input)
+    opt(preceded(t(TokenKind::At), local_name)).parse_next(input)
 }
 
 #[cfg(test)]

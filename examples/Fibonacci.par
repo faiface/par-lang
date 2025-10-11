@@ -9,7 +9,7 @@ def Fibonacci =
   in begin case {
     .close => !
     .next =>
-      let (a) b = (b) Nat.Add(a, b)
+      let (a) b = (b) a->Nat.Add(b)
       in (a) loop
   }
 
@@ -29,7 +29,7 @@ def Program: ! = do {
     .end! => {}
     .step remaining => {
       fib.next[n]
-      console.print(Nat.ToString(n))
+      console.print(n->Nat.ToString)
       remaining.loop
     }
   }
@@ -40,12 +40,12 @@ def Program: ! = do {
 
 def TestNthFib: [Test] ! = [test] do {
   test
-    .assert("NthFib(0) should be 1", Nat.Equals(NthFib(0), 1))
-    .assert("NthFib(1) should be 1", Nat.Equals(NthFib(1), 1))
-    .assert("NthFib(2) should be 2", Nat.Equals(NthFib(2), 2))
-    .assert("NthFib(3) should be 3", Nat.Equals(NthFib(3), 3))
-    .assert("NthFib(4) should be 5", Nat.Equals(NthFib(4), 5))
-    .assert("NthFib(5) should be 8", Nat.Equals(NthFib(5), 8))
-    .assert("NthFib(6) should be 13", Nat.Equals(NthFib(6), 13))
-    .assert("NthFib(10) should be 89", Nat.Equals(NthFib(10), 89))
+    .assert("NthFib(0) should be 1", NthFib(0)->Nat.Equals(1))
+    .assert("NthFib(1) should be 1", NthFib(1)->Nat.Equals(1))
+    .assert("NthFib(2) should be 2", NthFib(2)->Nat.Equals(2))
+    .assert("NthFib(3) should be 3", NthFib(3)->Nat.Equals(3))
+    .assert("NthFib(4) should be 5", NthFib(4)->Nat.Equals(5))
+    .assert("NthFib(5) should be 8", NthFib(5)->Nat.Equals(8))
+    .assert("NthFib(6) should be 13", NthFib(6)->Nat.Equals(13))
+    .assert("NthFib(10) should be 89", NthFib(10)->Nat.Equals(89))
 } in !

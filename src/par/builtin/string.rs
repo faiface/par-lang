@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, sync::Arc};
 
-use arcstr::Substr;
+use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
             list::readback_list,
             parser::{provide_string_parser, ReaderRemainder},
         },
+        primitive::ParString,
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
@@ -26,38 +27,23 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Box::pin(string_builder(handle))
             }),
             Definition::external(
-                "Parse",
+                "Parser",
                 Type::function(
                     Type::string(),
-                    Type::name(
-                        None,
-                        "Parser",
-                        vec![Type::either(vec![]), Type::either(vec![])],
-                    ),
+                    Type::name(None, "Parser", vec![Type::either(vec![])]),
                 ),
-                |handle| Box::pin(string_parse(handle)),
+                |handle| Box::pin(string_parser(handle)),
             ),
             Definition::external(
-                "ParseReader",
+                "ParserFromReader",
                 Type::forall(
-                    "errIn",
-                    Type::forall(
-                        "errOut",
-                        Type::function(
-                            Type::name(
-                                Some("Bytes"),
-                                "Reader",
-                                vec![Type::var("errIn"), Type::var("errOut")],
-                            ),
-                            Type::name(
-                                None,
-                                "Parser",
-                                vec![Type::var("errIn"), Type::var("errOut")],
-                            ),
-                        ),
+                    "e",
+                    Type::function(
+                        Type::name(Some("Bytes"), "Reader", vec![Type::var("e")]),
+                        Type::name(None, "Parser", vec![Type::var("e")]),
                     ),
                 ),
-                |handle| Box::pin(string_parse_reader(handle)),
+                |handle| Box::pin(string_parser_from_reader(handle)),
             ),
             Definition::external(
                 "Quote",
@@ -69,6 +55,25 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(Type::bytes(), Type::string()),
                 |handle| Box::pin(string_from_bytes(handle)),
             ),
+            Definition::external(
+                "Equals",
+                Type::function(
+                    Type::string(),
+                    Type::function(Type::string(), Type::name(Some("Bool"), "Bool", vec![])),
+                ),
+                |handle| Box::pin(string_equals(handle)),
+            ),
+            Definition::external(
+                "Compare",
+                Type::function(
+                    Type::string(),
+                    Type::function(
+                        Type::string(),
+                        Type::name(Some("Ordering"), "Ordering", vec![]),
+                    ),
+                ),
+                |handle| Box::pin(string_compare(handle)),
+            ),
         ],
     }
 }
@@ -78,10 +83,10 @@ async fn string_builder(mut handle: Handle) {
     loop {
         match handle.case().await.as_str() {
             "add" => {
-                buf += &handle.receive().string().await;
+                buf += handle.receive().string().await.as_str();
             }
             "build" => {
-                handle.provide_string(Substr::from(buf));
+                handle.provide_string(ParString::from(buf));
                 break;
             }
             _ => unreachable!(),
@@ -91,22 +96,46 @@ async fn string_builder(mut handle: Handle) {
 
 async fn string_quote(mut handle: Handle) {
     let s = handle.receive().string().await;
-    handle.provide_string(Substr::from(format!("{:?}", s)));
+    handle.provide_string(ParString::from(format!("{:?}", s)));
 }
 
-async fn string_parse(mut handle: Handle) {
+async fn string_parser(mut handle: Handle) {
     let remainder = handle.receive().string().await;
     provide_string_parser(handle, remainder).await;
 }
 
-async fn string_parse_reader(mut handle: Handle) {
+async fn string_parser_from_reader(mut handle: Handle) {
     let reader = handle.receive();
     provide_string_parser(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn string_from_bytes(mut handle: Handle) {
     let bytes = handle.receive().bytes().await;
-    handle.provide_string(Substr::from(String::from_utf8_lossy(&bytes)))
+    handle.provide_string(ParString::copy_from_slice(
+        String::from_utf8_lossy(&bytes).as_bytes(),
+    ))
+}
+
+async fn string_equals(mut handle: Handle) {
+    let left = handle.receive().string().await;
+    let right = handle.receive().string().await;
+    if left == right {
+        handle.signal(literal!("true"));
+    } else {
+        handle.signal(literal!("false"));
+    }
+    handle.break_();
+}
+
+async fn string_compare(mut handle: Handle) {
+    let left = handle.receive().string().await;
+    let right = handle.receive().string().await;
+    match left.cmp(&right) {
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.signal(literal!("less")),
+    }
+    handle.break_();
 }
 
 #[derive(Debug, Clone)]
@@ -116,7 +145,7 @@ pub(crate) enum StringPattern {
     Empty,
     Min(BigInt),
     Max(BigInt),
-    Str(Substr),
+    Str(ParString),
     One(CharClass),
     Non(CharClass),
     Concat(Box<Self>, Box<Self>),
@@ -301,7 +330,7 @@ impl MachineInner {
             (StringPattern::Min(n), State::Index(i)) => Some(&BigInt::from(*i) >= n),
             (StringPattern::Max(n), State::Index(i)) => Some(&BigInt::from(*i) <= n),
 
-            (StringPattern::Str(s), State::Index(i)) => Some(s.len() == *i),
+            (StringPattern::Str(s), State::Index(i)) => Some(s.as_str().len() == *i),
 
             (StringPattern::One(_), State::Index(i)) => Some(*i == 1),
             (StringPattern::Non(_), State::Index(i)) => Some(*i == 1),
@@ -357,7 +386,7 @@ impl MachineInner {
             }
 
             (StringPattern::Str(s), State::Index(i)) => {
-                if s.substr(*i..).chars().next() == Some(ch) {
+                if s.substr(*i..).as_str().chars().next() == Some(ch) {
                     *i += ch.len_utf8();
                 } else {
                     self.state = State::Halt;

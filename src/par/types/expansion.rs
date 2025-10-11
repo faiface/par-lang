@@ -2,7 +2,7 @@ use crate::location::Span;
 use crate::par::language::LocalName;
 use crate::par::types::visit;
 use crate::par::types::{LoopId, Type, TypeDefs, TypeError};
-use indexmap::IndexSet;
+use im::HashSet;
 
 impl Type {
     pub fn expand_definition(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
@@ -14,7 +14,7 @@ impl Type {
     }
 
     pub fn expand_recursive(
-        asc: &IndexSet<LoopId>,
+        asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
     ) -> Result<Self, TypeError> {
@@ -22,7 +22,7 @@ impl Type {
         fn inner(
             typ: &mut Type,
             target_label: &Option<LocalName>,
-            asc: &IndexSet<LoopId>,
+            asc: &HashSet<LoopId>,
             body: &Type,
         ) -> Result<(), TypeError> {
             match typ {
@@ -60,7 +60,7 @@ impl Type {
 
     pub fn expand_iterative(
         span: &Span,
-        asc: &IndexSet<LoopId>,
+        asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
     ) -> Result<Self, TypeError> {
@@ -71,11 +71,21 @@ impl Type {
             ));
         }
 
+        Type::expand_iterative_unsafe(span, asc, label, body)
+    }
+
+    // This variant does not make sure asc isn't empty
+    pub fn expand_iterative_unsafe(
+        _span: &Span,
+        asc: &HashSet<LoopId>,
+        label: &Option<LocalName>,
+        body: &Self,
+    ) -> Result<Self, TypeError> {
         let mut typ = body.clone();
         fn inner(
             typ: &mut Type,
             target_label: &Option<LocalName>,
-            asc: &IndexSet<LoopId>,
+            asc: &HashSet<LoopId>,
             body: &Type,
         ) -> Result<(), TypeError> {
             match typ {
@@ -112,5 +122,37 @@ impl Type {
 
         inner(&mut typ, label, asc, body)?;
         Ok(typ)
+    }
+
+    #[allow(dead_code)]
+    pub fn expand_fixpoint(&self) -> Result<Self, TypeError> {
+        match self {
+            Type::Recursive {
+                asc, label, body, ..
+            } => Self::expand_recursive(asc, label, body),
+            Type::Iterative {
+                span,
+                asc,
+                label,
+                body,
+            } => Self::expand_iterative(span, asc, label, body),
+            _ => Ok(self.clone()),
+        }
+    }
+
+    // This variant does not make sure iterative's asc isn't empty
+    pub fn expand_fixpoint_unfounded(&self) -> Result<Self, TypeError> {
+        match self {
+            Type::Recursive {
+                asc, label, body, ..
+            } => Self::expand_recursive(asc, label, body),
+            Type::Iterative {
+                span,
+                asc,
+                label,
+                body,
+            } => Self::expand_iterative_unsafe(span, asc, label, body),
+            _ => Ok(self.clone()),
+        }
     }
 }

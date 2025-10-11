@@ -298,6 +298,18 @@ impl Compiler {
                     }
                 }
             }
+            Tree::Box_(a, id) => {
+                let a = self.apply_safe_rules(*a);
+                Tree::Box_(Box::new(a), id)
+            }
+            Tree::Signal(signal, a) => {
+                let a = self.apply_safe_rules(*a);
+                Tree::Signal(signal, Box::new(a))
+            }
+            Tree::Choice(a, table) => {
+                let a = self.apply_safe_rules(*a);
+                Tree::Choice(Box::new(a), table)
+            }
             tree => tree,
         }
     }
@@ -664,7 +676,7 @@ impl Compiler {
                     panic!("Unexpected type for Signal: {:?}", subject.ty);
                 };
                 let Some(branch_type) = branches.get(chosen) else {
-                    unreachable!()
+                    unreachable!("branch {chosen} not found in {:}", subject.ty)
                 };
                 let (v0, v1) = self.create_typed_wire(branch_type.clone());
                 let choosing_tree = self.either_instance(ArcStr::from(&chosen.string), v1.tree);

@@ -3,13 +3,13 @@
 dec FileRead : [String] Result<!, String>
 def FileRead = [path]
   catch _ => .err! in
-  let try reader = Os.PathFromString(path).openFile in
-  let parser = String.ParseReader(type either{}, Os.Error)(reader) in
+  let try reader = Os.Path(path).openFile in
+  let parser = String.ParserFromReader(type Os.Error)(reader) in
   let try contents = parser.remainder in
   .ok contents
 
 dec StringLines : [String] List<String>
-def StringLines = [string] String.Parse(string).begin.match(.repeat.non.char "\n", .one.char "\n").case {
+def StringLines = [string] String.Parser(string).begin.match(.repeat.non.char "\n", .one.char "\n").case {
   .end err => let ! = Result.Always(type !)(err) in .end!
   .fail attempt => .item(Result.Always(type String)(attempt.remainder)).end!
   .match(line, _) reader => .item(line) reader.loop

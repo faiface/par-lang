@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
+    time::SystemTime,
 };
 
 use eframe::egui::{self, RichText, Theme};
@@ -27,6 +28,7 @@ use crate::{
         types::TypeError,
     },
 };
+use core::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
@@ -42,6 +44,7 @@ pub struct Playground {
     theme_mode: ThemeMode,
     rt: tokio::runtime::Runtime,
     cancel_token: Option<CancellationToken>,
+    file_old_mtime: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +132,7 @@ impl Playground {
                 .build()
                 .expect("Failed to create Tokio runtime"),
             cancel_token: None,
+            file_old_mtime: None,
         });
 
         if let Some(path) = file_path {
@@ -161,6 +165,30 @@ impl eframe::App for Playground {
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
         ctx.set_visuals(visuals);
 
+        if let Some(mtime) = self.file_mtime() {
+            match self.file_old_mtime {
+                None => (),
+                Some(old_mtime) => {
+                    if matches!(
+                        mtime
+                            .duration_since(old_mtime)
+                            .map(|x| x > Duration::new(0, 0)),
+                        Ok(true)
+                    ) {
+                        if let Ok(code) = self
+                            .file_path
+                            .as_ref()
+                            .ok_or(())
+                            .and_then(|path| self.reopen(&path).map_err(|_| ()))
+                        {
+                            self.code = code
+                        };
+                        self.file_old_mtime = Some(mtime);
+                    }
+                }
+            }
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::SidePanel::left("interaction")
                 .resizable(true)
@@ -186,6 +214,7 @@ impl eframe::App for Playground {
                             ))
                             .ui(ui, |ui| {
                                 if ui.button(egui::RichText::new("Open...").strong()).clicked() {
+                                    self.file_old_mtime = None;
                                     self.open_file();
                                     ui.close();
                                 }
@@ -193,6 +222,21 @@ impl eframe::App for Playground {
                                 if let Some(path) = self.file_path.clone() {
                                     if ui.button(egui::RichText::new("Save").strong()).clicked() {
                                         self.save_file(&path);
+                                        ui.close();
+                                    }
+
+                                    let mut do_reload = self.file_old_mtime.is_some();
+                                    if ui
+                                        .checkbox(
+                                            &mut do_reload,
+                                            egui::RichText::new("Reload").strong(),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.file_old_mtime = match self.file_old_mtime {
+                                            None => self.file_mtime(),
+                                            Some(_) => None,
+                                        };
                                         ui.close();
                                     }
                                 }
@@ -295,6 +339,16 @@ impl Playground {
         }
     }
 
+    fn reopen(&self, file_path: impl AsRef<Path>) -> Result<String, std::io::Error> {
+        let file_path = file_path.as_ref();
+        File::open(file_path).and_then(|mut file| {
+            use std::io::Read;
+            let mut buf = String::new();
+            file.read_to_string(&mut buf)?;
+            Ok(buf)
+        })
+    }
+
     fn save_file_as(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .set_can_create_directories(true)
@@ -310,6 +364,16 @@ impl Playground {
             use std::io::Write;
             file.write_all(self.code.as_bytes())
         });
+    }
+
+    fn file_mtime(&self) -> Option<SystemTime> {
+        let Ok(metadata) = std::fs::metadata(self.file_path.as_ref()?) else {
+            return None;
+        };
+        let Ok(mtime) = metadata.modified() else {
+            return None;
+        };
+        Some(mtime)
     }
 
     fn get_theme(&self, ui: &egui::Ui) -> ColorTheme {
@@ -537,6 +601,7 @@ fn par_syntax() -> Syntax {
             "catch",
             "try",
             "throw",
+            "default",
         ]),
         types: BTreeSet::from([]),
         special: BTreeSet::from(["<>"]),
