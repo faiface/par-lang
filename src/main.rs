@@ -106,7 +106,7 @@ static CRASH_STR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None)
 
 #[cfg(not(feature = "playground"))]
 fn run_playground(_: Option<PathBuf>) {
-    eprintln!("Playground was disabled when building par")
+    eprintln!("Playground was disabled when building Par")
 }
 
 #[cfg(feature = "playground")]

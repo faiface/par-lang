@@ -182,7 +182,7 @@ impl core::ops::Add<Rewrites> for Rewrites {
     }
 }
 
-#[cfg(feature = "playground")]
+#[allow(unused)]
 impl Rewrites {
     pub fn total(&self) -> u128 {
         self.commute + self.annihilate + self.signal + self.expand + self.era + self.resp
