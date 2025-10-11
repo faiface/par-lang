@@ -359,6 +359,7 @@ pub fn parse_module(
     })
 }
 
+#[cfg(feature = "playground")]
 pub fn parse_bytes(input: &str, file: &FileName) -> Option<Vec<u8>> {
     (literal_bytes_inner, winnow::combinator::eof)
         .parse_next(&mut Input::new(&lex(input, file)))

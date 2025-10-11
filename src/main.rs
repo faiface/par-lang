@@ -1,12 +1,16 @@
 use crate::icombs::readback::{TypedHandle, TypedReadback};
+use crate::par::build_result::BuildResult;
 use crate::par::types::Type;
-use crate::playground::{BuildResult, Playground};
+#[cfg(feature = "playground")]
+use crate::playground::Playground;
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
+#[cfg(feature = "playground")]
 use eframe::egui;
 use futures::task::SpawnExt;
 use std::fs::File;
+#[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,7 +19,9 @@ mod icombs;
 mod language_server;
 mod location;
 mod par;
+#[cfg(feature = "playground")]
 mod playground;
+#[cfg(feature = "playground")]
 mod readback;
 mod spawn;
 mod test_assertion;
@@ -26,7 +32,11 @@ fn main() {
         .subcommand_required(true)
         .subcommand(
             Command::new("playground")
-                .about("Start the Par playground")
+                .about(if cfg!(feature = "playground") {
+                    "Start the Par playground"
+                } else {
+                    "Disabled in build"
+                })
                 .arg(
                     arg!([file] "Open a Par file in the playground")
                         .value_parser(value_parser!(PathBuf)),
@@ -90,9 +100,16 @@ fn main() {
     }
 }
 
+#[cfg(feature = "playground")]
 /// String to save on crash. Used by the playground to avoid losing everything on panic.
 static CRASH_STR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+#[cfg(not(feature = "playground"))]
+fn run_playground(_: Option<PathBuf>) {
+    eprintln!("Playground was disabled when building Par")
+}
+
+#[cfg(feature = "playground")]
 fn run_playground(file: Option<PathBuf>) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),

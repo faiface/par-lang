@@ -1,13 +1,13 @@
 use super::io::IO;
 use crate::location::FileName;
-use crate::playground::BuildResult;
+use crate::par::build_result::BuildResult;
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
 use std::fmt::Write;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
-    Compile(crate::playground::Error),
+    Compile(crate::par::build_result::Error),
     //Types(TypeError<Internal<Name>>),
 }
 
