@@ -90,7 +90,7 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
       file.write(bytes).try@clearResp
 
       bytesSinceLastEvent->Nat.Add(Bytes.Length(bytes))
-      Nat.Compare(Time.Now(!), Nat.Add(timeOfLastEvent, 100)).case {
+      Time.Now(!)->Nat.Compare(timeOfLastEvent->Nat.Add(100)).case {
         .greater! => {
           yield.item((dest) .progressed bytesSinceLastEvent)
           let bytesSinceLastEvent = 0
@@ -120,12 +120,12 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
 
   catch e => {
     Debug.Log(Concat(*("Stdout error: ", e)))
-    progress.close
+    tracker.close
     exit!
   }
 
   let stdout = Os.Stdout
-  let progress = NewDownloadProgress
+  let tracker = NewProgressTracker
 
   events.begin.case {
     .item((destination) event) => {
@@ -133,13 +133,13 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
 
       event.case {
         .started expected => {
-          progress.file(name).started(expected)
+          tracker.file(name).started(expected)
           stdout.write(Concat(*("\nStarted downloading ", name, "\n"))).try
         }
 
         .progressed size => {
-          progress.file(name).progressed(size)
-          progress.stats[numFiles, sumDownloaded, sumExpected]
+          tracker.file(name).progressed(size)
+          tracker.stats[numFiles, sumDownloaded, sumExpected]
           stdout.write(Concat(*(
             "\r>> ", Int.ToString(numFiles), " file(s) in progress: ",
             Int.ToString(sumDownloaded), " B / ", Int.ToString(sumExpected), " B",
@@ -147,7 +147,7 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
         }
 
         .finished! => {
-          progress.file(name).ended[startTime, downloadedSize]
+          tracker.file(name).ended[startTime, downloadedSize]
           let duration = Time.Now(!)->Int.Sub(startTime)
           let speed = downloadedSize->Int.Mul(1000)->Int.Div(duration)
           stdout.write(Concat(*(
@@ -159,7 +159,7 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
         }
 
         .failed msg => {
-          progress.file(name).ended[_, _]
+          tracker.file(name).ended[_, _]
           stdout.write(Concat(*("\nFailed to download ", name, ": ", msg, "\n"))).try
         }
       }
@@ -169,12 +169,12 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
     .end! => {}
   }
 
-  progress.close
+  tracker.close
   stdout.close
   exit!
 }
 
-type DownloadProgress = iterative choice {
+type ProgressTracker = iterative choice {
   .close => !,
   .stats => (Nat, Int, Int) self,
   .file(String) => choice {
@@ -184,8 +184,7 @@ type DownloadProgress = iterative choice {
   }
 }
 
-def NewDownloadProgress: DownloadProgress = do {
-  // ("start time", "expected size", "downloaded size")
+def NewProgressTracker: ProgressTracker = do {
   let filesInProgress = Map.String(type (Nat, Nat, Nat)!)(*())
   let sumDownloaded: Int = 0
   let sumExpected: Int = 0
@@ -226,26 +225,13 @@ def NewDownloadProgress: DownloadProgress = do {
 
 dec FanIn : [type a] [List<List<a>>] List<a>
 def FanIn = [type a] [lists] chan yield {
-  let yield = Cell.Share(type dual List<a>)(yield, chan cell {
-    lists.begin.case {
-      .item(list) => {
-        cell.split(chan cell {
-          list.begin.case {
-            .item(value) => {
-              cell.take[yield]
-              yield.item(value)
-              cell.put(yield)
-              list.loop
-            }
-            .end! => { cell.end! }
-          }
-        })
-        lists.loop
-      }
-      .end! => { cell.end! }
-    }
-  })
-  yield.end!
+  Cell.Share(type dual List<a>)(yield, lists.begin.case {
+    .end! => .end!,
+    .item(list) lists => .split(list.begin.case {
+      .end! => .end!,
+      .item(value) list => .take[yield].put(yield.item(value)) list.loop,
+    }) lists.loop,
+  }).end!
 }
 
 dec Map : [type a, b] [List<a>, box [a] b] List<b>
