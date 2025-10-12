@@ -17,6 +17,13 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
+pub enum VariableUsage {
+    Unknown,
+    Copy,
+    Move,
+}
+
+#[derive(Clone, Debug)]
 pub enum Process<Typ> {
     Let {
         span: Span,
@@ -29,6 +36,7 @@ pub enum Process<Typ> {
     Do {
         span: Span,
         name: LocalName,
+        usage: VariableUsage,
         typ: Typ,
         command: Command<Typ>,
     },
@@ -58,7 +66,7 @@ pub enum Command<Typ> {
 #[derive(Clone, Debug)]
 pub enum Expression<Typ> {
     Global(Span, GlobalName, Typ),
-    Variable(Span, LocalName, Typ),
+    Variable(Span, LocalName, Typ, VariableUsage),
     Box(Span, Captures, Arc<Self>, Typ),
     Chan {
         span: Span,
@@ -89,7 +97,7 @@ impl<Typ> Spanning for Process<Typ> {
 
 #[derive(Clone, Debug)]
 pub struct Captures {
-    pub names: IndexMap<LocalName, Span>,
+    pub names: IndexMap<LocalName, (Span, VariableUsage)>,
 }
 
 impl Default for Captures {
@@ -107,9 +115,9 @@ impl Captures {
         }
     }
 
-    pub fn single(name: LocalName, span: Span) -> Self {
+    pub fn single(name: LocalName, span: Span, usage: VariableUsage) -> Self {
         let mut caps = Self::new();
-        caps.add(name, span);
+        caps.add(name, span, usage);
         caps
     }
 
@@ -119,12 +127,16 @@ impl Captures {
         }
     }
 
-    pub fn add(&mut self, name: LocalName, span: Span) {
-        self.names.insert(name, span);
+    pub fn add(&mut self, name: LocalName, span: Span, usage: VariableUsage)  {
+        self.names.insert(name, (span, usage));
     }
 
-    pub fn remove(&mut self, name: &LocalName) -> Option<Span> {
+    pub fn remove(&mut self, name: &LocalName) -> Option<(Span, VariableUsage)> {
         self.names.shift_remove(name)
+    }
+
+    pub fn contains(&self, name: &LocalName) -> bool {
+        self.names.contains_key(name)
     }
 }
 
@@ -144,7 +156,7 @@ impl Process<()> {
             } => {
                 let (process, mut caps) = process.fix_captures(loop_points);
                 caps.remove(name);
-                let (expression, caps1) = expression.fix_captures(loop_points);
+                let (expression, caps1) = expression.fix_captures(loop_points, &caps);
                 caps.extend(caps1);
                 (
                     Arc::new(Self::Let {
@@ -161,15 +173,18 @@ impl Process<()> {
             Self::Do {
                 span,
                 name,
+                usage: _usage,
                 typ,
                 command,
             } => {
                 let (command, mut caps) = command.fix_captures(name, loop_points);
-                caps.add(name.clone(), span.clone());
+                let usage = if caps.contains(name) { VariableUsage::Copy }  else { VariableUsage::Move };
+                caps.add(name.clone(), span.clone(), VariableUsage::Unknown);
                 (
                     Arc::new(Self::Do {
                         span: span.clone(),
                         name: name.clone(),
+                        usage,
                         typ: typ.clone(),
                         command,
                     }),
@@ -203,12 +218,14 @@ impl Process<()> {
             Self::Do {
                 span,
                 name,
+                usage,
                 typ,
                 command,
             } => Arc::new(Self::Do {
                 span: span.clone(),
                 name: name.clone(),
                 typ: typ.clone(),
+                usage: usage.clone(),
                 command: match command {
                     Command::Link(expression) => {
                         let expression = expression.optimize();
@@ -230,6 +247,7 @@ impl Process<()> {
                                             span.clone(),
                                             name.clone(),
                                             (),
+                                            VariableUsage::Unknown,
                                         )),
                                         then: Arc::clone(process),
                                     });
@@ -342,12 +360,12 @@ impl Command<()> {
     ) -> (Self, Captures) {
         match self {
             Self::Link(expression) => {
-                let (expression, caps) = expression.fix_captures(loop_points);
+                let (expression, caps) = expression.fix_captures(loop_points, &Captures::new());
                 (Self::Link(expression), caps)
             }
             Self::Send(argument, process) => {
                 let (process, mut caps) = process.fix_captures(loop_points);
-                let (argument, caps1) = argument.fix_captures(loop_points);
+                let (argument, caps1) = argument.fix_captures(loop_points, &caps);
                 caps.extend(caps1);
                 (Self::Send(argument, process), caps)
             }
@@ -475,18 +493,26 @@ impl Expression<()> {
     pub fn fix_captures(
         &self,
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
+        later_captures: &Captures,
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Global(span, name, typ) => (
                 Arc::new(Self::Global(span.clone(), name.clone(), typ.clone())),
                 Captures::new(),
             ),
-            Self::Variable(span, name, typ) => (
-                Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone())),
-                Captures::single(name.clone(), span.clone()),
-            ),
+            Self::Variable(span, name, typ, _usage) => {
+                let usage = if later_captures.contains(name) {
+                    VariableUsage::Copy
+                } else {
+                    VariableUsage::Move
+                };
+                (
+                    Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone(), usage, )),
+                    Captures::single(name.clone(), span.clone(), VariableUsage::Unknown),
+                )
+            },
             Self::Box(span, _, expression, typ) => {
-                let (expression, caps) = expression.fix_captures(loop_points);
+                let (expression, caps) = expression.fix_captures(loop_points, later_captures);
                 (
                     Arc::new(Self::Box(
                         span.clone(),
@@ -508,6 +534,13 @@ impl Expression<()> {
             } => {
                 let (process, mut caps) = process.fix_captures(loop_points);
                 caps.remove(channel);
+                for (name, (_span, usage)) in caps.names.iter_mut() {
+                    if later_captures.contains(name) {
+                        *usage = VariableUsage::Copy;
+                    } else {
+                        *usage = VariableUsage::Move;
+                    }
+                }
                 (
                     Arc::new(Self::Chan {
                         span: span.clone(),
@@ -537,8 +570,8 @@ impl Expression<()> {
             Self::Global(span, name, typ) => {
                 Arc::new(Self::Global(span.clone(), name.clone(), typ.clone()))
             }
-            Self::Variable(span, name, typ) => {
-                Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone()))
+            Self::Variable(span, name, typ, usage) => {
+                Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone(), usage.clone()))
             }
             Self::Box(span, caps, expression, typ) => Arc::new(Self::Box(
                 span.clone(),
@@ -622,7 +655,7 @@ impl Expression<Type> {
                     },
                 );
             }
-            Self::Variable(_, name, typ) => {
+            Self::Variable(_, name, typ, _usage) => {
                 consume(name.span(), NameWithType::named(name, typ.clone()));
             }
             Self::Box(span, _, expression, typ) => {
@@ -655,7 +688,7 @@ impl<Typ: Clone> Expression<Typ> {
     pub fn get_type(&self) -> Typ {
         match self {
             Self::Global(_, _, typ) => typ.clone(),
-            Self::Variable(_, _, typ) => typ.clone(),
+            Self::Variable(_, _, typ, _usage) => typ.clone(),
             Self::Box(_, _, _, typ) => typ.clone(),
             Self::Chan { expr_type, .. } => expr_type.clone(),
             Self::Primitive(_, _, typ) => typ.clone(),
@@ -684,6 +717,7 @@ impl Process<()> {
             Self::Do {
                 span: _,
                 name: _,
+                usage: _,
                 typ: (),
                 command,
             } => command.qualify(module),
@@ -737,7 +771,7 @@ impl Expression<()> {
     pub fn qualify(self: &mut Arc<Self>, module: Option<&str>) {
         match Arc::make_mut(self) {
             Self::Global(_span, name, ()) => name.qualify(module),
-            Self::Variable(_span, _name, ()) => {}
+            Self::Variable(_span, _name, (), _usage) => {}
             Self::Box(_span, _caps, expression, ()) => expression.qualify(module),
             Self::Chan {
                 span: _,
@@ -779,6 +813,7 @@ impl<Typ> Process<Typ> {
             Self::Do {
                 span: _,
                 name: subject,
+                usage: _,
                 typ: _,
                 command,
             } => {
@@ -890,7 +925,7 @@ impl<Typ> Expression<Typ> {
                 write!(f, "{}", name)
             }
 
-            Self::Variable(_, name, _) => {
+            Self::Variable(_, name, _, _) => {
                 write!(f, "{}", name)
             }
 

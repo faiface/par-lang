@@ -49,6 +49,7 @@ impl Context {
             Process::Do {
                 span,
                 name: object,
+                usage,
                 typ: (),
                 command,
             } => {
@@ -66,6 +67,7 @@ impl Context {
                 Ok(Arc::new(Process::Do {
                     span: span.clone(),
                     name: object.clone(),
+                    usage: usage.clone(),
                     typ: typ,
                     command: command,
                 }))
@@ -523,6 +525,7 @@ impl Context {
             Process::Do {
                 span,
                 name: object,
+                usage,
                 typ: (),
                 command,
             } => {
@@ -532,6 +535,7 @@ impl Context {
                         Arc::new(Process::Do {
                             span: span.clone(),
                             name: object.clone(),
+                            usage: usage.clone(),
                             typ: typ.clone(),
                             command,
                         }),
@@ -563,6 +567,7 @@ impl Context {
                     Arc::new(Process::Do {
                         span: span.clone(),
                         name: object.clone(),
+                        usage: usage.clone(),
                         typ,
                         command,
                     }),
@@ -729,7 +734,7 @@ impl Context {
                 )))
             }
 
-            Expression::Variable(span, name, ()) => {
+            Expression::Variable(span, name, (), usage) => {
                 if Some(name) == inference_subject {
                     return Err(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
@@ -746,6 +751,7 @@ impl Context {
                     span.clone(),
                     name.clone(),
                     typ.clone(),
+                    usage.clone(),
                 )))
             }
 
@@ -864,7 +870,7 @@ impl Context {
                 ))
             }
 
-            Expression::Variable(span, name, ()) => {
+            Expression::Variable(span, name, (), usage) => {
                 if Some(name) == inference_subject {
                     return Err(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
@@ -880,6 +886,7 @@ impl Context {
                         span.clone(),
                         name.clone(),
                         typ.clone(),
+                        usage.clone(),
                     )),
                     typ,
                 ))
