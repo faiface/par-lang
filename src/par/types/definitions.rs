@@ -1,6 +1,6 @@
 use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
-use crate::par::types::{Type, TypeError};
+use crate::par::types::{visit, Type, TypeError};
 use indexmap::{IndexMap, IndexSet};
 use std::sync::Arc;
 
@@ -150,231 +150,124 @@ impl TypeDefs {
     }
 
     pub fn validate_type(&self, typ: &Type) -> Result<(), TypeError> {
-        self.validate_type_inner(
-            typ,
-            &IndexSet::new(),
-            &IndexSet::new(),
-            &IndexSet::new(),
-            &IndexSet::new(),
-            true,
-        )
-    }
-
-    fn validate_type_inner(
-        &self,
-        typ: &Type,
-        self_pos: &IndexSet<Option<LocalName>>,
-        self_neg: &IndexSet<Option<LocalName>>,
-        unguarded_self_rec: &IndexSet<Option<LocalName>>,
-        unguarded_self_iter: &IndexSet<Option<LocalName>>,
-        check_self: bool,
-    ) -> Result<(), TypeError> {
-        Ok(match typ {
-            Type::Primitive(_, _) | Type::DualPrimitive(_, _) => (),
-
-            Type::Var(span, name) | Type::DualVar(span, name) => {
-                if self.vars.contains(name) {
-                    ()
-                } else {
-                    return Err(TypeError::TypeVariableNotDefined(
-                        span.clone(),
-                        name.clone(),
-                    ));
-                }
-            }
-            Type::Name(span, name, args) => {
-                // Dereference alias first so guarding/position checks happen in the body
-                let t = self.get(span, name, args)?;
-                self.validate_type_inner(
-                    &t,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-                // Separately validate arguments for existence/kind issues without self-guard checks
-                for arg in args {
-                    self.validate_type_inner(
-                        arg,
-                        &IndexSet::new(),
-                        &IndexSet::new(),
-                        &IndexSet::new(),
-                        &IndexSet::new(),
-                        false,
-                    )?;
-                }
-            }
-            Type::DualName(span, name, args) => {
-                // Dereference alias first so guarding/position checks happen in the body (with polarity swapped)
-                let t = self.get(span, name, args)?;
-                self.validate_type_inner(
-                    &t,
-                    self_neg,
-                    self_pos,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-                // Separately validate arguments for existence/kind issues without self-guard checks
-                for arg in args {
-                    self.validate_type_inner(
-                        arg,
-                        &IndexSet::new(),
-                        &IndexSet::new(),
-                        &IndexSet::new(),
-                        &IndexSet::new(),
-                        false,
-                    )?;
-                }
-            }
-
-            Type::Box(_, body) => self.validate_type_inner(
-                body,
-                self_pos,
-                self_neg,
-                unguarded_self_rec,
-                unguarded_self_iter,
-                check_self,
-            )?,
-            Type::DualBox(_, body) => self.validate_type_inner(
-                body,
-                self_neg,
-                self_pos,
-                unguarded_self_rec,
-                unguarded_self_iter,
-                check_self,
-            )?,
-
-            Type::Pair(_, t, u) => {
-                self.validate_type_inner(
-                    t,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-                self.validate_type_inner(
-                    u,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-            }
-            Type::Function(_, t, u) => {
-                self.validate_type_inner(
-                    t,
-                    self_neg,
-                    self_pos,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-                self.validate_type_inner(
-                    u,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-            }
-            Type::Either(_, branches) => {
-                let unguarded_self_rec = IndexSet::new();
-                for (_, t) in branches {
-                    self.validate_type_inner(
-                        t,
-                        self_pos,
-                        self_neg,
-                        &unguarded_self_rec,
-                        unguarded_self_iter,
-                        check_self,
-                    )?;
-                }
-            }
-            Type::Choice(_, branches) => {
-                let unguarded_self_iter = IndexSet::new();
-                for (_, t) in branches {
-                    self.validate_type_inner(
-                        t,
-                        self_pos,
-                        self_neg,
-                        unguarded_self_rec,
-                        &unguarded_self_iter,
-                        check_self,
-                    )?;
-                }
-            }
-            Type::Break(_) | Type::Continue(_) => (),
-
-            Type::Recursive { label, body, .. } | Type::Iterative { label, body, .. } => {
-                let (mut self_pos, mut self_neg) = (self_pos.clone(), self_neg.clone());
-                self_pos.insert(label.clone());
-                self_neg.shift_remove(label);
-                let (mut unguarded_self_rec, mut unguarded_self_iter) =
-                    (unguarded_self_rec.clone(), unguarded_self_iter.clone());
-                match typ {
-                    Type::Recursive { .. } => {
-                        unguarded_self_rec.insert(label.clone());
-                        unguarded_self_iter.shift_remove(label);
+        #[derive(Clone)]
+        struct Ctx {
+            defs: TypeDefs,
+            check_self: bool,
+            self_polarity: IndexMap<Option<LocalName>, bool>,
+            unguarded_self_rec: IndexSet<Option<LocalName>>,
+            unguarded_self_iter: IndexSet<Option<LocalName>>,
+        }
+        fn inner(typ: &Type, positive: bool, mut ctx: Ctx) -> Result<(), TypeError> {
+            match typ {
+                Type::Name(_span, _name, args) | Type::DualName(_span, _name, args) => {
+                    for arg in args {
+                        inner(
+                            arg,
+                            positive,
+                            Ctx {
+                                defs: ctx.defs.clone(),
+                                check_self: false,
+                                self_polarity: IndexMap::new(),
+                                unguarded_self_rec: IndexSet::new(),
+                                unguarded_self_iter: IndexSet::new(),
+                            },
+                        )?;
                     }
-                    Type::Iterative { .. } => {
-                        unguarded_self_iter.insert(label.clone());
-                        unguarded_self_rec.shift_remove(label);
-                    }
-                    _ => unreachable!(),
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                        inner(typ, positive, ctx.clone())
+                    })?;
                 }
-                self.validate_type_inner(
-                    body,
-                    &self_pos,
-                    &self_neg,
-                    &unguarded_self_rec,
-                    &unguarded_self_iter,
-                    check_self,
-                )?;
-            }
-            Type::Self_(span, label) => {
-                if check_self {
-                    if self_neg.contains(label) {
-                        return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
+                Type::Exists(_span, name, _body) | Type::Forall(_span, name, _body) => {
+                    ctx.defs.vars.insert(name.clone());
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                        inner(typ, positive, ctx.clone())
+                    })?;
+                }
+                Type::Var(span, name) | Type::DualVar(span, name) => {
+                    if ctx.defs.vars.contains(name) {
+                        ()
+                    } else {
+                        return Err(TypeError::TypeVariableNotDefined(
+                            span.clone(),
+                            name.clone(),
+                        ));
                     }
-                    if !self_pos.contains(label) {
+                }
+                Type::Recursive { label, .. } if ctx.check_self => {
+                    ctx.unguarded_self_rec.insert(label.clone());
+                    ctx.unguarded_self_iter.shift_remove(label);
+                    ctx.self_polarity.insert(label.clone(), positive);
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                        inner(typ, positive, ctx.clone())
+                    })?;
+                }
+                Type::Iterative { label, .. } if ctx.check_self => {
+                    ctx.unguarded_self_iter.insert(label.clone());
+                    ctx.unguarded_self_rec.shift_remove(label);
+                    ctx.self_polarity.insert(label.clone(), positive);
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                        inner(typ, positive, ctx.clone())
+                    })?;
+                }
+                Type::Either(..) if ctx.check_self => {
+                    ctx.unguarded_self_rec = IndexSet::new();
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                        inner(typ, positive, ctx.clone())
+                    })?;
+                }
+                Type::Choice(..) if ctx.check_self => {
+                    ctx.unguarded_self_iter = IndexSet::new();
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                        inner(typ, positive, ctx.clone())
+                    })?;
+                }
+                Type::Self_(span, label) if ctx.check_self => {
+                    if let Some(is_positive) = ctx.self_polarity.get(label) {
+                        if *is_positive != positive {
+                            return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
+                        }
+                    } else {
                         return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
                     }
-                    if unguarded_self_rec.contains(label) {
+                    if ctx.unguarded_self_rec.contains(label) {
                         return Err(TypeError::UnguardedRecursiveSelf(span.clone()));
                     }
-                    if unguarded_self_iter.contains(label) {
+                    if ctx.unguarded_self_iter.contains(label) {
                         return Err(TypeError::UnguardedIterativeSelf(span.clone()));
                     }
                 }
-            }
-            Type::DualSelf(span, label) => {
-                if check_self {
-                    if self_pos.contains(label) {
-                        return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
-                    }
-                    if !self_neg.contains(label) {
+                Type::DualSelf(span, label) if ctx.check_self => {
+                    if let Some(is_positive) = ctx.self_polarity.get(label) {
+                        if *is_positive == positive {
+                            return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
+                        }
+                    } else {
                         return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
                     }
+                    if ctx.unguarded_self_rec.contains(label) {
+                        return Err(TypeError::UnguardedRecursiveSelf(span.clone()));
+                    }
+                    if ctx.unguarded_self_iter.contains(label) {
+                        return Err(TypeError::UnguardedIterativeSelf(span.clone()));
+                    }
                 }
+                _ => visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
+                    inner(typ, positive, ctx.clone())
+                })?,
             }
-
-            Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
-                let mut with_var = self.clone();
-                with_var.vars.insert(name.clone());
-                with_var.validate_type_inner(
-                    body,
-                    self_pos,
-                    self_neg,
-                    unguarded_self_rec,
-                    unguarded_self_iter,
-                    check_self,
-                )?;
-            }
-        })
+            Ok(())
+        }
+        inner(
+            typ,
+            true,
+            Ctx {
+                defs: self.clone(),
+                check_self: true,
+                self_polarity: IndexMap::new(),
+                unguarded_self_rec: IndexSet::new(),
+                unguarded_self_iter: IndexSet::new(),
+            },
+        )
     }
 }
