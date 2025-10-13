@@ -153,7 +153,7 @@ impl Context {
         only_non_linear: bool,
         target: &mut Self,
     ) -> Result<(), TypeError> {
-        for (name, span) in &cap.names {
+        for (name, (span, _usage)) in &cap.names {
             if Some(name) == inference_subject {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
