@@ -5,6 +5,7 @@ use std::{
 };
 
 use super::net::{Net, Tree};
+use crate::par::process::VariableUsage;
 use crate::par::{
     language::{GlobalName, LocalName},
     process::{Captures, Command, Expression, Process},
@@ -20,7 +21,6 @@ use crate::{
 use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
 use std::hash::Hash;
-use crate::par::process::VariableUsage;
 
 #[derive(Clone, Debug)]
 pub enum Error {
@@ -61,9 +61,9 @@ impl Error {
 
     pub fn spans(&self) -> (Span, Vec<Span>) {
         match self {
-            Error::UnboundVar(span, _) | Error::UnknownVariableUsage(span) | Error::UnguardedLoop(span, _) => {
-                (span.clone(), vec![])
-            }
+            Error::UnboundVar(span, _)
+            | Error::UnknownVariableUsage(span)
+            | Error::UnguardedLoop(span, _) => (span.clone(), vec![]),
 
             Error::GlobalNotFound(name) => (name.span(), vec![]),
 
@@ -167,11 +167,7 @@ impl Context {
 
     pub fn unpack(&mut self, packed: &PackData, net: &mut Net) -> Tree {
         let mut m_trees = vec![];
-        for (name, ty) in packed
-            .names
-            .iter()
-            .zip(packed.types.iter())
-        {
+        for (name, ty) in packed.names.iter().zip(packed.types.iter()) {
             let (v0, v1) = net.create_wire();
             self.bind_variable(name.clone(), v0.with_type(ty.clone()));
             m_trees.push(v1);
@@ -369,7 +365,7 @@ impl Compiler {
     ) -> Result<T> {
         let mut vars = BTreeMap::new();
         for (name, (_span, usage)) in captures.names.iter() {
-            let tree = self.use_variable(name, usage,false)?;
+            let tree = self.use_variable(name, usage, false)?;
             vars.insert(Var::Name(name.clone()), tree);
         }
         for (label, _) in self.context.loop_points.clone().iter() {
@@ -402,26 +398,23 @@ impl Compiler {
             }
             match usage {
                 VariableUsage::Move => Ok(tree),
-                VariableUsage::Copy=> {
+                VariableUsage::Copy => {
                     let (w0, w1) = self.net.create_wire();
                     let (v0, v1) = self.net.create_wire();
                     self.net
                         .link(Tree::Dup(Box::new(v0), Box::new(w0)), tree.tree);
                     self.context.vars.insert(
                         var.clone(),
-
-                            TypedTree {
-                                tree: w1,
-                                ty: tree.ty.clone(),
-                            },
-                    );
-                    Ok(
                         TypedTree {
-                            tree: v1,
+                            tree: w1,
                             ty: tree.ty.clone(),
-                        }
-                     )
-                },
+                        },
+                    );
+                    Ok(TypedTree {
+                        tree: v1,
+                        ty: tree.ty.clone(),
+                    })
+                }
                 VariableUsage::Unknown => Err(Error::UnknownVariableUsage(Span::None)),
             }
         } else {
@@ -500,7 +493,9 @@ impl Compiler {
     fn compile_expression(&mut self, expr: &Expression<Type>) -> Result<TypedTree> {
         match expr {
             Expression::Global(_, name, _) => self.use_global(name),
-            Expression::Variable(_, name, _typ, usage) => Ok(self.use_variable(name, usage,false)?),
+            Expression::Variable(_, name, _typ, usage) => {
+                Ok(self.use_variable(name, usage, false)?)
+            }
 
             Expression::Box(_, captures, expression, typ) => self.with_captures(captures, |this| {
                 let (context_in, pack_data) = this.context.pack(None, None, None, &mut this.net);
@@ -571,14 +566,14 @@ impl Compiler {
     ) -> Result<()> {
         match cmd {
             Command::Link(expr) => {
-                let subject = self.use_variable(&name, usage,true)?;
+                let subject = self.use_variable(&name, usage, true)?;
                 let value = self.compile_expression(expr)?;
                 self.link_typed(subject, value);
                 self.end_context()?;
             }
             // types get erased.
             Command::SendType(argument, process) => {
-                let subject = self.use_variable(&name, usage,true)?;
+                let subject = self.use_variable(&name, usage, true)?;
                 let Type::Forall(_, type_name, ret_type) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for SendType: {:?}", subject.ty);
@@ -615,7 +610,7 @@ impl Compiler {
                 // name = free
                 // free = (name < expr >)
                 // < process >
-                let subject = self.use_variable(&name,usage, true)?;
+                let subject = self.use_variable(&name, usage, true)?;
                 let Type::Function(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
                 };
@@ -634,7 +629,7 @@ impl Compiler {
                 // name = free
                 // free = (name target)
                 // < process >
-                let subject = self.use_variable(&name,usage, true)?;
+                let subject = self.use_variable(&name, usage, true)?;
                 let Type::Pair(_, arg_type, ret_type) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
@@ -650,7 +645,7 @@ impl Compiler {
                 self.compile_process(process)?;
             }
             Command::Signal(chosen, process) => {
-                let subject = self.use_variable(&name,usage, true)?;
+                let subject = self.use_variable(&name, usage, true)?;
                 let Type::Choice(_, branches) = self.normalize_type(subject.ty.clone()) else {
                     panic!("Unexpected type for Signal: {:?}", subject.ty);
                 };
@@ -665,7 +660,7 @@ impl Compiler {
             }
             Command::Case(names, processes) => {
                 self.context.unguarded_loop_labels.clear();
-                let old_tree = self.use_variable(&name,usage, true)?;
+                let old_tree = self.use_variable(&name, usage, true)?;
                 // Multiplex all other variables in the context.
                 let (context_in, pack_data) = self.context.pack(None, None, None, &mut self.net);
 
@@ -723,7 +718,7 @@ impl Compiler {
                 let (def0, def1) = self.net.create_wire();
                 let prev = self.context.vars.insert(
                     Var::Loop(label.0.clone()),
-                        def0.with_type(Type::Break(Span::default())),
+                    def0.with_type(Type::Break(Span::default())),
                 );
 
                 if let Some(prev_tree) = prev {
@@ -758,7 +753,8 @@ impl Compiler {
                 if self.context.unguarded_loop_labels.contains(&label) {
                     return Err(Error::UnguardedLoop(span.clone(), label.clone().0));
                 }
-                let tree = self.use_var(&Var::Loop(label.0.clone()), &VariableUsage::Copy,false)?;
+                let tree =
+                    self.use_var(&Var::Loop(label.0.clone()), &VariableUsage::Copy, false)?;
                 let driver_tree = self.use_variable(&name, usage, true)?;
                 self.bind_variable(driver.clone(), driver_tree)?;
                 let labels_in_scope = self.context.loop_points.get(&label).unwrap().clone();

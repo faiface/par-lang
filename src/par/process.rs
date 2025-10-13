@@ -127,7 +127,7 @@ impl Captures {
         }
     }
 
-    pub fn add(&mut self, name: LocalName, span: Span, usage: VariableUsage)  {
+    pub fn add(&mut self, name: LocalName, span: Span, usage: VariableUsage) {
         self.names.insert(name, (span, usage));
     }
 
@@ -178,7 +178,11 @@ impl Process<()> {
                 command,
             } => {
                 let (command, mut caps) = command.fix_captures(name, loop_points);
-                let usage = if caps.contains(name) { VariableUsage::Copy }  else { VariableUsage::Move };
+                let usage = if caps.contains(name) {
+                    VariableUsage::Copy
+                } else {
+                    VariableUsage::Move
+                };
                 caps.add(name.clone(), span.clone(), VariableUsage::Unknown);
                 (
                     Arc::new(Self::Do {
@@ -507,10 +511,15 @@ impl Expression<()> {
                     VariableUsage::Move
                 };
                 (
-                    Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone(), usage, )),
+                    Arc::new(Self::Variable(
+                        span.clone(),
+                        name.clone(),
+                        typ.clone(),
+                        usage,
+                    )),
                     Captures::single(name.clone(), span.clone(), VariableUsage::Unknown),
                 )
-            },
+            }
             Self::Box(span, _, expression, typ) => {
                 let (expression, caps) = expression.fix_captures(loop_points, later_captures);
                 (
@@ -570,9 +579,12 @@ impl Expression<()> {
             Self::Global(span, name, typ) => {
                 Arc::new(Self::Global(span.clone(), name.clone(), typ.clone()))
             }
-            Self::Variable(span, name, typ, usage) => {
-                Arc::new(Self::Variable(span.clone(), name.clone(), typ.clone(), usage.clone()))
-            }
+            Self::Variable(span, name, typ, usage) => Arc::new(Self::Variable(
+                span.clone(),
+                name.clone(),
+                typ.clone(),
+                usage.clone(),
+            )),
             Self::Box(span, caps, expression, typ) => Arc::new(Self::Box(
                 span.clone(),
                 caps.clone(),

@@ -14,11 +14,11 @@ use super::{
     process::{self, Captures},
     types::Type,
 };
+use crate::par::process::VariableUsage;
 use crate::{
     location::{Span, Spanning},
     par::types::error::labels_from_span,
 };
-use crate::par::process::VariableUsage;
 
 #[derive(Clone, Debug)]
 pub struct LocalName {
@@ -1766,7 +1766,12 @@ fn compile_try(
                     name: LocalName::error(),
                     annotation: None,
                     typ: (),
-                    value: Arc::new(process::Expression::Variable(span.clone(), variable, (), VariableUsage::Unknown)),
+                    value: Arc::new(process::Expression::Variable(
+                        span.clone(),
+                        variable,
+                        (),
+                        VariableUsage::Unknown,
+                    )),
                     then: catch_block,
                 }),
                 ok_process,
