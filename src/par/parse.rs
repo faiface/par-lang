@@ -850,6 +850,18 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
 }
 
 fn expr_literal_bytes(input: &mut Input) -> Result<Expression> {
+    alt((expr_literal_bytes_empty, expr_literal_bytes_nonempty)).parse_next(input)
+}
+
+fn expr_literal_bytes_empty(input: &mut Input) -> Result<Expression> {
+    commit_after((t(TokenKind::Lt), t(TokenKind::Link)), t(TokenKind::Gt))
+        .map(|((pre, _), post)| {
+            Expression::Primitive(pre.span.join(post.span()), Primitive::Bytes(Bytes::new()))
+        })
+        .parse_next(input)
+}
+
+fn expr_literal_bytes_nonempty(input: &mut Input) -> Result<Expression> {
     commit_after(
         (t(TokenKind::Lt), t(TokenKind::Lt)),
         (literal_bytes_inner, t(TokenKind::Gt), t(TokenKind::Gt)),
