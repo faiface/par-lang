@@ -219,8 +219,7 @@ that multiple decimal values are allowed, and are delimited by spaces:
 
 ```par
 def Bytes1 = <<65 91>>  // inferred as `Bytes`
-def Bytes2 = << >>      // zero-byte sequence
-// def Bytes3 = <<>>    // This triggers syntax error for now, but we intend to fix it
+def Bytes2 = <<>>       // zero-byte sequence
 ```
 
 A `Bytes` can also be broken down to a list of `Byte`s:
