@@ -585,8 +585,7 @@ def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapp
 <p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
 that multiple decimal values are allowed, and are delimited by spaces:</p>
 <pre><code class="language-par">def Bytes1 = &lt;&lt;65 91&gt;&gt;  // inferred as `Bytes`
-def Bytes2 = &lt;&lt; &gt;&gt;      // zero-byte sequence
-// def Bytes3 = &lt;&lt;&gt;&gt;    // This triggers syntax error for now, but we intend to fix it
+def Bytes2 = &lt;&lt;&gt;&gt;       // zero-byte sequence
 </code></pre>
 <p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
 <pre><code class="language-par">dec Bytes : [Bytes] List&lt;Byte&gt;
