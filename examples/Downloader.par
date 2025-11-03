@@ -113,7 +113,7 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
 
 dec ShowDownloadProgress : [List<Event>, Os.Path] !
 def ShowDownloadProgress = [events, rootPath] chan exit {
-  let getName: box [Os.Path] String = box [path]
+  let getName = box [path: Os.Path]
     path.absolute
       ->TrimStart(rootPath.absolute)
       ->String.FromBytes
@@ -141,8 +141,8 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
           tracker.file(name).progressed(size)
           tracker.stats[numFiles, sumDownloaded, sumExpected]
           stdout.write(Concat(*(
-            "\r>> ", Int.ToString(numFiles), " file(s) in progress: ",
-            Int.ToString(sumDownloaded), " B / ", Int.ToString(sumExpected), " B",
+            "\r>> ", numFiles->Int.ToString, " file(s) in progress: ",
+            sumDownloaded->Int.ToString, " B / ", sumExpected->Int.ToString, " B",
           ))).try
         }
 
@@ -215,7 +215,7 @@ def NewProgressTracker: ProgressTracker = do {
     } in (startTime, downloaded) loop,
 
     .progressed(size) => do {
-      filesInProgress.put((startTime, expected, Nat.Add(downloaded, size))!)
+      filesInProgress.put((startTime, expected, downloaded->Nat.Add(size))!)
       sumDownloaded->Int.Add(size)
     } in loop,
   }
@@ -225,13 +225,30 @@ def NewProgressTracker: ProgressTracker = do {
 
 dec FanIn : [type a] [List<List<a>>] List<a>
 def FanIn = [type a] [lists] chan yield {
-  Cell.Share(type dual List<a>)(yield, lists.begin.case {
-    .end! => .end!,
-    .item(list) lists => .split(list.begin.case {
-      .end! => .end!,
-      .item(value) list => .take[yield].put(yield.item(value)) list.loop,
-    }) lists.loop,
-  }).end!
+  let yield = Cell.Share(type dual List<a>)(yield, chan cell {
+    lists.begin.case {
+      .end! => {
+        cell.end!
+      }
+      .item(list) => {
+        cell.split(chan cell {
+          list.begin.case {
+            .end! => {
+              cell.end!
+            }
+            .item(value) => {
+              cell.take[yield]
+              yield.item(value)
+              cell.put(yield)
+              list.loop
+            }
+          }
+        })
+        lists.loop
+      }
+    }
+  })
+  yield.end!
 }
 
 dec Map : [type a, b] [List<a>, box [a] b] List<b>
