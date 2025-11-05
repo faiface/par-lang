@@ -168,7 +168,7 @@ pub enum Construct {
     /// constructs an either type
     Signal(Span, LocalName, Box<Self>),
     /// constructs a choice type
-    Case(Span, ConstructBranches),
+    Case(Span, ConstructBranches, Option<Box<ConstructBranch>>),
     /// ! (unit)
     Break(Span),
     Begin {
@@ -197,7 +197,7 @@ pub enum Apply {
     Noop(Span),
     Send(Span, Box<Expression>, Box<Self>),
     Signal(Span, LocalName, Box<Self>),
-    Case(Span, ApplyBranches),
+    Case(Span, ApplyBranches, Option<Box<ApplyBranch>>),
     Begin {
         span: Span,
         unfounded: bool,
@@ -254,7 +254,12 @@ pub enum Command {
     Send(Span, Expression, Box<Self>),
     Receive(Span, Pattern, Box<Self>),
     Signal(Span, LocalName, Box<Self>),
-    Case(Span, CommandBranches, Option<Box<Process>>),
+    Case(
+        Span,
+        CommandBranches,
+        Option<Box<CommandBranch>>,
+        Option<Box<Process>>,
+    ),
     Break(Span),
     Continue(Span, Box<Process>),
     Begin {
@@ -1100,13 +1105,17 @@ impl Construct {
                 })
             }
 
-            Self::Case(span, ConstructBranches(construct_branches)) => {
+            Self::Case(span, ConstructBranches(construct_branches), else_branch) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
                 for (branch_name, construct_branch) in construct_branches {
                     branches.push(branch_name.clone());
                     processes.push(construct_branch.compile(pass)?);
                 }
+                let else_process = match else_branch {
+                    Some(branch) => Some(branch.compile(pass)?),
+                    None => None,
+                };
                 let branches = Arc::from(branches);
                 let processes = Box::from(processes);
                 Arc::new(process::Process::Do {
@@ -1114,7 +1123,7 @@ impl Construct {
                     name: LocalName::result(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1190,7 +1199,7 @@ impl Spanning for Construct {
             Self::Send(span, _, _)
             | Self::Receive(span, _, _)
             | Self::Signal(span, _, _)
-            | Self::Case(span, _)
+            | Self::Case(span, _, _)
             | Self::Break(span)
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
@@ -1284,13 +1293,17 @@ impl Apply {
                 })
             }
 
-            Self::Case(span, ApplyBranches(expression_branches)) => {
+            Self::Case(span, ApplyBranches(expression_branches), else_branch) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
                 for (branch_name, expression_branch) in expression_branches {
                     branches.push(branch_name.clone());
                     processes.push(expression_branch.compile(pass)?);
                 }
+                let else_process = match else_branch {
+                    Some(branch) => Some(branch.compile(pass)?),
+                    None => None,
+                };
                 let branches = Arc::from(branches);
                 let processes = Box::from(processes);
                 Arc::new(process::Process::Do {
@@ -1298,7 +1311,7 @@ impl Apply {
                     name: LocalName::object(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1370,7 +1383,7 @@ impl Spanning for Apply {
         match self {
             Self::Send(span, _, _)
             | Self::Signal(span, _, _)
-            | Self::Case(span, _)
+            | Self::Case(span, _, _)
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
@@ -1616,7 +1629,7 @@ impl Command {
                 })
             }
 
-            Self::Case(span, CommandBranches(process_branches), optional_process) => {
+            Self::Case(span, CommandBranches(process_branches), else_branch, optional_process) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
 
@@ -1628,6 +1641,10 @@ impl Command {
                     branches.push(branch_name.clone());
                     processes.push(process_branch.compile(object_name, pass)?);
                 }
+                let else_process = match else_branch {
+                    Some(branch) => Some(branch.compile(object_name, pass)?),
+                    None => None,
+                };
                 if optional_process.is_some() {
                     pass.unset_fallthrough()?;
                 }
@@ -1639,7 +1656,7 @@ impl Command {
                     name: object_name.clone(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1776,6 +1793,7 @@ fn compile_try(
                 }),
                 ok_process,
             ]),
+            None,
         ),
     })
 }
@@ -1807,6 +1825,7 @@ fn compile_default(
                 }),
                 ok_process,
             ]),
+            None,
         ),
     })
 }
@@ -1860,7 +1879,7 @@ impl Spanning for Command {
             | Self::Send(span, _, _)
             | Self::Receive(span, _, _)
             | Self::Signal(span, _, _)
-            | Self::Case(span, _, _)
+            | Self::Case(span, _, _, _)
             | Self::Break(span)
             | Self::Continue(span, _)
             | Self::Begin { span, .. }

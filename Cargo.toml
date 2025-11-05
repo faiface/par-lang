@@ -10,8 +10,8 @@ playground = ["eframe", "egui_code_editor", "rfd"]
 
 [dependencies]
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-eframe = { version = "0.32.0", features = ["default", "__screenshot"], optional = true }
-egui_code_editor = { version = "0.2.17", optional = true }
+eframe = { version = "0.33.0", features = ["default", "__screenshot"], optional = true }
+egui_code_editor = { version = "0.2.20", optional = true }
 indexmap = "2.7.0"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
 stacker = "0.1.19"

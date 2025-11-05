@@ -414,9 +414,9 @@ fn definition(input: &mut Input) -> Result<(Definition<Expression>, Option<Type>
 
 fn branches_body<'i, P, O>(
     branch: P,
-) -> impl Parser<Input<'i>, (Span, BTreeMap<LocalName, O>), Error> + use<'i, P, O>
+) -> impl Parser<Input<'i>, (Span, BTreeMap<LocalName, O>, Option<Box<O>>), Error> + use<'i, P, O>
 where
-    P: Parser<Input<'i>, O, Error>,
+    P: Clone + Parser<Input<'i>, O, Error>,
 {
     commit_after(
         t(TokenKind::LCurly),
@@ -426,7 +426,50 @@ where
                 (
                     t(TokenKind::Dot),
                     local_name,
-                    cut_err(branch),
+                    cut_err(branch.clone()),
+                    opt(t(TokenKind::Comma)),
+                ),
+            )
+            .fold(
+                || BTreeMap::new(),
+                |mut branches, (_, name, branch, _)| {
+                    branches.insert(name, branch);
+                    branches
+                },
+            ),
+            opt((
+                t(TokenKind::Else),
+                cut_err(branch),
+                opt(t(TokenKind::Comma)),
+            )),
+            t(TokenKind::RCurly),
+        ),
+    )
+    .map(|(open, (branches, else_branch, close))| {
+        (
+            open.span.join(close.span()),
+            branches,
+            else_branch.map(|(_, b, _)| Box::new(b)),
+        )
+    })
+    .context(StrContext::Label("either/choice branches"))
+}
+
+fn branches_without_else_body<'i, P, O>(
+    branch: P,
+) -> impl Parser<Input<'i>, (Span, BTreeMap<LocalName, O>), Error> + use<'i, P, O>
+where
+    P: Clone + Parser<Input<'i>, O, Error>,
+{
+    commit_after(
+        t(TokenKind::LCurly),
+        (
+            repeat(
+                0..,
+                (
+                    t(TokenKind::Dot),
+                    local_name,
+                    cut_err(branch.clone()),
                     opt(t(TokenKind::Comma)),
                 ),
             )
@@ -534,7 +577,7 @@ fn typ_receive(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_either(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::Either), branches_body(typ))
+    commit_after(t(TokenKind::Either), branches_without_else_body(typ))
         .map(|(pre, (branches_span, branches))| {
             Type::Either(pre.span.join(branches_span), branches)
         })
@@ -542,7 +585,7 @@ fn typ_either(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_choice(input: &mut Input) -> Result<Type> {
-    commit_after(t(TokenKind::Choice), branches_body(typ_branch))
+    commit_after(t(TokenKind::Choice), branches_without_else_body(typ_branch))
         .map(|(pre, (branches_span, branches))| {
             Type::Choice(pre.span.join(branches_span), branches)
         })
@@ -1074,8 +1117,12 @@ fn cons_signal(input: &mut Input) -> Result<Construct> {
 
 fn cons_case(input: &mut Input) -> Result<Construct> {
     commit_after(t(TokenKind::Case), branches_body(cons_branch))
-        .map(|(pre, (branches_span, branches))| {
-            Construct::Case(pre.span.join(branches_span), ConstructBranches(branches))
+        .map(|(pre, (branches_span, branches, else_branch))| {
+            Construct::Case(
+                pre.span.join(branches_span),
+                ConstructBranches(branches),
+                else_branch,
+            )
         })
         .parse_next(input)
 }
@@ -1260,8 +1307,12 @@ fn apply_case(input: &mut Input) -> Result<Apply> {
         (t(TokenKind::Dot), t(TokenKind::Case)),
         branches_body(apply_branch),
     )
-    .map(|((pre, _), (branches_span, branches))| {
-        Apply::Case(pre.span.join(branches_span), ApplyBranches(branches))
+    .map(|((pre, _), (branches_span, branches, else_branch))| {
+        Apply::Case(
+            pre.span.join(branches_span),
+            ApplyBranches(branches),
+            else_branch,
+        )
     })
     .parse_next(input)
 }
@@ -1669,13 +1720,16 @@ fn cmd_case(input: &mut Input) -> Result<Command> {
         (t(TokenKind::Dot), t(TokenKind::Case)),
         (branches_body(cmd_branch), opt(pass_process)),
     )
-    .map(|((pre, _), ((branches_span, branches), pass_process))| {
-        Command::Case(
-            pre.span.join(branches_span),
-            CommandBranches(branches),
-            pass_process.map(Box::new),
-        )
-    })
+    .map(
+        |((pre, _), ((branches_span, branches, else_branch), pass_process))| {
+            Command::Case(
+                pre.span.join(branches_span),
+                CommandBranches(branches),
+                else_branch,
+                pass_process.map(Box::new),
+            )
+        },
+    )
     .parse_next(input)
 }
 

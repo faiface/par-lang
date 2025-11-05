@@ -559,6 +559,7 @@ fn par_syntax() -> Syntax {
             "try",
             "throw",
             "default",
+            "else",
         ]),
         types: BTreeSet::from([]),
         special: BTreeSet::from(["<>"]),

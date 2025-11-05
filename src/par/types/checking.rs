@@ -240,24 +240,16 @@ impl Context {
                 (Command::Signal(chosen.clone(), process), inferred_types)
             }
 
-            Command::Case(branches, processes) => {
-                let Type::Either(_, required_branches) = typ else {
+            Command::Case(branches, processes, else_process) => {
+                let Type::Either(_, branch_types) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::Case,
                         typ.clone(),
                     ));
                 };
-                if let Some(missing) = required_branches
-                    .keys()
-                    .find(|&branch| !branches.contains(branch))
-                {
-                    return Err(TypeError::MissingBranch(
-                        span.clone(),
-                        missing.clone(),
-                        typ.clone(),
-                    ));
-                }
+
+                let mut remaining_branches = branch_types.clone();
 
                 let original_context = self.clone();
                 let mut typed_processes = Vec::new();
@@ -266,14 +258,14 @@ impl Context {
                 for (branch, process) in branches.iter().zip(processes.iter()) {
                     *self = original_context.clone();
 
-                    let Some(branch_type) = required_branches.get(branch) else {
+                    let Some(branch_type) = remaining_branches.remove(branch) else {
                         return Err(TypeError::RedundantBranch(
                             span.clone(),
                             branch.clone(),
                             typ.clone(),
                         ));
                     };
-                    self.put(span, object.clone(), branch_type.clone())?;
+                    self.put(span, object.clone(), branch_type)?;
                     let (process, inferred_in_branch) = analyze_process(self, process)?;
                     typed_processes.push(process);
 
@@ -285,8 +277,44 @@ impl Context {
                         (t1, _) => inferred_type = t1,
                     }
                 }
+
+                let typed_else_process = match else_process {
+                    Some(process) => {
+                        *self = original_context.clone();
+                        let object_type = Type::Either(Span::None, remaining_branches);
+                        remaining_branches = BTreeMap::new();
+                        self.put(span, object.clone(), object_type)?;
+                        let (process, inferred_in_branch) = analyze_process(self, process)?;
+
+                        match (inferred_type, inferred_in_branch) {
+                            (None, Some(t2)) => inferred_type = Some(t2),
+                            (Some(t1), Some(t2)) => {
+                                inferred_type =
+                                    Some(intersect_types(&self.type_defs, span, &t1, &t2)?);
+                            }
+                            (t1, _) => inferred_type = t1,
+                        }
+
+                        Some(process)
+                    }
+
+                    None => None,
+                };
+
+                if let Some((missing, _)) = remaining_branches.pop_first() {
+                    return Err(TypeError::MissingBranch(
+                        span.clone(),
+                        missing.clone(),
+                        typ.clone(),
+                    ));
+                }
+
                 (
-                    Command::Case(Arc::clone(branches), Box::from(typed_processes)),
+                    Command::Case(
+                        Arc::clone(branches),
+                        Box::from(typed_processes),
+                        typed_else_process,
+                    ),
                     inferred_type,
                 )
             }
@@ -635,7 +663,14 @@ impl Context {
                 )
             }
 
-            Command::Case(branches, processes) => {
+            Command::Case(branches, processes, else_process) => {
+                if else_process.is_some() {
+                    return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                        span.clone(),
+                        subject.clone(),
+                    ));
+                }
+
                 let original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut branch_types = BTreeMap::new();
@@ -648,7 +683,7 @@ impl Context {
                 }
 
                 (
-                    Command::Case(Arc::clone(branches), Box::from(typed_processes)),
+                    Command::Case(Arc::clone(branches), Box::from(typed_processes), None),
                     Type::Either(span.clone(), branch_types),
                 )
             }

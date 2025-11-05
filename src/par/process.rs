@@ -49,7 +49,11 @@ pub enum Command<Typ> {
     Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
     Receive(LocalName, Option<Type>, Typ, Arc<Process<Typ>>),
     Signal(LocalName, Arc<Process<Typ>>),
-    Case(Arc<[LocalName]>, Box<[Arc<Process<Typ>>]>),
+    Case(
+        Arc<[LocalName]>,
+        Box<[Arc<Process<Typ>>]>,
+        Option<Arc<Process<Typ>>>,
+    ),
     Break,
     Continue(Arc<Process<Typ>>),
     Begin {
@@ -272,9 +276,10 @@ impl Process<()> {
                     Command::Signal(chosen, process) => {
                         Command::Signal(chosen.clone(), process.optimize())
                     }
-                    Command::Case(branches, processes) => {
+                    Command::Case(branches, processes, else_process) => {
                         let processes = processes.iter().map(|p| p.optimize()).collect();
-                        Command::Case(Arc::clone(branches), processes)
+                        let else_process = else_process.clone().map(|p| p.optimize());
+                        Command::Case(Arc::clone(branches), processes, else_process)
                     }
                     Command::Break => Command::Break,
                     Command::Continue(process) => Command::Continue(process.optimize()),
@@ -385,7 +390,7 @@ impl Command<()> {
                 let (process, caps) = process.fix_captures(loop_points);
                 (Self::Signal(chosen.clone(), process), caps)
             }
-            Self::Case(branches, processes) => {
+            Self::Case(branches, processes, else_process) => {
                 let mut fixed_processes = Vec::new();
                 let mut caps = Captures::new();
                 for process in processes {
@@ -393,8 +398,17 @@ impl Command<()> {
                     fixed_processes.push(process);
                     caps.extend(caps1);
                 }
+                let fixed_else = else_process.clone().map(|process| {
+                    let (process, caps1) = process.fix_captures(loop_points);
+                    caps.extend(caps1);
+                    process
+                });
                 (
-                    Self::Case(branches.clone(), fixed_processes.into_boxed_slice()),
+                    Self::Case(
+                        branches.clone(),
+                        fixed_processes.into_boxed_slice(),
+                        fixed_else,
+                    ),
                     caps,
                 )
             }
@@ -470,8 +484,11 @@ impl Command<Type> {
             Self::Signal(_, process) => {
                 process.types_at_spans(program, consume);
             }
-            Self::Case(_, branches) => {
+            Self::Case(_, branches, else_process) => {
                 for process in branches {
+                    process.types_at_spans(program, consume);
+                }
+                if let Some(process) = else_process {
                     process.types_at_spans(program, consume);
                 }
             }
@@ -755,8 +772,11 @@ impl Command<()> {
             Self::Signal(_, process) => {
                 process.qualify(module);
             }
-            Self::Case(_, branches) => {
+            Self::Case(_, branches, else_process) => {
                 for process in branches {
+                    process.qualify(module);
+                }
+                if let Some(process) = else_process {
                     process.qualify(module);
                 }
             }
@@ -855,11 +875,18 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Case(choices, branches) => {
+                    Command::Case(choices, branches, else_process) => {
                         write!(f, ".case {{")?;
                         for (choice, process) in choices.iter().zip(branches.iter()) {
                             indentation(f, indent + 1)?;
                             write!(f, ".{} => {{", choice)?;
+                            process.pretty(f, indent + 2)?;
+                            indentation(f, indent + 1)?;
+                            write!(f, "}}")?;
+                        }
+                        if let Some(process) = else_process {
+                            indentation(f, indent + 1)?;
+                            write!(f, "else => {{")?;
                             process.pretty(f, indent + 2)?;
                             indentation(f, indent + 1)?;
                             write!(f, "}}")?;
