@@ -168,11 +168,11 @@ this way, too. In fact, that's exactly what happens with `Str4`.
 
 ## `Char`
 
-A `Char` is a single Unicode character. `Char` literals are enclosed in single quotes:
+A `Char` is a single Unicode character. `Char` literals are single characters enclosed in double quotes:
 
 ```par
-def Char1 = 'a'  // inferred as `Char`
-def Char2 = '\n'
+def Char1 = "a"  // inferred as `Char`
+def Char2 = "\n"
 ```
 
 Since `Char` is a subtype of `String`, every variable of type `Char` can be used as a `String`, too.
@@ -180,7 +180,7 @@ Since `Char` is a subtype of `String`, every variable of type `Char` can be used
 There's a built-in function to check if a `Char` is a part of a character class:
 
 ```par
-def IsWhitespace = Char.Is(' ', .whitespace!)  // = .true!
+def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
 ```
 
 There's no built-in function turning a `String` to a list of `Char`s. Feel free to
