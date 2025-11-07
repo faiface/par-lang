@@ -168,7 +168,7 @@ this way, too. In fact, that's exactly what happens with `Str4`.
 
 ## `Char`
 
-A `Char` is a single Unicode character. `Char` literals are enclosed in single quotes:
+A `Char` is a single Unicode character. `Char` literals are single characters enclosed in double quotes:
 
 ```par
 def Char1 = "a"  // inferred as `Char`
