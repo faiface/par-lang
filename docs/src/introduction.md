@@ -31,12 +31,6 @@ promising way of building concurrent applications arises.
 
 But, Par isn't just a concurrent language.
 
-> In fact, real-world applications of Par's concurrency are still
-> very limited, due to a lack of non-determinism, and poor I/O libraries. That's because Par is
-> **very new,** but we're working hard to bring both of these to a better state.
-> 
-> Yet, Par is still interesting for other reasons.
-
 Classical linear logic is a beast, and a powerful one
 at that. Par absorbs all this power into its own expressivity. With [**duality,**](./processes/duality.md)
 **session types,** and a rich set of concepts all mapping to logical connectives,
