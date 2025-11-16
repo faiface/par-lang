@@ -7,10 +7,6 @@
 - 🫶 If you'd like to support my effort to bring the power of linear logic into practical programming, you can do
   it via [GitHub Sponsors](https://github.com/sponsors/faiface).
 
-- 🦀 If you like this **concurrent paradigm,** and want to use it **in a real programming language,** check out
-  my Rust crate with the same name: **[Par](https://github.com/faiface/par).** It's a full implementation
-  of **session types,** including non-deterministic handling of many clients.
-
 ## 🚀 Get started with the [documentation](https://faiface.github.io/par-lang/introduction.html)
 
 ## 📺 [What’s a linear programming language like? — Coding a “Mini Grep” in Par](https://youtu.be/nU7Lt6k3lNQ?si=8KtbTQMgp6VhZ5UP)
