@@ -1,7 +1,7 @@
 # Looping & Branching
 
-We’ve now seen how commands work with [choice types](../types/choice.md) (via selection),
-and [function types](../types/function.md) (via sending). But those aren’t the only types that
+We’ve now seen how commands work with [choice types](/types/choice.md) (via selection),
+and [function types](/types/function.md) (via sending). But those aren’t the only types that
 come with their own command styles. Every type does.
 
 Let’s turn our attention to something more intricate: **recursive types.**
@@ -15,8 +15,8 @@ type List<a> = recursive either {
 }
 ```
 
-The `List` type is [recursive](../types/recursive.md), and contains an
-[`either`](../types/either.md), and within that, a [pair](../types/pair.md).
+The `List` type is [recursive](/types/recursive.md), and contains an
+[`either`](/types/either.md), and within that, a [pair](/types/pair.md).
 
 To work with such a structure in process syntax, we’ll need to combine three kinds of commands:
 
@@ -35,7 +35,7 @@ see how it works out!
 
 ```par
 def Concat = [strings] do {
-  // code continued below...
+  // code continued below.
 ```
 
 **Let’s go step by step!**
@@ -69,7 +69,7 @@ not return something.
 
 There's another key difference: notice the `.item` branch has `=>` right after the branch name!
 There's no pattern. That's because in process syntax, binding the payload of an
-[either](../types/either.md) is optional. Normally, **the subject itself becomes the payload.**
+[either](/types/either.md) is optional. Normally, **the subject itself becomes the payload.**
 However, it is possible to match the payload fully, if desired.
 
 So, inside the `.item` branch, `strings` now has the type `(String) List<String>` — it’s a pair, and
@@ -77,7 +77,7 @@ we want to peel off its first part, to add it to the string builder.
 
 There's **one last important detail,** and that's concerning **control flow.** If a `.case`
 branch process does not end (we'll learn about ending processes in the section about
-[`chan` expressions](../chan_expression.md)), then it proceeds to the next line after the closing
+[`chan` expressions](/processes/chan_expression.md)), then it proceeds to the next line after the closing
 parenthesis of the `.case` command. All local variables are kept.
 
 ## Receiving
@@ -117,7 +117,7 @@ tagging along the control flow of `strings`.
 ## Patterns in `.case` branches
 
 The `.item =>` branch can be made a little more pleasant. If the subject after .begin is a
-[pair](../types/pair.md), we’re allowed to use pattern matching directly in the `.case` branch.
+[pair](/types/pair.md), we’re allowed to use pattern matching directly in the `.case` branch.
 
 That means this:
 
@@ -157,10 +157,10 @@ def TestConcat = Concat(*("A", "B", "C"))  // = "ABC"
 ```
 
 This beautifully ties together all the commands we've covered so far:
-- **Selection** for [choices](../types/choice.md).
-- **Sending** for [functions](../types/function.md).
-- **Branching** for [eithers](../types/either.md).
-- **Receiving** for [pairs](../types/pair.md). Here, in the form of a pattern.
+- **Selection** for [choices](/types/choice.md).
+- **Sending** for [functions](/types/function.md).
+- **Branching** for [eithers](/types/either.md).
+- **Receiving** for [pairs](/types/pair.md). Here, in the form of a pattern.
 
 The _receive commands_ is the least clearly useful here. Let's move to infinite sequences to see a
 more compelling use-case.
