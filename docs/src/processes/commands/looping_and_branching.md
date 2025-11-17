@@ -35,7 +35,7 @@ see how it works out!
 
 ```par
 def Concat = [strings] do {
-  // code continued below.
+  // code continued below...
 ```
 
 **Let’s go step by step!**
