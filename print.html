@@ -2783,7 +2783,7 @@ session typing to this imperative-looking process syntax.</p>
 }
 </code></pre>
 <p>It’s basically an object, in an OOP-fashion, with two methods: <code>.add</code> and <code>.build</code>. At the top
-level, it’s an <a href="processes/commands/../types/iterative.html">iterative</a> <a href="processes/commands/../types/choice.html">choice</a>: an object that
+level, it’s an <a href="processes/commands//types/iterative.html">iterative</a> <a href="processes/commands//types/choice.html">choice</a>: an object that
 can be repeatedly interacted with.</p>
 <p>We construct an empty <code>String.Builder</code> using the built-in definition of the same name:</p>
 <pre><code class="language-par">def LetsBuildStrings = do {
@@ -2792,11 +2792,11 @@ can be repeatedly interacted with.</p>
 </code></pre>
 <h2 id="selection"><a class="header" href="#selection">Selection</a></h2>
 <p>Now, we have a local variable <code>builder</code> of the type <code>String.Builder</code>.</p>
-<p>When learning about <a href="processes/commands/../types/iterative.html">iterative</a> types, we learned that we can treat them
+<p>When learning about <a href="processes/commands//types/iterative.html">iterative</a> types, we learned that we can treat them
 as their underlying body. For <code>String.Builder</code>, it’s a <strong>choice type,</strong> and the command for those is
 the <strong>selection command.</strong></p>
 <p>All commands start with their subject. Here it’s the <code>builder</code> variable. The selection command
-itself then looks the same as the usual <a href="processes/commands/../types/choice.html#destruction">destruction of a choice</a>.</p>
+itself then looks the same as the usual <a href="processes/commands//types/choice.html#destruction">destruction of a choice</a>.</p>
 <pre><code class="language-par">def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add        // selection command
@@ -2806,7 +2806,7 @@ itself then looks the same as the usual <a href="processes/commands/../types/cho
 of the selected branch. Here’s the one we selected:</p>
 <pre><code class="language-par">  .add(String) =&gt; self,
 </code></pre>
-<p>The argument on the left side of <code>=&gt;</code> is just a syntax sugar for a <a href="processes/commands/../types/function.html">function</a>.
+<p>The argument on the left side of <code>=&gt;</code> is just a syntax sugar for a <a href="processes/commands//types/function.html">function</a>.
 De-sugared, it is:</p>
 <pre><code class="language-par">  .add =&gt; [String] self,
 </code></pre>
@@ -2881,8 +2881,8 @@ can be <strong>chained</strong> together, without repeating the subject.</p>
 } in builder.build  // = "Hello, world!"
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="looping--branching"><a class="header" href="#looping--branching">Looping &amp; Branching</a></h1>
-<p>We’ve now seen how commands work with <a href="processes/commands/../types/choice.html">choice types</a> (via selection),
-and <a href="processes/commands/../types/function.html">function types</a> (via sending). But those aren’t the only types that
+<p>We’ve now seen how commands work with <a href="processes/commands//types/choice.html">choice types</a> (via selection),
+and <a href="processes/commands//types/function.html">function types</a> (via sending). But those aren’t the only types that
 come with their own command styles. Every type does.</p>
 <p>Let’s turn our attention to something more intricate: <strong>recursive types.</strong></p>
 <p>Take this familiar definition:</p>
@@ -2891,8 +2891,8 @@ come with their own command styles. Every type does.</p>
   .item(a) self,
 }
 </code></pre>
-<p>The <code>List</code> type is <a href="processes/commands/../types/recursive.html">recursive</a>, and contains an
-<a href="processes/commands/../types/either.html"><code>either</code></a>, and within that, a <a href="processes/commands/../types/pair.html">pair</a>.</p>
+<p>The <code>List</code> type is <a href="processes/commands//types/recursive.html">recursive</a>, and contains an
+<a href="processes/commands//types/either.html"><code>either</code></a>, and within that, a <a href="processes/commands//types/pair.html">pair</a>.</p>
 <p>To work with such a structure in process syntax, we’ll need to combine three kinds of commands:</p>
 <ul>
 <li><code>.begin</code> and <code>.loop</code> for recursion,</li>
@@ -2927,13 +2927,13 @@ not return something.</p>
 </code></pre>
 <p>There’s another key difference: notice the <code>.item</code> branch has <code>=&gt;</code> right after the branch name!
 There’s no pattern. That’s because in process syntax, binding the payload of an
-<a href="processes/commands/../types/either.html">either</a> is optional. Normally, <strong>the subject itself becomes the payload.</strong>
+<a href="processes/commands//types/either.html">either</a> is optional. Normally, <strong>the subject itself becomes the payload.</strong>
 However, it is possible to match the payload fully, if desired.</p>
 <p>So, inside the <code>.item</code> branch, <code>strings</code> now has the type <code>(String) List&lt;String&gt;</code> — it’s a pair, and
 we want to peel off its first part, to add it to the string builder.</p>
 <p>There’s <strong>one last important detail,</strong> and that’s concerning <strong>control flow.</strong> If a <code>.case</code>
 branch process does not end (we’ll learn about ending processes in the section about
-<a href="processes/commands/../chan_expression.html"><code>chan</code> expressions</a>), then it proceeds to the next line after the closing
+<a href="processes/commands//processes/chan_expression.html"><code>chan</code> expressions</a>), then it proceeds to the next line after the closing
 parenthesis of the <code>.case</code> command. All local variables are kept.</p>
 <h2 id="receiving"><a class="header" href="#receiving">Receiving</a></h2>
 <p>To peel a value from a pair, we use the <strong>receive command:</strong></p>
@@ -2962,7 +2962,7 @@ different operations based on its changing type. Meanwhile, <code>builder</code>
 tagging along the control flow of <code>strings</code>.</p>
 <h2 id="patterns-in-case-branches"><a class="header" href="#patterns-in-case-branches">Patterns in <code>.case</code> branches</a></h2>
 <p>The <code>.item =&gt;</code> branch can be made a little more pleasant. If the subject after .begin is a
-<a href="processes/commands/../types/pair.html">pair</a>, we’re allowed to use pattern matching directly in the <code>.case</code> branch.</p>
+<a href="processes/commands//types/pair.html">pair</a>, we’re allowed to use pattern matching directly in the <code>.case</code> branch.</p>
 <p>That means this:</p>
 <pre><code class="language-par">    .item =&gt; {
       strings[str]
@@ -2993,10 +2993,10 @@ def TestConcat = Concat(*("A", "B", "C"))  // = "ABC"
 </code></pre>
 <p>This beautifully ties together all the commands we’ve covered so far:</p>
 <ul>
-<li><strong>Selection</strong> for <a href="processes/commands/../types/choice.html">choices</a>.</li>
-<li><strong>Sending</strong> for <a href="processes/commands/../types/function.html">functions</a>.</li>
-<li><strong>Branching</strong> for <a href="processes/commands/../types/either.html">eithers</a>.</li>
-<li><strong>Receiving</strong> for <a href="processes/commands/../types/pair.html">pairs</a>. Here, in the form of a pattern.</li>
+<li><strong>Selection</strong> for <a href="processes/commands//types/choice.html">choices</a>.</li>
+<li><strong>Sending</strong> for <a href="processes/commands//types/function.html">functions</a>.</li>
+<li><strong>Branching</strong> for <a href="processes/commands//types/either.html">eithers</a>.</li>
+<li><strong>Receiving</strong> for <a href="processes/commands//types/pair.html">pairs</a>. Here, in the form of a pattern.</li>
 </ul>
 <p>The <em>receive commands</em> is the least clearly useful here. Let’s move to infinite sequences to see a
 more compelling use-case.</p>
@@ -3025,7 +3025,7 @@ def Fibonacci =
 </code></pre>
 <p>The internal state of the sequence is a pair <code>(a) b</code>. On each <code>.next</code>, we emit <code>a</code> and update
 the pair. This is a clean and elegant use of corecursive iteration, as we’ve covered it in the
-section on <a href="processes/commands/../types/iterative.html">iterative types</a>.</p>
+section on <a href="processes/commands//types/iterative.html">iterative types</a>.</p>
 <p>So far so good — but how do we use this value?</p>
 <h2 id="goal-print-the-first-30-fibonacci-numbers"><a class="header" href="#goal-print-the-first-30-fibonacci-numbers">Goal: print the first 30 Fibonacci numbers</a></h2>
 <p>Let’s say we want to print the first 30 Fibonacci numbers to the terminal.</p>
@@ -3038,7 +3038,7 @@ section on <a href="processes/commands/../types/iterative.html">iterative types<
 </ol>
 <p>We’ll need a way to loop <strong>exactly 30 times.</strong> But there’s a catch: In Par,
 <strong>looping is only possible on recursive types.</strong> There’s no built-in recursion on <code>Nat</code>, so we need
-to convert the number 30 into a <a href="processes/commands/../types/recursive.html">recursive</a>.</p>
+to convert the number 30 into a <a href="processes/commands//types/recursive.html">recursive</a>.</p>
 <p>Good news: there’s a built-in helper for that! It’s called <code>Nat.Repeat</code>, here’s its type:</p>
 <pre><code class="language-par">dec Nat.Repeat : [Nat] recursive either {
   .end!,

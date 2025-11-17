@@ -168,7 +168,7 @@
 }
 </code></pre>
 <p>It’s basically an object, in an OOP-fashion, with two methods: <code>.add</code> and <code>.build</code>. At the top
-level, it’s an <a href="../types/iterative.html">iterative</a> <a href="../types/choice.html">choice</a>: an object that
+level, it’s an <a href="/types/iterative.html">iterative</a> <a href="/types/choice.html">choice</a>: an object that
 can be repeatedly interacted with.</p>
 <p>We construct an empty <code>String.Builder</code> using the built-in definition of the same name:</p>
 <pre><code class="language-par">def LetsBuildStrings = do {
@@ -177,11 +177,11 @@ can be repeatedly interacted with.</p>
 </code></pre>
 <h2 id="selection"><a class="header" href="#selection">Selection</a></h2>
 <p>Now, we have a local variable <code>builder</code> of the type <code>String.Builder</code>.</p>
-<p>When learning about <a href="../types/iterative.html">iterative</a> types, we learned that we can treat them
+<p>When learning about <a href="/types/iterative.html">iterative</a> types, we learned that we can treat them
 as their underlying body. For <code>String.Builder</code>, it’s a <strong>choice type,</strong> and the command for those is
 the <strong>selection command.</strong></p>
 <p>All commands start with their subject. Here it’s the <code>builder</code> variable. The selection command
-itself then looks the same as the usual <a href="../types/choice.html#destruction">destruction of a choice</a>.</p>
+itself then looks the same as the usual <a href="/types/choice.html#destruction">destruction of a choice</a>.</p>
 <pre><code class="language-par">def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add        // selection command
@@ -191,7 +191,7 @@ itself then looks the same as the usual <a href="../types/choice.html#destructio
 of the selected branch. Here’s the one we selected:</p>
 <pre><code class="language-par">  .add(String) =&gt; self,
 </code></pre>
-<p>The argument on the left side of <code>=&gt;</code> is just a syntax sugar for a <a href="../types/function.html">function</a>.
+<p>The argument on the left side of <code>=&gt;</code> is just a syntax sugar for a <a href="/types/function.html">function</a>.
 De-sugared, it is:</p>
 <pre><code class="language-par">  .add =&gt; [String] self,
 </code></pre>
