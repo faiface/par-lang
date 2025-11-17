@@ -33,7 +33,7 @@ def Fibonacci =
 
 The internal state of the sequence is a pair `(a) b`. On each `.next`, we emit `a` and update
 the pair. This is a clean and elegant use of corecursive iteration, as we've covered it in the
-section on [iterative types](../types/iterative.md).
+section on [iterative types](/types/iterative.md).
 
 So far so good — but how do we use this value?
 
@@ -50,7 +50,7 @@ That means:
 
 We’ll need a way to loop **exactly 30 times.** But there’s a catch: In Par,
 **looping is only possible on recursive types.** There’s no built-in recursion on `Nat`, so we need
-to convert the number 30 into a [recursive](../types/recursive.md).
+to convert the number 30 into a [recursive](/types/recursive.md).
 
 Good news: there’s a built-in helper for that! It's called `Nat.Repeat`, here's its type:
 

@@ -10,7 +10,7 @@ type String.Builder = iterative choice {
 ```
 
 It's basically an object, in an OOP-fashion, with two methods: `.add` and `.build`. At the top
-level, it's an [iterative](../types/iterative.md) [choice](../types/choice.md): an object that
+level, it's an [iterative](/types/iterative.md) [choice](/types/choice.md): an object that
 can be repeatedly interacted with.
 
 We construct an empty `String.Builder` using the built-in definition of the same name:
@@ -25,12 +25,12 @@ def LetsBuildStrings = do {
 
 Now, we have a local variable `builder` of the type `String.Builder`.
 
-When learning about [iterative](../types/iterative.md) types, we learned that we can treat them
+When learning about [iterative](/types/iterative.md) types, we learned that we can treat them
 as their underlying body. For `String.Builder`, it's a **choice type,** and the command for those is
 the **selection command.**
 
 All commands start with their subject. Here it's the `builder` variable. The selection command
-itself then looks the same as the usual [destruction of a choice](../types/choice.md#destruction).
+itself then looks the same as the usual [destruction of a choice](/types/choice.md#destruction).
 
 ```par
 def LetsBuildStrings = do {
@@ -46,7 +46,7 @@ of the selected branch. Here's the one we selected:
   .add(String) => self,
 ```
 
-The argument on the left side of `=>` is just a syntax sugar for a [function](../types/function.md).
+The argument on the left side of `=>` is just a syntax sugar for a [function](/types/function.md).
 De-sugared, it is:
 
 ```par
