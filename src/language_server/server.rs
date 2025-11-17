@@ -56,31 +56,35 @@ impl<'c> LanguageServer<'c> {
         let response = match method {
             HoverRequest::METHOD => {
                 let params = extract_request::<HoverRequest>(request);
+                let uri = &params.text_document_position_params.text_document.uri;
                 self.handle_request_instance(
                     request_id,
-                    &params.text_document_position_params.text_document.uri,
+                    uri,
                     |instance| instance.handle_hover(&params),
                 )
             }
             DocumentSymbolRequest::METHOD => {
                 let params = extract_request::<DocumentSymbolRequest>(request);
-                self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
+                let uri = &params.text_document.uri;
+                self.handle_request_instance(request_id, uri, |instance| {
                     instance.provide_document_symbols(&params)
                 })
             }
             GotoDeclaration::METHOD => {
                 let params = extract_request::<GotoDeclaration>(request);
+                let uri = &params.text_document_position_params.text_document.uri;
                 self.handle_request_instance(
                     request_id,
-                    &params.text_document_position_params.text_document.uri,
+                    uri,
                     |instance| instance.handle_goto_declaration(&params),
                 )
             }
             GotoDefinition::METHOD => {
                 let params = extract_request::<GotoDefinition>(request);
+                let uri = &params.text_document_position_params.text_document.uri;
                 self.handle_request_instance(
                     request_id,
-                    &params.text_document_position_params.text_document.uri,
+                    uri,
                     |instance| instance.handle_goto_definition(&params),
                 )
             }
