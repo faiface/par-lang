@@ -204,26 +204,36 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
             let Some((raw, kind)) = (match c {
-                '-' => Some(
-                    alt((
+                '-' => {
+                    let (raw, mut kind) = alt((
                         ("->").map(|raw| (raw, TokenKind::ThinArrow)),
                         (
-                            take(1 as usize),
+                            take(1usize),
                             take_while(0.., |c| matches!(c, '0'..='9' | '_')),
                         )
                             .take()
                             .map(|raw| (raw, TokenKind::Integer)),
                     ))
-                    .parse_next(input)?,
-                ),
+                    .parse_next(input)?;
+                    if let TokenKind::Integer = kind {
+                        if !raw.contains(|c| matches!(c, '0'..='9')) {
+                            kind = TokenKind::Unknown;
+                        }
+                    }
+                    Some((raw, kind))
+                }
                 '0'..='9' | '+' => {
                     let raw = (
-                        take(1 as usize),
+                        take(1usize),
                         take_while(0.., |c| matches!(c, '0'..='9' | '_')),
                     )
                         .take()
                         .parse_next(input)?;
-                    Some((raw, TokenKind::Integer))
+                    if !raw.contains(|c| matches!(c, '0'..='9')) {
+                        Some((raw, TokenKind::Unknown))
+                    } else {
+                        Some((raw, TokenKind::Integer))
+                    }
                 }
                 '"' => {
                     any.parse_next(input)?;
