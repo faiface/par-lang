@@ -349,6 +349,12 @@ impl Context {
                 captures,
                 body: process,
             } => {
+                if let Some(inference_subject) = inference_subject {
+                    return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                        span.clone(),
+                        inference_subject.clone(),
+                    ));
+                }
                 let Type::Recursive {
                     span: typ_span,
                     asc: typ_asc,
@@ -393,21 +399,7 @@ impl Context {
                     object.clone(),
                     Type::expand_recursive(&typ_asc, typ_label, typ_body)?,
                 )?;
-                let (process, inferred_type) = analyze_process(self, process)?;
-
-                let inferred_type = inferred_type.map(|body| {
-                    if body.contains_self(label) {
-                        Type::Iterative {
-                            span: span.clone(),
-                            asc: typ_asc,
-                            label: label.clone(),
-                            body: Box::new(body),
-                        }
-                    } else {
-                        body
-                    }
-                });
-
+                let (process, _inferred_type) = analyze_process(self, process)?;
                 (
                     Command::Begin {
                         unfounded: *unfounded,
@@ -415,7 +407,7 @@ impl Context {
                         captures: captures.clone(),
                         body: process,
                     },
-                    inferred_type,
+                    None,
                 )
             }
 
