@@ -99,11 +99,11 @@ where
 {
     match typ {
         Type::Name(span, name, args) => {
-            let typ = defs.get(span, name, args).expect("Type not found");
+            let typ = defs.get(span, name, args)?;
             visit(&typ)?;
         }
         Type::DualName(span, name, args) => {
-            let typ = defs.get_dual(span, name, args).expect("Type not found");
+            let typ = defs.get_dual(span, name, args)?;
             visit(&typ)?;
         }
         _ => {
