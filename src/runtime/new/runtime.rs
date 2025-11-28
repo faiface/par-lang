@@ -1,78 +1,79 @@
+use arcstr::ArcStr;
 use futures::io::FillBuf;
 
 use super::arena::*;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
-pub type PackagePtr<'s> = Index<'s, Package<'s>>;
-pub type GlobalPtr<'s> = Index<'s, Global<'s>>;
-pub type Str<'s> = Arc<str>;
+pub type PackagePtr = Index<Package>;
+pub type GlobalPtr = Index<Global>;
+pub type Str = ArcStr;
 
 #[derive(Clone)]
-struct Instance<'s> {
-    vars: Arc<Mutex<Box<[Option<Value<'s>>]>>>,
+struct Instance {
+    vars: Arc<Mutex<Box<[Option<Value>]>>>,
 }
 
-type UserValue<'s> = Box<dyn Any>;
+type UserValue = Box<dyn Any>;
 
 #[derive(Clone)]
-pub struct Package<'s> {
-    root: Global<'s>,
-    captures: Global<'s>,
+pub struct Package {
+    root: Global,
+    captures: Global,
     num_vars: usize,
 }
 
 #[derive(Clone)]
-pub enum Global<'s> {
+pub enum Global {
     Variable(usize),
-    LinearPackage(PackagePtr<'s>, GlobalPtr<'s>),
-    GlobalPackage(PackagePtr<'s>, GlobalPtr<'s>),
-    Destruct(GlobalCont<'s>),
-    Value(GlobalValue<'s>),
-    Fanout(IndexSlice<'s, Global<'s>>),
+    LinearPackage(PackagePtr, GlobalPtr),
+    GlobalPackage(PackagePtr, GlobalPtr),
+    Destruct(GlobalCont),
+    Value(GlobalValue),
+    Fanout(Index<[Global]>),
 }
 
-pub enum Value<'s> {
+pub enum Value {
     User(Box<dyn Any>),
-    ShareHole(Arc<Mutex<SharedHole<'s>>>),
-    Shared(Shared<'s>),
-    Global(Instance<'s>, Global<'s>),
+    ShareHole(Arc<Mutex<SharedHole>>),
+    Shared(Shared),
+    Global(Instance, Global),
 }
 
 #[derive(Clone)]
-pub enum Shared<'s> {
-    Async(Arc<Mutex<SharedHole<'s>>>),
-    Sync(Arc<SyncShared<'s>>),
+pub enum Shared {
+    Async(Arc<Mutex<SharedHole>>),
+    Sync(Arc<SyncShared>),
 }
 
 #[derive(Clone)]
-pub enum SyncShared<'s> {
+pub enum SyncShared {
     Break,
-    Pair(Shared<'s>, Shared<'s>),
-    Either(Str<'s>, Shared<'s>),
-    Package(PackagePtr<'s>, Shared<'s>),
+    Pair(Shared, Shared),
+    Either(Str, Shared),
+    Package(PackagePtr, Shared),
 }
 
 #[derive(Clone)]
-pub enum GlobalValue<'s> {
+pub enum GlobalValue {
     Break,
-    Pair(GlobalPtr<'s>, GlobalPtr<'s>),
-    Either(Str<'s>, GlobalPtr<'s>),
+    Pair(GlobalPtr, GlobalPtr),
+    Either(Str, GlobalPtr),
 }
 
 #[derive(Clone)]
-pub enum GlobalCont<'s> {
+pub enum GlobalCont {
     Continue,
-    Par(GlobalPtr<'s>, GlobalPtr<'s>),
+    Par(GlobalPtr, GlobalPtr),
 }
 
-enum SharedHole<'s> {
-    Filled(SyncShared<'s>),
-    Unfilled(Vec<Value<'s>>),
+enum SharedHole {
+    Filled(SyncShared),
+    Unfilled(Vec<Value>),
 }
-pub struct Net<'s> {
-    arena: IndexedArena<'s>,
-    redexes: Vec<(Value<'s>, Value<'s>)>,
+pub struct Net {
+    arena: Arena,
+    redexes: Vec<(Value, Value)>,
 }
 
 macro_rules! sym {
@@ -81,8 +82,8 @@ macro_rules! sym {
     };
 }
 
-impl<'s> Net<'s> {
-    fn set_var(&mut self, instance: Instance<'s>, index: usize, value: Value<'s>) {
+impl Net {
+    fn set_var(&mut self, instance: Instance, index: usize, value: Value) {
         let mut lock = instance.vars.lock().unwrap();
         let slot = lock.get_mut(index).unwrap();
         match slot {
@@ -94,10 +95,10 @@ impl<'s> Net<'s> {
             }
         }
     }
-    fn link(&mut self, a: Value<'s>, b: Value<'s>) {
+    fn link(&mut self, a: Value, b: Value) {
         self.redexes.push((a, b));
     }
-    fn instantiate(&mut self, package: PackagePtr<'s>) -> (Value<'s>, Value<'s>) {
+    fn instantiate(&mut self, package: PackagePtr) -> (Value, Value) {
         let package = self.arena.get(package);
         let instance = Instance {
             vars: Arc::new(Mutex::new(
@@ -110,7 +111,7 @@ impl<'s> Net<'s> {
             Value::Global(instance.clone(), package.captures.clone()),
         )
     }
-    fn share(&mut self, a: Value<'s>) -> Option<Shared<'s>> {
+    fn share(&mut self, a: Value) -> Option<Shared> {
         match a {
             Value::User(any) => None,
             Value::ShareHole(mutex) => None,
@@ -155,7 +156,7 @@ impl<'s> Net<'s> {
             }
         }
     }
-    pub fn reduce(&mut self) -> Option<(UserValue<'s>, Value<'s>)> {
+    pub fn reduce(&mut self) -> Option<(UserValue, Value)> {
         while let Some((a, b)) = self.redexes.pop() {
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
@@ -163,7 +164,7 @@ impl<'s> Net<'s> {
         }
         None
     }
-    fn link_with_hole(&mut self, hole: &mut SharedHole<'s>, value: Value<'s>) {
+    fn link_with_hole(&mut self, hole: &mut SharedHole, value: Value) {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
                 self.link(
@@ -174,7 +175,7 @@ impl<'s> Net<'s> {
             SharedHole::Unfilled(values) => values.push(value),
         }
     }
-    fn interact(&mut self, a: Value<'s>, b: Value<'s>) -> Option<(UserValue<'s>, Value<'s>)> {
+    fn interact(&mut self, a: Value, b: Value) -> Option<(UserValue, Value)> {
         match (a, b) {
             sym!(Value::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
@@ -193,7 +194,7 @@ impl<'s> Net<'s> {
             }
             sym!(Value::Global(instance, Global::Fanout(destinations)), other) => {
                 let other = self.share(other).unwrap();
-                let destinations = self.arena.get_slice(destinations);
+                let destinations = self.arena.get(destinations);
                 for dest in destinations {
                     self.redexes.push((
                         Value::Global(instance.clone(), dest.clone()),
