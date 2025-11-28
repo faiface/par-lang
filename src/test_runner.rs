@@ -1,9 +1,6 @@
-use crate::icombs::{
-    readback::{TypedHandle, TypedReadback},
-    IcCompiled,
-};
 use crate::par::build_result::BuildResult;
 use crate::par::parse;
+use crate::runtime::{Compiled, TypedHandle, TypedReadback};
 use crate::spawn::TokioSpawn;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
 use colored::Colorize;
@@ -178,7 +175,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
 
 fn run_single_test(
     program: &crate::par::program::CheckedModule,
-    ic_compiled: &crate::icombs::IcCompiled,
+    ic_compiled: &Compiled,
     test_name: String,
 ) -> TestResult {
     let start = Instant::now();
@@ -224,7 +221,7 @@ fn run_single_test(
 
 async fn run_test_with_test_type(
     program: &crate::par::program::CheckedModule,
-    ic_compiled: &IcCompiled,
+    ic_compiled: &Compiled,
     name: &crate::par::language::GlobalName,
     ty: &crate::par::types::Type,
 ) -> Result<TestStatus, String> {

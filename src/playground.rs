@@ -11,10 +11,10 @@ use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
 use crate::{
-    icombs::readback::TypedHandle, location::FileName, par::program::CheckedModule,
+    runtime::TypedHandle, location::FileName, par::program::CheckedModule,
     readback::Element, spawn::TokioSpawn,
 };
-use crate::{icombs::IcCompiled, par::build_result::BuildResult};
+use crate::{runtime::Compiled, par::build_result::BuildResult};
 use core::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -371,7 +371,7 @@ impl Playground {
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
-        compiled: &IcCompiled,
+        compiled: &Compiled,
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {

@@ -21,15 +21,15 @@ use crate::{
 use super::{compiler::TypedTree, Net, Tree};
 
 pub(crate) mod private {
-    use crate::icombs::net::ReducerMessage;
-    use crate::icombs::Net;
+    use crate::runtime::old::net::ReducerMessage;
+    use crate::runtime::old::Net;
     use futures::channel::mpsc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Arc, LockResult, Mutex};
 
     pub struct NetWrapper {
         net: Arc<Mutex<Net>>,
-        notify: mpsc::UnboundedSender<crate::icombs::net::ReducerMessage>,
+        notify: mpsc::UnboundedSender<crate::runtime::old::net::ReducerMessage>,
         handle_count: Arc<AtomicUsize>,
     }
 
@@ -86,7 +86,7 @@ pub(crate) mod private {
     }
 }
 
-use crate::icombs::net::ReducerMessage;
+use crate::runtime::old::net::ReducerMessage;
 use private::NetWrapper;
 
 pub struct Handle {
@@ -849,9 +849,9 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icombs::compiler::TypedTree;
     use crate::location::Span;
     use crate::par::types::Type;
+    use crate::runtime::old::compiler::TypedTree;
     use std::sync::atomic::AtomicUsize;
 
     #[test]

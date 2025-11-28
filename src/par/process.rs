@@ -4,7 +4,7 @@ use super::{
     types::Type,
 };
 use crate::{
-    icombs::readback::Handle,
+    runtime::Handle,
     location::{Span, Spanning},
     par::program::CheckedModule,
 };

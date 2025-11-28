@@ -1,4 +1,4 @@
-use crate::icombs::readback::{TypedHandle, TypedReadback};
+use crate::runtime::{TypedHandle, TypedReadback};
 use crate::par::build_result::BuildResult;
 use crate::par::types::Type;
 #[cfg(feature = "playground")]
@@ -15,7 +15,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-mod icombs;
+mod runtime;
 mod language_server;
 mod location;
 mod par;

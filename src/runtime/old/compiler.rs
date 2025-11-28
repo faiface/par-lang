@@ -817,34 +817,6 @@ impl Compiler {
     }
 }
 
-pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
-    let mut compiler = Compiler {
-        net: Net::default(),
-        context: Context {
-            vars: BTreeMap::default(),
-            loop_points: BTreeMap::default(),
-            unguarded_loop_labels: Default::default(),
-        },
-        type_defs: program.type_defs.clone(),
-        definitions: program.definitions.clone(),
-        global_name_to_id: Default::default(),
-        id_to_package: Default::default(),
-        id_to_ty: Default::default(),
-        compile_global_stack: Default::default(),
-        lazy_redexes: vec![],
-    };
-
-    for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {
-        compiler.compile_global(&name)?;
-    }
-
-    Ok(IcCompiled {
-        id_to_package: Arc::new(compiler.id_to_package.into_iter().enumerate().collect()),
-        name_to_id: compiler.global_name_to_id,
-        id_to_ty: compiler.id_to_ty.into_iter().enumerate().collect(),
-    })
-}
-
 #[derive(Clone, Default)]
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
@@ -883,4 +855,34 @@ impl IcCompiled {
         net.packages = self.id_to_package.clone();
         net
     }
+
+
+    pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
+        let mut compiler = Compiler {
+            net: Net::default(),
+            context: Context {
+                vars: BTreeMap::default(),
+                loop_points: BTreeMap::default(),
+                unguarded_loop_labels: Default::default(),
+            },
+            type_defs: program.type_defs.clone(),
+            definitions: program.definitions.clone(),
+            global_name_to_id: Default::default(),
+            id_to_package: Default::default(),
+            id_to_ty: Default::default(),
+            compile_global_stack: Default::default(),
+            lazy_redexes: vec![],
+        };
+
+        for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {
+            compiler.compile_global(&name)?;
+        }
+
+        Ok(IcCompiled {
+            id_to_package: Arc::new(compiler.id_to_package.into_iter().enumerate().collect()),
+            name_to_id: compiler.global_name_to_id,
+            id_to_ty: compiler.id_to_ty.into_iter().enumerate().collect(),
+        })
+    }
+
 }

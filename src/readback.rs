@@ -1,12 +1,9 @@
 use crate::{
-    icombs::{
-        readback::{TypedHandle, TypedReadback},
-        Net,
-    },
     par::{
         parse::parse_bytes,
         primitive::{ParString, Primitive},
     },
+    runtime::{Net, TypedHandle, TypedReadback},
 };
 use arcstr::ArcStr;
 use bytes::Bytes;

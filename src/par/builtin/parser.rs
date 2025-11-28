@@ -3,7 +3,7 @@ use bytes::Bytes;
 use std::collections::VecDeque;
 
 use crate::{
-    icombs::readback::Handle,
+    runtime::Handle,
     par::{
         builtin::{
             bytes::{BytesMachine, BytesPattern},
