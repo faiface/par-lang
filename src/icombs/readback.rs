@@ -329,7 +329,7 @@ impl Handle {
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
         locked.link(
-            Tree::Con(Box::new(u1), Box::new(t1)),
+            Tree::Times(Box::new(u1), Box::new(t1)),
             self.tree.take().unwrap(),
         );
         locked.notify_reducer();
@@ -347,7 +347,7 @@ impl Handle {
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
         locked.link(
-            Tree::Con(Box::new(u1), Box::new(t1)),
+            Tree::Par(Box::new(u1), Box::new(t1)),
             self.tree.take().unwrap(),
         );
         locked.notify_reducer();
@@ -389,13 +389,13 @@ impl Handle {
 
     pub fn break_(self) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.unwrap());
+        locked.link(Tree::Break, self.tree.unwrap());
         locked.notify_reducer();
     }
 
     pub fn continue_(self) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.unwrap());
+        locked.link(Tree::Continue, self.tree.unwrap());
         locked.notify_reducer();
     }
 }
@@ -679,7 +679,7 @@ impl TypedHandle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
+        locked.link(Tree::Times(Box::new(u1), Box::new(t1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -706,7 +706,7 @@ impl TypedHandle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
+        locked.link(Tree::Par(Box::new(u1), Box::new(t1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -783,7 +783,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.tree);
+        locked.link(Tree::Break, self.tree.tree);
         locked.notify_reducer();
     }
 
@@ -794,7 +794,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.tree);
+        locked.link(Tree::Continue, self.tree.tree);
         locked.notify_reducer();
     }
 }

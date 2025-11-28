@@ -153,7 +153,7 @@ impl Context {
             m_trees.push(tree.tree);
             m_tys.push(tree.ty);
         }
-        let context_in = multiplex_trees(m_trees);
+        let context_in = demultiplex_trees(m_trees);
         (
             context_in,
             PackData {
@@ -206,14 +206,28 @@ impl Tree {
 
 pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
     if trees.len() == 0 {
-        Tree::Era
+        Tree::Break
     } else if trees.len() == 1 {
         trees.pop().unwrap()
     } else {
         let new_trees = trees.split_off(trees.len() / 2);
-        Tree::Con(
+        Tree::Times(
             Box::new(multiplex_trees(trees)),
             Box::new(multiplex_trees(new_trees)),
+        )
+    }
+}
+
+pub(crate) fn demultiplex_trees(mut trees: Vec<Tree>) -> Tree {
+    if trees.len() == 0 {
+        Tree::Continue
+    } else if trees.len() == 1 {
+        trees.pop().unwrap()
+    } else {
+        let new_trees = trees.split_off(trees.len() / 2);
+        Tree::Par(
+            Box::new(demultiplex_trees(trees)),
+            Box::new(demultiplex_trees(new_trees)),
         )
     }
 }
@@ -262,7 +276,7 @@ impl Compiler {
                     (a, b) => Tree::Dup(Box::new(a), Box::new(b)),
                 }
             }
-            Tree::Con(a, b) => {
+            Tree::Times(a, b) => {
                 let a = self.apply_safe_rules(*a);
                 let b = self.apply_safe_rules(*b);
                 match (a, b) {
@@ -272,7 +286,7 @@ impl Compiler {
                     }
                     (a, b) => {
                         // TODO optimize `!` and `?`
-                        Tree::Con(Box::new(a), Box::new(b))
+                        Tree::Times(Box::new(a), Box::new(b))
                     }
                 }
             }
@@ -508,7 +522,7 @@ impl Compiler {
                     let context_out = this.context.unpack(&pack_data, &mut this.net);
                     let body = this.compile_expression(&expression)?;
                     this.end_context()?;
-                    Ok(Tree::Con(Box::new(context_out), Box::new(body.tree))
+                    Ok(Tree::Par(Box::new(context_out), Box::new(body.tree))
                         .with_type(Type::Break(Span::default())))
                 })?;
                 Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
@@ -617,13 +631,13 @@ impl Compiler {
                 // < process >
                 let subject = self.use_variable(&name, usage, true)?;
                 let Type::Function(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
-                    panic!("Unexpected type for Receive: {:?}", subject.ty);
+                    panic!("Unexpected type for Send: {:?}", subject.ty);
                 };
                 let expr = self.compile_expression(expr)?;
                 let (v0, v1) = self.create_typed_wire(*ret_type);
                 self.bind_variable(name, v0)?;
                 self.net.link(
-                    Tree::Con(Box::new(v1.tree), Box::new(expr.tree)),
+                    Tree::Times(Box::new(v1.tree), Box::new(expr.tree)),
                     subject.tree,
                 );
                 self.compile_process(process)?;
@@ -644,7 +658,7 @@ impl Compiler {
                 self.bind_variable(name, w0)?;
                 self.bind_variable(target.clone(), v0)?;
                 self.net.link(
-                    Tree::Con(Box::new(w1.tree), Box::new(v1.tree)),
+                    Tree::Par(Box::new(w1.tree), Box::new(v1.tree)),
                     subject.tree,
                 );
                 self.compile_process(process)?;
@@ -683,7 +697,7 @@ impl Compiler {
                         this.bind_variable(name.clone(), w0)?;
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
                         this.compile_process(process)?;
-                        Ok(Tree::Con(Box::new(context_out), Box::new(w1.tree))
+                        Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
                             .with_type(Type::Break(Default::default())))
                     })?;
                     branches.insert(ArcStr::from(&branch_name.string), package_id);
@@ -701,7 +715,7 @@ impl Compiler {
                             this.bind_variable(name.clone(), w0)?;
                             let context_out = this.context.unpack(&pack_data, &mut this.net);
                             this.compile_process(process)?;
-                            Ok(Tree::Con(Box::new(context_out), Box::new(w1.tree))
+                            Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
                                 .with_type(Type::Break(Default::default())))
                         })?;
                         Some(package_id)
@@ -718,7 +732,7 @@ impl Compiler {
                 // ==
                 // name = *
                 let a = self.use_variable(&name, usage, true)?.tree;
-                self.net.link(a, Tree::Era);
+                self.net.link(a, Tree::Break);
                 self.end_context()?;
             }
             Command::Continue(process) => {
@@ -727,7 +741,7 @@ impl Compiler {
                 // name = *
                 // < process >
                 let a = self.use_variable(&name, usage, true)?.tree;
-                self.net.link(a, Tree::Era);
+                self.net.link(a, Tree::Continue);
                 self.compile_process(process)?;
             }
             Command::Begin {
