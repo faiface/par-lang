@@ -1,47 +1,159 @@
+use super::runtime::Runtime;
+use std::cell::OnceCell;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use crate::par::language::GlobalName;
+use crate::par::types::Type;
 use crate::runtime::new::arena::{Arena, Index};
-use crate::runtime::new::runtime::{GlobalCont, GlobalValue};
-use crate::runtime::{new, old};
+use crate::runtime::new::runtime::{GlobalCont, GlobalValue, Package, PackagePtr};
+use crate::runtime::old::net::VarState;
+use crate::runtime::{new, old, TypedHandle};
+use crate::runtime::new::reducer::Reducer;
+use indexmap::IndexMap;
 use old::compiler::IcCompiled;
 
+use crate::runtime::old::Net;
 use new::runtime::Global;
 
+#[derive(Default)]
 pub struct NetTranspiler {
     source: old::net::Net,
     dest: Arena,
+    num_vars: usize,
+    variable_map: HashMap<usize, usize>,
+    package_map: HashMap<usize, PackagePtr>,
+}
+
+#[derive(Clone)]
+pub struct Transpiled {
+    pub arena: Arc<Arena>,
+    pub name_to_package: HashMap<GlobalName, PackagePtr>,
+    pub name_to_ty: HashMap<GlobalName, Type>,
+}
+
+impl Transpiled {
+    pub fn transpile(mut ic_compiled: IcCompiled) -> Self {
+        let mut this: NetTranspiler = Default::default();
+        for i in ic_compiled.id_to_package.keys() {
+            this.package_map
+                .insert(*i, this.dest.alloc(OnceCell::new()));
+        }
+        for (id, mut body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
+            this.transpile_package(id, body)
+        }
+        Self {
+            arena: Arc::new(this.dest),
+            name_to_package: ic_compiled
+                .name_to_id
+                .iter()
+                .map(|(a, b)| (a.clone(), this.package_map.get(b).unwrap().clone()))
+                .collect(),
+            name_to_ty: ic_compiled
+                .name_to_id
+                .iter()
+                .map(|(a, b)| (a.clone(), ic_compiled.id_to_ty.get(b).unwrap().clone()))
+                .collect(),
+        }
+    }
+
+    pub fn compile_file(
+        module: &crate::par::program::CheckedModule,
+    ) -> Result<Self, crate::runtime::RuntimeCompilerError> {
+        let ic_compiled = crate::runtime::old::compiler::IcCompiled::compile_file(module)?;
+        let transpiled = Self::transpile(ic_compiled);
+        Ok(transpiled)
+    }
+
+    pub fn get_with_name(&self, name: &GlobalName) -> Option<PackagePtr> {
+        Some(self.name_to_package.get(name).cloned()?)
+    }
+
+    pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
+        Some(self.name_to_ty.get(name).cloned()?)
+    }
+
+    pub fn new_runtime(&self) -> Runtime {
+        Runtime::from(self.arena.clone())
+    }
+    pub fn new_reducer(&self) -> Reducer {
+        Reducer::from(Runtime::from(self.arena.clone()))
+    }
+    pub fn inject_package(&self, name: &GlobalName) -> super::readback::Handle {
+        todo!()
+    }
 }
 
 impl NetTranspiler {
-    fn transpile_tree_and_alloc(&mut self, source: &old::net::Tree) -> Index<Global> {
+    fn transpile_tree_and_alloc(&mut self, source: old::net::Tree) -> Index<Global> {
         let tree = self.transpile_tree(source);
         self.dest.alloc(tree)
     }
-    fn transpile_tree(&mut self, source: &old::net::Tree) -> Global {
+    fn map_variable(&mut self, id: usize) -> usize {
+        match self.variable_map.entry(id) {
+            std::collections::hash_map::Entry::Occupied(occupied_entry) => occupied_entry.remove(),
+            std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                let id = self.num_vars;
+                vacant_entry.insert(id);
+                self.num_vars += 1;
+                id
+            }
+        }
+    }
+    fn transpile_package(&mut self, id: usize, mut body: Net) {
+        // First, allocate the package
+        assert!(body.redexes.is_empty());
+        assert!(body.ports.len() == 1);
+        let root = body.ports.pop_back().unwrap();
+        self.source = body;
+        self.variable_map.clear();
+        let num_vars = self.num_vars;
+        self.num_vars = 0;
+        let root = self.transpile_tree(root);
+        let package = Package {
+            root: root,
+            captures: Global::Destruct(GlobalCont::Continue),
+            num_vars: num_vars,
+        };
+        let package_slot = self.package_map.get(&id).unwrap();
+        self.dest.get(package_slot.clone()).set(package).unwrap();
+    }
+    fn map_package(&mut self, id: usize) -> PackagePtr {
+        self.package_map.get(&id).unwrap().clone()
+    }
+    fn transpile_tree(&mut self, source: old::net::Tree) -> Global {
         use old::net::Tree;
         match source {
+            Tree::Var(id) => match self.source.variables.remove_linked(id) {
+                Ok(contents) => self.transpile_tree(contents),
+                Err(e) => {
+                    // this is a "real" aux aux link.
+                    Global::Variable(self.map_variable(id))
+                }
+            },
             Tree::Break => Global::Value(GlobalValue::Break),
             Tree::Continue => Global::Destruct(GlobalCont::Continue),
             Tree::Era => Global::Fanout(self.dest.alloc_clone(&[])),
             Tree::Par(a, b) => {
-                let a: Index<Global> = self.transpile_tree_and_alloc(a);
-                let b: Index<Global> = self.transpile_tree_and_alloc(b);
+                let a: Index<Global> = self.transpile_tree_and_alloc(*a);
+                let b: Index<Global> = self.transpile_tree_and_alloc(*b);
                 Global::Destruct(GlobalCont::Par(a, b))
             }
             Tree::Times(a, b) => {
-                let a: Index<Global> = self.transpile_tree_and_alloc(a);
-                let b: Index<Global> = self.transpile_tree_and_alloc(b);
+                let a: Index<Global> = self.transpile_tree_and_alloc(*a);
+                let b: Index<Global> = self.transpile_tree_and_alloc(*b);
                 Global::Value(GlobalValue::Pair(a, b))
             }
             Tree::Dup(a, b) => {
-                let s = [self.transpile_tree(a), self.transpile_tree(b)];
+                let s = [self.transpile_tree(*a), self.transpile_tree(*b)];
                 Global::Fanout(self.dest.alloc_clone(&s))
             }
             Tree::Signal(arc_str, tree) => Global::Value(GlobalValue::Either(
                 arc_str.clone(),
-                self.transpile_tree_and_alloc(tree),
+                self.transpile_tree_and_alloc(*tree),
             )),
             Tree::Choice(tree, hash_map, _) => todo!(),
             Tree::Box_(tree, _) => todo!(),
-            Tree::Var(_) => todo!(),
             Tree::Package(_) => todo!(),
             Tree::SignalRequest(sender) => todo!(),
             Tree::Primitive(primitive) => todo!(),

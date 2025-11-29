@@ -143,7 +143,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         return results;
     };
 
-    let Some(ic_compiled) = build.ic_compiled() else {
+    let Some(rt_compiled) = build.rt_compiled() else {
         results.push(TestResult {
             name: file.to_string_lossy().to_string(),
             duration: Duration::ZERO,
@@ -166,7 +166,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         .collect();
 
     for (name, _) in test_definitions {
-        let result = run_single_test(&checked, &ic_compiled, name.primary.clone());
+        let result = run_single_test(&checked, &rt_compiled, name.primary.clone());
         results.push(result);
     }
 
@@ -175,7 +175,7 @@ fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
 
 fn run_single_test(
     program: &crate::par::program::CheckedModule,
-    ic_compiled: &Compiled,
+    rt_compiled: &Compiled,
     test_name: String,
 ) -> TestResult {
     let start = Instant::now();
@@ -199,11 +199,11 @@ fn run_single_test(
             .map(|(n, _)| n)
             .ok_or_else(|| format!("Test definition '{}' not found", test_name))?;
 
-        let ty = ic_compiled
+        let ty = rt_compiled
             .get_type_of(name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
 
-        run_test_with_test_type(program, ic_compiled, name, &ty).await
+        run_test_with_test_type(program, rt_compiled, name, &ty).await
     });
 
     let duration = start.elapsed();
@@ -221,14 +221,14 @@ fn run_single_test(
 
 async fn run_test_with_test_type(
     program: &crate::par::program::CheckedModule,
-    ic_compiled: &Compiled,
+    rt_compiled: &Compiled,
     name: &crate::par::language::GlobalName,
     ty: &crate::par::types::Type,
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 
-    let mut net = ic_compiled.create_net();
-    let child_net = ic_compiled
+    let mut net = rt_compiled.create_net();
+    let child_net = rt_compiled
         .get_with_name(name)
         .ok_or_else(|| format!("Failed to get net for test '{}'", name.primary))?;
 

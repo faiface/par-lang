@@ -11,10 +11,10 @@ use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
 use crate::{
-    runtime::TypedHandle, location::FileName, par::program::CheckedModule,
-    readback::Element, spawn::TokioSpawn,
+    location::FileName, par::program::CheckedModule, readback::Element, runtime::TypedHandle,
+    spawn::TokioSpawn,
 };
-use crate::{runtime::Compiled, par::build_result::BuildResult};
+use crate::{par::build_result::BuildResult, runtime::Compiled};
 use core::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -439,8 +439,8 @@ impl Playground {
                     );
                     ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
 
-                    if let (Some(checked), Some(ic_compiled)) =
-                        (self.build.checked(), self.build.ic_compiled())
+                    if let (Some(checked), Some(rt_compiled)) =
+                        (self.build.checked(), self.build.rt_compiled())
                     {
                         egui::containers::menu::MenuButton::from_button(
                             egui::Button::new(
@@ -458,7 +458,7 @@ impl Playground {
                                     &mut self.element,
                                     ui,
                                     checked.clone(),
-                                    ic_compiled,
+                                    rt_compiled,
                                 );
                             })
                         });
@@ -506,14 +506,14 @@ impl Playground {
                     }
 
                     if self.show_ic {
-                        if let Some(ic_compiled) = self.build.ic_compiled() {
+                        if let Some(rt_compiled) = self.build.rt_compiled() {
                             CodeEditor::default()
-                                .id_source("ic_compiled")
+                                .id_source("rt_compiled")
                                 .with_rows(32)
                                 .with_fontsize(self.editor_font_size)
                                 .with_theme(theme)
                                 .with_numlines(true)
-                                .show(ui, &mut format!("{}", ic_compiled));
+                                .show(ui, &mut format!("{}", rt_compiled));
                         }
                     }
 

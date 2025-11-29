@@ -1,8 +1,8 @@
-use crate::runtime::{TypedHandle, TypedReadback};
 use crate::par::build_result::BuildResult;
 use crate::par::types::Type;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
+use crate::runtime::{TypedHandle, TypedReadback};
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
@@ -15,7 +15,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-mod runtime;
 mod language_server;
 mod location;
 mod par;
@@ -23,6 +22,7 @@ mod par;
 mod playground;
 #[cfg(feature = "playground")]
 mod readback;
+mod runtime;
 mod spawn;
 mod test_assertion;
 mod test_runner;
@@ -179,12 +179,16 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let Some(ic_compiled) = build.ic_compiled() else {
-            println!("{}: {}", "IC compilation failed".bright_red(), definition);
+        let Some(rt_compiled) = build.rt_compiled() else {
+            println!(
+                "{}: {}",
+                "Runtime compilation failed".bright_red(),
+                definition
+            );
             return;
         };
 
-        let ty = ic_compiled.get_type_of(name).unwrap();
+        let ty = rt_compiled.get_type_of(name).unwrap();
 
         let Type::Break(_) = ty else {
             println!(
@@ -195,8 +199,8 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let mut net = ic_compiled.create_net();
-        let child_net = ic_compiled.get_with_name(name).unwrap();
+        let mut net = rt_compiled.create_net();
+        let child_net = rt_compiled.get_with_name(name).unwrap();
         let tree = net.inject_net(child_net).with_type(ty.clone());
 
         let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));

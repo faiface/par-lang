@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::fmt::Debug;
 
 use super::runtime::{Global, Package};
@@ -46,7 +47,7 @@ impl Indexable for Global {
         Index(start)
     }
 }
-impl Indexable for Package {
+impl Indexable for OnceCell<Package> {
     type Store = usize;
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
         &store.packages[index.0]
@@ -81,10 +82,11 @@ impl<T: Indexable + ?Sized> Index<T> {
     }
 }
 
+#[derive(Default)]
 pub struct Arena {
     nodes: Vec<Global>,
     strings: String,
-    packages: Vec<Package>,
+    packages: Vec<OnceCell<Package>>,
 }
 
 impl Arena {

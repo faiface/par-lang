@@ -856,7 +856,6 @@ impl IcCompiled {
         net
     }
 
-
     pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
         let mut compiler = Compiler {
             net: Net::default(),
@@ -884,5 +883,4 @@ impl IcCompiled {
             id_to_ty: compiler.id_to_ty.into_iter().enumerate().collect(),
         })
     }
-
 }

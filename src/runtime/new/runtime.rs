@@ -1,29 +1,50 @@
 use arcstr::ArcStr;
 use futures::io::FillBuf;
+use num_bigint::BigInt;
+use std::cell::OnceCell;
+use std::fmt::Debug;
+
+use crate::par::primitive::Primitive;
 
 use super::arena::*;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
-pub type PackagePtr = Index<Package>;
+pub type PackagePtr = Index<OnceCell<Package>>;
 pub type GlobalPtr = Index<Global>;
 pub type Str = ArcStr;
 
-#[derive(Clone)]
+use tokio::sync::oneshot;
+
+#[derive(Clone, Debug)]
 struct Instance {
     vars: Arc<Mutex<Box<[Option<Value>]>>>,
 }
 
-type UserValue = Box<dyn Any>;
-
-#[derive(Clone)]
-pub struct Package {
-    root: Global,
-    captures: Global,
-    num_vars: usize,
+#[derive(Clone, Debug)]
+pub enum NonlinearUdata {
+    Primitive(Primitive),
+    Other(Arc<dyn AnyDebug>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+pub enum LinearUdata {}
+
+#[derive(Debug)]
+pub enum External {
+    Request(oneshot::Sender<Value>),
+    LinearUdata(LinearUdata),
+    NonlinearUdata(NonlinearUdata),
+}
+
+#[derive(Clone, Debug)]
+pub struct Package {
+    pub root: Global,
+    pub captures: Global,
+    pub num_vars: usize,
+}
+
+#[derive(Clone, Debug)]
 pub enum Global {
     Variable(usize),
     LinearPackage(PackagePtr, GlobalPtr),
@@ -33,20 +54,23 @@ pub enum Global {
     Fanout(Index<[Global]>),
 }
 
+trait AnyDebug: Any + Debug {}
+
+#[derive(Debug)]
 pub enum Value {
-    User(Box<dyn Any>),
+    External(External),
     ShareHole(Arc<Mutex<SharedHole>>),
     Shared(Shared),
     Global(Instance, Global),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Shared {
     Async(Arc<Mutex<SharedHole>>),
     Sync(Arc<SyncShared>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SyncShared {
     Break,
     Pair(Shared, Shared),
@@ -54,26 +78,36 @@ pub enum SyncShared {
     Package(PackagePtr, Shared),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum GlobalValue {
     Break,
     Pair(GlobalPtr, GlobalPtr),
     Either(Str, GlobalPtr),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum GlobalCont {
     Continue,
     Par(GlobalPtr, GlobalPtr),
 }
 
+#[derive(Debug)]
 enum SharedHole {
     Filled(SyncShared),
     Unfilled(Vec<Value>),
 }
-pub struct Net {
-    arena: Arena,
-    redexes: Vec<(Value, Value)>,
+pub struct Runtime {
+    pub arena: Arc<Arena>,
+    pub redexes: Vec<(Value, Value)>,
+}
+
+impl From<Arc<Arena>> for Runtime {
+    fn from(arena: Arc<Arena>) -> Self {
+        Self {
+            arena,
+            redexes: vec![],
+        }
+    }
 }
 
 macro_rules! sym {
@@ -82,7 +116,7 @@ macro_rules! sym {
     };
 }
 
-impl Net {
+impl Runtime {
     fn set_var(&mut self, instance: Instance, index: usize, value: Value) {
         let mut lock = instance.vars.lock().unwrap();
         let slot = lock.get_mut(index).unwrap();
@@ -95,17 +129,20 @@ impl Net {
             }
         }
     }
-    fn link(&mut self, a: Value, b: Value) {
+    pub fn link(&mut self, a: Value, b: Value) {
         self.redexes.push((a, b));
     }
     fn instantiate(&mut self, package: PackagePtr) -> (Value, Value) {
         let package = self.arena.get(package);
         let instance = Instance {
             vars: Arc::new(Mutex::new(
-                Vec::from_iter(std::iter::from_fn(|| Some(None)).take(package.num_vars))
-                    .into_boxed_slice(),
+                Vec::from_iter(
+                    std::iter::from_fn(|| Some(None)).take(package.get().unwrap().num_vars),
+                )
+                .into_boxed_slice(),
             )),
         };
+        let package = package.get().unwrap();
         (
             Value::Global(instance.clone(), package.root.clone()),
             Value::Global(instance.clone(), package.captures.clone()),
@@ -113,7 +150,7 @@ impl Net {
     }
     fn share(&mut self, a: Value) -> Option<Shared> {
         match a {
-            Value::User(any) => None,
+            Value::External(any) => None,
             Value::ShareHole(mutex) => None,
             Value::Shared(shared) => Some(shared),
             Value::Global(instance, Global::Destruct(..)) => None,
@@ -156,7 +193,7 @@ impl Net {
             }
         }
     }
-    pub fn reduce(&mut self) -> Option<(UserValue, Value)> {
+    pub fn reduce(&mut self) -> Option<(External, Value)> {
         while let Some((a, b)) = self.redexes.pop() {
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
@@ -175,12 +212,12 @@ impl Net {
             SharedHole::Unfilled(values) => values.push(value),
         }
     }
-    fn interact(&mut self, a: Value, b: Value) -> Option<(UserValue, Value)> {
+    fn interact(&mut self, a: Value, b: Value) -> Option<(External, Value)> {
         match (a, b) {
             sym!(Value::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
             }
-            sym!(Value::User(user), other) => {
+            sym!(Value::External(user), other) => {
                 return Some((user, other));
             }
             sym!(

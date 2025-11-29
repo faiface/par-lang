@@ -69,7 +69,7 @@ pub enum BuildResult {
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
-        ic_compiled: Compiled,
+        rt_compiled: Compiled,
     },
 }
 
@@ -119,14 +119,14 @@ impl BuildResult {
         }
     }
 
-    pub fn ic_compiled(&self) -> Option<&Compiled> {
+    pub fn rt_compiled(&self) -> Option<&Compiled> {
         match self {
             Self::None => None,
             Self::SyntaxError { .. } => None,
             Self::CompileError { .. } => None,
             Self::TypeError { .. } => None,
             Self::InetError { .. } => None,
-            Self::Ok { ic_compiled, .. } => Some(&ic_compiled),
+            Self::Ok { rt_compiled, .. } => Some(&rt_compiled),
         }
     }
 
@@ -168,8 +168,8 @@ impl BuildResult {
 
     pub fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
         let type_on_hover = TypeOnHover::new(&checked);
-        let ic_compiled = match Compiled::compile_file(&checked) {
-            Ok(ic_compiled) => ic_compiled,
+        let rt_compiled = match Compiled::compile_file(&checked) {
+            Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
                     pretty,
@@ -183,7 +183,7 @@ impl BuildResult {
             pretty,
             checked,
             type_on_hover,
-            ic_compiled,
+            rt_compiled,
         }
     }
 }
