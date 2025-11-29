@@ -5,6 +5,7 @@ use std::cell::OnceCell;
 use std::fmt::Debug;
 
 use crate::par::primitive::Primitive;
+use std::collections::HashMap;
 
 use super::arena::*;
 use std::any::Any;
@@ -17,7 +18,7 @@ pub type Str = ArcStr;
 use tokio::sync::oneshot;
 
 #[derive(Clone, Debug)]
-struct Instance {
+pub struct Instance {
     vars: Arc<Mutex<Box<[Option<Value>]>>>,
 }
 
@@ -30,11 +31,14 @@ pub enum NonlinearUdata {
 #[derive(Clone, Debug)]
 pub enum LinearUdata {}
 
+pub type ExternalFn = fn(crate::runtime::old::readback::Handle) -> std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
+
 #[derive(Debug)]
 pub enum External {
     Request(oneshot::Sender<Value>),
     LinearUdata(LinearUdata),
     NonlinearUdata(NonlinearUdata),
+    Function(ExternalFn),
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +56,7 @@ pub enum Global {
     Destruct(GlobalCont),
     Value(GlobalValue),
     Fanout(Index<[Global]>),
+    External(ExternalFn),
 }
 
 trait AnyDebug: Any + Debug {}
@@ -89,6 +94,7 @@ pub enum GlobalValue {
 pub enum GlobalCont {
     Continue,
     Par(GlobalPtr, GlobalPtr),
+    Choice(GlobalPtr, Arc<HashMap<ArcStr, PackagePtr>>),
 }
 
 #[derive(Debug)]
@@ -132,7 +138,7 @@ impl Runtime {
     pub fn link(&mut self, a: Value, b: Value) {
         self.redexes.push((a, b));
     }
-    fn instantiate(&mut self, package: PackagePtr) -> (Value, Value) {
+    pub fn instantiate(&mut self, package: PackagePtr) -> (Value, Value) {
         let package = self.arena.get(package);
         let instance = Instance {
             vars: Arc::new(Mutex::new(
@@ -156,6 +162,7 @@ impl Runtime {
             Value::Global(instance, Global::Destruct(..)) => None,
             Value::Global(instance, Global::LinearPackage(..)) => None,
             Value::Global(instance, Global::Fanout(..)) => None,
+            Value::Global(instance, Global::External(..)) => None,
             Value::Global(instance, Global::GlobalPackage(package, captures)) => {
                 let captures = Value::Global(instance, self.arena.get(captures).clone());
                 let captures = self.share(captures)?;

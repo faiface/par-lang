@@ -199,7 +199,7 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let mut net = rt_compiled.create_net();
+        todo!()/*let mut net = rt_compiled.create_net();
         let child_net = rt_compiled.get_with_name(name).unwrap();
         let tree = net.inject_net(child_net).with_type(ty.clone());
 
@@ -224,7 +224,7 @@ fn run_definition(file: PathBuf, definition: String) {
             .unwrap();
 
         readback_future.await;
-        reducer_future.await;
+        reducer_future.await;*/
     });
 }
 

@@ -227,7 +227,8 @@ async fn run_test_with_test_type(
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 
-    let mut net = rt_compiled.create_net();
+    todo!()/*
+    let mut net: crate::runtime::old::Net = todo!();//rt_compiled.create_net();
     let child_net = rt_compiled
         .get_with_name(name)
         .ok_or_else(|| format!("Failed to get net for test '{}'", name.primary))?;
@@ -283,7 +284,7 @@ async fn run_test_with_test_type(
             }
         }
         _ => Err("Test did not return expected type (!Break)".to_string()),
-    }
+    }*/
 }
 
 const PASSED: &str = "✓";

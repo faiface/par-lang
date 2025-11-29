@@ -53,7 +53,7 @@ impl Indexable for OnceCell<Package> {
         &store.packages[index.0]
     }
     fn alloc<'s>(store: &'s mut Arena, data: Self) -> Index<Self> {
-        let start = store.nodes.len();
+        let start = store.packages.len();
         store.packages.push(data);
         Index(start)
     }

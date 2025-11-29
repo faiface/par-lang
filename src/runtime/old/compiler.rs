@@ -359,6 +359,7 @@ impl Compiler {
         net2.redexes.append(&mut self.lazy_redexes.clone().into());
         net2.assert_valid();
 
+
         self.net.normal();
         self.net
             .redexes
@@ -801,7 +802,7 @@ impl Compiler {
                     Some(&labels_in_scope),
                     &mut self.net,
                 );
-                self.lazy_redexes.push((tree.tree, context_in));
+                self.net.redexes.push_back((tree.tree, context_in));
             }
         };
         Ok(())

@@ -1,17 +1,20 @@
-use crate::runtime::new::runtime::{Runtime, Value, External, NonlinearUdata, Global};
+use crate::runtime::new::runtime::{Runtime, Value, External, NonlinearUdata, Global, PackagePtr};
 use std::sync::Arc;
 use crate::TokioSpawn;
+use tokio::sync::oneshot;
 use futures::task::{Spawn, FutureObj, SpawnExt};
 use tokio::sync::mpsc;
+use super::readback::Handle;
 
 pub enum ReducerMessage {
     Redex(Value, Value),
     Spawn(FutureObj<'static, ()>),
+    Instantiate(PackagePtr, oneshot::Sender<(Value, Value)>),
 }
-pub struct NetHandle(mpsc::UnboundedSender<ReducerMessage>);
+pub struct NetHandle(pub mpsc::UnboundedSender<ReducerMessage>);
 
 pub struct Reducer {
-    runtime: Runtime,
+    pub runtime: Runtime,
     spawner: Arc<dyn Spawn + Send + Sync>,
     inbox: mpsc::UnboundedReceiver<ReducerMessage>,
     inbox_tx:  mpsc::UnboundedSender<ReducerMessage>,
@@ -37,6 +40,9 @@ impl Reducer {
             },
             ReducerMessage::Spawn(s) => {
                 self.spawner.spawn_obj(s);
+            },
+            ReducerMessage::Instantiate(package, ret) => {
+                ret.send(self.runtime.instantiate(package)).unwrap();
             }
         }
     }

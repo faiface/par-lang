@@ -3,6 +3,10 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::par::types::TypeDefs;
+use super::reducer::NetHandle;
+use super::readback::Handle;
+
 use crate::par::language::GlobalName;
 use crate::par::types::Type;
 use crate::runtime::new::arena::{Arena, Index};
@@ -30,20 +34,23 @@ pub struct Transpiled {
     pub arena: Arc<Arena>,
     pub name_to_package: HashMap<GlobalName, PackagePtr>,
     pub name_to_ty: HashMap<GlobalName, Type>,
+    type_defs: TypeDefs,
 }
 
 impl Transpiled {
-    pub fn transpile(mut ic_compiled: IcCompiled) -> Self {
+    pub fn transpile(mut ic_compiled: IcCompiled, type_defs: TypeDefs,) -> Self {
         let mut this: NetTranspiler = Default::default();
         for i in ic_compiled.id_to_package.keys() {
+            let slot = this.dest.alloc(OnceCell::new());
             this.package_map
-                .insert(*i, this.dest.alloc(OnceCell::new()));
+                .insert(*i, slot);
         }
         for (id, mut body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
             this.transpile_package(id, body)
         }
         Self {
             arena: Arc::new(this.dest),
+            type_defs,
             name_to_package: ic_compiled
                 .name_to_id
                 .iter()
@@ -60,8 +67,9 @@ impl Transpiled {
     pub fn compile_file(
         module: &crate::par::program::CheckedModule,
     ) -> Result<Self, crate::runtime::RuntimeCompilerError> {
+        let type_defs = module.type_defs.clone();
         let ic_compiled = crate::runtime::old::compiler::IcCompiled::compile_file(module)?;
-        let transpiled = Self::transpile(ic_compiled);
+        let transpiled = Self::transpile(ic_compiled, type_defs);
         Ok(transpiled)
     }
 
@@ -78,6 +86,11 @@ impl Transpiled {
     }
     pub fn new_reducer(&self) -> Reducer {
         Reducer::from(Runtime::from(self.arena.clone()))
+    }
+    pub async fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
+        let t = self.get_type_of(name)?;
+        let package = self.get_with_name(name)?;
+        Some(Handle::instantiate(handle, package, t, self.type_defs.clone()).await)
     }
     pub fn inject_package(&self, name: &GlobalName) -> super::readback::Handle {
         todo!()
@@ -102,6 +115,7 @@ impl NetTranspiler {
     }
     fn transpile_package(&mut self, id: usize, mut body: Net) {
         // First, allocate the package
+        println!("{:?}", body.redexes);
         assert!(body.redexes.is_empty());
         assert!(body.ports.len() == 1);
         let root = body.ports.pop_back().unwrap();
@@ -152,15 +166,22 @@ impl NetTranspiler {
                 arc_str.clone(),
                 self.transpile_tree_and_alloc(*tree),
             )),
-            Tree::Choice(tree, hash_map, _) => todo!(),
+            Tree::Choice(tree, hash_map, _) => {
+                let tree = self.transpile_tree_and_alloc(*tree);
+                Global::Destruct(
+                    GlobalCont::Choice(tree, Arc::new(hash_map.iter().map(|(k, v)| (k.clone(), self.package_map.get(v).unwrap().clone())).collect()))
+                )
+            }
             Tree::Box_(tree, _) => todo!(),
-            Tree::Package(_) => todo!(),
+            Tree::Package(id) => {
+                Global::GlobalPackage(self.map_package(id), self.dest.alloc(Global::Value(GlobalValue::Break)))
+            },
             Tree::SignalRequest(sender) => todo!(),
             Tree::Primitive(primitive) => todo!(),
             Tree::IntRequest(sender) => todo!(),
             Tree::StringRequest(sender) => todo!(),
             Tree::BytesRequest(sender) => todo!(),
-            Tree::External(_) => todo!(),
+            Tree::External(e) => Global::External(e),
             Tree::ExternalBox(_) => todo!(),
         }
     }
