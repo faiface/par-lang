@@ -186,9 +186,9 @@ impl TypeError {
                     name,
                 )
             }
-            Self::TypeMustBeKnownAtThisPoint(span, _) => {
+            Self::TypeMustBeKnownAtThisPoint(span, name) => {
                 let labels = labels_from_span(code, span);
-                miette::miette!(labels = labels, "Type must be known at this point.")
+                miette::miette!(labels = labels, "Type of `{}` must be known at this point.", name)
             }
             Self::ParameterTypeMustBeKnown(span, param) => {
                 let labels = labels_from_span(code, span);
