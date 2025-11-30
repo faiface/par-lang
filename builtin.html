@@ -448,26 +448,27 @@ type Os.Path = iterative@append recursive@parent box choice {
 
   .parent =&gt; Option&lt;self@parent&gt;,
   .append(Bytes) =&gt; self@append,
-
-  .openFile =&gt; Result&lt;Os.Error, Os.Reader&gt;,
-  .createOrReplaceFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
-  .createNewFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
-  .appendToFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
-  .createOrAppendToFile =&gt; Result&lt;Os.Error, Os.Writer&gt;,
-
-  .listDir =&gt; Result&lt;Os.Error, List&lt;self@append&gt;&gt;,
-  .traverseDir =&gt; Result&lt;Os.Error, recursive@tree either {
-    .end!,
-    .file(self@append) self@tree,
-    .dir(self@append, self@tree) self@tree,
-  }&gt;,
-  .createDir =&gt; Result&lt;Os.Error, !&gt;,
 }
 
 dec Os.Path : [Bytes] Os.Path
 
 dec Os.Stdin  : Os.Reader
 dec Os.Stdout : Os.Writer
+dec Os.Stderr : Os.Writer
+
+dec Os.OpenFile             : [Os.Path] Result&lt;Os.Error, Os.Reader&gt;
+dec Os.CreateOrReplaceFile  : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
+dec Os.CreateNewFile        : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
+dec Os.AppendToFile         : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
+dec Os.CreateOrAppendToFile : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
+
+dec Os.CreateDir   : [Os.Path] Result&lt;Os.Error, !&gt;
+dec Os.ListDir     : [Os.Path] Result&lt;Os.Error, List&lt;Os.Path&gt;&gt;
+dec Os.TraverseDir : [Os.Path] Result&lt;Os.Error, recursive either {
+  .end!,
+  .file(Os.Path) self,
+  .dir(Os.Path, self) self,
+}&gt;
 
 
 /// Url
@@ -508,6 +509,12 @@ dec Http.Listen : [String] recursive either {
   .shutdown Result&lt;Http.Error, !&gt;,
   .incoming(Http.Request, [Http.Response] Result&lt;Http.Error, !&gt;) self,
 }
+
+
+/// Time
+
+dec Time.Now : [!] Nat
+
 
 /// Map
 
