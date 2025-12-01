@@ -351,6 +351,7 @@ dec Http.Listen : [String] recursive either {
 /// Time
 
 dec Time.Now : [!] Nat
+dec Time.WaitAndNow : [Nat] Nat
 
 
 /// Map
