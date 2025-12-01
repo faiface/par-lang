@@ -1,5 +1,5 @@
 use std::{
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
 };
 
@@ -162,9 +162,10 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
 
 async fn path_from_bytes(mut handle: Handle) {
     let b = handle.receive().bytes().await;
-    // Unsafe: we accept arbitrary OS-encoded bytes without validation
-    let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
-    let p = PathBuf::from(os);
+    // Use proper platform-specific conversion instead of unsafe unchecked
+    let os_string = bytes_to_os(b.as_ref())
+        .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(b.as_ref()).into_owned()));
+    let p = PathBuf::from(os_string);
     provide_path(handle, p);
 }
 
@@ -200,7 +201,10 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 },
                 "append" => {
                     let b = handle.receive().bytes().await;
-                    let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
+                    // Use proper platform-specific conversion instead of unsafe unchecked
+                    let os_string = bytes_to_os(b.as_ref())
+                        .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(b.as_ref()).into_owned()));
+                    let os: &OsStr = os_string.as_os_str();
                     let p2 = path.join(Path::new(os));
                     provide_path(handle, p2);
                 }
@@ -256,6 +260,45 @@ fn os_to_bytes(os: &OsStr) -> Bytes {
 #[cfg(not(any(unix, windows)))]
 fn os_to_bytes(os: &OsStr) -> Bytes {
     Bytes::from(os.to_string_lossy().as_ref())
+}
+
+/// Convert bytes back to OsString, handling platform-specific encodings.
+/// This is the inverse of `os_to_bytes`.
+#[cfg(windows)]
+fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
+    use std::os::windows::ffi::OsStringExt;
+    
+    // Windows: bytes are UTF-16 little-endian (from os_to_bytes)
+    if bytes.len() % 2 != 0 {
+        return Err("Invalid UTF-16: odd number of bytes".to_string());
+    }
+    
+    // Convert little-endian byte pairs to u16
+    let wide: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+    
+    // Remove trailing NUL if present (Windows paths shouldn't have embedded NULs)
+    // This handles the case where os_to_bytes might have added a trailing NUL
+    let wide: Vec<u16> = wide.into_iter()
+        .take_while(|&w| w != 0)
+        .collect();
+    
+    Ok(OsString::from_wide(&wide))
+}
+
+#[cfg(unix)]
+fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
+    use std::os::unix::ffi::OsStrExt;
+    // Unix: bytes are already in the correct format (UTF-8 or arbitrary bytes)
+    Ok(OsString::from_vec(bytes.to_vec()))
+}
+
+#[cfg(not(any(windows, unix)))]
+fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
+    // Fallback: lossy conversion for unknown platforms
+    Ok(OsString::from(String::from_utf8_lossy(bytes)))
 }
 
 async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl AsyncRead + Unpin) {
@@ -568,6 +611,8 @@ async fn os_traverse_dir(mut handle: Handle) {
 async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
     handle.signal(literal!("absolute"));
     let path_bytes = handle.bytes().await;
-    let os_str = unsafe { OsStr::from_encoded_bytes_unchecked(&path_bytes) };
-    PathBuf::from(os_str)
+    // Use proper platform-specific conversion instead of unsafe unchecked
+    let os_string = bytes_to_os(&path_bytes)
+        .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(&path_bytes).into_owned()));
+    PathBuf::from(os_string)
 }
