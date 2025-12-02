@@ -367,6 +367,7 @@ type Map<k, v> = iterative choice {
 }
 
 dec Map.String : [type v] [List<(String) box v>] Map<String, v>
+dec Map.Bytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>
 dec Map.Int    : [type v] [List<(Int) box v>]    Map<Int, v>
 dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
 
