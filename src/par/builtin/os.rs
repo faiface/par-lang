@@ -165,6 +165,17 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(os_env(handle)),
             ),
+            Definition::external(
+                "EnvVar",
+                Type::function(
+                    Type::bytes(),
+                    Type::either(vec![
+                        ("err", Type::break_()),
+                        ("ok", Type::bytes()),
+                    ]),
+                ),
+                |handle| Box::pin(os_envvar(handle)),
+            ),
         ],
     }
 }
@@ -583,6 +594,21 @@ async fn os_env(mut handle: Handle) {
     }
     handle.signal(literal!("end"));
     handle.break_();
+}
+
+async fn os_envvar(mut handle: Handle) {
+    let name = handle.receive().bytes().await;
+    let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(name.as_ref()) };
+    match std::env::var_os(os) {
+        Some(val) => {
+            handle.signal(literal!("ok"));
+            return handle.provide_bytes(os_to_bytes(&val));
+        },
+        None => {
+            handle.signal(literal!("err"));
+            return handle.break_();
+        }
+    }
 }
 
 async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {

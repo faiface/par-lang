@@ -318,6 +318,7 @@ dec Os.TraverseDir : [Os.Path] Result<Os.Error, recursive either {
 }>
 
 dec Os.Env : List<(Bytes) Bytes>
+dec Os.EnvVar : [Bytes] Option<Bytes>
 
 /// Url
 
