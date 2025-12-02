@@ -124,6 +124,32 @@ pub enum Pattern {
 }
 
 #[derive(Clone, Debug)]
+pub enum Condition {
+    Bool(Span, Expression),
+    Is {
+        span: Span,
+        value: Expression,
+        variant: LocalName,
+        pattern: Pattern,
+    },
+    And(Span, Box<Self>, Box<Self>),
+    Or(Span, Box<Self>, Box<Self>),
+    Not(Span, Box<Self>),
+}
+
+impl Condition {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Bool(span, _)
+            | Self::Is { span, .. }
+            | Self::And(span, _, _)
+            | Self::Or(span, _, _)
+            | Self::Not(span, _) => span.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Expression {
     Primitive(Span, Primitive),
     List(Span, Vec<Self>),
@@ -144,6 +170,11 @@ pub enum Expression {
         then: Box<Self>,
     },
     Throw(Span, Option<LocalName>, Box<Self>),
+    If {
+        span: Span,
+        branches: Vec<(Condition, Expression)>,
+        else_: Box<Self>,
+    },
     Do {
         span: Span,
         process: Box<Process>,
@@ -241,6 +272,12 @@ pub enum Process {
         then: Box<Self>,
     },
     Throw(Span, Option<LocalName>, Box<Expression>),
+    If {
+        span: Span,
+        branches: Vec<(Condition, Process)>,
+        else_: Box<Process>,
+        then: Option<Box<Process>>,
+    },
     GlobalCommand(GlobalName, Command),
     Command(LocalName, Command),
     Telltypes(Span, Box<Self>),
@@ -259,6 +296,7 @@ pub enum Command {
         CommandBranches,
         Option<Box<CommandBranch>>,
         Option<Box<Process>>,
+        bool,
     ),
     Break(Span),
     Continue(Span, Box<Process>),
@@ -963,6 +1001,28 @@ impl Expression {
                 })
             }
 
+            Self::If {
+                span,
+                branches,
+                else_,
+            } => {
+                let mut process_ast = link_process_from_expr(else_);
+                for (condition, body) in branches.iter().rev() {
+                    process_ast =
+                        condition_process_ast(condition, link_process_from_expr(body), process_ast);
+                }
+                let compiled = process_ast.compile(pass)?;
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process: compiled,
+                })
+            }
+
             Self::Do {
                 span,
                 process,
@@ -1052,6 +1112,7 @@ impl Spanning for Expression {
             | Self::Let { span, .. }
             | Self::Catch { span, .. }
             | Self::Throw(span, _, _)
+            | Self::If { span, .. }
             | Self::Do { span, .. }
             | Self::Box(span, _)
             | Self::Chan { span, .. }
@@ -1123,7 +1184,7 @@ impl Construct {
                     name: LocalName::result(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process),
+                    command: process::Command::Case(branches, processes, else_process, false),
                 })
             }
 
@@ -1311,7 +1372,7 @@ impl Apply {
                     name: LocalName::object(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process),
+                    command: process::Command::Case(branches, processes, else_process, false),
                 })
             }
 
@@ -1485,6 +1546,29 @@ impl Spanning for ApplyBranch {
 impl Process {
     pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
+            Self::If {
+                span: _,
+                branches,
+                else_,
+                then,
+            } => {
+                if let Some(tail) = then {
+                    let tail = tail.compile(pass)?;
+                    pass.set_fallthrough(Some(tail))?;
+                }
+
+                let mut process_ast: Process = *else_.clone();
+                for (condition, body) in branches.iter().rev() {
+                    process_ast = condition_process_ast(condition, body.clone(), process_ast);
+                }
+                let compiled = process_ast.compile(pass)?;
+
+                if then.is_some() {
+                    pass.unset_fallthrough()?;
+                }
+                compiled
+            }
+
             Self::Let {
                 span,
                 pattern,
@@ -1569,6 +1653,7 @@ impl Spanning for Process {
             Self::Let { span, .. } => span.clone(),
             Self::Catch { span, .. } => span.clone(),
             Self::Throw(span, _, _) => span.clone(),
+            Self::If { span, .. } => span.clone(),
             Self::GlobalCommand(_, command) => command.span(),
             Self::Command(_, command) => command.span(),
             Self::Telltypes(span, _) => span.clone(),
@@ -1629,7 +1714,13 @@ impl Command {
                 })
             }
 
-            Self::Case(span, CommandBranches(process_branches), else_branch, optional_process) => {
+            Self::Case(
+                span,
+                CommandBranches(process_branches),
+                else_branch,
+                optional_process,
+                lenient,
+            ) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
 
@@ -1637,6 +1728,7 @@ impl Command {
                     let process = process.compile(pass)?;
                     pass.set_fallthrough(Some(process))?;
                 }
+
                 for (branch_name, process_branch) in process_branches {
                     branches.push(branch_name.clone());
                     processes.push(process_branch.compile(object_name, pass)?);
@@ -1656,7 +1748,7 @@ impl Command {
                     name: object_name.clone(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process),
+                    command: process::Command::Case(branches, processes, else_process, *lenient),
                 })
             }
 
@@ -1794,6 +1886,7 @@ fn compile_try(
                 ok_process,
             ]),
             None,
+            false,
         ),
     })
 }
@@ -1826,6 +1919,7 @@ fn compile_default(
                 ok_process,
             ]),
             None,
+            false,
         ),
     })
 }
@@ -1872,6 +1966,197 @@ fn compile_pipe(
     })
 }
 
+#[derive(Clone)]
+struct Restoration {
+    span: Span,
+    name: LocalName,
+    value: Expression,
+}
+
+fn pattern_to_expression(pattern: &Pattern) -> Option<Expression> {
+    match pattern {
+        Pattern::Name(span, name, _) => Some(Expression::Variable(span.clone(), name.clone())),
+        Pattern::Receive(span, first, rest) => {
+            let first_expr = pattern_to_expression(first)?;
+            let then = construct_from_pattern(rest)?;
+            Some(Expression::Construction(Construct::Send(
+                span.clone(),
+                Box::new(first_expr),
+                Box::new(then),
+            )))
+        }
+        Pattern::Continue(span) => Some(Expression::Construction(Construct::Break(span.clone()))),
+        Pattern::ReceiveType(_, _, _) | Pattern::Try(_, _, _) | Pattern::Default(_, _, _) => None,
+    }
+}
+
+fn construct_from_pattern(pattern: &Pattern) -> Option<Construct> {
+    match pattern {
+        Pattern::Name(span, name, _) => Some(Construct::Then(Box::new(Expression::Variable(
+            span.clone(),
+            name.clone(),
+        )))),
+        Pattern::Receive(span, first, rest) => {
+            let expression = pattern_to_expression(first)?;
+            let then = construct_from_pattern(rest)?;
+            Some(Construct::Send(
+                span.clone(),
+                Box::new(expression),
+                Box::new(then),
+            ))
+        }
+        Pattern::Continue(span) => Some(Construct::Break(span.clone())),
+        Pattern::ReceiveType(_, _, _) | Pattern::Try(_, _, _) | Pattern::Default(_, _, _) => None,
+    }
+}
+
+fn reconstruction_for_is(
+    span: &Span,
+    value: &Expression,
+    variant: &LocalName,
+    pattern: &Pattern,
+) -> Option<Restoration> {
+    let Expression::Variable(_, name) = value else {
+        return None;
+    };
+    let payload = construct_from_pattern(pattern)?;
+    let reconstruction = Expression::Construction(Construct::Signal(
+        span.clone(),
+        variant.clone(),
+        Box::new(payload),
+    ));
+    Some(Restoration {
+        span: span.clone(),
+        name: name.clone(),
+        value: reconstruction,
+    })
+}
+
+fn collect_restorations(condition: &Condition) -> Vec<Restoration> {
+    match condition {
+        Condition::Bool(_, _) => Vec::new(),
+        Condition::Is {
+            span,
+            value,
+            variant,
+            pattern,
+        } => reconstruction_for_is(span, value, variant, pattern)
+            .into_iter()
+            .collect(),
+        Condition::And(_, left, right) => {
+            let mut restores = collect_restorations(left);
+            restores.extend(collect_restorations(right));
+            restores
+        }
+        Condition::Or(_, _, _) => Vec::new(),
+        Condition::Not(_, _) => Vec::new(),
+    }
+}
+
+fn apply_restorations(restores: Vec<Restoration>, failure: Process) -> Process {
+    restores
+        .into_iter()
+        .rev()
+        .fold(failure, |acc, restore| Process::Let {
+            span: restore.span.clone(),
+            pattern: Pattern::Name(restore.span.clone(), restore.name.clone(), None),
+            value: Box::new(restore.value.clone()),
+            then: Box::new(acc),
+        })
+}
+
+fn attach_pattern_to_process(pattern: &Pattern, body: Process, subject: &LocalName) -> Process {
+    if matches!(pattern, Pattern::Continue(_)) {
+        return body;
+    }
+    Process::Let {
+        span: pattern.span().join(body.span()),
+        pattern: pattern.clone(),
+        value: Box::new(Expression::Variable(pattern.span(), subject.clone())),
+        then: Box::new(body),
+    }
+}
+
+fn condition_process_ast(condition: &Condition, success: Process, failure: Process) -> Process {
+    match condition {
+        Condition::Bool(span, expr) => {
+            let temp = LocalName::temp();
+            let mut branches = BTreeMap::new();
+            branches.insert(
+                LocalName::from(literal!("true")),
+                CommandBranch::Then(span.clone(), success),
+            );
+            branches.insert(
+                LocalName::from(literal!("false")),
+                CommandBranch::Then(span.clone(), failure.clone()),
+            );
+            Process::Let {
+                span: span.clone(),
+                pattern: Pattern::Name(span.clone(), temp.clone(), None),
+                value: Box::new(expr.clone()),
+                then: Box::new(Process::Command(
+                    temp.clone(),
+                    Command::Case(span.clone(), CommandBranches(branches), None, None, true),
+                )),
+            }
+        }
+        Condition::Is {
+            span,
+            value,
+            variant,
+            pattern,
+        } => {
+            let (subject_name, binding_value) = match value {
+                Expression::Variable(_, name) => (name.clone(), None),
+                _ => (LocalName::temp(), Some(value.clone())),
+            };
+            let mut branches = BTreeMap::new();
+            let success_process = attach_pattern_to_process(pattern, success, &subject_name);
+            branches.insert(
+                variant.clone(),
+                CommandBranch::Then(success_process.span(), success_process),
+            );
+            let failure_branch = CommandBranch::Then(failure.span(), failure.clone());
+            let command_process = Process::Command(
+                subject_name.clone(),
+                Command::Case(
+                    span.clone(),
+                    CommandBranches(branches),
+                    Some(Box::new(failure_branch)),
+                    None,
+                    true,
+                ),
+            );
+            match binding_value {
+                Some(value) => Process::Let {
+                    span: span.clone(),
+                    pattern: Pattern::Name(span.clone(), subject_name.clone(), None),
+                    value: Box::new(value),
+                    then: Box::new(command_process),
+                },
+                None => command_process,
+            }
+        }
+        Condition::And(_, left, right) => {
+            let restored_failure = apply_restorations(collect_restorations(left), failure.clone());
+            let right_process = condition_process_ast(right, success, restored_failure);
+            condition_process_ast(left, right_process, failure)
+        }
+        Condition::Or(_, left, right) => {
+            let right_process = condition_process_ast(right, success.clone(), failure.clone());
+            condition_process_ast(left, success, right_process)
+        }
+        Condition::Not(_, inner) => condition_process_ast(inner, failure, success),
+    }
+}
+
+fn link_process_from_expr(expr: &Expression) -> Process {
+    Process::Command(
+        LocalName::result(),
+        Command::Link(expr.span(), Box::new(expr.clone())),
+    )
+}
+
 impl Spanning for Command {
     fn span(&self) -> Span {
         match self {
@@ -1879,7 +2164,7 @@ impl Spanning for Command {
             | Self::Send(span, _, _)
             | Self::Receive(span, _, _)
             | Self::Signal(span, _, _)
-            | Self::Case(span, _, _, _)
+            | Self::Case(span, _, _, _, _)
             | Self::Break(span)
             | Self::Continue(span, _)
             | Self::Begin { span, .. }

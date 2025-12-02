@@ -663,7 +663,7 @@ impl Compiler {
                 self.bind_variable(name, v0)?;
                 self.compile_process(process)?;
             }
-            Command::Case(names, processes, else_process) => {
+            Command::Case(names, processes, else_process, lenient) => {
                 self.context.unguarded_loop_labels.clear();
                 let old_tree = self.use_variable(&name, usage, true)?;
                 // Multiplex all other variables in the context.
@@ -677,7 +677,13 @@ impl Compiler {
                 choice_and_process.sort_by_key(|k| k.0);
 
                 for (branch_name, process) in choice_and_process {
-                    let branch_type = branch_types.get(branch_name).unwrap();
+                    let Some(branch_type) = branch_types.get(branch_name) else {
+                        if *lenient {
+                            continue;
+                        } else {
+                            unreachable!("branch {branch_name} not found in {:}", ty)
+                        }
+                    };
                     let (package_id, _) = self.in_package(|this, _| {
                         let (w0, w1) = this.create_typed_wire(branch_type.clone());
                         this.bind_variable(name.clone(), w0)?;

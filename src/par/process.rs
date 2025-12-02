@@ -53,6 +53,7 @@ pub enum Command<Typ> {
         Arc<[LocalName]>,
         Box<[Arc<Process<Typ>>]>,
         Option<Arc<Process<Typ>>>,
+        bool,
     ),
     Break,
     Continue(Arc<Process<Typ>>),
@@ -276,10 +277,10 @@ impl Process<()> {
                     Command::Signal(chosen, process) => {
                         Command::Signal(chosen.clone(), process.optimize())
                     }
-                    Command::Case(branches, processes, else_process) => {
+                    Command::Case(branches, processes, else_process, lenient) => {
                         let processes = processes.iter().map(|p| p.optimize()).collect();
                         let else_process = else_process.clone().map(|p| p.optimize());
-                        Command::Case(Arc::clone(branches), processes, else_process)
+                        Command::Case(Arc::clone(branches), processes, else_process, *lenient)
                     }
                     Command::Break => Command::Break,
                     Command::Continue(process) => Command::Continue(process.optimize()),
@@ -390,7 +391,7 @@ impl Command<()> {
                 let (process, caps) = process.fix_captures(loop_points);
                 (Self::Signal(chosen.clone(), process), caps)
             }
-            Self::Case(branches, processes, else_process) => {
+            Self::Case(branches, processes, else_process, lenient) => {
                 let mut fixed_processes = Vec::new();
                 let mut caps = Captures::new();
                 for process in processes {
@@ -408,6 +409,7 @@ impl Command<()> {
                         branches.clone(),
                         fixed_processes.into_boxed_slice(),
                         fixed_else,
+                        *lenient,
                     ),
                     caps,
                 )
@@ -484,7 +486,7 @@ impl Command<Type> {
             Self::Signal(_, process) => {
                 process.types_at_spans(program, consume);
             }
-            Self::Case(_, branches, else_process) => {
+            Self::Case(_, branches, else_process, _) => {
                 for process in branches {
                     process.types_at_spans(program, consume);
                 }
@@ -772,7 +774,7 @@ impl Command<()> {
             Self::Signal(_, process) => {
                 process.qualify(module);
             }
-            Self::Case(_, branches, else_process) => {
+            Self::Case(_, branches, else_process, _) => {
                 for process in branches {
                     process.qualify(module);
                 }
@@ -875,7 +877,7 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Case(choices, branches, else_process) => {
+                    Command::Case(choices, branches, else_process, _) => {
                         write!(f, ".case {{")?;
                         for (choice, process) in choices.iter().zip(branches.iter()) {
                             indentation(f, indent + 1)?;
