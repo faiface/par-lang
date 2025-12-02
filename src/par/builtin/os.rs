@@ -156,6 +156,15 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(os_traverse_dir(handle)),
             ),
+            Definition::external(
+                "Env",
+                Type::name(
+                    Some("List"),
+                    "List",
+                    vec![Type::pair(Type::bytes(), Type::bytes())],
+                ),
+                |handle| Box::pin(os_env(handle)),
+            ),
         ],
     }
 }
@@ -563,6 +572,17 @@ async fn os_traverse_dir(mut handle: Handle) {
             return handle.provide_string(ParString::from(err));
         }
     }
+}
+
+async fn os_env(mut handle: Handle) {
+    for (name, value) in std::env::vars_os() {
+        handle.signal(literal!("item"));
+        let mut pair = handle.send();
+        pair.send().provide_bytes(os_to_bytes(&name));
+        pair.provide_bytes(os_to_bytes(&value));
+    }
+    handle.signal(literal!("end"));
+    handle.break_();
 }
 
 async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
