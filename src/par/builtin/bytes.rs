@@ -84,6 +84,25 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 Type::function(Type::bytes(), Type::nat()),
                 |handle| Box::pin(bytes_length(handle)),
             ),
+            Definition::external(
+                "Equals",
+                Type::function(
+                    Type::bytes(),
+                    Type::function(Type::bytes(), Type::name(Some("Bool"), "Bool", vec![])),
+                ),
+                |handle| Box::pin(bytes_equals(handle)),
+            ),
+            Definition::external(
+                "Compare",
+                Type::function(
+                    Type::bytes(),
+                    Type::function(
+                        Type::bytes(),
+                        Type::name(Some("Ordering"), "Ordering", vec![]),
+                    ),
+                ),
+                |handle| Box::pin(bytes_compare(handle)),
+            ),
         ],
     }
 }
@@ -134,6 +153,28 @@ async fn bytes_empty_reader(mut handle: Handle) {
             _ => unreachable!(),
         }
     }
+}
+
+async fn bytes_equals(mut handle: Handle) {
+    let left = handle.receive().bytes().await;
+    let right = handle.receive().bytes().await;
+    if left == right {
+        handle.signal(literal!("true"));
+    } else {
+        handle.signal(literal!("false"));
+    }
+    handle.break_();
+}
+
+async fn bytes_compare(mut handle: Handle) {
+    let left = handle.receive().bytes().await;
+    let right = handle.receive().bytes().await;
+    match left.cmp(&right) {
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.signal(literal!("less")),
+    }
+    handle.break_();
 }
 
 async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {

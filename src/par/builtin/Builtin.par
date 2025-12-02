@@ -260,6 +260,8 @@ type Bytes.Pattern = recursive either {
   .or List<self>,
 }
 
+dec Bytes.Equals  : [Bytes, Bytes] Bool
+dec Bytes.Compare : [Bytes, Bytes] Ordering
 dec Bytes.Length  : [Bytes] Nat
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
