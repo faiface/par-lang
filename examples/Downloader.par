@@ -36,19 +36,16 @@ def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
         next.loop
       }
 
-      String.Equals(method, "POST").case {
-        .true! => {
-          let try sourceUrl = catch e => .err e in
-            String.ParserFromReader(type Http.Error)(body)
-              .remainder.try
-              ->Url.FromString
+      if String.Equals(method, "POST") => {
+        let try sourceUrl = catch e => .err e in
+          String.ParserFromReader(type Http.Error)(body)
+            .remainder.try
+            ->Url.FromString
 
-          let destination = rootPath.append(url.path->TrimStart("/"))
-          yield.item((sourceUrl, destination)!)
-          respond((200, *()) Bytes.EmptyReader)
-          next.loop
-        }
-        .false! => {}
+        let destination = rootPath.append(url.path->TrimStart("/"))
+        yield.item((sourceUrl, destination)!)
+        respond((200, *()) Bytes.EmptyReader)
+        next.loop
       }
 
       body.close
@@ -68,9 +65,8 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
   let headers = BoxMap.String(type Bytes)(headers)
   catch@clearResp err => { body.close; throw err }
 
-  Nat.Equals(status, 200).case {
-    .false! => { throw@clearResp "Bad server response" }
-    .true! => {}
+  if not Nat.Equals(status, 200) => {
+    throw@clearResp "Bad server response"
   }
 
   let try@clearResp file = Os.CreateNewFile(dest)
@@ -90,13 +86,10 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
       file.write(bytes).try@clearResp
 
       bytesSinceLastEvent->Nat.Add(Bytes.Length(bytes))
-      Time.Now(!)->Nat.Compare(timeOfLastEvent->Nat.Add(100)).case {
-        .greater! => {
-          yield.item((dest) .progressed bytesSinceLastEvent)
-          let bytesSinceLastEvent = 0
-          let timeOfLastEvent = Time.Now(!)
-        }
-        .equal! => {} .less! => {}
+      if Time.Now(!)->Nat.Compare(timeOfLastEvent->Nat.Add(100)) is .greater! => {
+        yield.item((dest) .progressed bytesSinceLastEvent)
+        let bytesSinceLastEvent = 0
+        let timeOfLastEvent = Time.Now(!)
       }
 
       body.loop
