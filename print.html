@@ -791,6 +791,7 @@ let num = value
 <pre><code class="language-par">/// Nat
 
 dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Sub   : [Nat, Int] Nat
 dec Nat.Mul   : [Nat, Nat] Nat
 dec Nat.Div   : [Nat, Nat] Nat
 dec Nat.Mod   : [Nat, Nat] Nat
@@ -1097,6 +1098,7 @@ dec Os.TraverseDir : [Os.Path] Result&lt;Os.Error, recursive either {
   .dir(Os.Path, self) self,
 }&gt;
 
+dec Os.Env : List&lt;(Bytes) Bytes&gt;
 
 /// Url
 
@@ -1156,6 +1158,7 @@ type Map&lt;k, v&gt; = iterative choice {
 }
 
 dec Map.String : [type v] [List&lt;(String) box v&gt;] Map&lt;String, v&gt;
+dec Map.Bytes  : [type v] [List&lt;(Bytes) box v&gt;]  Map&lt;Bytes, v&gt;
 dec Map.Int    : [type v] [List&lt;(Int) box v&gt;]    Map&lt;Int, v&gt;
 dec Map.Nat    : [type v] [List&lt;(Nat) box v&gt;]    Map&lt;Nat, v&gt;
 
@@ -1172,6 +1175,7 @@ type BoxMap&lt;k, v&gt; = iterative box choice {
 }
 
 dec BoxMap.String : [type v] [List&lt;(String) box v&gt;] BoxMap&lt;String, v&gt;
+dec BoxMap.Bytes  : [type v] [List&lt;(Bytes) box v&gt;]  BoxMap&lt;Bytes, v&gt;
 dec BoxMap.Int    : [type v] [List&lt;(Int) box v&gt;]    BoxMap&lt;Int, v&gt;
 dec BoxMap.Nat    : [type v] [List&lt;(Nat) box v&gt;]    BoxMap&lt;Nat, v&gt;
 
