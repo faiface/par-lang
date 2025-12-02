@@ -384,6 +384,7 @@ type BoxMap<k, v> = iterative box choice {
 }
 
 dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
+dec BoxMap.Bytes  : [type v] [List<(Bytes) box v>]  BoxMap<Bytes, v>
 dec BoxMap.Int    : [type v] [List<(Int) box v>]    BoxMap<Int, v>
 dec BoxMap.Nat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v>
 

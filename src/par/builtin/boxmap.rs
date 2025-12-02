@@ -37,6 +37,22 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(boxmap_new(handle, Handle::string, Handle::provide_string)),
             ),
+            // BoxMap.Bytes : [type v] [List<(Bytes) box v>] BoxMap<Bytes, v>
+            Definition::external(
+                "Bytes",
+                Type::forall(
+                    "v",
+                    Type::function(
+                        Type::name(
+                            Some("List"),
+                            "List",
+                            vec![Type::pair(Type::bytes(), Type::box_(Type::var("v")))],
+                        ),
+                        Type::name(None, "BoxMap", vec![Type::bytes(), Type::var("v")]),
+                    ),
+                ),
+                |handle| Box::pin(boxmap_new(handle, Handle::bytes, Handle::provide_bytes)),
+            ),
             // BoxMap.Int : [type v] [List<(Int) box v>] BoxMap<Int, v>
             Definition::external(
                 "Int",
