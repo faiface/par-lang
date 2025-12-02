@@ -1,6 +1,7 @@
 /// Nat
 
 dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Sub   : [Nat, Int] Nat
 dec Nat.Mul   : [Nat, Nat] Nat
 dec Nat.Div   : [Nat, Nat] Nat
 dec Nat.Mod   : [Nat, Nat] Nat
