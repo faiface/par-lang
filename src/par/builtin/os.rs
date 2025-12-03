@@ -181,8 +181,14 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
 async fn path_from_bytes(mut handle: Handle) {
     let b = handle.receive().bytes().await;
     // Use proper platform-specific conversion instead of unsafe unchecked
-    let os_string = bytes_to_os(b.as_ref())
-        .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(b.as_ref()).into_owned()));
+    // On Windows, bytes_to_os expects UTF-16, but strings from Par are UTF-8
+    // So we need to try UTF-8 first, then fall back to bytes_to_os if that fails
+    let os_string = if let Ok(utf8_str) = String::from_utf8(b.as_ref().to_vec()) {
+        OsString::from(utf8_str)
+    } else {
+        bytes_to_os(b.as_ref())
+            .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(b.as_ref()).into_owned()))
+    };
     let p = PathBuf::from(os_string);
     provide_path(handle, p);
 }
@@ -220,8 +226,9 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                 "append" => {
                     let b = handle.receive().bytes().await;
                     // Use proper platform-specific conversion instead of unsafe unchecked
-                    let os_string = bytes_to_os(b.as_ref())
-                        .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(b.as_ref()).into_owned()));
+                    let os_string = bytes_to_os(b.as_ref()).unwrap_or_else(|_| {
+                        OsString::from(String::from_utf8_lossy(b.as_ref()).into_owned())
+                    });
                     let os: &OsStr = os_string.as_os_str();
                     let p2 = path.join(Path::new(os));
                     provide_path(handle, p2);
@@ -299,9 +306,7 @@ fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
 
     // Remove trailing NUL if present (Windows paths shouldn't have embedded NULs)
     // This handles the case where os_to_bytes might have added a trailing NUL
-    let wide: Vec<u16> = wide.into_iter()
-        .take_while(|&w| w != 0)
-        .collect();
+    let wide: Vec<u16> = wide.into_iter().take_while(|&w| w != 0).collect();
 
     Ok(OsString::from_wide(&wide))
 }
@@ -630,6 +635,8 @@ async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
     handle.signal(literal!("absolute"));
     let path_bytes = handle.bytes().await;
     // Use proper platform-specific conversion instead of unsafe unchecked
+    // The bytes from "absolute" are already in UTF-16 (Windows) or UTF-8 (Unix) format
+    // from os_to_bytes, so we need to decode them correctly
     let os_string = bytes_to_os(&path_bytes)
         .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(&path_bytes).into_owned()));
     PathBuf::from(os_string)
@@ -659,17 +666,74 @@ struct ExecHandleState {
     stderr: Option<ChildStderr>,
 }
 
+// Resolve executable path, searching PATH if needed
+fn resolve_executable(path: &Path) -> PathBuf {
+    // Check if path exists - if it does, use it as-is
+    if path.exists() && path.is_file() {
+        return path.to_path_buf();
+    }
+
+    // Extract just the filename (without directory)
+    // If the path doesn't exist, try to find it in PATH
+    if let Some(exe_name) = path.file_name() {
+        // On Windows, try with .exe extension if not present
+        #[cfg(windows)]
+        let exe_names = {
+            let exe_str = exe_name.to_string_lossy();
+            if !exe_str.ends_with(".exe")
+                && !exe_str.ends_with(".bat")
+                && !exe_str.ends_with(".cmd")
+            {
+                vec![
+                    OsString::from(format!("{}.exe", exe_str)),
+                    exe_name.to_os_string(), // Also try without extension
+                ]
+            } else {
+                vec![exe_name.to_os_string()]
+            }
+        };
+
+        #[cfg(not(windows))]
+        let exe_names = vec![exe_name.to_os_string()];
+
+        // Search PATH environment variable
+        // Use std::env::var_os to get OsString directly (handles non-UTF8 paths better)
+        if let Some(path_env) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&path_env) {
+                for exe_name in &exe_names {
+                    let candidate = dir.join(exe_name);
+                    if candidate.exists() && candidate.is_file() {
+                        return candidate;
+                    }
+                }
+            }
+        }
+    }
+
+    // If not found in PATH, return original path (will fail with clear error)
+    path.to_path_buf()
+}
+
 // Execute external process
 async fn os_exec(mut handle: Handle) {
     // Receive path
     let path = pathbuf_from_os_path(handle.receive()).await;
 
+    // Resolve executable path (search PATH if needed)
+    let resolved_path = resolve_executable(&path);
+
     // Receive list of arguments
     let args = read_string_list(handle.receive()).await;
 
     // Build command
-    let mut cmd = Command::new(&path);
+    let mut cmd = Command::new(&resolved_path);
     cmd.args(&args);
+    // Set working directory to user's current directory (where par was run from)
+    // This preserves relative path resolution in arguments, while the executable path
+    // itself is already resolved to an absolute path via resolve_executable().
+    if let Ok(current_dir) = std::env::current_dir() {
+        cmd.current_dir(current_dir);
+    }
     cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -696,9 +760,6 @@ async fn os_exec(mut handle: Handle) {
 
 // Provide ExecHandle operations
 async fn provide_exec_handle(mut handle: Handle, state: Arc<TokioMutex<ExecHandleState>>) {
-    // TODO: Create shared state for lock when lock feature is re-enabled
-    // let lock_state = Arc::new(TokioMutex::new(false));
-
     loop {
         match handle.case().await.as_str() {
             "wait" => {
@@ -796,16 +857,15 @@ async fn provide_exec_handle(mut handle: Handle, state: Arc<TokioMutex<ExecHandl
                     return;
                 }
             }
-            // "lock" => {
-            //     // TODO: Implement lock feature
-            //     _ => unreachable!(),
-            // }
+            // Lock feature reserved for future implementation (see Os.ExecLock in merge request docs)
             _ => unreachable!(),
         }
     }
 }
 
 // Provide ExecLock operations
+// Reserved for future Os.ExecLock feature (see merge request docs for future work)
+// This function is not currently exposed in the Par API but kept for future implementation
 #[allow(dead_code)]
 async fn provide_exec_lock(mut handle: Handle, lock_state: Arc<TokioMutex<bool>>) {
     // Acquire lock
