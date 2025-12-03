@@ -103,15 +103,6 @@ def List.Builder = [type a]
     .build => append(.end!),
   }
 
-dec List.Find : [type a] [List<box a>, box [a] Bool] Option<a>
-def List.Find = [type a] [list, f] list.begin.case {
-  .end! => .err!,
-  .item(v) list => f(v).case {
-    .true! => .ok v,
-    .false! => list.loop,
-  },
-}
-
 
 /// Ordering
 
