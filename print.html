@@ -1041,6 +1041,8 @@ type Bytes.Pattern = recursive either {
   .or List&lt;self&gt;,
 }
 
+dec Bytes.Equals  : [Bytes, Bytes] Bool
+dec Bytes.Compare : [Bytes, Bytes] Ordering
 dec Bytes.Length  : [Bytes] Nat
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
@@ -1098,7 +1100,7 @@ dec Os.TraverseDir : [Os.Path] Result&lt;Os.Error, recursive either {
   .dir(Os.Path, self) self,
 }&gt;
 
-dec Os.Env : List&lt;(Bytes) Bytes&gt;
+dec Os.Env : BoxMap.Readonly&lt;Bytes, Bytes&gt;
 
 /// Url
 
@@ -1172,6 +1174,13 @@ type BoxMap&lt;k, v&gt; = iterative box choice {
   .get(k) =&gt; Option&lt;box v&gt;,
   .put(k, box v) =&gt; self,
   .delete(k) =&gt; self,
+}
+
+type BoxMap.Readonly&lt;k, v&gt; = box choice {
+  .size =&gt; Nat,
+  .keys =&gt; List&lt;k&gt;,
+  .list =&gt; List&lt;(k) box v&gt;,
+  .get(k) =&gt; Option&lt;box v&gt;,
 }
 
 dec BoxMap.String : [type v] [List&lt;(String) box v&gt;] BoxMap&lt;String, v&gt;
