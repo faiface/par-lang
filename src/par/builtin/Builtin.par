@@ -120,11 +120,11 @@ def List.Map = [type a, b] [list, f] list.begin.case {
 
 dec List.FlatMap : [type a, b] [List<a>, box [a] List<b>] List<b>
 def List.FlatMap = [type a, b] [list, f] list.begin.case {
-	.end! => .end!,
-	.item(v) list => f(v).begin@flat.case {
-		.end! => list.loop,
-		.item(v) flat => .item(v) flat.loop@flat,
-	},
+  .end! => .end!,
+  .item(v) list => f(v).begin@flat.case {
+    .end! => list.loop,
+    .item(v) flat => .item(v) flat.loop@flat,
+  },
 }
 
 dec List.Filter : [type a] [List<box a>, box [a] Bool] List<a>
@@ -147,6 +147,14 @@ def List.Reduce = [type a] [list, f] list.case {
   .end! => .err!,
   .item(result) list => .ok List.Fold(type a, a)(list, result, f),
 }
+
+dec List.Size : [type a] [List<box a>] Nat
+def List.Size = [type a] [list]
+  let len = 0 in
+  list.begin.case {
+    .end! => len,
+    .item(_) list => do { len->Nat.Add(1) } in list.loop,
+  }
 
 
 /// Ordering
