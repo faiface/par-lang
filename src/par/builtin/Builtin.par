@@ -206,6 +206,26 @@ def List.Join = [list, sep]
     },
   }
 
+dec List.MinMax : [type a] [List<box a>, box [a, a] Ordering] Option<(a) a>
+def List.MinMax = [type a] [list, cmp]
+  let result: Option<(box a) box a> = .err! in
+  list.begin.case {
+    .end! => result,
+    .item(v) list => result.case {
+      .err! =>
+        let result = .ok(v) v in
+        list.loop,
+      .ok(min) max =>
+        let result = cmp(v, min).case {
+          .less! => .ok (v) max,
+          else _ => cmp(v, max).case {
+            .greater! => .ok (min) v,
+            else _ => result,
+          },
+        } in list.loop,
+    },
+  }
+
 
 /// Ordering
 
