@@ -185,6 +185,21 @@ def List.Copy = [type a] [dst, src] do {
   }
 } in dst
 
+dec List.Join : [List<String>, String] String
+def List.Join = [list, sep]
+	let builder = String.Builder in
+	list.case {
+		.end! => builder.build,
+		.item(v) list => do {
+			builder.add(v)
+		} in list.begin.case {
+			.end! => builder.build,
+			.item(v) list => do {
+				builder.add(sep).add(v)
+			} in list.loop,
+		},
+	}
+
 
 /// Ordering
 
