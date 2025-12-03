@@ -156,6 +156,24 @@ def List.Size = [type a] [list]
     .item(_) list => do { len->Nat.Add(1) } in list.loop,
   }
 
+dec List.Concat : [type a] [List<a>, List<a>] List<a>
+def List.Concat = [type a] [list1, list2] chan yield {
+  yield->{List.Copy(type a)}(list1)
+  yield->{List.Copy(type a)}(list2)
+  yield.end!
+}
+
+dec List.Copy : [type a] [dual List<a>, List<a>] dual List<a>
+def List.Copy = [type a] [dst, src] do {
+  src.begin.case {
+    .end! => {},
+    .item(v) src => {
+      dst.item(v)
+      src.loop
+    },
+  }
+} in dst
+
 
 /// Ordering
 
