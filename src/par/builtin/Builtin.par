@@ -118,6 +118,15 @@ def List.Map = [type a, b] [list, f] list.begin.case {
   .item(v) list => .item(f(v)) list.loop,
 }
 
+dec List.FlatMap : [type a, b] [List<a>, box [a] List<b>] List<b>
+def List.FlatMap = [type a, b] [list, f] list.begin.case {
+	.end! => .end!,
+	.item(v) list => f(v).begin@flat.case {
+		.end! => list.loop,
+		.item(v) flat => .item(v) flat.loop@flat,
+	},
+}
+
 dec List.Filter : [type a] [List<box a>, box [a] Bool] List<a>
 def List.Filter = [type a] [list, f] list.begin.case {
   .end! => .end!,
