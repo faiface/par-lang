@@ -386,11 +386,11 @@ type BoxMap<k, v> = iterative box choice {
   .delete(k) => self,
 }
 
-type BoxMap.Readonly<k, v> = iterative box choice {
-	.size => Nat,
-	.keys => List<k>,
-	.list => List<(k) box v>,
-	.get(k) => Option<box v>,
+type BoxMap.Readonly<k, v> = box choice {
+  .size => Nat,
+  .keys => List<k>,
+  .list => List<(k) box v>,
+  .get(k) => Option<box v>,
 }
 
 dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
