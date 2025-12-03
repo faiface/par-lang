@@ -95,6 +95,12 @@ type List.Builder<a> = iterative choice {
   .build => List<a>,
 }
 
+type List.Result<e, a> = recursive either {
+  .ok!,
+  .err e,
+  .item(a) self,
+}
+
 dec List.Builder : [type a] List.Builder<a>
 def List.Builder = [type a]
   let append: [List<a>] List<a> = [xs] xs
@@ -187,18 +193,18 @@ def List.Copy = [type a] [dst, src] do {
 
 dec List.Join : [List<String>, String] String
 def List.Join = [list, sep]
-	let builder = String.Builder in
-	list.case {
-		.end! => builder.build,
-		.item(v) list => do {
-			builder.add(v)
-		} in list.begin.case {
-			.end! => builder.build,
-			.item(v) list => do {
-				builder.add(sep).add(v)
-			} in list.loop,
-		},
-	}
+  let builder = String.Builder in
+  list.case {
+    .end! => builder.build,
+    .item(v) list => do {
+      builder.add(v)
+    } in list.begin.case {
+      .end! => builder.build,
+      .item(v) list => do {
+        builder.add(sep).add(v)
+      } in list.loop,
+    },
+  }
 
 
 /// Ordering
@@ -279,6 +285,15 @@ dec String.Builder : String.Builder
 dec String.Parser  : [String] String.Parser<either {}>
 
 dec String.ParserFromReader : [type e] [Bytes.Reader<e>] String.Parser<e>
+
+dec String.Lines : [type e] [String.Parser<e>] List.Result<e, String>
+def String.Lines = [type e] [parser]
+  catch e => .err e in
+  parser.begin.match(.repeat.one.any!, .str "\n").case {
+    .end try ! => .ok !,
+    .fail parser => let try r = parser.remainder in .item(r) .ok!,
+    .match(line, _) parser => .item(line) parser.loop,
+  }
 
 
 /// Byte
