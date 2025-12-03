@@ -45,28 +45,6 @@ impl Type {
         Ok(typ)
     }
 
-    pub fn contains_self(&self, label: &Option<LocalName>) -> bool {
-        fn inner(result: &mut bool, typ: &Type, target_label: &Option<LocalName>) {
-            match typ {
-                Type::Self_(_span, label) | Type::DualSelf(_span, label)
-                    if label == target_label =>
-                {
-                    *result = true;
-                }
-                Type::Recursive { label, .. } | Type::Iterative { label, .. }
-                    if label == target_label => {}
-                _ => visit::continue_(typ, |child| {
-                    inner(result, child, target_label);
-                    Ok::<(), ()>(())
-                })
-                .unwrap(),
-            }
-        }
-        let mut result = false;
-        inner(&mut result, self, label);
-        result
-    }
-
     pub fn contains_var(&self, var: &LocalName) -> bool {
         fn inner(result: &mut bool, typ: &Type, target_name: &LocalName) -> Result<(), ()> {
             match typ {
