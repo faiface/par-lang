@@ -310,8 +310,7 @@ dec Os.TraverseDir : [Os.Path] Result<Os.Error, recursive either {
   .dir(Os.Path, self) self,
 }>
 
-dec Os.Env : List<(Bytes) Bytes>
-dec Os.EnvVar : [Bytes] Option<Bytes>
+dec Os.Env : BoxMap.Readonly<Bytes, Bytes>
 
 /// Url
 
@@ -385,6 +384,13 @@ type BoxMap<k, v> = iterative box choice {
   .get(k) => Option<box v>,
   .put(k, box v) => self,
   .delete(k) => self,
+}
+
+type BoxMap.Readonly<k, v> = iterative box choice {
+	.size => Nat,
+	.keys => List<k>,
+	.list => List<(k) box v>,
+	.get(k) => Option<box v>,
 }
 
 dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>

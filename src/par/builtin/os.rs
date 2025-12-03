@@ -19,6 +19,7 @@ use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
+use num_bigint::BigInt;
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
     Module {
@@ -158,23 +159,8 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "Env",
-                Type::name(
-                    Some("List"),
-                    "List",
-                    vec![Type::pair(Type::bytes(), Type::bytes())],
-                ),
-                |handle| Box::pin(os_env(handle)),
-            ),
-            Definition::external(
-                "EnvVar",
-                Type::function(
-                    Type::bytes(),
-                    Type::either(vec![
-                        ("err", Type::break_()),
-                        ("ok", Type::bytes()),
-                    ]),
-                ),
-                |handle| Box::pin(os_envvar(handle)),
+                Type::name(Some("BoxMap"), "Readonly", vec![Type::bytes(), Type::bytes()]),
+                |handle| Box::pin(envmap_new(handle)),
             ),
         ],
     }
@@ -585,30 +571,49 @@ async fn os_traverse_dir(mut handle: Handle) {
     }
 }
 
-async fn os_env(mut handle: Handle) {
-    for (name, value) in std::env::vars_os() {
-        handle.signal(literal!("item"));
-        let mut pair = handle.send();
-        pair.send().provide_bytes(os_to_bytes(&name));
-        pair.provide_bytes(os_to_bytes(&value));
-    }
-    handle.signal(literal!("end"));
-    handle.break_();
-}
-
-async fn os_envvar(mut handle: Handle) {
-    let name = handle.receive().bytes().await;
-    let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(name.as_ref()) };
-    match std::env::var_os(os) {
-        Some(val) => {
-            handle.signal(literal!("ok"));
-            return handle.provide_bytes(os_to_bytes(&val));
-        },
-        None => {
-            handle.signal(literal!("err"));
-            return handle.break_();
+async fn envmap_new(mut handle: Handle) {
+    handle.provide_box(move |mut handle| {
+        async move {
+            match handle.case().await.as_str() {
+                "size" => {
+                    return handle.provide_nat(BigInt::from(std::env::vars_os().count()));
+                }
+                "keys" => {
+                    for (name, _) in std::env::vars_os() {
+                        handle.signal(literal!("item"));
+                        handle.send().provide_bytes(os_to_bytes(&name));
+                    }
+                    handle.signal(literal!("end"));
+                    return handle.break_();
+                }
+                "list" => {
+                    for (name, value) in std::env::vars_os() {
+                        handle.signal(literal!("item"));
+                        let mut pair = handle.send();
+                        pair.send().provide_bytes(os_to_bytes(&name));
+                        pair.provide_bytes(os_to_bytes(&value));
+                    }
+                    handle.signal(literal!("end"));
+                    return handle.break_();
+                }
+                "get" => {
+                    let name = handle.receive().bytes().await;
+                    let name_os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(name.as_ref()) };
+                    match std::env::var_os(name_os) {
+                        Some(val) => {
+                            handle.signal(literal!("ok"));
+                            return handle.provide_bytes(os_to_bytes(&val));
+                        },
+                        None => {
+                            handle.signal(literal!("err"));
+                            return handle.break_();
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            }
         }
-    }
+    });
 }
 
 async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
