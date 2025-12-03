@@ -308,6 +308,22 @@ dec Os.TraverseDir : [Os.Path] Result<Os.Error, recursive either {
 }>
 
 
+/// Os.Exec - Execute external OS process
+/// 
+/// NOTICE: Breaks Par's safety guarantees (deadlock freedom, race freedom, session type safety).
+/// Use with care. Prefer Par's native concurrency when possible.
+
+type Os.ExecHandle = iterative choice {
+  .wait => Result<Os.Error, Nat>,      // Wait for process completion, returns exit code
+  .kill => Result<Os.Error, !>,        // Terminate process immediately (consumes handle)
+  .stdin => Os.Writer,                 // Write to process stdin (linear, must be closed)
+  .stdout => Os.Reader,                // Read from process stdout (linear, must be consumed)
+  .stderr => Os.Reader,                // Read from process stderr (linear, must be consumed)
+}
+
+dec Os.Exec : [Os.Path, List<String>] Result<Os.Error, Os.ExecHandle>
+
+
 /// Url
 
 type Url.Error = String

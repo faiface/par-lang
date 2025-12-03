@@ -15,9 +15,13 @@ use crate::{
 use arcstr::literal;
 use bytes::Bytes;
 use futures::future::BoxFuture;
+use num_bigint::BigInt;
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command},
 };
 
 pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
@@ -156,6 +160,20 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
                 ),
                 |handle| Box::pin(os_traverse_dir(handle)),
             ),
+            Definition::external(
+                "Exec",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::function(
+                        Type::name(Some("List"), "List", vec![Type::string()]),
+                        Type::either(vec![
+                            ("err", Type::name(None, "Error", vec![])),
+                            ("ok", Type::name(None, "ExecHandle", vec![])),
+                        ]),
+                    ),
+                ),
+                |handle| Box::pin(os_exec(handle)),
+            ),
         ],
     }
 }
@@ -267,24 +285,24 @@ fn os_to_bytes(os: &OsStr) -> Bytes {
 #[cfg(windows)]
 fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
     use std::os::windows::ffi::OsStringExt;
-    
+
     // Windows: bytes are UTF-16 little-endian (from os_to_bytes)
     if bytes.len() % 2 != 0 {
         return Err("Invalid UTF-16: odd number of bytes".to_string());
     }
-    
+
     // Convert little-endian byte pairs to u16
     let wide: Vec<u16> = bytes
         .chunks_exact(2)
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
-    
+
     // Remove trailing NUL if present (Windows paths shouldn't have embedded NULs)
     // This handles the case where os_to_bytes might have added a trailing NUL
     let wide: Vec<u16> = wide.into_iter()
         .take_while(|&w| w != 0)
         .collect();
-    
+
     Ok(OsString::from_wide(&wide))
 }
 
@@ -615,4 +633,214 @@ async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
     let os_string = bytes_to_os(&path_bytes)
         .unwrap_or_else(|_| OsString::from(String::from_utf8_lossy(&path_bytes).into_owned()));
     PathBuf::from(os_string)
+}
+
+// Helper to read List<String> from handle
+async fn read_string_list(mut handle: Handle) -> Vec<String> {
+    let mut args = Vec::new();
+    loop {
+        match handle.case().await.as_str() {
+            "end" => break,
+            "item" => {
+                let arg = handle.receive().string().await;
+                args.push(arg.as_str().to_string());
+            }
+            _ => unreachable!(),
+        }
+    }
+    args
+}
+
+// Shared state for ExecHandle
+struct ExecHandleState {
+    child: Option<Child>,
+    stdin: Option<ChildStdin>,
+    stdout: Option<ChildStdout>,
+    stderr: Option<ChildStderr>,
+}
+
+// Execute external process
+async fn os_exec(mut handle: Handle) {
+    // Receive path
+    let path = pathbuf_from_os_path(handle.receive()).await;
+
+    // Receive list of arguments
+    let args = read_string_list(handle.receive()).await;
+
+    // Build command
+    let mut cmd = Command::new(&path);
+    cmd.args(&args);
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    // Spawn process
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let state = Arc::new(TokioMutex::new(ExecHandleState {
+                stdin: child.stdin.take(),
+                stdout: child.stdout.take(),
+                stderr: child.stderr.take(),
+                child: Some(child),
+            }));
+
+            handle.signal(literal!("ok"));
+            provide_exec_handle(handle, state).await;
+        }
+        Err(err) => {
+            handle.signal(literal!("err"));
+            handle.provide_string(ParString::from(err.to_string()));
+        }
+    }
+}
+
+// Provide ExecHandle operations
+async fn provide_exec_handle(mut handle: Handle, state: Arc<TokioMutex<ExecHandleState>>) {
+    // TODO: Create shared state for lock when lock feature is re-enabled
+    // let lock_state = Arc::new(TokioMutex::new(false));
+
+    loop {
+        match handle.case().await.as_str() {
+            "wait" => {
+                let mut locked = state.lock().await;
+                // Drop any remaining handles
+                drop(locked.stdin.take());
+                drop(locked.stdout.take());
+                drop(locked.stderr.take());
+                // Extract child from state
+                if let Some(mut child) = locked.child.take() {
+                    drop(locked);
+
+                    match child.wait().await {
+                        Ok(status) => {
+                            let exit_code = status.code().unwrap_or(0);
+                            handle.signal(literal!("ok"));
+                            handle.provide_nat(BigInt::from(exit_code));
+                            return;
+                        }
+                        Err(err) => {
+                            handle.signal(literal!("err"));
+                            handle.provide_string(ParString::from(err.to_string()));
+                            return;
+                        }
+                    }
+                } else {
+                    drop(locked);
+                    handle.signal(literal!("err"));
+                    handle.provide_string(ParString::from("process already waited".to_string()));
+                    return;
+                }
+            }
+            "kill" => {
+                let mut locked = state.lock().await;
+                if let Some(mut child) = locked.child.take() {
+                    drop(locked);
+
+                    if let Err(err) = child.kill().await {
+                        handle.signal(literal!("err"));
+                        handle.provide_string(ParString::from(err.to_string()));
+                        return;
+                    }
+                    handle.signal(literal!("ok"));
+                    return handle.break_();
+                } else {
+                    drop(locked);
+                    handle.signal(literal!("err"));
+                    handle
+                        .provide_string(ParString::from("process already terminated".to_string()));
+                    return;
+                }
+            }
+            "stdin" => {
+                let mut locked = state.lock().await;
+                if let Some(stdin) = locked.stdin.take() {
+                    drop(locked);
+                    // Provide writer directly - consume handle
+                    provide_bytes_writer_from_async(handle, stdin).await;
+                    // Note: Process continues running as long as stdin handle exists
+                    return;
+                } else {
+                    drop(locked);
+                    handle.signal(literal!("err"));
+                    handle.provide_string(ParString::from("stdin already taken".to_string()));
+                    return;
+                }
+            }
+            "stdout" => {
+                let mut locked = state.lock().await;
+                if let Some(stdout) = locked.stdout.take() {
+                    drop(locked);
+                    // Provide reader directly - consume handle
+                    provide_bytes_reader_from_async(handle, stdout).await;
+                    // Note: Process continues running as long as stdout handle exists
+                    return;
+                } else {
+                    drop(locked);
+                    handle.signal(literal!("err"));
+                    handle.provide_string(ParString::from("stdout already taken".to_string()));
+                    return;
+                }
+            }
+            "stderr" => {
+                let mut locked = state.lock().await;
+                if let Some(stderr) = locked.stderr.take() {
+                    drop(locked);
+                    // Provide reader directly - consume handle
+                    provide_bytes_reader_from_async(handle, stderr).await;
+                    // Note: Process continues running as long as stderr handle exists
+                    return;
+                } else {
+                    drop(locked);
+                    handle.signal(literal!("err"));
+                    handle.provide_string(ParString::from("stderr already taken".to_string()));
+                    return;
+                }
+            }
+            // "lock" => {
+            //     // TODO: Implement lock feature
+            //     _ => unreachable!(),
+            // }
+            _ => unreachable!(),
+        }
+    }
+}
+
+// Provide ExecLock operations
+#[allow(dead_code)]
+async fn provide_exec_lock(mut handle: Handle, lock_state: Arc<TokioMutex<bool>>) {
+    // Acquire lock
+    {
+        let mut locked = lock_state.lock().await;
+        if *locked {
+            // Lock already held - this is an error in our simple implementation
+            // In a more sophisticated version, we might wait or return an error
+            handle.signal(literal!("err"));
+            handle.provide_string(ParString::from("lock already held".to_string()));
+            return;
+        }
+        *locked = true;
+    }
+
+    loop {
+        match handle.case().await.as_str() {
+            "release" => {
+                let mut locked = lock_state.lock().await;
+                *locked = false;
+                return handle.break_();
+            }
+            "check" => {
+                let locked = lock_state.lock().await;
+                let is_held = *locked;
+                drop(locked);
+                if is_held {
+                    handle.signal(literal!("true"));
+                } else {
+                    handle.signal(literal!("false"));
+                }
+                // Continue with same lock
+                continue;
+            }
+            _ => unreachable!(),
+        }
+    }
 }
