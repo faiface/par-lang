@@ -66,6 +66,9 @@ type Bool = either {
   .true!,
 }
 
+dec Bool.Not : [Bool] Bool
+def Bool.Not = [v] v.case { .true! => .false!, .false! => .true! }
+
 
 /// Result
 
@@ -269,6 +272,19 @@ def List.Unzip = [type a, b] [list] do {
     },
   }
 } in (list1.build) list2.build
+
+dec List.All : [type a] [List<box a>, box [a] Bool] Bool
+def List.All = [type a] [list, f]
+	list.begin.case {
+		.end! => .true!,
+		.item(v) list => f(v).case {
+			.true! => list.loop,
+			.false! => .false!,
+		},
+	}
+
+dec List.Any : [type a] [List<box a>, box [a] Bool] Bool
+def List.Any = [type a] [list, f] List.All(type a)(list, box [v] Bool.Not(f(v)))
 
 
 /// Ordering
