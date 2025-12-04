@@ -109,7 +109,7 @@ def List.Builder = [type a]
     .build => append(.end!),
   }
 
-dec List.Find : [type a] [List<box a>, box [a] Bool] Option<a>
+dec List.Find : [type a] [List<box a>, box [box a] Bool] Option<box a>
 def List.Find = [type a] [list, f] list.begin.case {
   .end! => .err!,
   .item(v) list => f(v).case {
@@ -118,9 +118,9 @@ def List.Find = [type a] [list, f] list.begin.case {
   },
 }
 
-dec List.FindLast : [type a] [List<box a>, box [a] Bool] Option<a>
+dec List.FindLast : [type a] [List<box a>, box [box a] Bool] Option<box a>
 def List.FindLast = [type a] [list, f]
-  let result: box Option<a> = box .err! in
+  let result: Option<box a> = .err! in
   list.begin.case {
     .end! => result,
     .item(v) list => f(v).case {
@@ -144,7 +144,7 @@ def List.FlatMap = [type a, b] [list, f] list.begin.case {
   },
 }
 
-dec List.Filter : [type a] [List<box a>, box [a] Bool] List<a>
+dec List.Filter : [type a] [List<box a>, box [box a] Bool] List<box a>
 def List.Filter = [type a] [list, f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).case {
@@ -206,7 +206,7 @@ def List.Join = [list, sep]
     },
   }
 
-dec List.MinMax : [type a] [List<box a>, box [a, a] Ordering] Option<(a) a>
+dec List.MinMax : [type a] [List<box a>, box [box a, box a] Ordering] Option<(box a) box a>
 def List.MinMax = [type a] [list, cmp]
   let result: Option<(box a) box a> = .err! in
   list.begin.case {
@@ -225,6 +225,20 @@ def List.MinMax = [type a] [list, cmp]
         } in list.loop,
     },
   }
+
+dec List.Min : [type a] [List<box a>, box [box a, box a] Ordering] Option<box a>
+def List.Min = [type a] [list, cmp]
+	List.MinMax(type a)(list, cmp).case {
+		.err! => .err!,
+		.ok(min) _ => .ok min,
+	}
+
+dec List.Max : [type a] [List<box a>, box [box a, box a] Ordering] Option<box a>
+def List.Max = [type a] [list, cmp]
+	List.MinMax(type a)(list, cmp).case {
+		.err! => .err!,
+		.ok(_) max => .ok max,
+	}
 
 
 /// Ordering
