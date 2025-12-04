@@ -96,8 +96,7 @@ type List.Builder<a> = iterative choice {
 }
 
 type List.Result<e, a> = recursive either {
-  .ok!,
-  .err e,
+  .end Result<e, !>,
   .item(a) self,
 }
 
@@ -228,47 +227,47 @@ def List.MinMax = [type a] [list, cmp]
 
 dec List.Min : [type a] [List<box a>, box [box a, box a] Ordering] Option<box a>
 def List.Min = [type a] [list, cmp]
-	List.MinMax(type a)(list, cmp).case {
-		.err! => .err!,
-		.ok(min) _ => .ok min,
-	}
+  List.MinMax(type a)(list, cmp).case {
+    .err! => .err!,
+    .ok(min) _ => .ok min,
+  }
 
 dec List.Max : [type a] [List<box a>, box [box a, box a] Ordering] Option<box a>
 def List.Max = [type a] [list, cmp]
-	List.MinMax(type a)(list, cmp).case {
-		.err! => .err!,
-		.ok(_) max => .ok max,
-	}
+  List.MinMax(type a)(list, cmp).case {
+    .err! => .err!,
+    .ok(_) max => .ok max,
+  }
 
 dec List.Zip : [type a, b] [List<box a>, List<box b>] List<(box a) box b>
 def List.Zip = [type a, b] [list1, list2] chan yield {
-	list1.begin.case {
-		.end! => { yield.end! },
-		.item(v1) list1 => {
-			list2.case {
-				.end! => { yield.end! },
-				.item(v2) list2 => {
-					yield.item((v1) v2)
-					list1.loop
-				},
-			}
-		},
-	}
+  list1.begin.case {
+    .end! => { yield.end! },
+    .item(v1) list1 => {
+      list2.case {
+        .end! => { yield.end! },
+        .item(v2) list2 => {
+          yield.item((v1) v2)
+          list1.loop
+        },
+      }
+    },
+  }
 }
 
 dec List.Unzip : [type a, b] [List<(a) b>] (List<a>) List<b>
 def List.Unzip = [type a, b] [list] do {
-	let list1 = List.Builder(type a)
-	let list2 = List.Builder(type b)
+  let list1 = List.Builder(type a)
+  let list2 = List.Builder(type b)
 
-	list.begin.case {
-		.end! => {},
-		.item((v1) v2) list => {
-			list1.add(v1)
-			list2.add(v2)
-			list.loop
-		},
-	}
+  list.begin.case {
+    .end! => {},
+    .item((v1) v2) list => {
+      list1.add(v1)
+      list2.add(v2)
+      list.loop
+    },
+  }
 } in (list1.build) list2.build
 
 
@@ -353,10 +352,10 @@ dec String.ParserFromReader : [type e] [Bytes.Reader<e>] String.Parser<e>
 
 dec String.Lines : [type e] [String.Parser<e>] List.Result<e, String>
 def String.Lines = [type e] [parser]
-  catch e => .err e in
+  catch e => .end .err e in
   parser.begin.match(.repeat.one.any!, .str "\n").case {
-    .end try ! => .ok !,
-    .fail parser => let try r = parser.remainder in .item(r) .ok!,
+    .end try ! => .end .ok!,
+    .fail parser => let try r = parser.remainder in .item(r) .end .ok!,
     .match(line, _) parser => .item(line) parser.loop,
   }
 
