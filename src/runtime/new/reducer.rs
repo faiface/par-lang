@@ -1,23 +1,27 @@
-use crate::runtime::new::runtime::{Runtime, Value, External, NonlinearUdata, Global, PackagePtr};
-use std::sync::Arc;
-use crate::TokioSpawn;
-use tokio::sync::oneshot;
-use futures::task::{Spawn, FutureObj, SpawnExt};
-use tokio::sync::mpsc;
 use super::readback::Handle;
+use crate::runtime::new::runtime::{
+    ExternalFn, Global, Linear, Node, PackagePtr, Runtime, UserData,
+};
+use crate::TokioSpawn;
+use futures::task::{FutureObj, Spawn, SpawnExt};
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 pub enum ReducerMessage {
-    Redex(Value, Value),
+    Redex(Node, Node),
     Spawn(FutureObj<'static, ()>),
-    Instantiate(PackagePtr, oneshot::Sender<(Value, Value)>),
+    Instantiate(PackagePtr, oneshot::Sender<(Node, Node)>),
 }
+
+#[derive(Clone)]
 pub struct NetHandle(pub mpsc::UnboundedSender<ReducerMessage>);
 
 pub struct Reducer {
     pub runtime: Runtime,
     spawner: Arc<dyn Spawn + Send + Sync>,
     inbox: mpsc::UnboundedReceiver<ReducerMessage>,
-    inbox_tx:  mpsc::UnboundedSender<ReducerMessage>,
+    inbox_tx: mpsc::UnboundedSender<ReducerMessage>,
 }
 
 impl Reducer {
@@ -37,10 +41,10 @@ impl Reducer {
         match msg {
             ReducerMessage::Redex(a, b) => {
                 self.runtime.redexes.push((a, b));
-            },
+            }
             ReducerMessage::Spawn(s) => {
                 self.spawner.spawn_obj(s);
-            },
+            }
             ReducerMessage::Instantiate(package, ret) => {
                 ret.send(self.runtime.instantiate(package)).unwrap();
             }
@@ -51,17 +55,20 @@ impl Reducer {
             loop {
                 if let Some((a, b)) = self.runtime.reduce() {
                     match (a, b) {
-                        (External::Request(a), b) => {
+                        (UserData::Request(a), b) => {
                             a.send(b).unwrap();
                         }
-                        (a, Value::External(External::Request(b))) => {
-                            b.send(Value::External(a));
+                        (a, Node::Linear(Linear::Request(b))) => {
+                            b.send(Node::Linear(a.into()));
                         }
-                        (External::NonlinearUdata(x), Value::Global(instance, Global::Fanout(out))) => {
+                        (UserData::Primitive(p), Node::Global(instance, Global::Fanout(out))) => {
                             for i in self.runtime.arena.get(out) {
-                                self.runtime.redexes.push((Value::External(External::NonlinearUdata(x.clone())), Value::Global(instance.clone(), i.clone())));
+                                self.runtime.redexes.push((
+                                    Node::Linear(UserData::Primitive(p.clone()).into()),
+                                    Node::Global(instance.clone(), i.clone()),
+                                ));
                             }
-                        },
+                        }
                         _ => todo!(),
                     }
                 } else if let Ok(msg) = self.inbox.try_recv() {

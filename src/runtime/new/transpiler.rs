@@ -3,17 +3,17 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::par::types::TypeDefs;
-use super::reducer::NetHandle;
 use super::readback::Handle;
+use super::reducer::NetHandle;
+use crate::par::types::TypeDefs;
 
 use crate::par::language::GlobalName;
 use crate::par::types::Type;
 use crate::runtime::new::arena::{Arena, Index};
+use crate::runtime::new::reducer::Reducer;
 use crate::runtime::new::runtime::{GlobalCont, GlobalValue, Package, PackagePtr};
 use crate::runtime::old::net::VarState;
 use crate::runtime::{new, old, TypedHandle};
-use crate::runtime::new::reducer::Reducer;
 use indexmap::IndexMap;
 use old::compiler::IcCompiled;
 
@@ -38,12 +38,11 @@ pub struct Transpiled {
 }
 
 impl Transpiled {
-    pub fn transpile(mut ic_compiled: IcCompiled, type_defs: TypeDefs,) -> Self {
+    pub fn transpile(mut ic_compiled: IcCompiled, type_defs: TypeDefs) -> Self {
         let mut this: NetTranspiler = Default::default();
         for i in ic_compiled.id_to_package.keys() {
             let slot = this.dest.alloc(OnceCell::new());
-            this.package_map
-                .insert(*i, slot);
+            this.package_map.insert(*i, slot);
         }
         for (id, mut body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
             this.transpile_package(id, body)
@@ -90,7 +89,9 @@ impl Transpiled {
     pub async fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
         let t = self.get_type_of(name)?;
         let package = self.get_with_name(name)?;
-        Some(Handle::instantiate(handle, package, t, self.type_defs.clone()).await)
+        Handle::instantiate(self.arena.clone(), handle, package)
+            .await
+            .ok()
     }
     pub fn inject_package(&self, name: &GlobalName) -> super::readback::Handle {
         todo!()
@@ -115,7 +116,6 @@ impl NetTranspiler {
     }
     fn transpile_package(&mut self, id: usize, mut body: Net) {
         // First, allocate the package
-        println!("{:?}", body.redexes);
         assert!(body.redexes.is_empty());
         assert!(body.ports.len() == 1);
         let root = body.ports.pop_back().unwrap();
@@ -168,20 +168,27 @@ impl NetTranspiler {
             )),
             Tree::Choice(tree, hash_map, _) => {
                 let tree = self.transpile_tree_and_alloc(*tree);
-                Global::Destruct(
-                    GlobalCont::Choice(tree, Arc::new(hash_map.iter().map(|(k, v)| (k.clone(), self.package_map.get(v).unwrap().clone())).collect()))
-                )
+                Global::Destruct(GlobalCont::Choice(
+                    tree,
+                    Arc::new(
+                        hash_map
+                            .iter()
+                            .map(|(k, v)| (k.clone(), self.package_map.get(v).unwrap().clone()))
+                            .collect(),
+                    ),
+                ))
             }
             Tree::Box_(tree, _) => todo!(),
-            Tree::Package(id) => {
-                Global::GlobalPackage(self.map_package(id), self.dest.alloc(Global::Value(GlobalValue::Break)))
-            },
+            Tree::Package(id) => Global::GlobalPackage(
+                self.map_package(id),
+                self.dest.alloc(Global::Value(GlobalValue::Break)),
+            ),
             Tree::SignalRequest(sender) => todo!(),
-            Tree::Primitive(primitive) => todo!(),
+            Tree::Primitive(primitive) => Global::Value(GlobalValue::Primitive(primitive)),
             Tree::IntRequest(sender) => todo!(),
             Tree::StringRequest(sender) => todo!(),
             Tree::BytesRequest(sender) => todo!(),
-            Tree::External(e) => Global::External(e),
+            Tree::External(e) => Global::Value(GlobalValue::External(e)),
             Tree::ExternalBox(_) => todo!(),
         }
     }

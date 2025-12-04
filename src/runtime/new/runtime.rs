@@ -19,27 +19,19 @@ use tokio::sync::oneshot;
 
 #[derive(Clone, Debug)]
 pub struct Instance {
-    vars: Arc<Mutex<Box<[Option<Value>]>>>,
+    vars: Arc<Mutex<Box<[Option<Node>]>>>,
 }
-
-#[derive(Clone, Debug)]
-pub enum NonlinearUdata {
-    Primitive(Primitive),
-    Other(Arc<dyn AnyDebug>),
-}
-
-#[derive(Clone, Debug)]
-pub enum LinearUdata {}
-
-pub type ExternalFn = fn(crate::runtime::old::readback::Handle) -> std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
 
 #[derive(Debug)]
-pub enum External {
-    Request(oneshot::Sender<Value>),
-    LinearUdata(LinearUdata),
-    NonlinearUdata(NonlinearUdata),
-    Function(ExternalFn),
+pub enum UserData {
+    Primitive(Primitive),
+    External(ExternalFn),
+    Request(oneshot::Sender<Node>),
 }
+
+pub type ExternalFn = fn(
+    crate::runtime::old::readback::Handle,
+) -> std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
 
 #[derive(Clone, Debug)]
 pub struct Package {
@@ -56,15 +48,13 @@ pub enum Global {
     Destruct(GlobalCont),
     Value(GlobalValue),
     Fanout(Index<[Global]>),
-    External(ExternalFn),
 }
 
 trait AnyDebug: Any + Debug {}
 
 #[derive(Debug)]
-pub enum Value {
-    External(External),
-    ShareHole(Arc<Mutex<SharedHole>>),
+pub enum Node {
+    Linear(Linear),
     Shared(Shared),
     Global(Instance, Global),
 }
@@ -75,19 +65,50 @@ pub enum Shared {
     Sync(Arc<SyncShared>),
 }
 
+// A "Value" parametrized by a "pointer type"
 #[derive(Clone, Debug)]
-pub enum SyncShared {
+pub enum Value<P> {
     Break,
-    Pair(Shared, Shared),
-    Either(Str, Shared),
-    Package(PackagePtr, Shared),
+    Pair(P, P),
+    Either(Str, P),
+    External(ExternalFn),
+    Primitive(Primitive),
+}
+
+impl<P> Value<P> {
+    fn map_leaves<Q>(self, mut f: impl FnMut(P) -> Option<Q>) -> Option<Value<Q>> {
+        Some(match self {
+            Value::Break => Value::Break,
+            Value::Pair(a, b) => Value::Pair(f(a)?, f(b)?),
+            Value::Either(s, v) => Value::Either(s, f(v)?),
+            Value::External(e) => Value::External(e),
+            Value::Primitive(primitive) => Value::Primitive(primitive),
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
-pub enum GlobalValue {
-    Break,
-    Pair(GlobalPtr, GlobalPtr),
-    Either(Str, GlobalPtr),
+pub enum SyncShared {
+    Package(PackagePtr, Shared),
+    Value(Value<Shared>),
+}
+
+pub type GlobalValue = Value<GlobalPtr>;
+#[derive(Debug)]
+pub enum Linear {
+    Value(Value<Box<Node>>),
+    Request(oneshot::Sender<Node>),
+    ShareHole(Arc<Mutex<SharedHole>>),
+}
+
+impl From<UserData> for Linear {
+    fn from(this: UserData) -> Linear {
+        match this {
+            UserData::Primitive(p) => Linear::Value(Value::Primitive(p)),
+            UserData::External(p) => Linear::Value(Value::External(p)),
+            UserData::Request(p) => Linear::Request(p),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -100,11 +121,11 @@ pub enum GlobalCont {
 #[derive(Debug)]
 enum SharedHole {
     Filled(SyncShared),
-    Unfilled(Vec<Value>),
+    Unfilled(Vec<Node>),
 }
 pub struct Runtime {
     pub arena: Arc<Arena>,
-    pub redexes: Vec<(Value, Value)>,
+    pub redexes: Vec<(Node, Node)>,
 }
 
 impl From<Arc<Arena>> for Runtime {
@@ -123,7 +144,7 @@ macro_rules! sym {
 }
 
 impl Runtime {
-    fn set_var(&mut self, instance: Instance, index: usize, value: Value) {
+    fn set_var(&mut self, instance: Instance, index: usize, value: Node) {
         let mut lock = instance.vars.lock().unwrap();
         let slot = lock.get_mut(index).unwrap();
         match slot {
@@ -135,10 +156,10 @@ impl Runtime {
             }
         }
     }
-    pub fn link(&mut self, a: Value, b: Value) {
+    pub fn link(&mut self, a: Node, b: Node) {
         self.redexes.push((a, b));
     }
-    pub fn instantiate(&mut self, package: PackagePtr) -> (Value, Value) {
+    pub fn instantiate(&mut self, package: PackagePtr) -> (Node, Node) {
         let package = self.arena.get(package);
         let instance = Instance {
             vars: Arc::new(Mutex::new(
@@ -150,42 +171,33 @@ impl Runtime {
         };
         let package = package.get().unwrap();
         (
-            Value::Global(instance.clone(), package.root.clone()),
-            Value::Global(instance.clone(), package.captures.clone()),
+            Node::Global(instance.clone(), package.root.clone()),
+            Node::Global(instance.clone(), package.captures.clone()),
         )
     }
-    fn share(&mut self, a: Value) -> Option<Shared> {
+    fn share(&mut self, a: Node) -> Option<Shared> {
         match a {
-            Value::External(any) => None,
-            Value::ShareHole(mutex) => None,
-            Value::Shared(shared) => Some(shared),
-            Value::Global(instance, Global::Destruct(..)) => None,
-            Value::Global(instance, Global::LinearPackage(..)) => None,
-            Value::Global(instance, Global::Fanout(..)) => None,
-            Value::Global(instance, Global::External(..)) => None,
-            Value::Global(instance, Global::GlobalPackage(package, captures)) => {
-                let captures = Value::Global(instance, self.arena.get(captures).clone());
+            Node::Linear(any) => None,
+            Node::Shared(shared) => Some(shared),
+            Node::Global(instance, Global::Destruct(..)) => None,
+            Node::Global(instance, Global::LinearPackage(..)) => None,
+            Node::Global(instance, Global::Fanout(..)) => None,
+            Node::Global(instance, Global::GlobalPackage(package, captures)) => {
+                let captures = Node::Global(instance, self.arena.get(captures).clone());
                 let captures = self.share(captures)?;
                 Some(Shared::Sync(Arc::new(SyncShared::Package(
                     package, captures,
                 ))))
             }
-            Value::Global(instance, Global::Value(value)) => Some(
-                (Shared::Sync(Arc::new(match value {
-                    GlobalValue::Break => (SyncShared::Break),
-                    GlobalValue::Pair(a, b) => SyncShared::Pair(
-                        self.share(Value::Global(instance.clone(), self.arena.get(a).clone()))?,
-                        self.share(Value::Global(instance, self.arena.get(b).clone()))?,
-                    ),
-                    GlobalValue::Either(name, a) => {
-                        (SyncShared::Either(
-                            name,
-                            self.share(Value::Global(instance, self.arena.get(a).clone()))?,
-                        ))
-                    }
-                }))),
-            ),
-            Value::Global(instance, Global::Variable(id)) => {
+            Node::Global(instance, Global::Value(value)) => Some(Shared::Sync(Arc::new(
+                SyncShared::Value(value.map_leaves(|p| {
+                    self.share(Node::Global(instance.clone(), self.arena.get(p).clone()))
+                })?),
+            ))),
+            Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
+                value.map_leaves(|p| self.share(*p))?,
+            )))),
+            Node::Global(instance, Global::Variable(id)) => {
                 let mut lock = instance.vars.lock().unwrap();
                 let slot = &mut lock[id];
                 if let Some(slot) = slot.take() {
@@ -193,14 +205,14 @@ impl Runtime {
                     self.share(slot)
                 } else {
                     let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
-                    let hole = Value::ShareHole(state.clone());
+                    let hole = Node::Linear(Linear::ShareHole(state.clone()));
                     slot.replace(hole);
                     Some(Shared::Async(state))
                 }
             }
         }
     }
-    pub fn reduce(&mut self) -> Option<(External, Value)> {
+    pub fn reduce(&mut self) -> Option<(UserData, Node)> {
         while let Some((a, b)) = self.redexes.pop() {
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
@@ -208,50 +220,51 @@ impl Runtime {
         }
         None
     }
-    fn link_with_hole(&mut self, hole: &mut SharedHole, value: Value) {
+    fn link_with_hole(&mut self, hole: &mut SharedHole, value: Node) {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
                 self.link(
-                    Value::Shared(Shared::Sync(Arc::new(sync_shared_value.clone()))),
+                    Node::Shared(Shared::Sync(Arc::new(sync_shared_value.clone()))),
                     value,
                 );
             }
             SharedHole::Unfilled(values) => values.push(value),
         }
     }
-    fn interact(&mut self, a: Value, b: Value) -> Option<(External, Value)> {
+    fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         match (a, b) {
-            sym!(Value::Global(instance, Global::Variable(index)), value) => {
+            sym!(Node::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
             }
-            sym!(Value::External(user), other) => {
-                return Some((user, other));
-            }
             sym!(
-                Value::Global(instance, Global::LinearPackage(package, captures_in)),
+                Node::Global(instance, Global::LinearPackage(package, captures_in)),
                 other
             ) => {
                 let (root, captures) = self.instantiate(package);
                 let captures_in = self.arena.get(captures_in).clone();
-                self.link(captures, Value::Global(instance, captures_in));
+                self.link(captures, Node::Global(instance, captures_in));
                 self.link(root, other);
             }
-            sym!(Value::Global(instance, Global::Fanout(destinations)), other) => {
+            sym!(Node::Linear(Linear::Request(request)), other) => {
+                return Some((UserData::Request(request), other));
+            }
+            sym!(Node::Global(instance, Global::Fanout(destinations)), other) => {
                 let other = self.share(other).unwrap();
                 let destinations = self.arena.get(destinations);
                 for dest in destinations {
                     self.redexes.push((
-                        Value::Global(instance.clone(), dest.clone()),
-                        Value::Shared(other.clone()),
+                        Node::Global(instance.clone(), dest.clone()),
+                        Node::Shared(other.clone()),
                     ));
                 }
             }
-            sym!(Value::ShareHole(state), other) => {
+            sym!(Node::Linear(Linear::ShareHole(state)), other) => {
                 let other = self.share(other).unwrap();
                 match other {
-                    Shared::Async(other) => {
-                        self.link_with_hole(&mut other.lock().unwrap(), Value::ShareHole(state))
-                    }
+                    Shared::Async(other) => self.link_with_hole(
+                        &mut other.lock().unwrap(),
+                        Node::Linear(Linear::ShareHole(state)),
+                    ),
                     Shared::Sync(value) => {
                         let mut lock = state.lock().unwrap();
                         let SharedHole::Unfilled(values) =
@@ -260,37 +273,37 @@ impl Runtime {
                             unreachable!()
                         };
                         for i in values {
-                            self.link(i, Value::Shared(Shared::Sync(value.clone())));
+                            self.link(i, Node::Shared(Shared::Sync(value.clone())));
                         }
                     }
                 }
             }
             sym!(
-                Value::Global(instance, Global::GlobalPackage(package, captures_in)),
+                Node::Global(instance, Global::GlobalPackage(package, captures_in)),
                 other
             ) => {
                 let (root, captures) = self.instantiate(package);
                 let captures_in = self.arena.get(captures_in).clone();
-                self.link(captures, Value::Global(instance, captures_in));
+                self.link(captures, Node::Global(instance, captures_in));
                 self.link(root, other);
             }
-            sym!(Value::Shared(Shared::Sync(x)), other)
+            sym!(Node::Shared(Shared::Sync(x)), other)
                 if matches!(&*x, SyncShared::Package(..)) =>
             {
                 let SyncShared::Package(package, captures_in) = &*x else {
                     unreachable!()
                 };
                 let (root, captures) = self.instantiate(package.clone());
-                self.link(captures, Value::Shared(captures_in.clone()));
+                self.link(captures, Node::Shared(captures_in.clone()));
                 self.link(root, other);
             }
-            sym!(Value::Shared(Shared::Async(state)), other) => {
+            sym!(Node::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
                 self.link_with_hole(&mut *lock, other);
             }
-            sym!(Value::Shared(_), Value::Global(_, Global::Value(_)))
-            | (Value::Shared(_), Value::Shared(_))
-            | (Value::Global(_, Global::Value(_)), Value::Global(_, Global::Value(_))) => {
+            sym!(Node::Shared(_), Node::Global(_, Global::Value(_)))
+            | (Node::Shared(_), Node::Shared(_))
+            | (Node::Global(_, Global::Value(_)), Node::Global(_, Global::Value(_))) => {
                 unimplemented!("Value-value!");
             }
             _ => todo!(),
