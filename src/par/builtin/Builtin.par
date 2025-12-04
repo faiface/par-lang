@@ -240,6 +240,37 @@ def List.Max = [type a] [list, cmp]
 		.ok(_) max => .ok max,
 	}
 
+dec List.Zip : [type a, b] [List<box a>, List<box b>] List<(box a) box b>
+def List.Zip = [type a, b] [list1, list2] chan yield {
+	list1.begin.case {
+		.end! => { yield.end! },
+		.item(v1) list1 => {
+			list2.case {
+				.end! => { yield.end! },
+				.item(v2) list2 => {
+					yield.item((v1) v2)
+					list1.loop
+				},
+			}
+		},
+	}
+}
+
+dec List.Unzip : [type a, b] [List<(a) b>] (List<a>) List<b>
+def List.Unzip = [type a, b] [list] do {
+	let list1 = List.Builder(type a)
+	let list2 = List.Builder(type b)
+
+	list.begin.case {
+		.end! => {},
+		.item((v1) v2) list => {
+			list1.add(v1)
+			list2.add(v2)
+			list.loop
+		},
+	}
+} in (list1.build) list2.build
+
 
 /// Ordering
 
