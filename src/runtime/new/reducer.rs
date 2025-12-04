@@ -40,12 +40,18 @@ impl Reducer {
     fn handle_message(&mut self, msg: ReducerMessage) {
         match msg {
             ReducerMessage::Redex(a, b) => {
+                println!(
+                    "Received redex {:?} ~ {:?}",
+                    a.variant_tree_name(),
+                    b.variant_tree_name()
+                );
                 self.runtime.redexes.push((a, b));
             }
             ReducerMessage::Spawn(s) => {
-                self.spawner.spawn_obj(s);
+                self.spawner.spawn_obj(s).unwrap();
             }
             ReducerMessage::Instantiate(package, ret) => {
+                use crate::runtime::new::runtime::Linker;
                 ret.send(self.runtime.instantiate(package)).unwrap();
             }
         }
@@ -56,10 +62,11 @@ impl Reducer {
                 if let Some((a, b)) = self.runtime.reduce() {
                     match (a, b) {
                         (UserData::Request(a), b) => {
+                            println!("Send request");
                             a.send(b).unwrap();
                         }
                         (a, Node::Linear(Linear::Request(b))) => {
-                            b.send(Node::Linear(a.into()));
+                            b.send(Node::Linear(a.into())).unwrap();
                         }
                         (UserData::Primitive(p), Node::Global(instance, Global::Fanout(out))) => {
                             for i in self.runtime.arena.get(out) {
@@ -68,6 +75,14 @@ impl Reducer {
                                     Node::Global(instance.clone(), i.clone()),
                                 ));
                             }
+                        }
+                        (UserData::External(f), other) => {
+                            let handle = Handle::from_node(
+                                self.runtime.arena.clone(),
+                                self.net_handle(),
+                                other,
+                            );
+                            self.spawner.spawn(f(handle)).unwrap();
                         }
                         _ => todo!(),
                     }
@@ -83,5 +98,6 @@ impl Reducer {
                 break;
             }
         }
+        println!("Finished mail loop");
     }
 }

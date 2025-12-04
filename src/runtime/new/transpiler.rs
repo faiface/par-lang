@@ -91,7 +91,7 @@ impl Transpiled {
     pub async fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
         let t = self.get_type_of(name)?;
         let package = self.get_with_name(name)?;
-        Handle::instantiate(self.arena.clone(), handle, package)
+        Handle::from_package(self.arena.clone(), handle, package)
             .await
             .ok()
     }
@@ -168,7 +168,7 @@ impl NetTranspiler {
                 arc_str.clone(),
                 self.transpile_tree_and_alloc(*tree),
             )),
-            Tree::Choice(tree, hash_map, _) => {
+            Tree::Choice(tree, hash_map, els) => {
                 let tree = self.transpile_tree_and_alloc(*tree);
                 Global::Destruct(GlobalCont::Choice(
                     tree,
@@ -178,6 +178,7 @@ impl NetTranspiler {
                             .map(|(k, v)| (k.clone(), self.package_map.get(v).unwrap().clone()))
                             .collect(),
                     ),
+                    els.map(|x| self.package_map.get(&x).unwrap().clone()),
                 ))
             }
             Tree::Box_(tree, _) => todo!(),

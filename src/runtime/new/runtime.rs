@@ -1,4 +1,5 @@
 use arcstr::ArcStr;
+use core::panic;
 use num_bigint::BigInt;
 use std::fmt::Debug;
 use std::sync::OnceLock;
@@ -16,9 +17,25 @@ pub type Str = ArcStr;
 
 use tokio::sync::oneshot;
 
+#[derive(Debug)]
+pub struct InstanceInner(Mutex<Box<[Option<Node>]>>);
 #[derive(Clone, Debug)]
 pub struct Instance {
-    vars: Arc<Mutex<Box<[Option<Node>]>>>,
+    vars: Arc<InstanceInner>,
+}
+
+impl Drop for InstanceInner {
+    fn drop(&mut self) {
+        for i in self.0.lock().unwrap().as_mut().iter() {
+            if !i.is_none() {
+                panic!(
+                    "Data was leaked in an Instance:
+                    {i:?}
+                "
+                )
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -28,9 +45,8 @@ pub enum UserData {
     Request(oneshot::Sender<Node>),
 }
 
-pub type ExternalFn = fn(
-    crate::runtime::new::readback::Handle,
-) -> std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
+pub type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
+pub type ExternalFn = fn(crate::runtime::new::readback::Handle) -> ExternalFnRet;
 
 #[derive(Clone, Debug)]
 pub struct Package {
@@ -114,7 +130,11 @@ impl From<UserData> for Linear {
 pub enum GlobalCont {
     Continue,
     Par(GlobalPtr, GlobalPtr),
-    Choice(GlobalPtr, Arc<HashMap<ArcStr, PackagePtr>>),
+    Choice(
+        GlobalPtr,
+        Arc<HashMap<ArcStr, PackagePtr>>,
+        Option<PackagePtr>,
+    ),
 }
 
 #[derive(Debug)]
@@ -125,6 +145,125 @@ enum SharedHole {
 pub struct Runtime {
     pub arena: Arc<Arena>,
     pub redexes: Vec<(Node, Node)>,
+}
+
+pub trait Linker {
+    fn link(&mut self, a: Node, b: Node);
+    fn arena(&self) -> Arc<Arena>;
+
+    fn destruct(&mut self, node: Node) -> Result<Value<Node>, Node> {
+        match node {
+            Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(*x)).unwrap()),
+            Node::Shared(Shared::Sync(shared)) => match &*shared {
+                SyncShared::Package(package, shared) => {
+                    let node = self
+                        .instantiate_with_captures(package.clone(), Node::Shared(shared.clone()));
+                    self.destruct(node)
+                }
+                SyncShared::Value(shared) => Ok(shared
+                    .clone()
+                    .map_leaves(|x| Some(Node::Shared(x)))
+                    .unwrap()),
+            },
+            Node::Global(instance, Global::Value(v)) => Ok(v
+                .map_leaves(|x| Some(Node::Global(instance.clone(), self.arena().get(x).clone())))
+                .unwrap()),
+            node => Err(node),
+        }
+    }
+
+    fn instantiate(&self, package: PackagePtr) -> (Node, Node) {
+        let arena = self.arena();
+        let package = arena.get(package);
+        let instance = Instance {
+            vars: Arc::new(InstanceInner(Mutex::new(
+                Vec::from_iter(
+                    std::iter::from_fn(|| Some(None)).take(package.get().unwrap().num_vars),
+                )
+                .into_boxed_slice(),
+            ))),
+        };
+        let package = package.get().unwrap();
+        (
+            Node::Global(instance.clone(), package.root.clone()),
+            Node::Global(instance.clone(), package.captures.clone()),
+        )
+    }
+    fn instantiate_with_captures(&mut self, package: PackagePtr, captures: Node) -> Node {
+        let (r, c) = Self::instantiate(&self, package);
+        self.link(c, captures);
+        r
+    }
+
+    fn enqueue_to_hole(&mut self, hole: &mut SharedHole, cont: Node) {
+        match hole {
+            SharedHole::Filled(sync_shared_value) => {
+                self.link(
+                    Node::Shared(Shared::Sync(Arc::new(sync_shared_value.clone()))),
+                    cont,
+                );
+            }
+            SharedHole::Unfilled(values) => values.push(cont),
+        }
+    }
+    fn fill_hole(&mut self, hole: Arc<Mutex<SharedHole>>, value: Node) {
+        let value = self.share(value).unwrap();
+        match value {
+            Shared::Async(value) => self.enqueue_to_hole(
+                &mut value.lock().unwrap(),
+                Node::Linear(Linear::ShareHole(hole)),
+            ),
+            Shared::Sync(value) => {
+                let mut lock = hole.lock().unwrap();
+                let SharedHole::Unfilled(continuations) =
+                    core::mem::replace(&mut *lock, SharedHole::Filled((*value).clone()))
+                else {
+                    unreachable!()
+                };
+                for i in continuations {
+                    self.link(i, Node::Shared(Shared::Sync(value.clone())));
+                }
+            }
+        }
+    }
+    fn share(&self, node: Node) -> Option<Shared> {
+        match node {
+            Node::Shared(shared) => Some(shared),
+            Node::Global(instance, Global::Destruct(..)) => None,
+            Node::Global(instance, Global::LinearPackage(..)) => None,
+            Node::Global(instance, Global::Fanout(..)) => None,
+            Node::Global(instance, Global::GlobalPackage(package, captures)) => {
+                let captures = Node::Global(instance, self.arena().get(captures).clone());
+                let captures = self.share(captures)?;
+                Some(Shared::Sync(Arc::new(SyncShared::Package(
+                    package, captures,
+                ))))
+            }
+            Node::Global(instance, Global::Value(value)) => Some(Shared::Sync(Arc::new(
+                SyncShared::Value(value.map_leaves(|p| {
+                    self.share(Node::Global(instance.clone(), self.arena().get(p).clone()))
+                })?),
+            ))),
+            Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
+                value.map_leaves(|p| self.share(*p))?,
+            )))),
+            Node::Linear(Linear::Request(..)) => None,
+            Node::Linear(Linear::ShareHole(..)) => None,
+            Node::Global(instance, Global::Variable(id)) => {
+                let mut lock = instance.vars.0.lock().unwrap();
+                let slot = &mut lock[id];
+                if let Some(slot) = slot.take() {
+                    drop(lock);
+                    Some(self.share(slot)?)
+                } else {
+                    let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
+                    let hole = Node::Linear(Linear::ShareHole(state.clone()));
+                    slot.replace(hole);
+                    Some(Shared::Async(state))
+                }
+            }
+        }
+    }
 }
 
 impl From<Arc<Arena>> for Runtime {
@@ -142,9 +281,18 @@ macro_rules! sym {
     };
 }
 
+impl Linker for Runtime {
+    fn link(&mut self, a: Node, b: Node) {
+        self.redexes.push((a, b));
+    }
+    fn arena(&self) -> Arc<Arena> {
+        self.arena.clone()
+    }
+}
+
 impl Runtime {
     fn set_var(&mut self, instance: Instance, index: usize, value: Node) {
-        let mut lock = instance.vars.lock().unwrap();
+        let mut lock = instance.vars.0.lock().unwrap();
         let slot = lock.get_mut(index).unwrap();
         match slot {
             Some(..) => {
@@ -152,62 +300,6 @@ impl Runtime {
             }
             None => {
                 *slot = Some(value);
-            }
-        }
-    }
-    pub fn link(&mut self, a: Node, b: Node) {
-        self.redexes.push((a, b));
-    }
-    pub fn instantiate(&mut self, package: PackagePtr) -> (Node, Node) {
-        let package = self.arena.get(package);
-        let instance = Instance {
-            vars: Arc::new(Mutex::new(
-                Vec::from_iter(
-                    std::iter::from_fn(|| Some(None)).take(package.get().unwrap().num_vars),
-                )
-                .into_boxed_slice(),
-            )),
-        };
-        let package = package.get().unwrap();
-        (
-            Node::Global(instance.clone(), package.root.clone()),
-            Node::Global(instance.clone(), package.captures.clone()),
-        )
-    }
-    fn share(&mut self, a: Node) -> Option<Shared> {
-        match a {
-            Node::Linear(any) => None,
-            Node::Shared(shared) => Some(shared),
-            Node::Global(instance, Global::Destruct(..)) => None,
-            Node::Global(instance, Global::LinearPackage(..)) => None,
-            Node::Global(instance, Global::Fanout(..)) => None,
-            Node::Global(instance, Global::GlobalPackage(package, captures)) => {
-                let captures = Node::Global(instance, self.arena.get(captures).clone());
-                let captures = self.share(captures)?;
-                Some(Shared::Sync(Arc::new(SyncShared::Package(
-                    package, captures,
-                ))))
-            }
-            Node::Global(instance, Global::Value(value)) => Some(Shared::Sync(Arc::new(
-                SyncShared::Value(value.map_leaves(|p| {
-                    self.share(Node::Global(instance.clone(), self.arena.get(p).clone()))
-                })?),
-            ))),
-            Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
-                value.map_leaves(|p| self.share(*p))?,
-            )))),
-            Node::Global(instance, Global::Variable(id)) => {
-                let mut lock = instance.vars.lock().unwrap();
-                let slot = &mut lock[id];
-                if let Some(slot) = slot.take() {
-                    drop(lock);
-                    self.share(slot)
-                } else {
-                    let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
-                    let hole = Node::Linear(Linear::ShareHole(state.clone()));
-                    slot.replace(hole);
-                    Some(Shared::Async(state))
-                }
             }
         }
     }
@@ -219,18 +311,12 @@ impl Runtime {
         }
         None
     }
-    fn link_with_hole(&mut self, hole: &mut SharedHole, value: Node) {
-        match hole {
-            SharedHole::Filled(sync_shared_value) => {
-                self.link(
-                    Node::Shared(Shared::Sync(Arc::new(sync_shared_value.clone()))),
-                    value,
-                );
-            }
-            SharedHole::Unfilled(values) => values.push(value),
-        }
-    }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
+        println!(
+            "Redex {:?} {:?} ",
+            a.variant_tree_name(),
+            b.variant_tree_name()
+        );
         match (a, b) {
             sym!(Node::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
@@ -239,10 +325,15 @@ impl Runtime {
                 Node::Global(instance, Global::LinearPackage(package, captures_in)),
                 other
             ) => {
-                let (root, captures) = self.instantiate(package);
-                let captures_in = self.arena.get(captures_in).clone();
-                self.link(captures, Node::Global(instance, captures_in));
+                let root = self.instantiate_with_captures(
+                    package,
+                    Node::Global(instance, self.arena.get(captures_in).clone()),
+                );
                 self.link(root, other);
+            }
+            sym!(Node::Shared(Shared::Async(state)), other) => {
+                let mut lock = state.lock().unwrap();
+                self.enqueue_to_hole(&mut *lock, other);
             }
             sym!(Node::Linear(Linear::Request(request)), other) => {
                 return Some((UserData::Request(request), other));
@@ -257,33 +348,15 @@ impl Runtime {
                     ));
                 }
             }
-            sym!(Node::Linear(Linear::ShareHole(state)), other) => {
-                let other = self.share(other).unwrap();
-                match other {
-                    Shared::Async(other) => self.link_with_hole(
-                        &mut other.lock().unwrap(),
-                        Node::Linear(Linear::ShareHole(state)),
-                    ),
-                    Shared::Sync(value) => {
-                        let mut lock = state.lock().unwrap();
-                        let SharedHole::Unfilled(values) =
-                            core::mem::replace(&mut *lock, SharedHole::Filled((*value).clone()))
-                        else {
-                            unreachable!()
-                        };
-                        for i in values {
-                            self.link(i, Node::Shared(Shared::Sync(value.clone())));
-                        }
-                    }
-                }
-            }
+            sym!(Node::Linear(Linear::ShareHole(hole)), other) => self.fill_hole(hole, other),
             sym!(
                 Node::Global(instance, Global::GlobalPackage(package, captures_in)),
                 other
             ) => {
-                let (root, captures) = self.instantiate(package);
-                let captures_in = self.arena.get(captures_in).clone();
-                self.link(captures, Node::Global(instance, captures_in));
+                let root = self.instantiate_with_captures(
+                    package,
+                    Node::Global(instance, self.arena.get(captures_in).clone()),
+                );
                 self.link(root, other);
             }
             sym!(Node::Shared(Shared::Sync(x)), other)
@@ -292,21 +365,151 @@ impl Runtime {
                 let SyncShared::Package(package, captures_in) = &*x else {
                     unreachable!()
                 };
-                let (root, captures) = self.instantiate(package.clone());
-                self.link(captures, Node::Shared(captures_in.clone()));
+                let root = self
+                    .instantiate_with_captures(package.clone(), Node::Shared(captures_in.clone()));
                 self.link(root, other);
             }
-            sym!(Node::Shared(Shared::Async(state)), other) => {
-                let mut lock = state.lock().unwrap();
-                self.link_with_hole(&mut *lock, other);
+            sym!(
+                Node::Linear(Linear::Value(Value::External(ext)))
+                    | Node::Global(_, Global::Value(Value::External(ext))),
+                other
+            ) => {
+                return Some((UserData::External(ext), other));
             }
-            sym!(Node::Shared(_), Node::Global(_, Global::Value(_)))
-            | (Node::Shared(_), Node::Shared(_))
-            | (Node::Global(_, Global::Value(_)), Node::Global(_, Global::Value(_))) => {
-                unimplemented!("Value-value!");
+            sym!(Node::Global(instance, Global::Destruct(destructor)), node) => {
+                match (
+                    self.destruct(node).expect("Continuation-continuation!"),
+                    destructor,
+                ) {
+                    (Value::Break, GlobalCont::Continue) => (),
+                    (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
+                        self.link(
+                            a0,
+                            Node::Global(instance.clone(), self.arena.get(b0).clone()),
+                        );
+                        self.link(a1, Node::Global(instance, self.arena.get(b1).clone()));
+                    }
+                    (
+                        Value::Either(signal, payload),
+                        GlobalCont::Choice(context, options, default),
+                    ) => {
+                        if let Some(package) = options.get(&signal) {
+                            let root = self.instantiate_with_captures(
+                                package.clone(),
+                                Node::Global(instance, self.arena.get(context).clone()),
+                            );
+                            self.link(root, payload);
+                        } else {
+                            let root = self.instantiate_with_captures(
+                                default.unwrap().clone(),
+                                Node::Global(instance, self.arena.get(context).clone()),
+                            );
+                            // TODO: Optimize this; we're reconstructing the `Either` branch.
+                            // This could make us lose sharing.
+                            self.link(
+                                Node::Linear(Linear::Value(Value::Either(
+                                    signal,
+                                    Box::new(payload),
+                                ))),
+                                root,
+                            );
+                        }
+                    }
+                    _ => todo!(),
+                }
             }
-            _ => todo!(),
+            (a, b) => {
+                panic!(
+                    "Unimplemented reduction: {:?} {:?}",
+                    a.variant_tree_name(),
+                    b.variant_tree_name()
+                )
+            }
         };
         None
+    }
+}
+
+impl Node {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            Node::Linear(l) => format!("Linear({})", l.variant_tree_name()),
+            Node::Shared(s) => format!("Shared({})", s.variant_tree_name()),
+            Node::Global(_, g) => format!("Global({})", g.variant_tree_name()),
+        }
+    }
+}
+
+impl Linear {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            Linear::Value(v) => format!("Value({})", v.variant_tree_name()),
+            Linear::Request(_) => "Request".to_owned(),
+            Linear::ShareHole(_) => "ShareHole".to_owned(),
+        }
+    }
+}
+
+impl Shared {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            Shared::Async(_) => "Async".to_owned(),
+            Shared::Sync(sync) => format!("Sync({})", sync.variant_tree_name()),
+        }
+    }
+}
+
+impl SyncShared {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            SyncShared::Package(_, inner) => format!("Package({})", inner.variant_tree_name()),
+            SyncShared::Value(v) => format!("Value({})", v.variant_tree_name()),
+        }
+    }
+}
+
+impl Global {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            Global::Variable(_) => "Variable".into(),
+
+            Global::LinearPackage(_, g) => "LinearPackage".into(),
+
+            Global::GlobalPackage(_, g) => "GlobalPackage".into(),
+
+            Global::Destruct(c) => format!("Destruct({})", c.variant_tree_name()),
+
+            Global::Value(v) => format!("Value({})", v.variant_tree_name()),
+
+            Global::Fanout(idx) => "Fanout".into(),
+        }
+    }
+}
+
+impl GlobalCont {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            GlobalCont::Continue => "Continue".into(),
+
+            GlobalCont::Par(a, b) => "Par".into(),
+
+            GlobalCont::Choice(ptr, ..) => "Choice".into(),
+        }
+    }
+}
+
+impl<P> Value<P> {
+    pub fn variant_tree_name(&self) -> String {
+        match self {
+            Value::Break => "Break".into(),
+
+            Value::Pair(a, b) => "Pair".into(),
+
+            Value::Either(_, p) => "Either".into(),
+
+            Value::External(_) => "External".into(),
+
+            Value::Primitive(_) => "Primitive".into(),
+        }
     }
 }

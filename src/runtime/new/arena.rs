@@ -17,7 +17,7 @@ pub trait Indexable {
 impl Indexable for [Global] {
     type Store = (usize, usize);
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
-        &store.nodes[index.0 .0..index.0 .1]
+        &store.nodes[index.0 .0..index.0 .0 + index.0 .1]
     }
     fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
         let start = store.nodes.len();
@@ -28,7 +28,7 @@ impl Indexable for [Global] {
 impl Indexable for str {
     type Store = (usize, usize);
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
-        &store.strings[index.0 .0..index.0 .1]
+        &store.strings[index.0 .0..index.0 .0 + index.0 .1]
     }
     fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
         let start = store.strings.len();

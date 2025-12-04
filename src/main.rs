@@ -2,13 +2,15 @@ use crate::par::build_result::BuildResult;
 use crate::par::types::Type;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
-use crate::runtime::{TypedHandle, TypedReadback};
+use crate::runtime::new::runtime::ExternalFnRet;
+use crate::runtime::{Handle, TypedHandle, TypedReadback};
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use futures::task::SpawnExt;
+use futures::TryFutureExt;
 use std::fs::File;
 #[cfg(feature = "playground")]
 use std::io::Write;
@@ -199,10 +201,17 @@ fn run_definition(file: PathBuf, definition: String) {
                 reducer.run().await;
             })
             .unwrap();
-
-        let root_handle = rt_compiled.instantiate(net_handle, name).await.unwrap();
-        root_handle.continue_().await;
-        reducer_future.await;
+        fn identity(mut handle: Handle) -> ExternalFnRet {
+            Box::pin(async {
+                let arg = handle.receive().await;
+                handle.link_with(arg).await;
+            })
+        }
+        let mut root = rt_compiled.instantiate(net_handle, name).await.unwrap();
+        let arg = root.send().await.unwrap();
+        arg.provide_external(identity).await;
+        root.continue_().await.unwrap();
+        println!("Done :)");
     });
 }
 
