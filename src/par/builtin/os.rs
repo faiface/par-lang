@@ -313,7 +313,7 @@ fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
 
 #[cfg(unix)]
 fn bytes_to_os(bytes: &[u8]) -> Result<OsString, String> {
-    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::ffi::OsStringExt;
     // Unix: bytes are already in the correct format (UTF-8 or arbitrary bytes)
     Ok(OsString::from_vec(bytes.to_vec()))
 }
