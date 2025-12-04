@@ -1,0 +1,1 @@
+def Main: [type a] [type b] [(a) b] (b) a = [type a] [type b] [(a) b] (b) a

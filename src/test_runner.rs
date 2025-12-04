@@ -227,20 +227,10 @@ async fn run_test_with_test_type(
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 
-    todo!()/*
-    let mut net: crate::runtime::old::Net = todo!();//rt_compiled.create_net();
-    let child_net = rt_compiled
-        .get_with_name(name)
-        .ok_or_else(|| format!("Failed to get net for test '{}'", name.primary))?;
-
-    let tree = net.inject_net(child_net).with_type(ty.clone());
-
-    let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
-
-    let type_defs = program.type_defs.clone();
+    let mut reducer = rt_compiled.new_reducer();
+    let root_handle = rt_compiled.instantiate(reducer.net_handle(), name).await;
     let spawner = Arc::new(TokioSpawn::new());
-    let sender_clone = sender.clone();
-
+    /*
     // Spawn the test function execution
     let test_future = spawner
         .spawn_with_handle(async move {
@@ -284,7 +274,8 @@ async fn run_test_with_test_type(
             }
         }
         _ => Err("Test did not return expected type (!Break)".to_string()),
-    }*/
+    } */
+    todo!()
 }
 
 const PASSED: &str = "✓";

@@ -190,41 +190,19 @@ fn run_definition(file: PathBuf, definition: String) {
 
         let ty = rt_compiled.get_type_of(name).unwrap();
 
-        let Type::Break(_) = ty else {
-            println!(
-                "{}: {}",
-                "Definition does not have the unit (!) type".bright_red(),
-                definition
-            );
-            return;
-        };
-
-        todo!()/*let mut net = rt_compiled.create_net();
-        let child_net = rt_compiled.get_with_name(name).unwrap();
-        let tree = net.inject_net(child_net).with_type(ty.clone());
-
-        let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
+        let mut reducer = rt_compiled.new_reducer();
 
         let spawner = Arc::new(TokioSpawn::new());
-        let readback_future = spawner
+        let net_handle = reducer.net_handle();
+        let reducer_future = spawner
             .spawn_with_handle(async move {
-                let handle =
-                    TypedHandle::from_wrapper(checked.type_defs.clone(), net_wrapper, tree);
-                loop {
-                    match handle.readback().await {
-                        TypedReadback::Break => {
-                            break;
-                        }
-                        _ => {
-                            panic!("Unexpected readback from a unit definition.");
-                        }
-                    }
-                }
+                reducer.run().await;
             })
             .unwrap();
 
-        readback_future.await;
-        reducer_future.await;*/
+        let root_handle = rt_compiled.instantiate(net_handle, name).await.unwrap();
+        root_handle.continue_().await;
+        reducer_future.await;
     });
 }
 

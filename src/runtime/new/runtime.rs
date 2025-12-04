@@ -1,8 +1,7 @@
 use arcstr::ArcStr;
-use futures::io::FillBuf;
 use num_bigint::BigInt;
-use std::cell::OnceCell;
 use std::fmt::Debug;
+use std::sync::OnceLock;
 
 use crate::par::primitive::Primitive;
 use std::collections::HashMap;
@@ -11,7 +10,7 @@ use super::arena::*;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
-pub type PackagePtr = Index<OnceCell<Package>>;
+pub type PackagePtr = Index<OnceLock<Package>>;
 pub type GlobalPtr = Index<Global>;
 pub type Str = ArcStr;
 
@@ -30,7 +29,7 @@ pub enum UserData {
 }
 
 pub type ExternalFn = fn(
-    crate::runtime::old::readback::Handle,
+    crate::runtime::new::readback::Handle,
 ) -> std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
 
 #[derive(Clone, Debug)]

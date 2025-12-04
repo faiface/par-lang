@@ -7,6 +7,8 @@ use super::readback::Handle;
 use super::reducer::NetHandle;
 use crate::par::types::TypeDefs;
 
+use std::sync::OnceLock;
+
 use crate::par::language::GlobalName;
 use crate::par::types::Type;
 use crate::runtime::new::arena::{Arena, Index};
@@ -41,7 +43,7 @@ impl Transpiled {
     pub fn transpile(mut ic_compiled: IcCompiled, type_defs: TypeDefs) -> Self {
         let mut this: NetTranspiler = Default::default();
         for i in ic_compiled.id_to_package.keys() {
-            let slot = this.dest.alloc(OnceCell::new());
+            let slot = this.dest.alloc(OnceLock::new());
             this.package_map.insert(*i, slot);
         }
         for (id, mut body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {

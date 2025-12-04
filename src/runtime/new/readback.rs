@@ -4,6 +4,7 @@ use super::runtime::{
 };
 use crate::par::primitive::Primitive;
 use crate::runtime::new::arena::Arena;
+use crate::runtime::new::runtime::GlobalValue;
 use arcstr::ArcStr;
 use std::sync::Arc;
 
@@ -106,11 +107,26 @@ impl Handle {
         todo!()
     }
 
-    pub async fn break_(self) {
-        todo!()
+    pub async fn break_(mut self) -> Result<()> {
+        match core::mem::take(&mut self.node).unwrap() {
+            Node::Global(_, Global::Destruct(GlobalCont::Continue)) => Ok(()),
+            node => {
+                let other = Node::Linear(Linear::Value(Value::Break));
+                self.net
+                    .0
+                    .send(ReducerMessage::Redex(node, other))
+                    .map_err(|_| Error::Panicked)?;
+                Ok(())
+            }
+        }
     }
 
-    pub async fn continue_(self) {
-        todo!()
+    pub async fn continue_(mut self) -> Result<()> {
+        match core::mem::take(&mut self.node).unwrap() {
+            Node::Global(_, Global::Value(GlobalValue::Break)) => Ok(()),
+            node => {
+                todo!("{:?}", node)
+            }
+        }
     }
 }

@@ -58,7 +58,7 @@ pub enum Tree {
     StringRequest(oneshot::Sender<ParString>),
     BytesRequest(oneshot::Sender<Bytes>),
 
-    External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
+    External(fn(crate::runtime::new::readback::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
     ExternalBox(Arc<dyn Send + Sync + Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>>),
 }
 
@@ -478,7 +478,7 @@ impl Net {
                 self.rewrites.resp += 1;
             }
             (External(f), a) | (a, External(f)) => match &self.reducer {
-                Some(reducer) => reducer.spawn_external(f, a),
+                Some(reducer) => todo!(), //reducer.spawn_external(*f, a),
                 None => self.waiting_for_reducer.push((External(f), a)),
             },
             (ExternalBox(_), Era) | (Era, ExternalBox(_)) => {

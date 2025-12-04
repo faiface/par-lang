@@ -1,5 +1,5 @@
-use std::cell::OnceCell;
 use std::fmt::Debug;
+use std::sync::OnceLock;
 
 use super::runtime::{Global, Package};
 
@@ -47,7 +47,7 @@ impl Indexable for Global {
         Index(start)
     }
 }
-impl Indexable for OnceCell<Package> {
+impl Indexable for OnceLock<Package> {
     type Store = usize;
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
         &store.packages[index.0]
@@ -86,7 +86,7 @@ impl<T: Indexable + ?Sized> Index<T> {
 pub struct Arena {
     nodes: Vec<Global>,
     strings: String,
-    packages: Vec<OnceCell<Package>>,
+    packages: Vec<OnceLock<Package>>,
 }
 
 impl Arena {
