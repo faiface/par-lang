@@ -286,6 +286,22 @@ def List.All = [type a] [list, f]
 dec List.Any : [type a] [List<box a>, box [a] Bool] Bool
 def List.Any = [type a] [list, f] List.All(type a)(list, box [v] Bool.Not(f(v)))
 
+dec List.Dedup : [type a] [List<box a>, box [a, a] Bool] List<box a>
+def List.Dedup = [type a] [list, eq]
+	list.case {
+		.end! => .end!,
+		.item(prev) list => .item(prev)
+			list.begin.case {
+				.end! => .end!,
+				.item(v) list => eq(prev, v).case {
+					.true! => list.loop,
+					.false! =>
+						let prev = v in
+						.item(v) list.loop,
+				}
+			}
+	}
+
 
 /// Ordering
 
