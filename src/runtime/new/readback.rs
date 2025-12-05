@@ -130,7 +130,7 @@ impl Handle {
 
     pub async fn send(&mut self) -> Result<Self> {
         match self.node.take().await {
-            /*
+            /* TODO fast path:
             Node::Global(instance, Global::Destruct(GlobalCont::Par(left, right))) => {
                 let left = Node::Global(instance.clone(), left.get(&self.arena).clone());
                 let right = Node::Global(instance, right.get(&self.arena).clone());
@@ -163,7 +163,7 @@ impl Handle {
 
     pub async fn signal(&mut self, chosen: ArcStr) -> Result<()> {
         match self.node.take().await {
-            // TODO fast destructuring.
+            // TODO fast path
             node => {
                 let (payload, payload_h) = HandleNode::linked_pair();
                 let other = Node::Linear(Linear::Value(Value::Either(chosen, Box::new(payload))));
