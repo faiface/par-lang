@@ -302,6 +302,26 @@ def List.Dedup = [type a] [list, eq]
 			}
 	}
 
+dec List.Take : [type a] [List<box a>, Nat] List<box a>
+def List.Take = [type a] [list, n]
+	Nat.Repeat(n).begin.case {
+		.end! => .end!,
+		.step next => list.case {
+			.end! => .end!
+			.item(v) list => .item(v) next.loop,
+		}
+	}
+
+dec List.Drop : [type a] [List<box a>, Nat] List<box a>
+def List.Drop = [type a] [list, n]
+	Nat.Repeat(n).begin.case {
+		.end! => list,
+		.step next => list.case {
+			.end! => .end!,
+			.item(_) list => next.loop,
+		},
+	}
+
 
 /// Ordering
 
