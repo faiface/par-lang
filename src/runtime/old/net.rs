@@ -59,7 +59,15 @@ pub enum Tree {
     BytesRequest(oneshot::Sender<Bytes>),
 
     External(fn(crate::runtime::new::readback::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
-    ExternalBox(Arc<dyn Send + Sync + Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>>),
+    ExternalBox(
+        Arc<
+            dyn Send
+                + Sync
+                + Fn(
+                    crate::runtime::new::readback::Handle,
+                ) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+        >,
+    ),
 }
 
 impl Tree {
@@ -478,7 +486,7 @@ impl Net {
                 self.rewrites.resp += 1;
             }
             (External(f), a) | (a, External(f)) => match &self.reducer {
-                Some(reducer) => todo!(), //reducer.spawn_external(*f, a),
+                Some(_reducer) => todo!(), //reducer.spawn_external(*f, a),
                 None => self.waiting_for_reducer.push((External(f), a)),
             },
             (ExternalBox(_), Era) | (Era, ExternalBox(_)) => {
@@ -490,7 +498,7 @@ impl Net {
                 self.rewrites.commute += 1;
             }
             (ExternalBox(f), a) | (a, ExternalBox(f)) => match &self.reducer {
-                Some(reducer) => reducer.spawn_external(f.as_ref(), a),
+                Some(reducer) => todo!(),
                 None => self.waiting_for_reducer.push((ExternalBox(f), a)),
             },
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),

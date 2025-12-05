@@ -195,10 +195,7 @@ impl Handle {
         Fut: 'static + Send + Future<Output = ()>,
     {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(
-            Tree::ExternalBox(Arc::new(move |handle| Box::pin(f(handle)))),
-            self.tree.unwrap(),
-        );
+        locked.link(todo!(), self.tree.unwrap());
         locked.notify_reducer();
     }
 

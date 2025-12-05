@@ -1,6 +1,5 @@
 use arcstr::ArcStr;
 use core::panic;
-use num_bigint::BigInt;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
@@ -41,12 +40,24 @@ impl Drop for InstanceInner {
 #[derive(Debug)]
 pub enum UserData {
     Primitive(Primitive),
-    External(ExternalFn),
+    ExternalFn(ExternalFn),
+    ExternalArc(ExternalArc),
     Request(oneshot::Sender<Node>),
 }
 
 pub type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
 pub type ExternalFn = fn(crate::runtime::new::readback::Handle) -> ExternalFnRet;
+
+#[derive(Clone)]
+pub struct ExternalArc(
+    pub Arc<dyn Send + Sync + Fn(crate::runtime::new::readback::Handle) -> ExternalFnRet>,
+);
+
+impl Debug for ExternalArc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExternalArc").finish_non_exhaustive()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Package {
@@ -86,7 +97,8 @@ pub enum Value<P> {
     Break,
     Pair(P, P),
     Either(Str, P),
-    External(ExternalFn),
+    ExternalFn(ExternalFn),
+    ExternalArc(ExternalArc),
     Primitive(Primitive),
 }
 
@@ -96,7 +108,8 @@ impl<P> Value<P> {
             Value::Break => Value::Break,
             Value::Pair(a, b) => Value::Pair(f(a)?, f(b)?),
             Value::Either(s, v) => Value::Either(s, f(v)?),
-            Value::External(e) => Value::External(e),
+            Value::ExternalFn(e) => Value::ExternalFn(e),
+            Value::ExternalArc(e) => Value::ExternalArc(e),
             Value::Primitive(primitive) => Value::Primitive(primitive),
         })
     }
@@ -120,7 +133,8 @@ impl From<UserData> for Linear {
     fn from(this: UserData) -> Linear {
         match this {
             UserData::Primitive(p) => Linear::Value(Value::Primitive(p)),
-            UserData::External(p) => Linear::Value(Value::External(p)),
+            UserData::ExternalFn(p) => Linear::Value(Value::ExternalFn(p)),
+            UserData::ExternalArc(p) => Linear::Value(Value::ExternalArc(p)),
             UserData::Request(p) => Linear::Request(p),
         }
     }
@@ -229,9 +243,9 @@ pub trait Linker {
     fn share(&self, node: Node) -> Option<Shared> {
         match node {
             Node::Shared(shared) => Some(shared),
-            Node::Global(instance, Global::Destruct(..)) => None,
-            Node::Global(instance, Global::LinearPackage(..)) => None,
-            Node::Global(instance, Global::Fanout(..)) => None,
+            Node::Global(_instance, Global::Destruct(..)) => None,
+            Node::Global(_instance, Global::LinearPackage(..)) => None,
+            Node::Global(_instance, Global::Fanout(..)) => None,
             Node::Global(instance, Global::GlobalPackage(package, captures)) => {
                 let captures = Node::Global(instance, self.arena().get(captures).clone());
                 let captures = self.share(captures)?;
@@ -293,7 +307,8 @@ impl Linker for Runtime {
 impl Runtime {
     fn set_var(&mut self, instance: Instance, index: usize, value: Node) {
         let mut lock = instance.vars.0.lock().unwrap();
-        let slot = lock.get_mut(index).unwrap();
+        println!("{:?} {:?}", index, &mut *lock);
+        let slot = lock.get_mut(index).expect("Invalid index in variable!");
         match slot {
             Some(..) => {
                 self.link(slot.take().unwrap(), value);
@@ -370,11 +385,18 @@ impl Runtime {
                 self.link(root, other);
             }
             sym!(
-                Node::Linear(Linear::Value(Value::External(ext)))
-                    | Node::Global(_, Global::Value(Value::External(ext))),
+                Node::Linear(Linear::Value(Value::ExternalFn(ext)))
+                    | Node::Global(_, Global::Value(Value::ExternalFn(ext))),
                 other
             ) => {
-                return Some((UserData::External(ext), other));
+                return Some((UserData::ExternalFn(ext), other));
+            }
+            sym!(
+                Node::Linear(Linear::Value(Value::ExternalArc(ext)))
+                    | Node::Global(_, Global::Value(Value::ExternalArc(ext))),
+                other
+            ) => {
+                return Some((UserData::ExternalArc(ext), other));
             }
             sym!(Node::Global(instance, Global::Destruct(destructor)), node) => {
                 match (
@@ -473,15 +495,15 @@ impl Global {
         match self {
             Global::Variable(_) => "Variable".into(),
 
-            Global::LinearPackage(_, g) => "LinearPackage".into(),
+            Global::LinearPackage(_, _g) => "LinearPackage".into(),
 
-            Global::GlobalPackage(_, g) => "GlobalPackage".into(),
+            Global::GlobalPackage(_, _g) => "GlobalPackage".into(),
 
             Global::Destruct(c) => format!("Destruct({})", c.variant_tree_name()),
 
             Global::Value(v) => format!("Value({})", v.variant_tree_name()),
 
-            Global::Fanout(idx) => "Fanout".into(),
+            Global::Fanout(_idx) => "Fanout".into(),
         }
     }
 }
@@ -491,9 +513,9 @@ impl GlobalCont {
         match self {
             GlobalCont::Continue => "Continue".into(),
 
-            GlobalCont::Par(a, b) => "Par".into(),
+            GlobalCont::Par(_a, _b) => "Par".into(),
 
-            GlobalCont::Choice(ptr, ..) => "Choice".into(),
+            GlobalCont::Choice(_ptr, ..) => "Choice".into(),
         }
     }
 }
@@ -503,11 +525,12 @@ impl<P> Value<P> {
         match self {
             Value::Break => "Break".into(),
 
-            Value::Pair(a, b) => "Pair".into(),
+            Value::Pair(_a, _b) => "Pair".into(),
 
-            Value::Either(_, p) => "Either".into(),
+            Value::Either(_, _p) => "Either".into(),
 
-            Value::External(_) => "External".into(),
+            Value::ExternalFn(_) => "ExternalFn".into(),
+            Value::ExternalArc(_) => "ExternalArc".into(),
 
             Value::Primitive(_) => "Primitive".into(),
         }

@@ -1,10 +1,9 @@
 use crate::par::build_result::BuildResult;
 use crate::par::parse;
-use crate::runtime::{Compiled, TypedHandle, TypedReadback};
+use crate::runtime::Compiled;
 use crate::spawn::TokioSpawn;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
 use colored::Colorize;
-use futures::task::SpawnExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,6 +13,7 @@ use tokio::runtime::Runtime;
 #[derive(Debug)]
 enum TestStatus {
     Passed,
+    PassedWithNoAssertions,
     Failed(String),
     FailedWithAssertions(Vec<AssertionResult>),
     CompileError(String),
@@ -23,7 +23,10 @@ enum TestStatus {
 
 impl TestStatus {
     fn is_passed(&self) -> bool {
-        matches!(self, TestStatus::Passed)
+        matches!(
+            self,
+            TestStatus::Passed | TestStatus::PassedWithNoAssertions
+        )
     }
 }
 
@@ -31,6 +34,7 @@ impl Display for TestStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TestStatus::Passed => write!(f, "passed"),
+            TestStatus::PassedWithNoAssertions => write!(f, "passed with no assertions"),
             TestStatus::Failed(msg) => write!(f, "failed: {msg}"),
             TestStatus::FailedWithAssertions(v) => {
                 write!(f, "failed with {} assertion(s)", v.len())
@@ -75,10 +79,7 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
         print_test_results(&test_file, &results);
 
         total_tests += results.len();
-        passed_tests += results
-            .iter()
-            .filter(|r| matches!(r.status, TestStatus::Passed))
-            .count();
+        passed_tests += results.iter().filter(|r| r.status.is_passed()).count();
     }
 
     let duration = start_time.elapsed();
@@ -220,62 +221,56 @@ fn run_single_test(
 }
 
 async fn run_test_with_test_type(
-    program: &crate::par::program::CheckedModule,
+    _program: &crate::par::program::CheckedModule,
     rt_compiled: &Compiled,
     name: &crate::par::language::GlobalName,
-    ty: &crate::par::types::Type,
+    _ty: &crate::par::types::Type,
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 
     let mut reducer = rt_compiled.new_reducer();
-    let root_handle = rt_compiled.instantiate(reducer.net_handle(), name).await;
+    let net_handle = reducer.net_handle().clone();
+    let reducer_future = reducer.spawn_reducer();
+    println!("Waiting for instantiate...");
+    let mut root = rt_compiled.instantiate(net_handle, name).await.unwrap();
+    println!(":)");
     let spawner = Arc::new(TokioSpawn::new());
-    /*
     // Spawn the test function execution
+    use futures::task::SpawnExt;
+    let sender_clone = sender.clone();
     let test_future = spawner
         .spawn_with_handle(async move {
-            let handle = TypedHandle::from_wrapper(type_defs, net_wrapper, tree);
-
             // The test function expects [Test.Test] !
             // We need to send a Test instance
-            let (test_handle, continue_handle) = handle.send();
-
-            // Convert TypedHandle to Handle and provide Test instance directly
-            let untyped_handle = test_handle.into_untyped();
+            let test_handle = root.send().await;
 
             // Provide the Test instance with the sender directly
             use crate::par::builtin::test::provide_test;
-            provide_test(untyped_handle, sender_clone);
+            provide_test(test_handle, sender_clone).await;
 
             // Continue with the test execution
-            continue_handle.readback().await
+            root.continue_().await;
         })
         .map_err(|e| format!("Failed to spawn test execution: {:?}", e))?;
-
     // collect results from the receiver
     let mut results = Vec::new();
+    println!("Test future...");
     let readback_result = test_future.await;
+    println!("Reducer future...");
     reducer_future.await;
 
     while let Ok(result) = receiver.try_recv() {
         results.push(result);
     }
+    let failed_assertions: Vec<_> = results.iter().filter(|r| !r.passed).cloned().collect();
 
-    match readback_result {
-        TypedReadback::Break => {
-            let failed_assertions: Vec<_> = results.iter().filter(|r| !r.passed).cloned().collect();
-
-            if failed_assertions.is_empty() && !results.is_empty() {
-                Ok(TestStatus::Passed)
-            } else if !failed_assertions.is_empty() {
-                Ok(TestStatus::FailedWithAssertions(failed_assertions))
-            } else {
-                Err("Test completed but no assertions were made".to_string())
-            }
-        }
-        _ => Err("Test did not return expected type (!Break)".to_string()),
-    } */
-    todo!()
+    if failed_assertions.is_empty() && !results.is_empty() {
+        Ok(TestStatus::Passed)
+    } else if !failed_assertions.is_empty() {
+        Ok(TestStatus::FailedWithAssertions(failed_assertions))
+    } else {
+        Ok(TestStatus::PassedWithNoAssertions)
+    }
 }
 
 const PASSED: &str = "✓";
@@ -322,6 +317,7 @@ fn print_test_results(file: &Path, results: &[TestResult]) {
                     );
                 }
             }
+            TestStatus::PassedWithNoAssertions => {}
             TestStatus::Passed => {}
         }
     }

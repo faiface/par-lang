@@ -1,2 +1,0 @@
-def SwapPair: [type a] [type b] [(a) b] (b) a = [type a] [type b] [(a) b] (b) a
-def Main: [[type a] [a] a] ! = [id] let (a) b = SwapPair(type !)(type !)(id(type (!) !)((!) !)) in a

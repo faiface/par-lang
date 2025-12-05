@@ -1,5 +1,4 @@
 use super::runtime::Runtime;
-use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,10 +12,8 @@ use crate::par::language::GlobalName;
 use crate::par::types::Type;
 use crate::runtime::new::arena::{Arena, Index};
 use crate::runtime::new::reducer::Reducer;
-use crate::runtime::new::runtime::{GlobalCont, GlobalValue, Package, PackagePtr};
-use crate::runtime::old::net::VarState;
-use crate::runtime::{new, old, TypedHandle};
-use indexmap::IndexMap;
+use crate::runtime::new::runtime::{ExternalArc, GlobalCont, GlobalValue, Package, PackagePtr};
+use crate::runtime::{new, old};
 use old::compiler::IcCompiled;
 
 use crate::runtime::old::Net;
@@ -40,13 +37,13 @@ pub struct Transpiled {
 }
 
 impl Transpiled {
-    pub fn transpile(mut ic_compiled: IcCompiled, type_defs: TypeDefs) -> Self {
+    pub fn transpile(ic_compiled: IcCompiled, type_defs: TypeDefs) -> Self {
         let mut this: NetTranspiler = Default::default();
         for i in ic_compiled.id_to_package.keys() {
             let slot = this.dest.alloc(OnceLock::new());
             this.package_map.insert(*i, slot);
         }
-        for (id, mut body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
+        for (id, body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
             this.transpile_package(id, body)
         }
         Self {
@@ -89,13 +86,13 @@ impl Transpiled {
         Reducer::from(Runtime::from(self.arena.clone()))
     }
     pub async fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
-        let t = self.get_type_of(name)?;
+        let _t = self.get_type_of(name)?;
         let package = self.get_with_name(name)?;
         Handle::from_package(self.arena.clone(), handle, package)
             .await
             .ok()
     }
-    pub fn inject_package(&self, name: &GlobalName) -> super::readback::Handle {
+    pub fn inject_package(&self, _name: &GlobalName) -> super::readback::Handle {
         todo!()
     }
 }
@@ -142,7 +139,7 @@ impl NetTranspiler {
         match source {
             Tree::Var(id) => match self.source.variables.remove_linked(id) {
                 Ok(contents) => self.transpile_tree(contents),
-                Err(e) => {
+                Err(_e) => {
                     // this is a "real" aux aux link.
                     Global::Variable(self.map_variable(id))
                 }
@@ -181,18 +178,18 @@ impl NetTranspiler {
                     els.map(|x| self.package_map.get(&x).unwrap().clone()),
                 ))
             }
-            Tree::Box_(tree, _) => todo!(),
+            Tree::Box_(_tree, _) => todo!(),
             Tree::Package(id) => Global::GlobalPackage(
                 self.map_package(id),
                 self.dest.alloc(Global::Value(GlobalValue::Break)),
             ),
-            Tree::SignalRequest(sender) => todo!(),
+            Tree::SignalRequest(_sender) => todo!(),
             Tree::Primitive(primitive) => Global::Value(GlobalValue::Primitive(primitive)),
-            Tree::IntRequest(sender) => todo!(),
-            Tree::StringRequest(sender) => todo!(),
-            Tree::BytesRequest(sender) => todo!(),
-            Tree::External(e) => Global::Value(GlobalValue::External(e)),
-            Tree::ExternalBox(_) => todo!(),
+            Tree::IntRequest(_sender) => todo!(),
+            Tree::StringRequest(_sender) => todo!(),
+            Tree::BytesRequest(_sender) => todo!(),
+            Tree::External(e) => Global::Value(GlobalValue::ExternalFn(e)),
+            Tree::ExternalBox(e) => Global::Value(GlobalValue::ExternalArc(ExternalArc(e))),
         }
     }
 }

@@ -1,16 +1,15 @@
 use crate::par::build_result::BuildResult;
-use crate::par::types::Type;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
 use crate::runtime::new::runtime::ExternalFnRet;
-use crate::runtime::{Handle, TypedHandle, TypedReadback};
+use crate::runtime::Handle;
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use futures::task::SpawnExt;
-use futures::TryFutureExt;
+
 use std::fs::File;
 #[cfg(feature = "playground")]
 use std::io::Write;
@@ -26,6 +25,7 @@ mod playground;
 mod readback;
 mod runtime;
 mod spawn;
+mod test;
 mod test_assertion;
 mod test_runner;
 
@@ -190,13 +190,13 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let ty = rt_compiled.get_type_of(name).unwrap();
+        let _ty = rt_compiled.get_type_of(name).unwrap();
 
         let mut reducer = rt_compiled.new_reducer();
 
         let spawner = Arc::new(TokioSpawn::new());
         let net_handle = reducer.net_handle();
-        let reducer_future = spawner
+        let _reducer_future = spawner
             .spawn_with_handle(async move {
                 reducer.run().await;
             })
@@ -208,9 +208,9 @@ fn run_definition(file: PathBuf, definition: String) {
             })
         }
         let mut root = rt_compiled.instantiate(net_handle, name).await.unwrap();
-        let arg = root.send().await.unwrap();
+        let arg = root.send().await;
         arg.provide_external(identity).await;
-        root.continue_().await.unwrap();
+        root.continue_().await;
         println!("Done :)");
     });
 }

@@ -1,9 +1,9 @@
 use super::readback::Handle;
-use crate::runtime::new::runtime::{
-    ExternalFn, Global, Linear, Node, PackagePtr, Runtime, UserData,
-};
+use crate::runtime::new::runtime::{Global, Linear, Node, PackagePtr, Runtime, UserData};
 use crate::TokioSpawn;
 use futures::task::{FutureObj, Spawn, SpawnExt};
+use std::future::Future;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -12,16 +12,39 @@ pub enum ReducerMessage {
     Redex(Node, Node),
     Spawn(FutureObj<'static, ()>),
     Instantiate(PackagePtr, oneshot::Sender<(Node, Node)>),
+    Dropped(usize),
+    Created(usize),
 }
 
-#[derive(Clone)]
-pub struct NetHandle(pub mpsc::UnboundedSender<ReducerMessage>);
+pub struct NetHandle(
+    pub mpsc::UnboundedSender<ReducerMessage>,
+    pub usize,
+    pub Arc<AtomicUsize>,
+);
+
+impl Clone for NetHandle {
+    fn clone(&self) -> Self {
+        let mut new = Self(
+            self.0.clone(),
+            self.2.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+            self.2.clone(),
+        );
+        new.0.send(ReducerMessage::Created(new.1));
+        new
+    }
+}
+
+impl Drop for NetHandle {
+    fn drop(&mut self) {
+        self.0.send(ReducerMessage::Dropped(self.1));
+    }
+}
 
 pub struct Reducer {
     pub runtime: Runtime,
     spawner: Arc<dyn Spawn + Send + Sync>,
     inbox: mpsc::UnboundedReceiver<ReducerMessage>,
-    inbox_tx: mpsc::UnboundedSender<ReducerMessage>,
+    handle: NetHandle,
 }
 
 impl Reducer {
@@ -31,41 +54,51 @@ impl Reducer {
             runtime,
             spawner: Arc::new(TokioSpawn::new()),
             inbox: rx,
-            inbox_tx: tx,
+            handle: NetHandle(tx, 0, Arc::new(1.into())),
         }
     }
     pub fn net_handle(&mut self) -> NetHandle {
-        NetHandle(self.inbox_tx.clone())
+        self.handle.clone()
     }
     fn handle_message(&mut self, msg: ReducerMessage) {
         match msg {
             ReducerMessage::Redex(a, b) => {
                 println!(
-                    "Received redex {:?} ~ {:?}",
+                    "Handle -> Reducer: {:?} ~ {:?}",
                     a.variant_tree_name(),
                     b.variant_tree_name()
                 );
                 self.runtime.redexes.push((a, b));
             }
             ReducerMessage::Spawn(s) => {
+                println!("Handle -> Reducer: Spawn");
                 self.spawner.spawn_obj(s).unwrap();
             }
             ReducerMessage::Instantiate(package, ret) => {
+                println!("Handle -> Reducer: Instantiate");
                 use crate::runtime::new::runtime::Linker;
                 ret.send(self.runtime.instantiate(package)).unwrap();
+            }
+            ReducerMessage::Dropped(id) => {
+                println!("Handle -> Reducer: Dropped {}", id);
+            }
+            ReducerMessage::Created(id) => {
+                println!("Handle -> Reducer: Created {}", id);
             }
         }
     }
     pub async fn run(&mut self) {
         loop {
             loop {
+                println!("Reducer State: Reducing");
                 if let Some((a, b)) = self.runtime.reduce() {
                     match (a, b) {
                         (UserData::Request(a), b) => {
-                            println!("Send request");
+                            println!("Runtime -> Reducer: Fulfill request");
                             a.send(b).unwrap();
                         }
                         (a, Node::Linear(Linear::Request(b))) => {
+                            println!("Runtime -> Reducer: Fulfill request");
                             b.send(Node::Linear(a.into())).unwrap();
                         }
                         (UserData::Primitive(p), Node::Global(instance, Global::Fanout(out))) => {
@@ -76,13 +109,23 @@ impl Reducer {
                                 ));
                             }
                         }
-                        (UserData::External(f), other) => {
+                        (UserData::ExternalFn(f), other) => {
+                            println!("Runtime -> Reducer: Run ExternalFn");
                             let handle = Handle::from_node(
                                 self.runtime.arena.clone(),
                                 self.net_handle(),
                                 other,
                             );
                             self.spawner.spawn(f(handle)).unwrap();
+                        }
+                        (UserData::ExternalArc(f), other) => {
+                            println!("Runtime -> Reducer: Run ExternalArc");
+                            let handle = Handle::from_node(
+                                self.runtime.arena.clone(),
+                                self.net_handle(),
+                                other,
+                            );
+                            self.spawner.spawn((f.0).as_ref()(handle)).unwrap();
                         }
                         _ => todo!(),
                     }
@@ -92,12 +135,24 @@ impl Reducer {
                     break;
                 }
             }
+            println!("Reducer State: Waiting for a message");
+            if self.inbox.sender_strong_count() == 1 {
+                break;
+            }
             if let Some(msg) = self.inbox.recv().await {
                 self.handle_message(msg);
             } else {
                 break;
             }
         }
-        println!("Finished mail loop");
+        println!("Reducer exited cleanly");
+    }
+    pub fn spawn_reducer(mut self) -> impl Future<Output = ()> {
+        self.spawner
+            .clone()
+            .spawn_with_handle(async move {
+                self.run().await;
+            })
+            .unwrap()
     }
 }

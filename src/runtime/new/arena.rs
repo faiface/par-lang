@@ -9,7 +9,7 @@ pub trait Indexable {
     fn alloc<'s>(store: &'s mut Arena, data: Self) -> Index<Self>
     where
         Self: Sized;
-    fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
+    fn alloc_clone<'s>(_store: &'s mut Arena, _data: &Self) -> Index<Self> {
         todo!()
     }
 }

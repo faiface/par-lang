@@ -1,16 +1,14 @@
 use super::reducer::{NetHandle, ReducerMessage};
 use super::runtime::{
-    ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, UserData, Value,
+    ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, Value,
 };
 use crate::par::primitive::Primitive;
 use crate::runtime::new::arena::Arena;
-use crate::runtime::new::runtime::{GlobalValue, Linker};
+use crate::runtime::new::runtime::Linker;
 use arcstr::ArcStr;
+use std::future::Future;
 use std::sync::Arc;
-use tokio::sync::watch::Receiver;
 
-use crate::par::types::TypeDefs;
-use crate::Type;
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
@@ -89,7 +87,7 @@ impl Handle {
         net.0
             .send(ReducerMessage::Instantiate(package, tx))
             .unwrap();
-        let (root, captures) = rx.await.map_err(|_| Error::Panicked).unwrap();
+        let (root, _captures) = rx.await.map_err(|_| Error::Panicked).unwrap();
         Ok(Handle {
             net: net,
             node: root.into(),
@@ -105,8 +103,23 @@ impl Handle {
     pub async fn provide_external(mut self, ext: ExternalFn) {
         // TODO add fast variant.
         let node = self.node.take().await;
-        self.link(node, Node::Linear(Linear::Value(Value::External(ext))));
+        self.link(node, Node::Linear(Linear::Value(Value::ExternalFn(ext))));
     }
+
+    pub async fn provide_external_closure<Fun, Fut>(mut self, f: Fun)
+    where
+        Fun: 'static + Send + Sync + Fn(Handle) -> Fut,
+        Fut: 'static + Send + Future<Output = ()>,
+    {
+        let node = self.node.take().await;
+        self.link(
+            node,
+            Node::Linear(Linear::Value(Value::ExternalArc(
+                super::runtime::ExternalArc(Arc::new(move |x| Box::pin(f(x)))),
+            ))),
+        );
+    }
+
     pub async fn provide_primitive(mut self, primitive: Primitive) {
         // TODO add fast variant.
         let node = self.node.take().await;
@@ -128,7 +141,7 @@ impl Handle {
         Ok(primitive)
     }
 
-    pub async fn send(&mut self) -> Result<Self> {
+    pub async fn send(&mut self) -> Self {
         match self.node.take().await {
             /* TODO fast path:
             Node::Global(instance, Global::Destruct(GlobalCont::Par(left, right))) => {
@@ -147,7 +160,7 @@ impl Handle {
                     Node::Linear(Linear::Value(Value::Pair(Box::new(left), Box::new(right))));
                 self.link(node, other);
                 self.node = left_h;
-                Ok(self.child_handle_with(right_h))
+                self.child_handle_with(right_h)
             }
         }
     }
@@ -161,7 +174,7 @@ impl Handle {
         self.child_handle_with(b.into())
     }
 
-    pub async fn signal(&mut self, chosen: ArcStr) -> Result<()> {
+    pub async fn signal(&mut self, chosen: ArcStr) {
         match self.node.take().await {
             // TODO fast path
             node => {
@@ -169,7 +182,6 @@ impl Handle {
                 let other = Node::Linear(Linear::Value(Value::Either(chosen, Box::new(payload))));
                 self.link(node, other);
                 self.node = payload_h;
-                Ok(())
             }
         }
     }
@@ -183,23 +195,23 @@ impl Handle {
         name
     }
 
-    pub async fn break_(mut self) -> Result<()> {
+    pub async fn break_(mut self) -> () {
         match self.node.take().await {
-            Node::Global(_, Global::Destruct(GlobalCont::Continue)) => Ok(()),
+            Node::Global(_, Global::Destruct(GlobalCont::Continue)) => (),
             node => {
                 let other = Node::Linear(Linear::Value(Value::Break));
                 self.link(node, other);
-                Ok(())
+                ()
             }
         }
     }
 
-    pub async fn continue_(mut self) -> Result<()> {
+    pub async fn continue_(mut self) -> () {
         let node = self.node.take().await;
         let Value::Break = self.destruct(node).unwrap() else {
             unreachable!()
         };
-        Ok(())
+        ()
     }
 }
 
