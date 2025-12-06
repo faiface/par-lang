@@ -1,8 +1,9 @@
 use super::super::language::LocalName;
-use super::super::process::{Command, Expression, Process};
+use super::super::process::{self, Command, Expression, Process};
 use super::core::{LoopId, Operation, Type};
 use super::error::TypeError;
-use super::Context;
+use super::lattice::union_types;
+use super::{Context, TypeDefs};
 use crate::location::Span;
 use crate::par::types::lattice::intersect_types;
 use indexmap::IndexMap;
@@ -75,6 +76,36 @@ impl Context {
 
             Process::Telltypes(span, _) => {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
+            }
+
+            Process::MergePoint(span, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    process::ProcessMergePoint::Checked(_) => {
+                        panic!("Merge point already checked before visiting all paths")
+                    }
+                    process::ProcessMergePoint::Unchecked { paths, process } => {
+                        let entry = paths
+                            .get_mut(span)
+                            .expect("Merge point path should have been registered");
+                        if entry.is_some() {
+                            panic!("Merge point path already filled");
+                        }
+                        *entry = Some(self.variables.clone());
+
+                        if paths.values().any(|p| p.is_none()) {
+                            return Ok(Arc::new(Process::MergePoint(
+                                span.clone(),
+                                Arc::clone(merge),
+                            )));
+                        }
+
+                        self.variables = merge_path_contexts(&self.type_defs, span, paths)?;
+                        let typed_process = self.check_process(process)?;
+                        *guard = process::ProcessMergePoint::Checked(typed_process.clone());
+                        Ok(typed_process)
+                    }
+                }
             }
         }
     }
@@ -607,6 +638,36 @@ impl Context {
             Process::Telltypes(span, _) => {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
+
+            Process::MergePoint(span, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    process::ProcessMergePoint::Checked(_) => {
+                        panic!("Merge point already checked before visiting all paths")
+                    }
+                    process::ProcessMergePoint::Unchecked { paths, process } => {
+                        let entry = paths
+                            .get_mut(span)
+                            .expect("Merge point path should have been registered");
+                        if entry.is_some() {
+                            panic!("Merge point path already filled");
+                        }
+                        *entry = Some(self.variables.clone());
+
+                        if paths.values().any(|p| p.is_none()) {
+                            return Ok((
+                                Arc::new(Process::MergePoint(span.clone(), Arc::clone(merge))),
+                                Type::choice(vec![]),
+                            ));
+                        }
+
+                        self.variables = merge_path_contexts(&self.type_defs, span, paths)?;
+                        let typed_process = self.infer_process(process, inference_subject)?;
+                        *guard = process::ProcessMergePoint::Checked(typed_process.0.clone());
+                        Ok(typed_process)
+                    }
+                }
+            }
         }
     }
 
@@ -1018,4 +1079,55 @@ impl Context {
             }
         }
     }
+}
+
+fn merge_path_contexts(
+    typedefs: &TypeDefs,
+    span: &Span,
+    paths: &IndexMap<Span, Option<IndexMap<LocalName, Type>>>,
+) -> Result<IndexMap<LocalName, Type>, TypeError> {
+    let maps: Vec<IndexMap<LocalName, Type>> = paths
+        .values()
+        .map(|p| p.as_ref().expect("all paths filled").clone())
+        .collect();
+    let first = maps
+        .first()
+        .cloned()
+        .expect("at least one path for merge point");
+
+    for map in &maps {
+        for name in map.keys() {
+            if !first.contains_key(name) {
+                return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+            }
+        }
+    }
+    for name in first.keys() {
+        for map in &maps {
+            if !map.contains_key(name) {
+                return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+            }
+        }
+    }
+
+    let mut merged_variables = IndexMap::new();
+    for name in first.keys() {
+        let mut acc = first.get(name).unwrap().clone();
+        for map in maps.iter().skip(1) {
+            let next = map.get(name).unwrap();
+            acc = match union_types(typedefs, span, &acc, next) {
+                Ok(t) => t,
+                Err(_) => {
+                    return Err(TypeError::MergeVariableTypesCannotBeUnified(
+                        span.clone(),
+                        name.clone(),
+                        acc.clone(),
+                        next.clone(),
+                    ))
+                }
+            };
+        }
+        merged_variables.insert(name.clone(), acc);
+    }
+    Ok(merged_variables)
 }

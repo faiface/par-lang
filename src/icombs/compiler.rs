@@ -8,7 +8,7 @@ use super::net::{Net, Tree};
 use crate::par::process::VariableUsage;
 use crate::par::{
     language::{GlobalName, LocalName},
-    process::{Captures, Command, Expression, Process},
+    process::{Captures, Command, Expression, Process, ProcessMergePoint},
     types::Type,
 };
 use crate::{
@@ -558,6 +558,13 @@ impl Compiler {
             } => self.compile_command(span, name.clone(), usage, typ.clone(), command),
 
             Process::Telltypes(_, _) => unreachable!(),
+            Process::MergePoint(_, merge) => {
+                if let ProcessMergePoint::Checked(process) = &*merge.lock().unwrap() {
+                    self.compile_process(process)
+                } else {
+                    unreachable!("Unchecked merge point reached during compilation")
+                }
+            }
         }
     }
 

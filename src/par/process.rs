@@ -13,7 +13,7 @@ use std::{
     fmt::{self, Write},
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 #[derive(Clone, Debug)]
@@ -41,6 +41,7 @@ pub enum Process<Typ> {
         command: Command<Typ>,
     },
     Telltypes(Span, Arc<Self>),
+    MergePoint(Span, Arc<Mutex<ProcessMergePoint>>),
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +67,15 @@ pub enum Command<Typ> {
     Loop(Option<LocalName>, LocalName, Captures),
     SendType(Type, Arc<Process<Typ>>),
     ReceiveType(LocalName, Arc<Process<Typ>>),
+}
+
+#[derive(Clone, Debug)]
+pub enum ProcessMergePoint {
+    Unchecked {
+        paths: IndexMap<Span, Option<IndexMap<LocalName, Type>>>,
+        process: Arc<Process<()>>,
+    },
+    Checked(Arc<Process<Type>>),
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +106,7 @@ impl<Typ> Spanning for Process<Typ> {
             Self::Let { span, .. } => span.clone(),
             Self::Do { span, .. } => span.clone(),
             Self::Telltypes(span, ..) => span.clone(),
+            Self::MergePoint(span, ..) => span.clone(),
         }
     }
 }
@@ -204,6 +215,20 @@ impl Process<()> {
                 let (process, caps) = process.fix_captures(loop_points);
                 (Arc::new(Self::Telltypes(span.clone(), process)), caps)
             }
+            Self::MergePoint(span, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    ProcessMergePoint::Unchecked { paths: _, process } => {
+                        let (fixed, caps) = process.fix_captures(loop_points);
+                        *process = fixed;
+                        (
+                            Arc::new(Self::MergePoint(span.clone(), Arc::clone(merge))),
+                            caps,
+                        )
+                    }
+                    ProcessMergePoint::Checked(_) => unreachable!("fix_captures after typecheck"),
+                }
+            }
         }
     }
 
@@ -309,6 +334,16 @@ impl Process<()> {
             Self::Telltypes(span, process) => {
                 Arc::new(Self::Telltypes(span.clone(), process.optimize()))
             }
+            Self::MergePoint(span, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    ProcessMergePoint::Unchecked { paths: _, process } => {
+                        *process = process.optimize();
+                    }
+                    ProcessMergePoint::Checked(_) => {}
+                }
+                Arc::new(Self::MergePoint(span.clone(), Arc::clone(merge)))
+            }
         }
     }
 }
@@ -357,6 +392,11 @@ impl Process<Type> {
             }
             Process::Telltypes(_, process) => {
                 process.types_at_spans(program, consume);
+            }
+            Process::MergePoint(_, merge) => {
+                if let ProcessMergePoint::Checked(process) = &*merge.lock().unwrap() {
+                    process.types_at_spans(program, consume);
+                }
             }
         }
     }
@@ -753,6 +793,13 @@ impl Process<()> {
                 command,
             } => command.qualify(module),
             Self::Telltypes(_span, process) => process.qualify(module),
+            Self::MergePoint(_, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    ProcessMergePoint::Unchecked { process, .. } => process.qualify(module),
+                    ProcessMergePoint::Checked(_) => {}
+                }
+            }
         }
     }
 }
@@ -954,6 +1001,13 @@ impl<Typ> Process<Typ> {
                 indentation(f, indent)?;
                 write!(f, "telltypes")?;
                 process.pretty(f, indent)
+            }
+            Self::MergePoint(_, merge) => {
+                let guard = merge.lock().unwrap();
+                match &*guard {
+                    ProcessMergePoint::Unchecked { process, .. } => process.pretty(f, indent),
+                    ProcessMergePoint::Checked(process) => process.pretty(f, indent),
+                }
             }
         }
     }

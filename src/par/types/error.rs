@@ -31,6 +31,8 @@ pub enum TypeError {
     InvalidBranch(Span, LocalName, Type),
     MissingBranch(Span, LocalName, Type),
     RedundantBranch(Span, LocalName, Type),
+    MergeVariableMissing(Span, LocalName),
+    MergeVariableTypesCannotBeUnified(Span, LocalName, Type, Type),
     TypesCannotBeUnified(Type, Type),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] LoopId),
@@ -280,6 +282,28 @@ impl TypeError {
                     typ_str
                 )
             }
+            Self::MergeVariableMissing(span, name) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "Variable `{}` is missing in one of the merging paths.",
+                    name
+                )
+            }
+            Self::MergeVariableTypesCannotBeUnified(span, name, t1, t2) => {
+                let labels = labels_from_span(code, span);
+                let mut t1s = String::new();
+                t1.pretty(&mut t1s, 1).unwrap();
+                let mut t2s = String::new();
+                t2.pretty(&mut t2s, 1).unwrap();
+                miette::miette!(
+                    labels = labels,
+                    "Types of `{}` across merging paths cannot be unified:\n\n  {}\n\n  {}\n",
+                    name,
+                    t1s,
+                    t2s
+                )
+            }
             Self::TypesCannotBeUnified(typ1, typ2) => {
                 miette::miette!(
                     labels = two_labels_from_two_spans(
@@ -381,6 +405,8 @@ impl TypeError {
             | Self::InvalidBranch(span, _, _)
             | Self::MissingBranch(span, _, _)
             | Self::RedundantBranch(span, _, _)
+            | Self::MergeVariableMissing(span, _)
+            | Self::MergeVariableTypesCannotBeUnified(span, _, _, _)
             | Self::NoSuchLoopPoint(span, _)
             | Self::DoesNotDescendSubjectOfBegin(span, _)
             | Self::LoopVariableNotPreserved(span, _)

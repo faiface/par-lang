@@ -4,17 +4,18 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt::Display,
     hash::Hash,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use arcstr::{literal, ArcStr};
+use indexmap::IndexMap;
 
 use super::{
     primitive::Primitive,
     process::{self, Captures},
     types::Type,
 };
-use crate::par::process::VariableUsage;
+use crate::par::process::{ProcessMergePoint, VariableUsage};
 use crate::{
     location::{Span, Spanning},
     par::types::error::labels_from_span,
@@ -484,8 +485,7 @@ pub struct Passes {
 
 #[derive(Clone, Debug)]
 pub struct Pass {
-    process: Arc<process::Process<()>>,
-    used: bool,
+    merge_point: Arc<Mutex<ProcessMergePoint>>,
     // Stack of reasons that currently disable this catch (LIFO).
     disabled_reasons: Vec<CatchDisabledReason>,
 }
@@ -505,24 +505,30 @@ impl Passes {
         p: Option<Arc<process::Process<()>>>,
     ) -> Result<&mut Self, CompileError> {
         self.fallthrough_stash.push(self.fallthrough.take());
-        self.fallthrough = p.map(Pass::new);
+        self.fallthrough = p.map(|process| {
+            Pass::new(Arc::new(Mutex::new(ProcessMergePoint::Unchecked {
+                paths: IndexMap::new(),
+                process,
+            })))
+        });
         Ok(self)
     }
 
-    fn use_fallthrough(&mut self) -> Option<Arc<process::Process<()>>> {
-        match self.fallthrough.as_mut() {
-            Some(pass) => {
-                pass.used = true;
-                Some(Arc::clone(&pass.process))
-            }
-            None => None,
-        }
+    fn use_fallthrough(&mut self, span: &Span) -> Option<Arc<process::Process<()>>> {
+        self.fallthrough.as_mut().map(|pass| pass.use_at(span))
     }
 
     fn unset_fallthrough(&mut self) -> Result<&mut Self, CompileError> {
         if let Some(previous) = self.fallthrough.take() {
-            if !previous.used {
-                return Err(CompileError::UnreachableCode(previous.process.span()));
+            match &*previous.merge_point.lock().unwrap() {
+                ProcessMergePoint::Unchecked { paths, process } => {
+                    if paths.is_empty() {
+                        return Err(CompileError::UnreachableCode(process.span()));
+                    }
+                }
+                ProcessMergePoint::Checked(_) => {
+                    panic!("fallthrough merge point was already checked")
+                }
             }
         }
         self.fallthrough = self
@@ -542,7 +548,13 @@ impl Passes {
             .or_default()
             .push(self.catch.remove(&label));
         if let Some(p) = p {
-            self.catch.insert(label, Pass::new(p));
+            self.catch.insert(
+                label,
+                Pass::new(Arc::new(Mutex::new(ProcessMergePoint::Unchecked {
+                    paths: IndexMap::new(),
+                    process: p,
+                }))),
+            );
         }
         Ok(self)
     }
@@ -557,8 +569,7 @@ impl Passes {
                 if let Some(reason) = pass.disabled_reasons.last().cloned() {
                     return Err(CompileError::MatchingCatchDisabled(span.clone(), reason));
                 }
-                pass.used = true;
-                Ok(Arc::clone(&pass.process))
+                Ok(pass.use_at(span))
             }
             None => Err(CompileError::NoMatchingCatch(span.clone())),
         }
@@ -566,8 +577,16 @@ impl Passes {
 
     fn unset_catch(&mut self, label: Option<LocalName>) -> Result<&mut Self, CompileError> {
         if let Some(previous) = self.catch.remove(&label) {
-            if !previous.used {
-                return Err(CompileError::UnreachableCode(previous.process.span()));
+            let guard = previous.merge_point.lock().unwrap();
+            match &*guard {
+                ProcessMergePoint::Unchecked { paths, process } => {
+                    if paths.is_empty() {
+                        return Err(CompileError::UnreachableCode(process.span()));
+                    }
+                }
+                ProcessMergePoint::Checked(_) => {
+                    panic!("catch merge point was already checked")
+                }
             }
         }
         let stashed = self
@@ -602,12 +621,23 @@ impl Passes {
 }
 
 impl Pass {
-    fn new(p: Arc<process::Process<()>>) -> Self {
+    fn new(merge_point: Arc<Mutex<ProcessMergePoint>>) -> Self {
         Pass {
-            process: p,
-            used: false,
+            merge_point,
             disabled_reasons: Vec::new(),
         }
+    }
+
+    fn use_at(&mut self, span: &Span) -> Arc<process::Process<()>> {
+        if let Ok(mut guard) = self.merge_point.lock() {
+            if let ProcessMergePoint::Unchecked { paths, .. } = &mut *guard {
+                paths.insert(span.clone(), None);
+            }
+        }
+        Arc::new(process::Process::MergePoint(
+            span.clone(),
+            Arc::clone(&self.merge_point),
+        ))
     }
 }
 
@@ -1639,7 +1669,7 @@ impl Process {
                 process.compile(pass)?,
             )),
 
-            Self::Noop(span) => match pass.use_fallthrough() {
+            Self::Noop(span) => match pass.use_fallthrough(span) {
                 Some(process) => process,
                 None => Err(CompileError::MustEndProcess(span.clone()))?,
             },
