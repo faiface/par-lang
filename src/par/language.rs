@@ -577,8 +577,7 @@ impl Passes {
 
     fn unset_catch(&mut self, label: Option<LocalName>) -> Result<&mut Self, CompileError> {
         if let Some(previous) = self.catch.remove(&label) {
-            let guard = previous.merge_point.lock().unwrap();
-            match &*guard {
+            match &*previous.merge_point.lock().unwrap() {
                 ProcessMergePoint::Unchecked { paths, process } => {
                     if paths.is_empty() {
                         return Err(CompileError::UnreachableCode(process.span()));
@@ -629,10 +628,15 @@ impl Pass {
     }
 
     fn use_at(&mut self, span: &Span) -> Arc<process::Process<()>> {
-        if let Ok(mut guard) = self.merge_point.lock() {
-            if let ProcessMergePoint::Unchecked { paths, .. } = &mut *guard {
-                paths.insert(span.clone(), None);
+        if let ProcessMergePoint::Unchecked { paths, .. } = &mut *self.merge_point.lock().unwrap() {
+            if let Some(_) = paths.insert(span.clone(), None) {
+                panic!(
+                    "merging path was already registered from this span: {:?}",
+                    span
+                );
             }
+        } else {
+            panic!("merge point was already checked")
         }
         Arc::new(process::Process::MergePoint(
             span.clone(),

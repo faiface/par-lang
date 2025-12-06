@@ -8,7 +8,7 @@ use crate::{
     location::{Span, Spanning},
     par::program::CheckedModule,
 };
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::{
     fmt::{self, Write},
     future::Future,
@@ -502,6 +502,43 @@ impl Command<()> {
     }
 }
 
+impl<Typ> Command<Typ> {
+    pub fn free_variables(&self) -> IndexSet<LocalName> {
+        match self {
+            Command::Link(expression) => expression.free_variables(),
+            Command::Send(argument, process) => {
+                let mut vars = argument.free_variables();
+                vars.extend(process.free_variables());
+                vars
+            }
+            Command::Receive(parameter, _annot, _typ, process) => {
+                let mut vars = process.free_variables();
+                vars.shift_remove(parameter);
+                vars
+            }
+            Command::Signal(_, process) => process.free_variables(),
+            Command::Case(_branches, processes, else_process, _) => {
+                let mut vars: IndexSet<LocalName> =
+                    processes.iter().flat_map(|p| p.free_variables()).collect();
+                if let Some(p) = else_process {
+                    vars.extend(p.free_variables());
+                }
+                vars
+            }
+            Command::Break => IndexSet::new(),
+            Command::Continue(process) => process.free_variables(),
+            Command::Begin { captures, body, .. } => {
+                let mut vars: IndexSet<LocalName> = captures.names.keys().cloned().collect();
+                vars.extend(body.free_variables());
+                vars
+            }
+            Command::Loop(_label, _driver, captures) => captures.names.keys().cloned().collect(),
+            Command::SendType(_argument, process) => process.free_variables(),
+            Command::ReceiveType(_parameter, process) => process.free_variables(),
+        }
+    }
+}
+
 impl Command<Type> {
     pub fn types_at_spans(
         &self,
@@ -875,6 +912,32 @@ impl Expression<()> {
 }
 
 impl<Typ> Process<Typ> {
+    pub fn free_variables(&self) -> IndexSet<LocalName> {
+        match self {
+            Process::Let {
+                name, value, then, ..
+            } => {
+                let mut vars = value.free_variables();
+                vars.extend(then.free_variables());
+                vars.shift_remove(name);
+                vars
+            }
+            Process::Do { name, command, .. } => {
+                let mut vars = command.free_variables();
+                vars.insert(name.clone());
+                vars
+            }
+            Process::Telltypes(_, process) => process.free_variables(),
+            Process::MergePoint(_, merge) => {
+                let guard = merge.lock().unwrap();
+                match &*guard {
+                    ProcessMergePoint::Unchecked { process, .. } => process.free_variables(),
+                    ProcessMergePoint::Checked(process) => process.free_variables(),
+                }
+            }
+        }
+    }
+
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Let {
@@ -1014,6 +1077,21 @@ impl<Typ> Process<Typ> {
 }
 
 impl<Typ> Expression<Typ> {
+    pub fn free_variables(&self) -> IndexSet<LocalName> {
+        match self {
+            Expression::Global(_, _, _) => IndexSet::new(),
+            Expression::Variable(_, name, _, _) => {
+                let mut set = IndexSet::new();
+                set.insert(name.clone());
+                set
+            }
+            Expression::Box(_, _, expression, _) => expression.free_variables(),
+            Expression::Chan { captures, .. } => captures.names.keys().cloned().collect(),
+            Expression::Primitive(_, _, _) => IndexSet::new(),
+            Expression::External(_, _, _) => IndexSet::new(),
+        }
+    }
+
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Global(_, name, _) => {
