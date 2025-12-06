@@ -120,13 +120,12 @@ impl NetTranspiler {
         let root = body.ports.pop_back().unwrap();
         self.source = body;
         self.variable_map.clear();
-        let num_vars = self.num_vars;
         self.num_vars = 0;
         let root = self.transpile_tree(root);
         let package = Package {
             root: root,
             captures: Global::Destruct(GlobalCont::Continue),
-            num_vars: num_vars,
+            num_vars: self.num_vars,
         };
         let package_slot = self.package_map.get(&id).unwrap();
         self.dest.get(package_slot.clone()).set(package).unwrap();

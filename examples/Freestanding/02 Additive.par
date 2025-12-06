@@ -1,0 +1,29 @@
+type Bool = either { .true! .false! }
+
+def Test0: [Test] ! = [test] chan user {
+    test.id[id]
+    id(type either {.true! .false!})(.true!).case {
+        .true => {
+            id?
+        }
+        .false => {
+            id?
+        }
+    }
+    test.done <> user
+}
+
+def Bool.Not: [Bool] Bool = [x] x.case {
+    .true! => .false!,
+    .false! => .true!,
+}
+
+def TestAssertTrue: [Test] ! = [test] chan user {
+    test.assert("Hi", .true!)
+    test.done <> user
+}
+
+def TestBoolNot: [Test] ! = [test] chan user {
+    test.assert("Hi", Bool.Not(.false!))
+    test.done <> user
+}

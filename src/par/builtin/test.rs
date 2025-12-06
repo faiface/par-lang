@@ -84,15 +84,16 @@ fn provide_test_inner(
                                 .expect_string()
                                 .as_str()
                                 .to_string();
+                            println!("{}", description);
                             let mut bool_handle = handle.receive().await;
 
                             let passed = match bool_handle.case().await.as_str() {
                                 "true" => {
-                                    bool_handle.break_().await;
+                                    bool_handle.continue_().await;
                                     true
                                 }
                                 "false" => {
-                                    bool_handle.break_().await;
+                                    bool_handle.continue_().await;
                                     false
                                 }
                                 variant => {

@@ -23,6 +23,12 @@ pub struct Instance {
     vars: Arc<InstanceInner>,
 }
 
+impl Instance {
+    fn identifier(&self) -> usize {
+        (Arc::as_ptr(&self.vars) as usize >> 3) & 0xFF
+    }
+}
+
 impl Drop for InstanceInner {
     fn drop(&mut self) {
         for i in self.0.lock().unwrap().as_mut().iter() {
@@ -187,26 +193,48 @@ pub trait Linker {
     }
 
     fn instantiate(&self, package: PackagePtr) -> (Node, Node) {
+        let (a, b, _, _) = self.instantiate_with_extra_vars(package, 0);
+        (a, b)
+    }
+    fn instantiate_with_extra_vars(
+        &self,
+        package: PackagePtr,
+        extra_vars: usize,
+    ) -> (Node, Node, Instance, usize) {
         let arena = self.arena();
         let package = arena.get(package);
+        let num_vars = package.get().unwrap().num_vars;
         let instance = Instance {
             vars: Arc::new(InstanceInner(Mutex::new(
-                Vec::from_iter(
-                    std::iter::from_fn(|| Some(None)).take(package.get().unwrap().num_vars),
-                )
-                .into_boxed_slice(),
+                Vec::from_iter(std::iter::from_fn(|| Some(None)).take(num_vars + extra_vars))
+                    .into_boxed_slice(),
             ))),
         };
+        println!("Instantiate {:x}", instance.identifier());
         let package = package.get().unwrap();
         (
             Node::Global(instance.clone(), package.root.clone()),
             Node::Global(instance.clone(), package.captures.clone()),
+            instance,
+            num_vars,
         )
     }
     fn instantiate_with_captures(&mut self, package: PackagePtr, captures: Node) -> Node {
-        let (r, c) = Self::instantiate(&self, package);
-        self.link(c, captures);
-        r
+        // TODO: This work like this now for compatibility with the old runtime, to make the
+        // transpiler simpler
+        // The correct approach is just linking the captures together.
+        let (root, internal_captures, instance, extra_var_idx) =
+            self.instantiate_with_extra_vars(package, 1);
+        let var = Global::Variable(extra_var_idx);
+        self.link(internal_captures, Node::Linear(Linear::Value(Value::Break)));
+        self.link(
+            root,
+            Node::Linear(Linear::Value(Value::Pair(
+                Box::new(captures),
+                Box::new(Node::Global(instance.clone(), var.clone())),
+            ))),
+        );
+        Node::Global(instance.clone(), var.clone())
     }
 
     fn enqueue_to_hole(&mut self, hole: &mut SharedHole, cont: Node) {
@@ -437,7 +465,9 @@ impl Runtime {
                             );
                         }
                     }
-                    _ => todo!(),
+                    (a, b) => {
+                        panic!("Unimplemented destruction between: {:?} {:?}", a, b)
+                    }
                 }
             }
             (a, b) => {
@@ -455,9 +485,11 @@ impl Runtime {
 impl Node {
     pub fn variant_tree_name(&self) -> String {
         match self {
-            Node::Linear(l) => format!("Linear({})", l.variant_tree_name()),
-            Node::Shared(s) => format!("Shared({})", s.variant_tree_name()),
-            Node::Global(_, g) => format!("Global({})", g.variant_tree_name()),
+            Node::Linear(l) => format!("Linear.{}", l.variant_tree_name()),
+            Node::Shared(s) => format!("Shared.{}", s.variant_tree_name()),
+            Node::Global(i, g) => {
+                format!("Global@{:x}.{}", i.identifier(), g.variant_tree_name())
+            }
         }
     }
 }
