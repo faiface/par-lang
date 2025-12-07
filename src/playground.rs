@@ -11,7 +11,7 @@ use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
 use crate::{
-    location::FileName, par::program::CheckedModule, readback::Element, runtime::TypedHandle,
+    location::FileName, par::program::CheckedModule, readback::Element, runtime::old::readback::TypedHandle, runtime::old::compiler::IcCompiled,
     spawn::TokioSpawn,
 };
 use crate::{par::build_result::BuildResult, runtime::Compiled};
@@ -371,7 +371,7 @@ impl Playground {
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
-        compiled: &Compiled,
+        compiled: &IcCompiled,
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
@@ -442,6 +442,9 @@ impl Playground {
                     if let (Some(checked), Some(rt_compiled)) =
                         (self.build.checked(), self.build.rt_compiled())
                     {
+                        let Compiled::Old(ic_compiled) = rt_compiled else {
+                            panic!("New compiler not yet supported in playground")
+                        };
                         egui::containers::menu::MenuButton::from_button(
                             egui::Button::new(
                                 egui::RichText::new("Run")
@@ -458,7 +461,7 @@ impl Playground {
                                     &mut self.element,
                                     ui,
                                     checked.clone(),
-                                    rt_compiled,
+                                    ic_compiled,
                                 );
                             })
                         });

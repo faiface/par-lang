@@ -12,7 +12,7 @@ use crate::{
     runtime::Handle,
 };
 use arcstr::literal;
-use futures::{future::BoxFuture, task::FutureObj};
+use futures::{future::BoxFuture};
 use im::OrdMap;
 use num_bigint::BigInt;
 
@@ -128,7 +128,7 @@ where
                         handle.signal(literal!("item")).await;
                         let mut pair = handle.send().await;
                         provide_key(pair.send().await, key.clone()).await;
-                        pair.link(value.lock().await.duplicate().await);
+                        pair.link(value.lock().await.duplicate().await).await;
                     }
                     handle.signal(literal!("end")).await;
                     return handle.break_().await;

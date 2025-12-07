@@ -191,11 +191,11 @@ pub fn provide_path(handle: Handle, path: PathBuf) -> BoxFuture<'static, ()> {
                     }
                     "parent" => match path.parent() {
                         Some(p) => {
-                            handle.signal(arcstr::literal!("ok"));
+                            handle.signal(arcstr::literal!("ok")).await;
                             provide_path(handle, p.to_path_buf()).await;
                         }
                         None => {
-                            handle.signal(arcstr::literal!("err"));
+                            handle.signal(arcstr::literal!("err")).await;
                             handle.break_().await;
                         }
                     },
@@ -229,11 +229,11 @@ fn absolute_path(p: &Path) -> PathBuf {
 
 async fn provide_bytes_parts(mut handle: Handle, p: &Path) {
     for part in p.iter() {
-        handle.signal(arcstr::literal!("item"));
+        handle.signal(arcstr::literal!("item")).await;
         let bytes = os_to_bytes(part);
         handle.send().await.provide_bytes(bytes).await;
     }
-    handle.signal(arcstr::literal!("end"));
+    handle.signal(arcstr::literal!("end")).await;
     handle.break_().await;
 }
 
@@ -361,7 +361,7 @@ async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
     for (_, name) in entries {
         let child = base.join(Path::new(&name));
         handle.signal(literal!("item")).await;
-        provide_path(handle.send().await, child);
+        provide_path(handle.send().await, child).await;
     }
     handle.signal(literal!("end")).await;
     handle.break_().await;
@@ -409,26 +409,29 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
     })
 }
 
-async fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
-    match nodes.split_first() {
-        None => {
-            handle.signal(literal!("end")).await;
-            handle.break_().await;
+fn provide_dir_tree<'a>(mut handle: Handle, nodes: &'a [DirNode]) -> BoxFuture<'a, ()> {
+    async move {
+        match nodes.split_first() {
+            None => {
+                handle.signal(literal!("end")).await;
+                handle.break_().await;
+            }
+            Some((node, tail)) => match node {
+                DirNode::File(path) => {
+                    handle.signal(literal!("file")).await;
+                    provide_path(handle.send().await, path.clone()).await;
+                    provide_dir_tree(handle, tail).await;
+                }
+                DirNode::Dir { path, children } => {
+                    handle.signal(literal!("dir")).await;
+                    provide_path(handle.send().await, path.clone()).await;
+                    provide_dir_tree(handle.send().await, children.as_slice()).await;
+                    provide_dir_tree(handle, tail).await;
+                }
+            },
         }
-        Some((node, tail)) => match node {
-            DirNode::File(path) => {
-                handle.signal(literal!("file")).await;
-                provide_path(handle.send().await, path.clone());
-                provide_dir_tree(handle, tail);
-            }
-            DirNode::Dir { path, children } => {
-                handle.signal(literal!("dir")).await;
-                provide_path(handle.send().await, path.clone());
-                provide_dir_tree(handle.send().await, children.as_slice());
-                provide_dir_tree(handle, tail);
-            }
-        },
     }
+    .boxed()
 }
 
 async fn os_stdin(handle: Handle) {

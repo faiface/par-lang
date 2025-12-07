@@ -85,7 +85,7 @@ async fn map_new<K: Clone + Ord, F: Future<Output = K>, G: Send + 'static + Futu
     let mut map: BTreeMap<K, Handle> = BTreeMap::new();
     for (key, value) in entries {
         if let Some(old) = map.insert(key, value) {
-            old.erase();
+            old.erase().await;
         }
     }
     provide_map(handle, map, read_key, provide_key).await;
@@ -114,10 +114,10 @@ async fn provide_map<
             "keys" => {
                 let mut keys = handle.send().await;
                 for key in map.keys() {
-                    keys.signal(literal!("item"));
+                    keys.signal(literal!("item")).await;
                     provide_key(keys.send().await, key.clone()).await;
                 }
-                keys.signal(literal!("end"));
+                keys.signal(literal!("end")).await;
                 keys.break_().await;
                 continue;
             }
@@ -126,7 +126,7 @@ async fn provide_map<
                     handle.signal(literal!("item")).await;
                     let mut pair = handle.send().await;
                     provide_key(pair.send().await, key).await;
-                    pair.link(value);
+                    pair.link(value).await;
                 }
                 handle.signal(literal!("end")).await;
                 return handle.break_().await;
@@ -138,7 +138,7 @@ async fn provide_map<
                     match removed {
                         Some(value) => {
                             handle.signal(literal!("ok")).await;
-                            handle.link(value);
+                            handle.link(value).await;
                         }
                         None => {
                             handle.signal(literal!("err")).await;

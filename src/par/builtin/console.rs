@@ -52,11 +52,11 @@ async fn console_open(mut handle: Handle) {
                             let string = ParString::copy_from_slice(
                                 buf.trim_end_matches(&['\n', '\r']).as_bytes(),
                             );
-                            handle.signal(literal!("ok"));
+                            handle.signal(literal!("ok")).await;
                             handle.provide_string(string).await;
                         }
                         _ => {
-                            handle.signal(literal!("err"));
+                            handle.signal(literal!("err")).await;
                             handle.break_().await;
                         }
                     }

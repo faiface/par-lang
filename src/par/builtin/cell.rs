@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc};
+use std::{sync::Arc};
 
 use futures::{future::BoxFuture, FutureExt};
 use tokio::sync::Mutex;
@@ -63,7 +63,7 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'stati
                 "take" => {
                     let mut locked = mutex.lock().await;
                     let current_value = locked.shared.take().unwrap();
-                    handle.send().await.link(current_value);
+                    handle.send().await.link(current_value).await;
                     match handle.case().await.as_str() {
                         "put" => {
                             let new_value = handle.receive().await;

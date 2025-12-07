@@ -150,7 +150,7 @@ async fn nat_div(mut handle: Handle) {
         BigInt::ZERO
     } else {
         x / y
-    });
+    }).await;
 }
 
 async fn nat_mod(mut handle: Handle) {
@@ -160,7 +160,7 @@ async fn nat_mod(mut handle: Handle) {
         BigInt::ZERO
     } else {
         x % y
-    });
+    }).await;
 }
 
 async fn nat_min(mut handle: Handle) {
@@ -216,7 +216,7 @@ async fn nat_repeat(mut handle: Handle) {
 
 async fn nat_repeat_lazy(mut handle: Handle) {
     let n = handle.receive().await.nat().await;
-    nat_repeat_lazy_inner(handle, n.clone());
+    nat_repeat_lazy_inner(handle, n.clone()).await;
 }
 
 fn nat_repeat_lazy_inner(mut handle: Handle, n: BigInt) -> BoxFuture<'static, ()> {

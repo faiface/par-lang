@@ -1,4 +1,3 @@
-type Bool = either { .true! .false! }
 
 def Test0: [Test] ! = [test] chan user {
     test.id[id]

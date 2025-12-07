@@ -80,8 +80,6 @@ pub enum Global {
     Fanout(Index<[Global]>),
 }
 
-trait AnyDebug: Any + Debug {}
-
 #[derive(Debug)]
 pub enum Node {
     Linear(Linear),
@@ -156,7 +154,7 @@ pub enum GlobalCont {
 }
 
 #[derive(Debug)]
-enum SharedHole {
+pub enum SharedHole {
     Filled(SyncShared),
     Unfilled(Vec<Node>),
 }

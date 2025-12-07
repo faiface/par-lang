@@ -622,7 +622,7 @@ async fn provide_request_body_reader(mut handle: Handle, mut body: Incoming) {
                             }
                             handle.signal(literal!("ok")).await;
                             handle.signal(literal!("chunk")).await;
-                            handle.send().await.provide_bytes(chunk);
+                            handle.send().await.provide_bytes(chunk).await;
                         }
                         Err(_) => {
                             // Skip non-data frames such as trailers.
@@ -632,7 +632,9 @@ async fn provide_request_body_reader(mut handle: Handle, mut body: Incoming) {
                 }
                 Some(Err(err)) => {
                     handle.signal(literal!("err")).await;
-                    handle.provide_string(ParString::from(err.to_string()));
+                    handle
+                        .provide_string(ParString::from(err.to_string()))
+                        .await;
                     return;
                 }
                 None => {
@@ -707,13 +709,13 @@ fn reader_to_body(reader: Handle) -> StreamBody<mpsc::Receiver<Result<Frame<Byte
 
     reader.concurrently(|mut reader| async move {
         loop {
-            reader.signal(literal!("read"));
+            reader.signal(literal!("read")).await;
             match reader.case().await.as_str() {
                 "ok" => match reader.case().await.as_str() {
                     "chunk" => {
                         let bytes = reader.receive().await.bytes().await;
                         if tx.send(Ok(Frame::data(bytes))).await.is_err() {
-                            reader.signal(literal!("close"));
+                            reader.signal(literal!("close")).await;
                             match reader.case().await.as_str() {
                                 "ok" => reader.continue_().await,
                                 "err" => {

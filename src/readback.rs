@@ -3,7 +3,9 @@ use crate::{
         parse::parse_bytes,
         primitive::{ParString, Primitive},
     },
-    runtime::{Net, TypedHandle, TypedReadback},
+    runtime::old::{
+        compiler::IcCompiled, net::Net, readback::TypedHandle, readback::TypedReadback}
+    
 };
 use arcstr::ArcStr;
 use bytes::Bytes;
@@ -543,8 +545,8 @@ async fn handle_coroutine(
             }
 
             TypedReadback::Choice(signals, callback) => {
-                let rx = {
-                    let (tx, rx) = oneshot::channel();
+                let rx: oneshot::Receiver<TypedHandle> = {
+                    let (tx, rx) = oneshot::channel::<TypedHandle>();
                     let mut lock = element.lock().expect("lock failed");
                     lock.request = Some(Request::Choice(
                         signals,

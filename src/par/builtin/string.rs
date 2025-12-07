@@ -124,9 +124,9 @@ async fn string_equals(mut handle: Handle) {
     let left = handle.receive().await.string().await;
     let right = handle.receive().await.string().await;
     if left == right {
-        handle.signal(literal!("true"));
+        handle.signal(literal!("true")).await;
     } else {
-        handle.signal(literal!("false"));
+        handle.signal(literal!("false")).await;
     }
     handle.break_().await;
 }

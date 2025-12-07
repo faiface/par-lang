@@ -215,7 +215,7 @@ async fn int_range(mut handle: Handle) {
     let mut i = lo;
     while i < hi {
         handle.signal(literal!("item")).await;
-        handle.send().await.provide_int(i.clone());
+        handle.send().await.provide_int(i.clone()).await;
         i += 1;
     }
     handle.signal(literal!("end")).await;

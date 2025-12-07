@@ -153,8 +153,8 @@ async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {
                 }
                 let chunk = bytes.slice(offset..len);
                 offset = len;
-                handle.signal(literal!("ok"));
-                handle.signal(literal!("chunk"));
+                handle.signal(literal!("ok")).await;
+                handle.signal(literal!("chunk")).await;
                 handle.send().await.provide_bytes(chunk).await;
             }
             _ => unreachable!(),
@@ -209,14 +209,18 @@ impl PipeReaderState {
         self.notify.notify_waiters();
     }
 
-    fn set_result_err(&self, err: Handle) {
-        {
+    async fn set_result_err(&self, err: Handle) {
+        // This tricky is necessary to avoid holding `guard` while awaiting.
+        if let Some(err) = {
             let mut guard = self.error.lock().expect("lock failed");
             if guard.is_none() {
                 *guard = Some(err);
+                None
             } else {
-                err.erase();
+                Some(err)
             }
+        } {
+            err.erase().await;
         }
         self.result_ready.store(true, AtomicOrdering::SeqCst);
         self.notify.notify_waiters();
@@ -253,7 +257,7 @@ async fn bytes_pipe_reader(mut handle: Handle) {
                 handle.break_().await;
             }
             "err" => {
-                result_state.set_result_err(handle);
+                result_state.set_result_err(handle).await;
             }
             _ => unreachable!(),
         }
@@ -267,27 +271,27 @@ async fn provide_pipe_reader_writer(mut handle: Handle, state: Arc<PipeReaderSta
         match handle.case().await.as_str() {
             "close" => {
                 if state.reader_closed() || state.error_present() {
-                    handle.signal(literal!("err"));
+                    handle.signal(literal!("err")).await;
                     return handle.break_().await;
                 }
                 state.take_sender();
-                handle.signal(literal!("ok"));
+                handle.signal(literal!("ok")).await;
                 return handle.break_().await;
             }
             "flush" => {
                 if state.reader_closed() || state.error_present() {
-                    handle.signal(literal!("err"));
+                    handle.signal(literal!("err")).await;
                     return handle.break_().await;
                 }
-                handle.signal(literal!("ok"));
+                handle.signal(literal!("ok")).await;
             }
             "write" => {
                 let bytes = handle.receive().await.bytes().await;
                 if write_chunk(&state, bytes) {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     continue;
                 }
-                handle.signal(literal!("err"));
+                handle.signal(literal!("err")).await;
                 return handle.break_().await;
             }
             _ => unreachable!(),
@@ -316,30 +320,30 @@ async fn provide_pipe_reader_output(
                 state.mark_reader_closed();
                 state.wait_result().await;
                 if let Some(err) = state.take_error() {
-                    handle.signal(literal!("err"));
-                    handle.link(err);
+                    handle.signal(literal!("err")).await;
+                    handle.link(err).await;
                     return;
                 } else {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     return handle.break_().await;
                 }
             }
             "read" => match rx.next().await {
                 Some(PipeMessage::Chunk(bytes)) => {
-                    handle.signal(literal!("ok"));
-                    handle.signal(literal!("chunk"));
+                    handle.signal(literal!("ok")).await;
+                    handle.signal(literal!("chunk")).await;
                     handle.send().await.provide_bytes(bytes);
                 }
                 None => {
                     state.mark_reader_closed();
                     state.wait_result().await;
                     if let Some(err) = state.take_error() {
-                        handle.signal(literal!("err"));
-                        handle.link(err);
+                        handle.signal(literal!("err")).await;
+                        handle.link(err).await;
                         return;
                     } else {
-                        handle.signal(literal!("ok"));
-                        handle.signal(literal!("end"));
+                        handle.signal(literal!("ok")).await;
+                        handle.signal(literal!("end")).await;
                         return handle.break_().await;
                     }
                 }

@@ -99,7 +99,7 @@ impl<'a> AsyncByteIterator for ReaderRemainderByteIterator<'a> {
         // Request more bytes from the underlying reader
         loop {
             let handle = self.remainder.handle.as_mut().unwrap();
-            handle.signal(literal!("read"));
+            handle.signal(literal!("read")).await;
             match handle.case().await.as_str() {
                 "ok" => match handle.case().await.as_str() {
                     "chunk" => {
@@ -120,7 +120,7 @@ impl<'a> AsyncByteIterator for ReaderRemainderByteIterator<'a> {
                     }
                     "end" => {
                         // Close the provider side of the 'end' branch
-                        self.remainder.handle.take().unwrap().continue_();
+                        self.remainder.handle.take().unwrap().continue_().await;
                         return Ok(None);
                     }
                     _ => unreachable!(),
@@ -181,12 +181,12 @@ impl BytesRemainder for ReaderRemainder {
 
     async fn provide_err(handle: Handle, err: Self::Err) {
         // Forward the opaque error value
-        handle.link(err);
+        handle.link(err).await;
     }
 
     async fn close(mut self) -> Result<(), Self::Err> {
         let handle = self.handle.as_mut().unwrap();
-        handle.signal(literal!("close"));
+        handle.signal(literal!("close")).await;
         match handle.case().await.as_str() {
             "ok" => Ok(self.handle.take().unwrap().continue_().await),
             "err" => Err(self.handle.take().unwrap()),
@@ -224,12 +224,12 @@ impl CharsRemainder for ReaderRemainder {
 
     async fn provide_err(handle: Handle, err: Self::Err) {
         // Forward the opaque error value
-        handle.link(err);
+        handle.link(err).await;
     }
 
     async fn close(mut self) -> Result<(), Self::Err> {
         let handle = self.handle.as_mut().unwrap();
-        handle.signal(literal!("close"));
+        handle.signal(literal!("close")).await;
         match handle.case().await.as_str() {
             "ok" => Ok(self.handle.take().unwrap().continue_().await),
             "err" => Err(self.handle.take().unwrap()),
@@ -358,11 +358,11 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
         match handle.case().await.as_str() {
             "close" => match remainder.close().await {
                 Ok(()) => {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     return handle.break_().await;
                 }
                 Err(err) => {
-                    handle.signal(literal!("err"));
+                    handle.signal(literal!("err")).await;
                     return R::provide_err(handle, err).await;
                 }
             },
@@ -372,18 +372,18 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                 match bytes.next().await {
                     Ok(Some((_, b))) => {
                         drop(bytes);
-                        handle.signal(literal!("byte"));
+                        handle.signal(literal!("byte")).await;
                         handle.send().await.provide_byte(b).await;
                         remainder.pop_bytes(1);
                     }
                     Ok(None) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("ok")).await;
                         return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("err"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("err")).await;
                         return R::provide_err(handle, err).await;
                     }
                 }
@@ -395,13 +395,13 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                 match remainder.bytes().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("ok")).await;
                         return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("err"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("err")).await;
                         return R::provide_err(handle, err).await;
                     }
                 }
@@ -415,8 +415,8 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                         Ok(Some((pos, b))) => (pos, b),
                         Ok(None) => break,
                         Err(err) => {
-                            handle.signal(literal!("end"));
-                            handle.signal(literal!("err"));
+                            handle.signal(literal!("end")).await;
+                            handle.signal(literal!("err")).await;
                             return R::provide_err(handle, err).await;
                         }
                     };
@@ -436,8 +436,8 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
 
                 match best_match {
                     Some((i, j)) => {
-                        handle.signal(literal!("match"));
-                        handle.send().await.provide_bytes(remainder.pop_bytes(i));
+                        handle.signal(literal!("match")).await;
+                        handle.send().await.provide_bytes(remainder.pop_bytes(i)).await;
                         handle
                             .send()
                             .await
@@ -445,7 +445,7 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                             .await;
                     }
                     None => {
-                        handle.signal(literal!("fail"));
+                        handle.signal(literal!("fail")).await;
                     }
                 }
             }
@@ -456,13 +456,13 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                 match remainder.bytes().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("ok")).await;
                         return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("err"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("err")).await;
                         return R::provide_err(handle, err).await;
                     }
                 }
@@ -475,8 +475,8 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                         Ok(Some((pos, b))) => (pos, b),
                         Ok(None) => break,
                         Err(err) => {
-                            handle.signal(literal!("end"));
-                            handle.signal(literal!("err"));
+                            handle.signal(literal!("end")).await;
+                            handle.signal(literal!("err")).await;
                             return R::provide_err(handle, err).await;
                         }
                     };
@@ -493,28 +493,28 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                         let right = match remainder.remaining_bytes().await {
                             Ok(bytes) => bytes,
                             Err(err) => {
-                                handle.signal(literal!("end"));
-                                handle.signal(literal!("err"));
+                                handle.signal(literal!("end")).await;
+                                handle.signal(literal!("err")).await;
                                 return R::provide_err(handle, err).await;
                             }
                         };
-                        handle.signal(literal!("match"));
-                        handle.send().await.provide_bytes(left);
-                        handle.send().await.provide_bytes(right);
+                        handle.signal(literal!("match")).await;
+                        handle.send().await.provide_bytes(left).await;
+                        handle.send().await.provide_bytes(right).await;
                         return handle.break_().await;
                     }
                     None => {
-                        handle.signal(literal!("fail"));
+                        handle.signal(literal!("fail")).await;
                     }
                 }
             }
             "remainder" => match remainder.remaining_bytes().await {
                 Ok(bytes) => {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     return handle.provide_bytes(bytes).await;
                 }
                 Err(err) => {
-                    handle.signal(literal!("err"));
+                    handle.signal(literal!("err")).await;
                     return R::provide_err(handle, err).await;
                 }
             },
@@ -528,11 +528,11 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
         match handle.case().await.as_str() {
             "close" => match remainder.close().await {
                 Ok(()) => {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     return handle.break_().await;
                 }
                 Err(err) => {
-                    handle.signal(literal!("err"));
+                    handle.signal(literal!("err")).await;
                     return R::provide_err(handle, err).await;
                 }
             },
@@ -542,18 +542,18 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                 match chars.next().await {
                     Ok(Some((_, len, ch))) => {
                         drop(chars);
-                        handle.signal(literal!("char"));
+                        handle.signal(literal!("char")).await;
                         handle.send().await.provide_char(ch).await;
                         remainder.pop_chars(len);
                     }
                     Ok(None) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("ok")).await;
                         return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("err"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("err")).await;
                         return R::provide_err(handle, err).await;
                     }
                 }
@@ -565,13 +565,13 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                 match remainder.chars().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("ok")).await;
                         return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("err"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("err")).await;
                         return R::provide_err(handle, err).await;
                     }
                 }
@@ -585,8 +585,8 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                         Ok(Some((pos, len, ch))) => (pos, len, ch),
                         Ok(None) => break,
                         Err(err) => {
-                            handle.signal(literal!("end"));
-                            handle.signal(literal!("err"));
+                            handle.signal(literal!("end")).await;
+                            handle.signal(literal!("err")).await;
                             return R::provide_err(handle, err).await;
                         }
                     };
@@ -606,7 +606,7 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
 
                 match best_match {
                     Some((i, j)) => {
-                        handle.signal(literal!("match"));
+                        handle.signal(literal!("match")).await;
                         handle
                             .send()
                             .await
@@ -619,7 +619,7 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                             .await;
                     }
                     None => {
-                        handle.signal(literal!("fail"));
+                        handle.signal(literal!("fail")).await;
                     }
                 }
             }
@@ -630,13 +630,13 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                 match remainder.chars().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("ok")).await;
                         return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("end"));
-                        handle.signal(literal!("err"));
+                        handle.signal(literal!("end")).await;
+                        handle.signal(literal!("err")).await;
                         return R::provide_err(handle, err).await;
                     }
                 }
@@ -649,8 +649,8 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                         Ok(Some((pos, len, ch))) => (pos, len, ch),
                         Ok(None) => break,
                         Err(err) => {
-                            handle.signal(literal!("end"));
-                            handle.signal(literal!("err"));
+                            handle.signal(literal!("end")).await;
+                            handle.signal(literal!("err")).await;
                             return R::provide_err(handle, err).await;
                         }
                     };
@@ -667,28 +667,28 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
                         let right = match remainder.remaining_chars().await {
                             Ok(string) => string,
                             Err(err) => {
-                                handle.signal(literal!("end"));
-                                handle.signal(literal!("err"));
+                                handle.signal(literal!("end")).await;
+                                handle.signal(literal!("err")).await;
                                 return R::provide_err(handle, err).await;
                             }
                         };
-                        handle.signal(literal!("match"));
+                        handle.signal(literal!("match")).await;
                         handle.send().await.provide_string(left).await;
                         handle.send().await.provide_string(right).await;
                         return handle.break_().await;
                     }
                     None => {
-                        handle.signal(literal!("fail"));
+                        handle.signal(literal!("fail")).await;
                     }
                 }
             }
             "remainder" => match remainder.remaining_chars().await {
                 Ok(string) => {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     return handle.provide_string(string).await;
                 }
                 Err(err) => {
-                    handle.signal(literal!("err"));
+                    handle.signal(literal!("err")).await;
                     return R::provide_err(handle, err).await;
                 }
             },

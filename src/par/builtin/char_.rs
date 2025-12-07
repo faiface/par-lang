@@ -49,9 +49,9 @@ async fn char_equals(mut handle: Handle) {
     let x = handle.receive().await.char().await;
     let y = handle.receive().await.char().await;
     if x == y {
-        handle.signal(literal!("true"));
+        handle.signal(literal!("true")).await;
     } else {
-        handle.signal(literal!("false"));
+        handle.signal(literal!("false")).await;
     }
     handle.break_().await;
 }
@@ -65,9 +65,9 @@ async fn char_is(mut handle: Handle) {
     let ch = handle.receive().await.char().await;
     let class = CharClass::readback(handle.receive().await).await;
     if class.contains(ch) {
-        handle.signal(literal!("true"));
+        handle.signal(literal!("true")).await;
     } else {
-        handle.signal(literal!("false"));
+        handle.signal(literal!("false")).await;
     }
     handle.break_().await;
 }

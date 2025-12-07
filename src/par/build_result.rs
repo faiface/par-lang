@@ -168,7 +168,9 @@ impl BuildResult {
 
     pub fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
         let type_on_hover = TypeOnHover::new(&checked);
-        let rt_compiled = match Compiled::compile_file(&checked, false) {
+        let rt_compiled = match Compiled::compile_file(
+            &checked, false, /* BuildResult uses only the old runtime right now */
+        ) {
             Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {

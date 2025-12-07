@@ -99,9 +99,7 @@ impl Transpiled {
             .await
             .ok()
     }
-    pub fn inject_package(&self, _name: &GlobalName) -> super::readback::Handle {
-        todo!()
-    }
+
 }
 
 impl NetTranspiler {

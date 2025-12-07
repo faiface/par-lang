@@ -1,7 +1,6 @@
 use crate::par::build_result::BuildResult;
 use crate::par::parse;
 use crate::runtime::Compiled;
-use crate::spawn::TokioSpawn;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
