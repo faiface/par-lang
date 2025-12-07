@@ -1,3 +1,31 @@
+//! This is the V2 runtime for the Par language
+//!
+//! Unlike with the old runtime, program state is strictly separated with
+//! immutable global program code. The global nodes are stored in an [`Arena`].
+//! Global nodes are attached to a piece of state which is a pointer to its [`Instance`]
+//!
+//! An `Instance` is an array of variable slots; which might be either empty or filled with a [`Value`]
+//! Instances are used to store program state within each global package, and also
+//! for communication within each global packages.
+//!
+//! Global nodes are all stored contiguously, and a definition's state is usually within the same Instance, which means
+//! that the runtime enjoys cache locality.
+//!
+//! Additionally, state can be stored in either [`Shared`] nodes or [`Linear`] nodes.
+//!
+//! `Linear` nodes are temporarily created by readback to interact with the program. They are usually stored in `Box`es
+//!  Additionally, ShareHoles are a type of linear value which is created when attempting to duplicate a global variable.
+//!  It is roughly the dual of a fanout node.
+//!
+//! `Shared` nodes are created when a node is duplicated. They are reference-counted and thus, copying them is cheap. They are destroyed
+//! by interacting them with a Global node that destructures values, such as a Par node or a Choice node. This destructures the shared node,
+//! but the children will still be reference-counted. This allows cheap copying of runtime values, which is something the old
+//! runtime was not able to do.
+//!
+//! The runtime is handled by the [`Runtime`] struct. It tracks the program's redexes, which
+//! are pairs of nodes that interact with each other, and reduces them until the program is finished.
+//! The `Runtime` does not know what to do with IO operations; that is handled by the `Reducer`
+
 use arcstr::ArcStr;
 use core::panic;
 use std::fmt::Debug;
@@ -18,6 +46,7 @@ use tokio::sync::oneshot;
 
 #[derive(Debug)]
 pub struct InstanceInner(Mutex<Box<[Option<Node>]>>);
+
 #[derive(Clone, Debug)]
 pub struct Instance {
     vars: Arc<InstanceInner>,
