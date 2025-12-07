@@ -1,6 +1,7 @@
 use super::readback::Handle;
 use crate::runtime::new::runtime::{Global, Linear, Node, PackagePtr, Runtime, UserData};
 use crate::TokioSpawn;
+use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
 use std::future::Future;
 use std::sync::atomic::AtomicUsize;
@@ -116,7 +117,9 @@ impl Reducer {
                                 self.net_handle(),
                                 other,
                             );
-                            self.spawner.spawn(f(handle)).unwrap();
+                            self.spawner
+                                .spawn(f(crate::runtime::Handle::New(handle)))
+                                .unwrap();
                         }
                         (UserData::ExternalArc(f), other) => {
                             println!("Runtime -> Reducer: Run ExternalArc");
@@ -125,7 +128,9 @@ impl Reducer {
                                 self.net_handle(),
                                 other,
                             );
-                            self.spawner.spawn((f.0).as_ref()(handle)).unwrap();
+                            self.spawner
+                                .spawn((f.0).as_ref()(crate::runtime::Handle::New(handle)))
+                                .unwrap();
                         }
                         _ => todo!(),
                     }
@@ -147,7 +152,7 @@ impl Reducer {
         }
         println!("Reducer exited cleanly");
     }
-    pub fn spawn_reducer(mut self) -> impl Future<Output = ()> {
+    pub fn spawn_reducer(mut self) -> RemoteHandle<()> {
         self.spawner
             .clone()
             .spawn_with_handle(async move {

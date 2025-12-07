@@ -228,36 +228,24 @@ async fn run_test_with_test_type(
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 
-    let mut reducer = rt_compiled.new_reducer();
-    let net_handle = reducer.net_handle().clone();
-    let reducer_future = reducer.spawn_reducer();
-    println!("Waiting for instantiate...");
-    let mut root = rt_compiled.instantiate(net_handle, name).await.unwrap();
-    println!(":)");
-    let spawner = Arc::new(TokioSpawn::new());
+    let (mut root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
+
     // Spawn the test function execution
-    use futures::task::SpawnExt;
-    let sender_clone = sender.clone();
-    let test_future = spawner
-        .spawn_with_handle(async move {
-            // The test function expects [Test.Test] !
-            // We need to send a Test instance
-            let test_handle = root.send().await;
+    //
+    // The test function expects [Test.Test] !
+    // We need to send a Test instance
+    let test_handle = root.send().await;
 
-            // Provide the Test instance with the sender directly
-            use crate::par::builtin::test::provide_test;
-            provide_test(test_handle, sender_clone).await;
+    // Provide the Test instance with the sender directly
+    use crate::par::builtin::test::provide_test;
+    provide_test(test_handle, sender).await;
 
-            // Continue with the test execution
-            root.continue_().await;
-        })
-        .map_err(|e| format!("Failed to spawn test execution: {:?}", e))?;
+    // Continue with the test execution
+    root.continue_().await;
     // collect results from the receiver
-    let mut results = Vec::new();
-    println!("Test future...");
-    let readback_result = test_future.await;
-    println!("Reducer future...");
     reducer_future.await;
+
+    let mut results = vec![];
 
     while let Ok(result) = receiver.try_recv() {
         results.push(result);

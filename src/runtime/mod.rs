@@ -1,6 +1,8 @@
 pub mod new;
 pub mod old;
-pub use new::transpiler::Transpiled as Compiled;
+pub use compiler::Compiled;
 pub use old::compiler::Error as RuntimeCompilerError;
-pub use new::readback::Handle;
+pub use readback::Handle;
 
+pub mod compiler;
+pub mod readback;

@@ -58,14 +58,12 @@ pub enum Tree {
     StringRequest(oneshot::Sender<ParString>),
     BytesRequest(oneshot::Sender<Bytes>),
 
-    External(fn(crate::runtime::new::readback::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
+    External(fn(crate::runtime::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
     ExternalBox(
         Arc<
             dyn Send
                 + Sync
-                + Fn(
-                    crate::runtime::new::readback::Handle,
-                ) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+                + Fn(crate::runtime::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
         >,
     ),
 }

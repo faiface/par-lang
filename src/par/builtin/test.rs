@@ -70,20 +70,13 @@ fn provide_test_inner(
 ) -> BoxFuture<'static, ()> {
     async move {
         handle
-            .provide_external_closure(move |mut handle| {
+            .provide_box(move |mut handle| {
                 let sender = sender.clone();
                 async move {
                     match handle.case().await.as_str() {
                         "assert" => {
-                            let description = handle
-                                .receive()
-                                .await
-                                .primitive()
-                                .await
-                                .expect("Received non-string on Test")
-                                .expect_string()
-                                .as_str()
-                                .to_string();
+                            let description =
+                                handle.receive().await.string().await.as_str().to_string();
                             println!("{}", description);
                             let mut bool_handle = handle.receive().await;
 
@@ -122,11 +115,11 @@ fn provide_test_inner(
                             fn identity(mut handle: Handle) -> ExternalFnRet {
                                 Box::pin(async {
                                     let arg = handle.receive().await;
-                                    handle.link_with(arg).await;
+                                    handle.link(arg).await;
                                 })
                             }
                             let argument = handle.send().await;
-                            argument.provide_external(identity).await;
+                            argument.provide_box(|x| identity(x)).await;
 
                             provide_test_inner(handle, sender).await;
                         }
@@ -137,7 +130,7 @@ fn provide_test_inner(
                                 })
                             }
                             let argument = handle.send().await;
-                            argument.provide_external(leak).await;
+                            argument.provide_box(|x| leak(x)).await;
 
                             provide_test_inner(handle, sender).await;
                         }

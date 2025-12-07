@@ -190,27 +190,10 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let _ty = rt_compiled.get_type_of(name).unwrap();
+        let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
-        let mut reducer = rt_compiled.new_reducer();
-
-        let spawner = Arc::new(TokioSpawn::new());
-        let net_handle = reducer.net_handle();
-        let _reducer_future = spawner
-            .spawn_with_handle(async move {
-                reducer.run().await;
-            })
-            .unwrap();
-        fn identity(mut handle: Handle) -> ExternalFnRet {
-            Box::pin(async {
-                let arg = handle.receive().await;
-                handle.link_with(arg).await;
-            })
-        }
-        let mut root = rt_compiled.instantiate(net_handle, name).await.unwrap();
-        let arg = root.send().await;
-        arg.provide_external(identity).await;
         root.continue_().await;
+        reducer_future.await;
         println!("Done :)");
     });
 }

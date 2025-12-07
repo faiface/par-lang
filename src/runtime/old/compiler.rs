@@ -217,7 +217,6 @@ pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
         )
     }
 }
-
 pub(crate) fn demultiplex_trees(mut trees: Vec<Tree>) -> Tree {
     if trees.len() == 0 {
         Tree::Continue
@@ -358,7 +357,6 @@ impl Compiler {
         let mut net2 = self.net.clone();
         net2.redexes.append(&mut self.lazy_redexes.clone().into());
         net2.assert_valid();
-
 
         self.net.normal();
         self.net

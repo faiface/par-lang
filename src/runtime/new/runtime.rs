@@ -52,12 +52,10 @@ pub enum UserData {
 }
 
 pub type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
-pub type ExternalFn = fn(crate::runtime::new::readback::Handle) -> ExternalFnRet;
+pub type ExternalFn = fn(crate::runtime::Handle) -> ExternalFnRet;
 
 #[derive(Clone)]
-pub struct ExternalArc(
-    pub Arc<dyn Send + Sync + Fn(crate::runtime::new::readback::Handle) -> ExternalFnRet>,
-);
+pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::runtime::Handle) -> ExternalFnRet>);
 
 impl Debug for ExternalArc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

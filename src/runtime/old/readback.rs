@@ -18,11 +18,11 @@ use crate::{
     },
 };
 
-use super::{compiler::TypedTree, Net, Tree};
-
+use super::{compiler::TypedTree, net::Tree, Net};
 pub(crate) mod private {
+    use super::super::{compiler::TypedTree, net::Tree, Net};
     use crate::runtime::old::net::ReducerMessage;
-    use crate::runtime::old::Net;
+    use crate::runtime::old::readback::Handle;
     use futures::channel::mpsc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Arc, LockResult, Mutex};
@@ -50,9 +50,17 @@ pub(crate) mod private {
             self.net.lock()
         }
 
-        #[cfg(feature = "playground")]
         pub(crate) fn net(&self) -> Arc<Mutex<Net>> {
             Arc::clone(&self.net)
+        }
+
+        pub fn new_handle(&self, tree: Tree) -> Handle {
+            Handle::new(
+                self.net.clone(),
+                self.notify.clone(),
+                self.handle_count.clone(),
+                tree,
+            )
         }
     }
 

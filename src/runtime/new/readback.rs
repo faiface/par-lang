@@ -6,6 +6,7 @@ use crate::par::primitive::Primitive;
 use crate::runtime::new::arena::Arena;
 use crate::runtime::new::runtime::Linker;
 use arcstr::ArcStr;
+use futures::task::FutureObj;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -106,6 +107,16 @@ impl Handle {
         self.link(node, Node::Linear(Linear::Value(Value::ExternalFn(ext))));
     }
 
+    pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
+    where
+        F: 'static + Send + Future<Output = ()>,
+    {
+        self.net
+            .0
+            .clone()
+            .send(ReducerMessage::Spawn(FutureObj::from(Box::new(f(self)))))
+            .unwrap();
+    }
     pub async fn provide_external_closure<Fun, Fut>(mut self, f: Fun)
     where
         Fun: 'static + Send + Sync + Fn(Handle) -> Fut,
@@ -115,7 +126,10 @@ impl Handle {
         self.link(
             node,
             Node::Linear(Linear::Value(Value::ExternalArc(
-                super::runtime::ExternalArc(Arc::new(move |x| Box::pin(f(x)))),
+                super::runtime::ExternalArc(Arc::new(move |x| match x {
+                    crate::runtime::Handle::New(x) => Box::pin(f(x)),
+                    _ => panic!("Mixed runtime handles"),
+                })),
             ))),
         );
     }
@@ -212,6 +226,12 @@ impl Handle {
             unreachable!()
         };
         ()
+    }
+    pub async fn erase(self) -> () {
+        todo!()
+    }
+    pub async fn duplicate(&mut self) -> Handle {
+        todo!()
     }
 }
 

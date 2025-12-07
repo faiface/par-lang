@@ -1,5 +1,6 @@
 use super::runtime::Runtime;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::Arc;
 
 use super::readback::Handle;
@@ -34,6 +35,12 @@ pub struct Transpiled {
     pub name_to_package: HashMap<GlobalName, PackagePtr>,
     pub name_to_ty: HashMap<GlobalName, Type>,
     type_defs: TypeDefs,
+}
+
+impl Display for Transpiled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{New transpiled..}")
+    }
 }
 
 impl Transpiled {
@@ -177,7 +184,9 @@ impl NetTranspiler {
                     els.map(|x| self.package_map.get(&x).unwrap().clone()),
                 ))
             }
-            Tree::Box_(_tree, _) => todo!(),
+            Tree::Box_(context, package) => {
+                todo!()
+            }
             Tree::Package(id) => Global::GlobalPackage(
                 self.map_package(id),
                 self.dest.alloc(Global::Value(GlobalValue::Break)),
@@ -192,14 +201,3 @@ impl NetTranspiler {
         }
     }
 }
-/*
-pub struct Transpiler<'s> {
-    old: IcCompiled,
-    dest: &'s mut IndexedArena<'s>,
-}
-
-impl<'s> Transpiler<'s> {
-    fn transpile(&mut self) {}
-}
-
-*/
