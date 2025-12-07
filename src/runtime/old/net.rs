@@ -383,7 +383,7 @@ impl Net {
                 // link anyway
                 self.link(a, b);
             }
-            sym!(Era | Continue, Break) => {
+            sym!(Era | Continue, Break) | sym!(Break | Continue, Era) => {
                 self.rewrites.era += 1;
             }
             sym!(Times(a0, a1), Era) | sym!(Par(a0, a1), Era) | sym!(Dup(a0, a1), Era) => {
@@ -395,6 +395,16 @@ impl Net {
                 self.link(*a0, *b0);
                 self.link(*a1, *b1);
                 self.rewrites.annihilate += 1;
+            }
+            sym!(Dup(a0, a1), Break) => {
+                self.link(*a0, Break);
+                self.link(*a1, Break);
+                self.rewrites.era += 1;
+            }
+            sym!(Dup(a0, a1), Continue) => {
+                self.link(*a0, Continue);
+                self.link(*a1, Continue);
+                self.rewrites.era += 1;
             }
             sym!(Times(a0, a1), Dup(b0, b1)) => {
                 let (a00, b00) = self.create_wire();
@@ -697,7 +707,7 @@ impl Net {
         for i in &self.ports {
             write!(&mut s, "{}{}\n", indent_string, self.show_tree(i)).unwrap();
         }
-        for (a, b) in &self.redexes {
+        for (a, b) in self.redexes.iter().chain(self.waiting_for_reducer.iter()) {
             write!(
                 &mut s,
                 "{}{} ~ {}\n",
@@ -720,11 +730,11 @@ impl Net {
                 }
             }
             Tree::Era => format!("*"),
-            Tree::Break => format!("*!"),
-            Tree::Continue => format!("*!"),
-            Tree::Par(a, b) => format!("⅋({} {})", self.show_tree(a), self.show_tree(b)),
-            Tree::Times(a, b) => format!("X({} {})", self.show_tree(a), self.show_tree(b)),
-            Tree::Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
+            Tree::Break => format!("!"),
+            Tree::Continue => format!("?"),
+            Tree::Par(a, b) => format!("[{}] {}", self.show_tree(b), self.show_tree(a)),
+            Tree::Times(a, b) => format!("({}) {}", self.show_tree(b), self.show_tree(a)),
+            Tree::Dup(a, b) => format!("{{{} {}}}", self.show_tree(a), self.show_tree(b)),
             Tree::Box_(context, package) => format!("box({} {})", self.show_tree(context), package),
             Tree::Signal(signal, payload) => {
                 format!("signal({} {})", signal, self.show_tree(payload))
@@ -739,9 +749,9 @@ impl Net {
             }
             Tree::Package(id) => format!("@{}", id),
 
-            Tree::Primitive(Primitive::Int(i)) => format!("{{{}}}", i),
-            Tree::Primitive(Primitive::String(s)) => format!("{{{:?}}}", s),
-            Tree::Primitive(Primitive::Bytes(b)) => format!("{{{:?}}}", b),
+            Tree::Primitive(Primitive::Int(i)) => format!("primitive({})", i),
+            Tree::Primitive(Primitive::String(s)) => format!("primitive({:?})", s),
+            Tree::Primitive(Primitive::Bytes(b)) => format!("primitive({:?})", b),
 
             Tree::SignalRequest(_) => format!("<signal request>"),
             Tree::IntRequest(_) => format!("<int request>"),

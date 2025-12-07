@@ -401,6 +401,11 @@ impl Handle {
     }
 
     pub fn break_(self) {
+        if matches!(self.tree, Some(Tree::Break)) {
+            panic!(
+                "Attempted to break break!. This is probably a type error on an external function. See the backtrace to investigate."
+            );
+        };
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Break, self.tree.unwrap());
         locked.notify_reducer();

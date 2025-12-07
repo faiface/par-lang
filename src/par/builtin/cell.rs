@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use futures::{future::BoxFuture, FutureExt};
 use tokio::sync::Mutex;
@@ -36,7 +36,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 
 async fn cell_share(mut handle: Handle) {
     let initial_value = handle.receive().await;
-    let sharing = handle.send().await;
+    let sharing = handle.receive().await;
 
     let mutex = Arc::new(Mutex::new(Cell {
         shared: Some(initial_value),
