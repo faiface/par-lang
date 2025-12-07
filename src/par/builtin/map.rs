@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, future::Future};
 
 use crate::{
-    runtime::Handle,
     par::{
         builtin::list::readback_list,
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 use arcstr::literal;
 use num_bigint::BigInt;
@@ -70,13 +70,13 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     }
 }
 
-async fn map_new<K: Clone + Ord, F: Future<Output = K>>(
+async fn map_new<K: Clone + Ord, F: Future<Output = K>, G: Send + 'static + Future<Output = ()>>(
     mut handle: Handle,
     read_key: impl Fn(Handle) -> F,
-    provide_key: impl Fn(Handle, K),
+    provide_key: impl Fn(Handle, K) -> G,
 ) {
-    let entries = readback_list(handle.receive(), |mut handle| async {
-        let key = read_key(handle.receive()).await;
+    let entries = readback_list(handle.receive().await, |mut handle| async {
+        let key = read_key(handle.receive().await).await;
         let value = handle;
         (key, value)
     })
@@ -91,56 +91,64 @@ async fn map_new<K: Clone + Ord, F: Future<Output = K>>(
     provide_map(handle, map, read_key, provide_key).await;
 }
 
-async fn provide_map<K: Clone + Ord, F: Future<Output = K>>(
+async fn provide_map<
+    K: Clone + Ord,
+    F: Future<Output = K>,
+    G: Send + 'static + Future<Output = ()>,
+>(
     mut handle: Handle,
     mut map: BTreeMap<K, Handle>,
     read_key: impl Fn(Handle) -> F,
-    provide_key: impl Fn(Handle, K),
+    provide_key: impl Fn(Handle, K) -> G,
 ) {
     loop {
         match handle.case().await.as_str() {
             "size" => {
-                handle.send().provide_nat(BigInt::from(map.len()));
+                handle
+                    .send()
+                    .await
+                    .provide_nat(BigInt::from(map.len()))
+                    .await;
                 continue;
             }
             "keys" => {
-                let mut keys = handle.send();
+                let mut keys = handle.send().await;
                 for key in map.keys() {
                     keys.signal(literal!("item"));
-                    provide_key(keys.send(), key.clone());
+                    provide_key(keys.send().await, key.clone()).await;
                 }
                 keys.signal(literal!("end"));
-                keys.break_();
+                keys.break_().await;
                 continue;
             }
             "list" => {
                 for (key, value) in map.into_iter() {
-                    handle.signal(literal!("item"));
-                    let mut pair = handle.send();
-                    provide_key(pair.send(), key);
+                    handle.signal(literal!("item")).await;
+                    let mut pair = handle.send().await;
+                    provide_key(pair.send().await, key).await;
                     pair.link(value);
                 }
-                handle.signal(literal!("end"));
-                return handle.break_();
+                handle.signal(literal!("end")).await;
+                return handle.break_().await;
             }
             "entry" => {
-                let key = read_key(handle.receive()).await;
+                let key = read_key(handle.receive().await).await;
                 let removed = map.remove(&key);
-                handle.send().concurrently(|mut handle| async move {
+                handle.send().await.concurrently(|mut handle| async move {
                     match removed {
                         Some(value) => {
-                            handle.signal(literal!("ok"));
+                            handle.signal(literal!("ok")).await;
                             handle.link(value);
                         }
                         None => {
-                            handle.signal(literal!("err"));
-                            handle.break_();
+                            handle.signal(literal!("err")).await;
+                            handle.break_().await;
                         }
                     }
                 });
                 match handle.case().await.as_str() {
                     "put" => {
-                        let new_value = handle.receive();
+                        let new_value = handle.receive().await;
                         map.insert(key, new_value);
                     }
                     "delete" => {}

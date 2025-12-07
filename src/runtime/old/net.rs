@@ -484,7 +484,7 @@ impl Net {
                 self.rewrites.resp += 1;
             }
             (External(f), a) | (a, External(f)) => match &self.reducer {
-                Some(_reducer) => todo!(), //reducer.spawn_external(*f, a),
+                Some(reducer) => reducer.spawn_external(|x| f(crate::runtime::Handle::Old(x)), a),
                 None => self.waiting_for_reducer.push((External(f), a)),
             },
             (ExternalBox(_), Era) | (Era, ExternalBox(_)) => {
@@ -496,7 +496,9 @@ impl Net {
                 self.rewrites.commute += 1;
             }
             (ExternalBox(f), a) | (a, ExternalBox(f)) => match &self.reducer {
-                Some(reducer) => todo!(),
+                Some(reducer) => {
+                    reducer.spawn_external(|x| f(crate::runtime::Handle::Old(x)), a);
+                }
                 None => self.waiting_for_reducer.push((ExternalBox(f), a)),
             },
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),

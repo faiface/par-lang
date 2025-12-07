@@ -4,12 +4,12 @@ use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
-    runtime::Handle,
     par::{
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -46,30 +46,30 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn char_equals(mut handle: Handle) {
-    let x = handle.receive().char().await;
-    let y = handle.receive().char().await;
+    let x = handle.receive().await.char().await;
+    let y = handle.receive().await.char().await;
     if x == y {
         handle.signal(literal!("true"));
     } else {
         handle.signal(literal!("false"));
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 async fn char_code(mut handle: Handle) {
-    let c = handle.receive().char().await;
-    handle.provide_nat(BigInt::from(c as u32))
+    let c = handle.receive().await.char().await;
+    handle.provide_nat(BigInt::from(c as u32)).await;
 }
 
 async fn char_is(mut handle: Handle) {
-    let ch = handle.receive().char().await;
-    let class = CharClass::readback(handle.receive()).await;
+    let ch = handle.receive().await.char().await;
+    let class = CharClass::readback(handle.receive().await).await;
     if class.contains(ch) {
         handle.signal(literal!("true"));
     } else {
         handle.signal(literal!("false"));
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 #[derive(Debug, Clone)]

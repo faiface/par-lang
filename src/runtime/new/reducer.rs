@@ -3,7 +3,6 @@ use crate::runtime::new::runtime::{Global, Linear, Node, PackagePtr, Runtime, Us
 use crate::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
-use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc;

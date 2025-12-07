@@ -1,11 +1,11 @@
 use crate::{
-    runtime::Handle,
     par::{
         primitive::ParString,
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 use arcstr::literal;
 use num_bigint::BigInt;
@@ -110,129 +110,135 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn int_add(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x + y);
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
+    handle.provide_int(x + y).await;
 }
 
 async fn int_sub(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x - y);
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
+    handle.provide_int(x - y).await;
 }
 
 async fn int_mul(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x * y);
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
+    handle.provide_int(x * y).await;
 }
 
 async fn int_div(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(if y == BigInt::ZERO {
-        BigInt::ZERO
-    } else {
-        x / y
-    });
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
+    handle
+        .provide_int(if y == BigInt::ZERO {
+            BigInt::ZERO
+        } else {
+            x / y
+        })
+        .await;
 }
 
 async fn int_mod(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().nat().await;
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.nat().await;
     if y == BigInt::ZERO {
-        handle.provide_nat(BigInt::ZERO);
+        handle.provide_nat(BigInt::ZERO).await;
     } else if x < BigInt::ZERO {
         let rem = x % y.clone();
-        handle.provide_nat(if rem == BigInt::ZERO {
-            BigInt::ZERO
-        } else {
-            y.clone() + rem
-        });
+        handle
+            .provide_nat(if rem == BigInt::ZERO {
+                BigInt::ZERO
+            } else {
+                y.clone() + rem
+            })
+            .await;
     } else {
-        handle.provide_nat(x % y);
+        handle.provide_nat(x % y).await;
     }
 }
 
 async fn int_min(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x.min(y));
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
+    handle.provide_int(x.min(y)).await;
 }
 
 async fn int_max(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x.max(y));
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
+    handle.provide_int(x.max(y)).await;
 }
 
 async fn int_clamp(mut handle: Handle) {
-    let int = handle.receive().int().await;
-    let min = handle.receive().int().await;
-    let max = handle.receive().int().await;
-    handle.provide_int(int.min(max).max(min));
+    let int = handle.receive().await.int().await;
+    let min = handle.receive().await.int().await;
+    let max = handle.receive().await.int().await;
+    handle.provide_int(int.min(max).max(min)).await;
 }
 
 async fn int_abs(mut handle: Handle) {
-    let int = handle.receive().int().await;
+    let int = handle.receive().await.int().await;
     if int < BigInt::ZERO {
-        handle.provide_nat(-int);
+        handle.provide_nat(-int).await;
     } else {
-        handle.provide_nat(int);
+        handle.provide_nat(int).await;
     }
 }
 
 async fn int_equals(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
     if x == y {
-        handle.signal(literal!("true"));
+        handle.signal(literal!("true")).await;
     } else {
-        handle.signal(literal!("false"));
+        handle.signal(literal!("false")).await;
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 async fn int_compare(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
+    let x = handle.receive().await.int().await;
+    let y = handle.receive().await.int().await;
     match x.cmp(&y) {
-        Ordering::Equal => handle.signal(literal!("equal")),
-        Ordering::Greater => handle.signal(literal!("greater")),
-        Ordering::Less => handle.signal(literal!("less")),
+        Ordering::Equal => handle.signal(literal!("equal")).await,
+        Ordering::Greater => handle.signal(literal!("greater")).await,
+        Ordering::Less => handle.signal(literal!("less")).await,
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 async fn int_range(mut handle: Handle) {
-    let lo = handle.receive().int().await;
-    let hi = handle.receive().int().await;
+    let lo = handle.receive().await.int().await;
+    let hi = handle.receive().await.int().await;
 
     let mut i = lo;
     while i < hi {
-        handle.signal(literal!("item"));
-        handle.send().provide_int(i.clone());
+        handle.signal(literal!("item")).await;
+        handle.send().await.provide_int(i.clone());
         i += 1;
     }
-    handle.signal(literal!("end"));
-    handle.break_();
+    handle.signal(literal!("end")).await;
+    handle.break_().await;
 }
 
 async fn int_to_string(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    handle.provide_string(ParString::from(x.to_str_radix(10)))
+    let x = handle.receive().await.int().await;
+    handle
+        .provide_string(ParString::from(x.to_str_radix(10)))
+        .await
 }
 
 async fn int_from_string(mut handle: Handle) {
-    let string = handle.receive().string().await;
+    let string = handle.receive().await.string().await;
     match string.as_str().parse::<BigInt>() {
         Ok(num) => {
-            handle.signal(literal!("ok"));
-            handle.provide_int(num);
+            handle.signal(literal!("ok")).await;
+            handle.provide_int(num).await;
         }
         Err(_) => {
-            handle.signal(literal!("err"));
-            handle.break_();
+            handle.signal(literal!("err")).await;
+            handle.break_().await;
         }
     };
 }

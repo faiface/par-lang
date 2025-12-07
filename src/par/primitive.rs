@@ -92,12 +92,3 @@ impl<T: Into<Bytes>> From<T> for ParString {
         }
     }
 }
-
-impl Primitive {
-    pub fn expect_string(self: Primitive) -> ParString {
-        match self {
-            Primitive::String(par_string) => par_string,
-            other => panic!("Expected string, got {:?}", other),
-        }
-    }
-}

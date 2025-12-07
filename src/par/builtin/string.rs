@@ -4,7 +4,6 @@ use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
-    runtime::Handle,
     par::{
         builtin::{
             char_::CharClass,
@@ -16,6 +15,7 @@ use crate::{
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -83,10 +83,10 @@ async fn string_builder(mut handle: Handle) {
     loop {
         match handle.case().await.as_str() {
             "add" => {
-                buf += handle.receive().string().await.as_str();
+                buf += handle.receive().await.string().await.as_str();
             }
             "build" => {
-                handle.provide_string(ParString::from(buf));
+                handle.provide_string(ParString::from(buf)).await;
                 break;
             }
             _ => unreachable!(),
@@ -95,47 +95,51 @@ async fn string_builder(mut handle: Handle) {
 }
 
 async fn string_quote(mut handle: Handle) {
-    let s = handle.receive().string().await;
-    handle.provide_string(ParString::from(format!("{:?}", s)));
+    let s = handle.receive().await.string().await;
+    handle
+        .provide_string(ParString::from(format!("{:?}", s)))
+        .await;
 }
 
 async fn string_parser(mut handle: Handle) {
-    let remainder = handle.receive().string().await;
+    let remainder = handle.receive().await.string().await;
     provide_string_parser(handle, remainder).await;
 }
 
 async fn string_parser_from_reader(mut handle: Handle) {
-    let reader = handle.receive();
+    let reader = handle.receive().await;
     provide_string_parser(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn string_from_bytes(mut handle: Handle) {
-    let bytes = handle.receive().bytes().await;
-    handle.provide_string(ParString::copy_from_slice(
-        String::from_utf8_lossy(&bytes).as_bytes(),
-    ))
+    let bytes = handle.receive().await.bytes().await;
+    handle
+        .provide_string(ParString::copy_from_slice(
+            String::from_utf8_lossy(&bytes).as_bytes(),
+        ))
+        .await;
 }
 
 async fn string_equals(mut handle: Handle) {
-    let left = handle.receive().string().await;
-    let right = handle.receive().string().await;
+    let left = handle.receive().await.string().await;
+    let right = handle.receive().await.string().await;
     if left == right {
         handle.signal(literal!("true"));
     } else {
         handle.signal(literal!("false"));
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 async fn string_compare(mut handle: Handle) {
-    let left = handle.receive().string().await;
-    let right = handle.receive().string().await;
+    let left = handle.receive().await.string().await;
+    let right = handle.receive().await.string().await;
     match left.cmp(&right) {
-        Ordering::Equal => handle.signal(literal!("equal")),
-        Ordering::Greater => handle.signal(literal!("greater")),
-        Ordering::Less => handle.signal(literal!("less")),
+        Ordering::Equal => handle.signal(literal!("equal")).await,
+        Ordering::Greater => handle.signal(literal!("greater")).await,
+        Ordering::Less => handle.signal(literal!("less")).await,
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 #[derive(Debug, Clone)]
@@ -180,7 +184,7 @@ impl StringPattern {
             }
             "empty" => {
                 // .empty!
-                handle.break_();
+                handle.break_().await;
                 Box::new(Self::Empty)
             }
             "min" => {

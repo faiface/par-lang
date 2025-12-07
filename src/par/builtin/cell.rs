@@ -1,15 +1,16 @@
 use std::{future::Future, sync::Arc};
 
+use futures::{future::BoxFuture, FutureExt};
 use tokio::sync::Mutex;
 
 use crate::{
-    runtime::Handle,
     location::Span,
     par::{
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -34,8 +35,8 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn cell_share(mut handle: Handle) {
-    let initial_value = handle.receive();
-    let sharing = handle.send();
+    let initial_value = handle.receive().await;
+    let sharing = handle.send().await;
 
     let mutex = Arc::new(Mutex::new(Cell {
         shared: Some(initial_value),
@@ -45,26 +46,27 @@ async fn cell_share(mut handle: Handle) {
     provide_cell(sharing, mutex).await
 }
 
-fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> impl Send + Future<Output = ()> {
+fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'static, ()> {
     async move {
         loop {
             match handle.case().await.as_str() {
-                "end" => break handle.continue_(),
+                "end" => break handle.continue_().await,
 
                 "split" => {
                     let mutex = Arc::clone(&mutex);
                     handle
                         .receive()
+                        .await
                         .concurrently(move |handle| provide_cell(handle, mutex));
                 }
 
                 "take" => {
                     let mut locked = mutex.lock().await;
                     let current_value = locked.shared.take().unwrap();
-                    handle.send().link(current_value);
+                    handle.send().await.link(current_value);
                     match handle.case().await.as_str() {
                         "put" => {
-                            let new_value = handle.receive();
+                            let new_value = handle.receive().await;
                             locked.shared = Some(new_value);
                             drop(locked)
                         }
@@ -76,6 +78,7 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> impl Send + Futu
             }
         }
     }
+    .boxed()
 }
 
 struct Cell {
@@ -87,6 +90,6 @@ impl Drop for Cell {
     fn drop(&mut self) {
         let value = self.shared.take().unwrap();
         let handle = self.finally.take().unwrap();
-        handle.link(value)
+        handle.concurrently(move |x| x.link(value))
     }
 }

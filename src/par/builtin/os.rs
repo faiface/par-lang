@@ -4,17 +4,17 @@ use std::{
 };
 
 use crate::{
-    runtime::Handle,
     par::{
         primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 use arcstr::literal;
 use bytes::Bytes;
-use futures::future::BoxFuture;
+use futures::{future::BoxFuture, FutureExt};
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -161,53 +161,55 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
 }
 
 async fn path_from_bytes(mut handle: Handle) {
-    let b = handle.receive().bytes().await;
+    let b = handle.receive().await.bytes().await;
     // Unsafe: we accept arbitrary OS-encoded bytes without validation
     let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
     let p = PathBuf::from(os);
-    provide_path(handle, p);
+    provide_path(handle, p).await;
 }
 
-pub fn provide_path(handle: Handle, path: PathBuf) {
-    handle.provide_box(move |mut handle| {
-        let path = path.clone();
-        async move {
-            match handle.case().await.as_str() {
-                "name" => {
-                    let bytes = path
-                        .file_name()
-                        .map(|n| os_to_bytes(n))
-                        .unwrap_or_else(|| Bytes::new());
-                    handle.provide_bytes(bytes);
-                }
-                "absolute" => {
-                    let abs = absolute_path(&path);
-                    let bytes = os_to_bytes(abs.as_os_str());
-                    handle.provide_bytes(bytes);
-                }
-                "parts" => {
-                    provide_bytes_parts(handle, &path);
-                }
-                "parent" => match path.parent() {
-                    Some(p) => {
-                        handle.signal(arcstr::literal!("ok"));
-                        provide_path(handle, p.to_path_buf());
+pub fn provide_path(handle: Handle, path: PathBuf) -> BoxFuture<'static, ()> {
+    handle
+        .provide_box(move |mut handle| {
+            let path = path.clone();
+            async move {
+                match handle.case().await.as_str() {
+                    "name" => {
+                        let bytes = path
+                            .file_name()
+                            .map(|n| os_to_bytes(n))
+                            .unwrap_or_else(|| Bytes::new());
+                        handle.provide_bytes(bytes).await;
                     }
-                    None => {
-                        handle.signal(arcstr::literal!("err"));
-                        handle.break_();
+                    "absolute" => {
+                        let abs = absolute_path(&path);
+                        let bytes = os_to_bytes(abs.as_os_str());
+                        handle.provide_bytes(bytes).await;
                     }
-                },
-                "append" => {
-                    let b = handle.receive().bytes().await;
-                    let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
-                    let p2 = path.join(Path::new(os));
-                    provide_path(handle, p2);
+                    "parts" => {
+                        provide_bytes_parts(handle, &path).await;
+                    }
+                    "parent" => match path.parent() {
+                        Some(p) => {
+                            handle.signal(arcstr::literal!("ok"));
+                            provide_path(handle, p.to_path_buf()).await;
+                        }
+                        None => {
+                            handle.signal(arcstr::literal!("err"));
+                            handle.break_().await;
+                        }
+                    },
+                    "append" => {
+                        let b = handle.receive().await.bytes().await;
+                        let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
+                        let p2 = path.join(Path::new(os));
+                        provide_path(handle, p2).await;
+                    }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
             }
-        }
-    })
+        })
+        .boxed()
 }
 
 fn absolute_path(p: &Path) -> PathBuf {
@@ -225,14 +227,14 @@ fn absolute_path(p: &Path) -> PathBuf {
     }
 }
 
-fn provide_bytes_parts(mut handle: Handle, p: &Path) {
+async fn provide_bytes_parts(mut handle: Handle, p: &Path) {
     for part in p.iter() {
         handle.signal(arcstr::literal!("item"));
         let bytes = os_to_bytes(part);
-        handle.send().provide_bytes(bytes);
+        handle.send().await.provide_bytes(bytes).await;
     }
     handle.signal(arcstr::literal!("end"));
-    handle.break_();
+    handle.break_().await;
 }
 
 #[cfg(unix)]
@@ -263,26 +265,30 @@ async fn provide_bytes_reader_from_async(mut handle: Handle, mut reader: impl As
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.signal(literal!("ok"));
-                return handle.break_();
+                handle.signal(literal!("ok")).await;
+                return handle.break_().await;
             }
             "read" => match reader.read(&mut buf[..]).await {
                 Ok(n) => {
                     if n == 0 {
-                        handle.signal(literal!("ok"));
-                        handle.signal(literal!("end"));
-                        return handle.break_();
+                        handle.signal(literal!("ok")).await;
+                        handle.signal(literal!("end")).await;
+                        return handle.break_().await;
                     }
-                    handle.signal(literal!("ok"));
-                    handle.signal(literal!("chunk"));
+                    handle.signal(literal!("ok")).await;
+                    handle.signal(literal!("chunk")).await;
                     handle
                         .send()
-                        .provide_bytes(Bytes::copy_from_slice(&buf[..n]));
+                        .await
+                        .provide_bytes(Bytes::copy_from_slice(&buf[..n]))
+                        .await;
                     continue;
                 }
                 Err(err) => {
-                    handle.signal(literal!("err"));
-                    return handle.provide_string(ParString::from(err.to_string()));
+                    handle.signal(literal!("err")).await;
+                    return handle
+                        .provide_string(ParString::from(err.to_string()))
+                        .await;
                 }
             },
             _ => unreachable!(),
@@ -297,35 +303,41 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
                 // Try to flush pending data before closing
                 match writer.flush().await {
                     Ok(()) => {
-                        handle.signal(literal!("ok"));
-                        return handle.break_();
+                        handle.signal(literal!("ok")).await;
+                        return handle.break_().await;
                     }
                     Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
+                        handle.signal(literal!("err")).await;
+                        return handle
+                            .provide_string(ParString::from(err.to_string()))
+                            .await;
                     }
                 }
             }
             "flush" => match writer.flush().await {
                 Ok(()) => {
-                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("ok")).await;
                     continue;
                 }
                 Err(err) => {
-                    handle.signal(literal!("err"));
-                    return handle.provide_string(ParString::from(err.to_string()));
+                    handle.signal(literal!("err")).await;
+                    return handle
+                        .provide_string(ParString::from(err.to_string()))
+                        .await;
                 }
             },
             "write" => {
-                let bytes = handle.receive().bytes().await;
+                let bytes = handle.receive().await.bytes().await;
                 match writer.write_all(bytes.as_ref()).await {
                     Ok(()) => {
-                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("ok")).await;
                         continue;
                     }
                     Err(err) => {
-                        handle.signal(literal!("err"));
-                        return handle.provide_string(ParString::from(err.to_string()));
+                        handle.signal(literal!("err")).await;
+                        return handle
+                            .provide_string(ParString::from(err.to_string()))
+                            .await;
                     }
                 }
             }
@@ -348,11 +360,11 @@ async fn provide_list_dir(mut handle: Handle, base: &Path, rd: &mut ReadDir) {
 
     for (_, name) in entries {
         let child = base.join(Path::new(&name));
-        handle.signal(literal!("item"));
-        provide_path(handle.send(), child);
+        handle.signal(literal!("item")).await;
+        provide_path(handle.send().await, child);
     }
-    handle.signal(literal!("end"));
-    handle.break_();
+    handle.signal(literal!("end")).await;
+    handle.break_().await;
 }
 
 // Directory tree node used for traverseDir
@@ -397,22 +409,22 @@ fn build_dir_tree(dir: PathBuf) -> BoxFuture<'static, Result<Vec<DirNode>, Strin
     })
 }
 
-fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
+async fn provide_dir_tree(mut handle: Handle, nodes: &[DirNode]) {
     match nodes.split_first() {
         None => {
-            handle.signal(literal!("end"));
-            handle.break_();
+            handle.signal(literal!("end")).await;
+            handle.break_().await;
         }
         Some((node, tail)) => match node {
             DirNode::File(path) => {
-                handle.signal(literal!("file"));
-                provide_path(handle.send(), path.clone());
+                handle.signal(literal!("file")).await;
+                provide_path(handle.send().await, path.clone());
                 provide_dir_tree(handle, tail);
             }
             DirNode::Dir { path, children } => {
-                handle.signal(literal!("dir"));
-                provide_path(handle.send(), path.clone());
-                provide_dir_tree(handle.send(), children.as_slice());
+                handle.signal(literal!("dir")).await;
+                provide_path(handle.send().await, path.clone());
+                provide_dir_tree(handle.send().await, children.as_slice());
                 provide_dir_tree(handle, tail);
             }
         },
@@ -432,21 +444,23 @@ async fn os_stderr(handle: Handle) {
 }
 
 async fn os_open_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match File::open(&path).await {
         Ok(file) => {
-            handle.signal(literal!("ok"));
+            handle.signal(literal!("ok")).await;
             return provide_bytes_reader_from_async(handle, file).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_create_or_replace_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match OpenOptions::new()
         .create(true)
         .write(true)
@@ -455,18 +469,20 @@ async fn os_create_or_replace_file(mut handle: Handle) {
         .await
     {
         Ok(file) => {
-            handle.signal(literal!("ok"));
+            handle.signal(literal!("ok")).await;
             return provide_bytes_writer_from_async(handle, file).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_create_new_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -474,18 +490,20 @@ async fn os_create_new_file(mut handle: Handle) {
         .await
     {
         Ok(file) => {
-            handle.signal(literal!("ok"));
+            handle.signal(literal!("ok")).await;
             return provide_bytes_writer_from_async(handle, file).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_append_to_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match OpenOptions::new()
         .write(true)
         .append(true)
@@ -493,18 +511,20 @@ async fn os_append_to_file(mut handle: Handle) {
         .await
     {
         Ok(file) => {
-            handle.signal(literal!("ok"));
+            handle.signal(literal!("ok")).await;
             return provide_bytes_writer_from_async(handle, file).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_create_or_append_to_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match OpenOptions::new()
         .create(true)
         .write(true)
@@ -513,60 +533,66 @@ async fn os_create_or_append_to_file(mut handle: Handle) {
         .await
     {
         Ok(file) => {
-            handle.signal(literal!("ok"));
+            handle.signal(literal!("ok")).await;
             return provide_bytes_writer_from_async(handle, file).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_create_dir(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match fs::create_dir_all(&path).await {
         Ok(()) => {
-            handle.signal(literal!("ok"));
-            return handle.break_();
+            handle.signal(literal!("ok")).await;
+            return handle.break_().await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_list_dir(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match fs::read_dir(&path).await {
         Ok(mut rd) => {
-            handle.signal(literal!("ok"));
+            handle.signal(literal!("ok")).await;
             return provide_list_dir(handle, &path, &mut rd).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err.to_string()));
+            handle.signal(literal!("err")).await;
+            return handle
+                .provide_string(ParString::from(err.to_string()))
+                .await;
         }
     }
 }
 
 async fn os_traverse_dir(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive()).await;
+    let path = pathbuf_from_os_path(handle.receive().await).await;
     match build_dir_tree(path.clone()).await {
         Ok(nodes) => {
-            handle.signal(literal!("ok"));
-            return provide_dir_tree(handle, nodes.as_slice());
+            handle.signal(literal!("ok")).await;
+            return provide_dir_tree(handle, nodes.as_slice()).await;
         }
         Err(err) => {
-            handle.signal(literal!("err"));
-            return handle.provide_string(ParString::from(err));
+            handle.signal(literal!("err")).await;
+            return handle.provide_string(ParString::from(err)).await;
         }
     }
 }
 
 async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {
-    handle.signal(literal!("absolute"));
+    handle.signal(literal!("absolute")).await;
     let path_bytes = handle.bytes().await;
     let os_str = unsafe { OsStr::from_encoded_bytes_unchecked(&path_bytes) };
     PathBuf::from(os_str)

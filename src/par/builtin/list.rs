@@ -13,11 +13,11 @@ where
     loop {
         match handle.case().await.as_str() {
             "end" => {
-                handle.break_();
+                handle.break_().await;
                 return items;
             }
             "item" => {
-                let item = readback_item(handle.receive()).await;
+                let item = readback_item(handle.receive().await).await;
                 items.push(item);
             }
             _ => unreachable!(),

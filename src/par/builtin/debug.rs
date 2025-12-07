@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::{
-    runtime::Handle,
     par::{
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -22,7 +22,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn debug_log(mut handle: Handle) {
-    let string = handle.receive().string().await;
+    let string = handle.receive().await.string().await;
     println!("{}", string.as_str());
-    handle.break_();
+    handle.break_().await;
 }
