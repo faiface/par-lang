@@ -23,6 +23,6 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 
 async fn debug_log(mut handle: Handle) {
     let string = handle.receive().await.string().await;
-    println!("{}", string.as_str());
+    eprintln!("{}", string.as_str());
     handle.break_().await;
 }

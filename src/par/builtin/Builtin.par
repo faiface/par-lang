@@ -1,6 +1,7 @@
 /// Nat
 
 dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Sub   : [Nat, Int] Nat
 dec Nat.Mul   : [Nat, Nat] Nat
 dec Nat.Div   : [Nat, Nat] Nat
 dec Nat.Mod   : [Nat, Nat] Nat
@@ -250,6 +251,8 @@ type Bytes.Pattern = recursive either {
   .or List<self>,
 }
 
+dec Bytes.Equals  : [Bytes, Bytes] Bool
+dec Bytes.Compare : [Bytes, Bytes] Ordering
 dec Bytes.Length  : [Bytes] Nat
 dec Bytes.Builder : Bytes.Builder
 dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
@@ -307,6 +310,7 @@ dec Os.TraverseDir : [Os.Path] Result<Os.Error, recursive either {
   .dir(Os.Path, self) self,
 }>
 
+dec Os.Env : BoxMap.Readonly<Bytes, Bytes>
 
 /// Url
 
@@ -366,6 +370,7 @@ type Map<k, v> = iterative choice {
 }
 
 dec Map.String : [type v] [List<(String) box v>] Map<String, v>
+dec Map.Bytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>
 dec Map.Int    : [type v] [List<(Int) box v>]    Map<Int, v>
 dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
 
@@ -381,7 +386,15 @@ type BoxMap<k, v> = iterative box choice {
   .delete(k) => self,
 }
 
+type BoxMap.Readonly<k, v> = box choice {
+  .size => Nat,
+  .keys => List<k>,
+  .list => List<(k) box v>,
+  .get(k) => Option<box v>,
+}
+
 dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
+dec BoxMap.Bytes  : [type v] [List<(Bytes) box v>]  BoxMap<Bytes, v>
 dec BoxMap.Int    : [type v] [List<(Int) box v>]    BoxMap<Int, v>
 dec BoxMap.Nat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v>
 

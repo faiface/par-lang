@@ -9,6 +9,8 @@
 
 ## 🚀 Get started with the [documentation](https://faiface.github.io/par-lang/introduction.html)
 
+## 🛠️ [VSCode extension](https://marketplace.visualstudio.com/items?itemName=par-lang.par-vscode)
+
 ## 📺 [What’s a linear programming language like? — Coding a “Mini Grep” in Par](https://youtu.be/nU7Lt6k3lNQ?si=8KtbTQMgp6VhZ5UP)
 
 ## 💡 Check out the [examples](examples/)

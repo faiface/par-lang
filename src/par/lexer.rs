@@ -203,7 +203,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
         let mut idx = 0;
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
-            let Some((raw, kind)) = (match c {
+            let Some((raw, kind, len)) = (match c {
                 '-' => {
                     let (raw, mut kind) = alt((
                         ("->").map(|raw| (raw, TokenKind::ThinArrow)),
@@ -220,7 +220,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                             kind = TokenKind::Unknown;
                         }
                     }
-                    Some((raw, kind))
+                    Some((raw, kind, raw.len()))
                 }
                 '0'..='9' | '+' => {
                     let raw = (
@@ -230,9 +230,9 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                         .take()
                         .parse_next(input)?;
                     if !raw.contains(|c| matches!(c, '0'..='9')) {
-                        Some((raw, TokenKind::Unknown))
+                        Some((raw, TokenKind::Unknown, raw.len()))
                     } else {
-                        Some((raw, TokenKind::Integer))
+                        Some((raw, TokenKind::Integer, raw.len()))
                     }
                 }
                 '"' => {
@@ -245,6 +245,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                         .parse_next(input)?;
                     let is_closed = opt('"').parse_next(input)?.is_some();
                     let is_valid = unescaper::unescape(raw).is_ok();
+                    let len = raw.len() + 1 + usize::from(is_closed);
                     Some((
                         raw,
                         if is_closed && is_valid {
@@ -252,6 +253,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                         } else {
                             TokenKind::InvalidString
                         },
+                        len,
                     ))
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
@@ -295,7 +297,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                             }
                         }
                     };
-                    Some((raw, kind))
+                    Some((raw, kind, raw.len()))
                 }
                 '\n' => {
                     let _ = any::<&str, Error>.parse_next(input);
@@ -311,46 +313,47 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                 }
                 ':' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Colon))
+                    Some((raw, TokenKind::Colon, raw.len()))
                 }
                 ';' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Semicolon))
+                    Some((raw, TokenKind::Semicolon, raw.len()))
                 }
                 '[' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LBrack))
+                    Some((raw, TokenKind::LBrack, raw.len()))
                 }
                 ']' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RBrack))
+                    Some((raw, TokenKind::RBrack, raw.len()))
                 }
                 '(' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LParen))
+                    Some((raw, TokenKind::LParen, raw.len()))
                 }
                 ')' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RParen))
+                    Some((raw, TokenKind::RParen, raw.len()))
                 }
                 '{' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LCurly))
+                    Some((raw, TokenKind::LCurly, raw.len()))
                 }
                 '}' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RCurly))
+                    Some((raw, TokenKind::RCurly, raw.len()))
                 }
-                '<' => Some(
-                    alt((
+                '<' => {
+                    let (raw, kind) = alt((
                         "<>".map(|raw| (raw, TokenKind::Link)),
                         "<".map(|raw| (raw, TokenKind::Lt)),
                     ))
-                    .parse_next(input)?,
-                ),
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
+                }
                 '>' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Gt))
+                    Some((raw, TokenKind::Gt, raw.len()))
                 }
                 '/' => {
                     let (is_comment, raw) = alt((
@@ -366,43 +369,44 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                         idx += raw.len();
                         None
                     } else {
-                        Some((raw, TokenKind::Slash))
+                        Some((raw, TokenKind::Slash, raw.len()))
                     }
                 }
                 '@' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::At))
+                    Some((raw, TokenKind::At, raw.len()))
                 }
                 ',' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Comma))
+                    Some((raw, TokenKind::Comma, raw.len()))
                 }
                 '.' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Dot))
+                    Some((raw, TokenKind::Dot, raw.len()))
                 }
-                '=' => Some(
-                    alt((
+                '=' => {
+                    let (raw, kind) = alt((
                         ("=>").map(|raw| (raw, TokenKind::FatArrow)),
                         ("=").map(|raw| (raw, TokenKind::Eq)),
                     ))
-                    .parse_next(input)?,
-                ),
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
+                }
                 '!' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Bang))
+                    Some((raw, TokenKind::Bang, raw.len()))
                 }
                 '?' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Quest))
+                    Some((raw, TokenKind::Quest, raw.len()))
                 }
                 '*' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Star))
+                    Some((raw, TokenKind::Star, raw.len()))
                 }
                 _ => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Unknown))
+                    Some((raw, TokenKind::Unknown, raw.len()))
                 }
             }) else {
                 continue;
@@ -412,11 +416,11 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                 row: row as u32,
                 column: column as u32,
             };
-            idx += raw.len();
+            idx += len;
             let end = Point {
                 offset: idx.try_into().expect("position too large"),
                 row: row as u32,
-                column: (column + raw.len()) as u32,
+                column: (column + len) as u32,
             };
             tokens.push(Token {
                 kind,

@@ -4,8 +4,7 @@ use crate::{
         primitive::{ParString, Primitive},
     },
     runtime::old::{
-        compiler::IcCompiled, net::Net, readback::TypedHandle, readback::TypedReadback}
-    
+        net::Net, readback::TypedHandle, readback::TypedReadback},
 };
 use arcstr::ArcStr;
 use bytes::Bytes;

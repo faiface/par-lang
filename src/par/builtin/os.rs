@@ -15,6 +15,7 @@ use crate::{
 use arcstr::literal;
 use bytes::Bytes;
 use futures::{future::BoxFuture, FutureExt};
+use num_bigint::BigInt;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -155,6 +156,15 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
                     ]),
                 ),
                 |handle| Box::pin(os_traverse_dir(handle)),
+            ),
+            Definition::external(
+                "Env",
+                Type::name(
+                    Some("BoxMap"),
+                    "Readonly",
+                    vec![Type::bytes(), Type::bytes()],
+                ),
+                |handle| Box::pin(envmap_new(handle)),
             ),
         ],
     }
@@ -592,6 +602,57 @@ async fn os_traverse_dir(mut handle: Handle) {
             return handle.provide_string(ParString::from(err)).await;
         }
     }
+}
+
+async fn envmap_new(mut handle: Handle) {
+    handle
+        .provide_box(move |mut handle| async move {
+            match handle.case().await.as_str() {
+                "size" => {
+                    return handle
+                        .provide_nat(BigInt::from(std::env::vars_os().count()))
+                        .await;
+                }
+                "keys" => {
+                    let vars: Vec<_> = std::env::vars_os().into_iter().collect();
+                    for (name, _) in vars {
+                        handle.signal(literal!("item")).await;
+                        handle.send().await.provide_bytes(os_to_bytes(&name)).await;
+                    }
+                    handle.signal(literal!("end")).await;
+                    return handle.break_().await;
+                }
+                "list" => {
+                    let vars: Vec<_> = std::env::vars_os().into_iter().collect();
+                    for (name, value) in vars {
+                        handle.signal(literal!("item")).await;
+                        let mut pair = handle.send().await;
+                        pair.send().await.provide_bytes(os_to_bytes(&name)).await;
+                        pair.provide_bytes(os_to_bytes(&value)).await;
+                    }
+                    handle.signal(literal!("end")).await;
+                    return handle.break_().await;
+                }
+                "get" => {
+                    let name = handle.receive().await.bytes().await;
+                    let name_os: &OsStr =
+                        unsafe { OsStr::from_encoded_bytes_unchecked(name.as_ref()) };
+                    match std::env::var_os(name_os) {
+                        Some(val) => {
+                            let bytes = os_to_bytes(&val);
+                            handle.signal(literal!("ok")).await;
+                            return handle.provide_bytes(bytes).await;
+                        }
+                        None => {
+                            handle.signal(literal!("err")).await;
+                            return handle.break_().await;
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            }
+        })
+        .await;
 }
 
 async fn pathbuf_from_os_path(mut handle: Handle) -> PathBuf {

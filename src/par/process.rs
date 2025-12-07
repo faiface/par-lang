@@ -538,7 +538,14 @@ impl Expression<()> {
                 )
             }
             Self::Box(span, _, expression, typ) => {
-                let (expression, caps) = expression.fix_captures(loop_points, later_captures);
+                let (expression, mut caps) = expression.fix_captures(loop_points, later_captures);
+                for (name, (_span, usage)) in caps.names.iter_mut() {
+                    if later_captures.contains(name) {
+                        *usage = VariableUsage::Copy;
+                    } else {
+                        *usage = VariableUsage::Move;
+                    }
+                }
                 (
                     Arc::new(Self::Box(
                         span.clone(),

@@ -24,6 +24,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 |handle| Box::pin(nat_add(handle)),
             ),
             Definition::external(
+                "Sub",
+                Type::function(Type::nat(), Type::function(Type::int(), Type::nat())),
+                |handle| Box::pin(nat_sub(handle)),
+            ),
+            Definition::external(
                 "Mul",
                 Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
                 |handle| Box::pin(nat_mul(handle)),
@@ -137,6 +142,12 @@ async fn nat_add(mut handle: Handle) {
     handle.provide_nat(x + y).await;
 }
 
+async fn nat_sub(mut handle: Handle) {
+    let x = handle.receive().await.nat().await;
+    let y = handle.receive().await.int().await;
+    handle.provide_nat((x - y).max(0.into())).await;
+}
+
 async fn nat_mul(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
@@ -146,21 +157,25 @@ async fn nat_mul(mut handle: Handle) {
 async fn nat_div(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle.provide_nat(if y == BigInt::ZERO {
-        BigInt::ZERO
-    } else {
-        x / y
-    }).await;
+    handle
+        .provide_nat(if y == BigInt::ZERO {
+            BigInt::ZERO
+        } else {
+            x / y
+        })
+        .await;
 }
 
 async fn nat_mod(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle.provide_nat(if y == BigInt::ZERO {
-        BigInt::ZERO
-    } else {
-        x % y
-    }).await;
+    handle
+        .provide_nat(if y == BigInt::ZERO {
+            BigInt::ZERO
+        } else {
+            x % y
+        })
+        .await;
 }
 
 async fn nat_min(mut handle: Handle) {
