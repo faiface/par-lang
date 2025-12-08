@@ -10,7 +10,7 @@ use std::{fmt::Display, fs};
 use tokio::runtime::Runtime;
 
 #[derive(Debug)]
-enum TestStatus {
+pub enum TestStatus {
     Passed,
     PassedWithNoAssertions,
     Failed(String),
@@ -21,7 +21,7 @@ enum TestStatus {
 }
 
 impl TestStatus {
-    fn is_passed(&self) -> bool {
+    pub fn is_passed(&self) -> bool {
         matches!(
             self,
             TestStatus::Passed | TestStatus::PassedWithNoAssertions
@@ -46,10 +46,10 @@ impl Display for TestStatus {
 }
 
 #[derive(Debug)]
-struct TestResult {
+pub struct TestResult {
     name: String,
     duration: Duration,
-    status: TestStatus,
+    pub status: TestStatus,
 }
 
 pub fn run_tests(config: &BuildConfig, file: Option<PathBuf>, filter: Option<String>) {
@@ -105,7 +105,7 @@ fn find_test_files() -> Vec<PathBuf> {
     test_files
 }
 
-fn run_test_file(config: &BuildConfig, file: &Path, filter: &Option<String>) -> Vec<TestResult> {
+pub fn run_test_file(config: &BuildConfig, file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let mut results = Vec::new();
 
     let Ok(code) = fs::read_to_string(file) else {

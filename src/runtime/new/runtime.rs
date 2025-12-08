@@ -432,8 +432,14 @@ impl Runtime {
     /// This function is analogous to a "VM enter"
     pub fn reduce(&mut self) -> Option<(UserData, Node)> {
         while let Some((a, b)) = self.redexes.pop() {
+
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
+            }
+
+            eprint!("RT Rdxs:\n");
+            for (a, b) in self.redexes.iter() {
+                eprint!("\t& {} ~ {}\n", a.variant_tree_name(), b.variant_tree_name());
             }
         }
         None
