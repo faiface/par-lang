@@ -61,14 +61,28 @@ impl Type {
                 body.pretty(f, indent)
             }
 
-            Self::Pair(_, arg, then) => {
-                let mut then = then;
-                write!(f, "(")?;
-                arg.pretty(f, indent)?;
-                while let Self::Pair(_, arg, next) = then.as_ref() {
-                    write!(f, ", ")?;
+            Self::Pair(_, arg, then, vars) => {
+                if !vars.is_empty() {
+                    write!(f, "<")?;
+                    write!(f, "{}", vars[0])?;
+                    for var in vars.iter().skip(1) {
+                        write!(f, ", {}", var)?;
+                    }
+                    write!(f, ">")?;
+                    write!(f, "(")?;
                     arg.pretty(f, indent)?;
-                    then = next;
+                } else {
+                    let mut then = then;
+                    write!(f, "(")?;
+                    arg.pretty(f, indent)?;
+                    while let Self::Pair(_, arg, next, vars) = then.as_ref() {
+                        if !vars.is_empty() {
+                            break;
+                        }
+                        write!(f, ", ")?;
+                        arg.pretty(f, indent)?;
+                        then = next;
+                    }
                 }
                 if let Self::Break(_) = then.as_ref() {
                     write!(f, ")!")
@@ -78,14 +92,28 @@ impl Type {
                 }
             }
 
-            Self::Function(_, param, then) => {
-                let mut then = then;
-                write!(f, "[")?;
-                param.pretty(f, indent)?;
-                while let Self::Function(_, param, next) = then.as_ref() {
-                    write!(f, ", ")?;
+            Self::Function(_, param, then, vars) => {
+                if !vars.is_empty() {
+                    write!(f, "<")?;
+                    write!(f, "{}", vars[0])?;
+                    for var in vars.iter().skip(1) {
+                        write!(f, ", {}", var)?;
+                    }
+                    write!(f, ">")?;
+                    write!(f, "[")?;
                     param.pretty(f, indent)?;
-                    then = next;
+                } else {
+                    let mut then = then;
+                    write!(f, "[")?;
+                    param.pretty(f, indent)?;
+                    while let Self::Function(_, arg, next, vars) = then.as_ref() {
+                        if !vars.is_empty() {
+                            break;
+                        }
+                        write!(f, ", ")?;
+                        arg.pretty(f, indent)?;
+                        then = next;
+                    }
                 }
                 if let Self::Continue(_) = then.as_ref() {
                     write!(f, "]?")
@@ -176,6 +204,8 @@ impl Type {
                 write!(f, "] ")?;
                 then.pretty(f, indent)
             }
+            Type::Hole(_, name, _) => write!(f, "%{}", name),
+            Type::DualHole(_, name, _) => write!(f, "dual %{}", name),
         }
     }
 
@@ -235,14 +265,28 @@ impl Type {
                 body.pretty_compact(f)
             }
 
-            Self::Pair(_, arg, then) => {
-                let mut then = then;
-                write!(f, "(")?;
-                arg.pretty_compact(f)?;
-                while let Self::Pair(_, arg, next) = then.as_ref() {
-                    write!(f, ", ")?;
+            Self::Pair(_, arg, then, vars) => {
+                if !vars.is_empty() {
+                    write!(f, "<")?;
+                    write!(f, "{}", vars[0])?;
+                    for var in vars.iter().skip(1) {
+                        write!(f, ", {}", var)?;
+                    }
+                    write!(f, ">")?;
+                    write!(f, "(")?;
                     arg.pretty_compact(f)?;
-                    then = next;
+                } else {
+                    let mut then = then;
+                    write!(f, "(")?;
+                    arg.pretty_compact(f)?;
+                    while let Self::Pair(_, arg, next, vars) = then.as_ref() {
+                        if !vars.is_empty() {
+                            break;
+                        }
+                        write!(f, ", ")?;
+                        arg.pretty_compact(f)?;
+                        then = next;
+                    }
                 }
                 if let Self::Break(_) = then.as_ref() {
                     write!(f, ")!")
@@ -252,14 +296,28 @@ impl Type {
                 }
             }
 
-            Self::Function(_, param, then) => {
-                let mut then = then;
-                write!(f, "[")?;
-                param.pretty_compact(f)?;
-                while let Self::Function(_, param, next) = then.as_ref() {
-                    write!(f, ", ")?;
+            Self::Function(_, param, then, vars) => {
+                if !vars.is_empty() {
+                    write!(f, "<")?;
+                    write!(f, "{}", vars[0])?;
+                    for var in vars.iter().skip(1) {
+                        write!(f, ", {}", var)?;
+                    }
+                    write!(f, ">")?;
+                    write!(f, "[")?;
                     param.pretty_compact(f)?;
-                    then = next;
+                } else {
+                    let mut then = then;
+                    write!(f, "[")?;
+                    param.pretty_compact(f)?;
+                    while let Self::Function(_, arg, next, vars) = then.as_ref() {
+                        if !vars.is_empty() {
+                            break;
+                        }
+                        write!(f, ", ")?;
+                        arg.pretty_compact(f)?;
+                        then = next;
+                    }
                 }
                 if let Self::Continue(_) = then.as_ref() {
                     write!(f, "]?")
@@ -350,6 +408,8 @@ impl Type {
                 write!(f, "] ")?;
                 then.pretty_compact(f)
             }
+            Type::Hole(_, name, _) => write!(f, "%{}", name),
+            Type::DualHole(_, name, _) => write!(f, "dual %{}", name),
         }
     }
 
@@ -381,11 +441,11 @@ impl Type {
                 }
             }
             Self::Box(_, body) | Self::DualBox(_, body) => body.types_at_spans(type_defs, consume),
-            Self::Pair(_, t, u) => {
+            Self::Pair(_, t, u, _) => {
                 t.types_at_spans(type_defs, consume);
                 u.types_at_spans(type_defs, consume);
             }
-            Self::Function(_, t, u) => {
+            Self::Function(_, t, u, _) => {
                 t.types_at_spans(type_defs, consume);
                 u.types_at_spans(type_defs, consume);
             }
@@ -414,6 +474,8 @@ impl Type {
             Self::Forall(_, _, body) => {
                 body.types_at_spans(type_defs, consume);
             }
+            Type::Hole(_, _, _) => {}
+            Type::DualHole(_, _, _) => {}
         }
     }
 }

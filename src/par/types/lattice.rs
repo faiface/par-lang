@@ -88,16 +88,26 @@ pub fn union_types(
                 ));
             }
         }
-        (Type::Pair(_, left1, right1), Type::Pair(_, left2, right2)) => Type::Pair(
-            span.clone(),
-            Box::new(union_types(typedefs, span, left1, left2)?),
-            Box::new(union_types(typedefs, span, right1, right2)?),
-        ),
-        (Type::Function(_, arg1, ret1), Type::Function(_, arg2, ret2)) => Type::Function(
-            span.clone(),
-            Box::new(intersect_types(typedefs, span, arg1, arg2)?),
-            Box::new(union_types(typedefs, span, ret1, ret2)?),
-        ),
+        (Type::Pair(_, left1, right1, vars1), Type::Pair(_, left2, right2, vars2))
+            if vars1.is_empty() && vars2.is_empty() =>
+        {
+            Type::Pair(
+                span.clone(),
+                Box::new(union_types(typedefs, span, left1, left2)?),
+                Box::new(union_types(typedefs, span, right1, right2)?),
+                vec![],
+            )
+        }
+        (Type::Function(_, arg1, ret1, vars1), Type::Function(_, arg2, ret2, vars2))
+            if vars1.is_empty() && vars2.is_empty() =>
+        {
+            Type::Function(
+                span.clone(),
+                Box::new(intersect_types(typedefs, span, arg1, arg2)?),
+                Box::new(union_types(typedefs, span, ret1, ret2)?),
+                vec![],
+            )
+        }
         (Type::Either(_, branches1), Type::Either(_, branches2)) => {
             let mut new_branches = branches1.clone();
             for (name, typ2) in branches2 {
@@ -216,16 +226,26 @@ pub fn intersect_types(
                 ));
             }
         }
-        (Type::Pair(_, left1, right1), Type::Pair(_, left2, right2)) => Type::Pair(
-            span.clone(),
-            Box::new(intersect_types(typedefs, span, left1, left2)?),
-            Box::new(intersect_types(typedefs, span, right1, right2)?),
-        ),
-        (Type::Function(_, arg1, ret1), Type::Function(_, arg2, ret2)) => Type::Function(
-            span.clone(),
-            Box::new(union_types(typedefs, span, &arg1, &arg2)?),
-            Box::new(intersect_types(typedefs, span, ret1, ret2)?),
-        ),
+        (Type::Pair(_, left1, right1, vars1), Type::Pair(_, left2, right2, vars2))
+            if vars1.is_empty() && vars2.is_empty() =>
+        {
+            Type::Pair(
+                span.clone(),
+                Box::new(intersect_types(typedefs, span, left1, left2)?),
+                Box::new(intersect_types(typedefs, span, right1, right2)?),
+                vec![],
+            )
+        }
+        (Type::Function(_, arg1, ret1, vars1), Type::Function(_, arg2, ret2, vars2))
+            if vars1.is_empty() && vars2.is_empty() =>
+        {
+            Type::Function(
+                span.clone(),
+                Box::new(union_types(typedefs, span, &arg1, &arg2)?),
+                Box::new(intersect_types(typedefs, span, ret1, ret2)?),
+                vec![],
+            )
+        }
         (Type::Either(_, branches1), Type::Either(_, branches2)) => {
             let mut new_branches = BTreeMap::new();
             for (name, typ1) in branches1 {

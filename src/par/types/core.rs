@@ -5,7 +5,10 @@ use crate::par::types::{visit, TypeDefs, TypeError};
 use arcstr::ArcStr;
 use im::HashSet;
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Formatter};
+use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LoopId(u64);
@@ -32,7 +35,10 @@ pub enum PrimitiveType {
 #[derive(Debug, Clone, Copy)]
 pub enum Operation {
     Send,
-    Receive,
+    Receive {
+        #[allow(unused)]
+        generics: usize,
+    },
     Signal,
     Case,
     Break,
@@ -41,6 +47,58 @@ pub enum Operation {
     Loop,
     SendType,
     ReceiveType,
+}
+
+pub struct HoleConstraints {
+    upper_bounds: Vec<Type>,
+    lower_bounds: Vec<Type>,
+}
+
+#[derive(Clone)]
+pub struct Hole(Arc<Mutex<HoleConstraints>>);
+
+impl Debug for Hole {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let constraints = self.0.lock().unwrap();
+        f.debug_struct("Hole")
+            .field("upper_bounds", &constraints.upper_bounds)
+            .field("lower_bounds", &constraints.lower_bounds)
+            .finish()
+    }
+}
+
+impl PartialEq for Hole {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+impl Eq for Hole {}
+
+impl Hash for Hole {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // All holes are considered equal for hashing purposes
+        0.hash(state);
+    }
+}
+
+impl Hole {
+    pub fn add_lower_bound(&self, bound: Type) {
+        let mut constraints = self.0.lock().unwrap();
+        constraints.lower_bounds.push(bound);
+    }
+
+    pub fn add_upper_bound(&self, bound: Type) {
+        let mut constraints = self.0.lock().unwrap();
+        constraints.upper_bounds.push(bound);
+    }
+
+    pub fn get_constraints(&self) -> (Vec<Type>, Vec<Type>) {
+        let constraints = self.0.lock().unwrap();
+        (
+            constraints.lower_bounds.clone(),
+            constraints.upper_bounds.clone(),
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,8 +111,8 @@ pub enum Type {
     DualName(Span, GlobalName, Vec<Self>),
     Box(Span, Box<Self>),
     DualBox(Span, Box<Self>),
-    Pair(Span, Box<Self>, Box<Self>),
-    Function(Span, Box<Self>, Box<Self>),
+    Pair(Span, Box<Self>, Box<Self>, Vec<LocalName>),
+    Function(Span, Box<Self>, Box<Self>, Vec<LocalName>),
     Either(Span, BTreeMap<LocalName, Self>),
     Choice(Span, BTreeMap<LocalName, Self>),
     Break(Span),
@@ -79,6 +137,8 @@ pub enum Type {
     DualSelf(Span, Option<LocalName>),
     Exists(Span, LocalName, Box<Self>),
     Forall(Span, LocalName, Box<Self>),
+    Hole(Span, LocalName, Hole),
+    DualHole(Span, LocalName, Hole),
 }
 
 #[allow(unused)]
@@ -121,16 +181,26 @@ impl Type {
         )
     }
 
+    pub fn hole(name: LocalName) -> (Self, Hole) {
+        let constraints = Arc::new(Mutex::new(HoleConstraints {
+            upper_bounds: Vec::new(),
+            lower_bounds: Vec::new(),
+        }));
+        let hole = Hole(constraints);
+        let typ = Self::Hole(Span::None, name, hole.clone());
+        (typ, hole)
+    }
+
     pub fn box_(t: Self) -> Self {
         Self::Box(Span::None, Box::new(t))
     }
 
     pub fn pair(t: Self, u: Self) -> Self {
-        Self::Pair(Span::None, Box::new(t), Box::new(u))
+        Self::Pair(Span::None, Box::new(t), Box::new(u), vec![])
     }
 
     pub fn function(t: Self, u: Self) -> Self {
-        Self::Function(Span::None, Box::new(t), Box::new(u))
+        Self::Function(Span::None, Box::new(t), Box::new(u), vec![])
     }
 
     pub fn either(branches: Vec<(&'static str, Self)>) -> Self {
@@ -240,8 +310,8 @@ impl Type {
             Self::Name(span, name, args) => defs.get(span, name, args)?.size(defs)?,
             Self::DualName(span, name, args) => defs.get_dual(span, name, args)?.size(defs)?,
             Self::Box(_, inner) | Self::DualBox(_, inner) => 1 + inner.size(defs)?,
-            Self::Pair(_, left, right) => 1 + left.size(defs)? + right.size(defs)?,
-            Self::Function(_, input, output) => 1 + input.size(defs)? + output.size(defs)?,
+            Self::Pair(_, left, right, _) => 1 + left.size(defs)? + right.size(defs)?,
+            Self::Function(_, input, output, _) => 1 + input.size(defs)? + output.size(defs)?,
             Self::Either(_, branches) | Self::Choice(_, branches) => {
                 let mut res: u32 = 1;
                 for branch in branches.values() {
@@ -253,6 +323,7 @@ impl Type {
             Self::Recursive { body, .. } | Self::Iterative { body, .. } => 1 + body.size(defs)?,
             Self::Self_(_, _) | Self::DualSelf(_, _) => 1,
             Self::Exists(_, _, body) | Self::Forall(_, _, body) => 1 + body.size(defs)?,
+            Self::Hole(_, _, _) | Self::DualHole(_, _, _) => 1,
         })
     }
 }
@@ -288,8 +359,8 @@ impl Spanning for Type {
             | Self::DualName(span, _, _)
             | Self::Box(span, _)
             | Self::DualBox(span, _)
-            | Self::Pair(span, _, _)
-            | Self::Function(span, _, _)
+            | Self::Pair(span, _, _, _)
+            | Self::Function(span, _, _, _)
             | Self::Either(span, _)
             | Self::Choice(span, _)
             | Self::Break(span)
@@ -299,7 +370,9 @@ impl Spanning for Type {
             | Self::Self_(span, _)
             | Self::DualSelf(span, _)
             | Self::Exists(span, _, _)
-            | Self::Forall(span, _, _) => span.clone(),
+            | Self::Forall(span, _, _)
+            | Self::Hole(span, _, _)
+            | Self::DualHole(span, _, _) => span.clone(),
         }
     }
 }
