@@ -45,9 +45,25 @@ pub type Str = ArcStr;
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
-pub struct InstanceInner(Mutex<Box<[Option<Node>]>>);
+struct InstanceInner(Mutex<Box<[Option<Node>]>>);
 
 #[derive(Clone, Debug)]
+/// An `Instance` stores the state associated to an instance of a Global node.
+///
+/// Instances can be cheaply cloned shallowly because they are reference counter; this creates another instance pointing to the same underyling
+/// [`InstanceInner`].
+///
+/// They act as the backing store for Global nodes. Specifically, [`Global::Variable`] nodes
+/// are indices into the array inside the `Instance`. Each instance of a global node
+/// also holds an Instance. It is in this instance where the state of the variables is stored
+///
+/// ## Lifetime of an `Instance`
+///
+/// They are created empty by `Linker::instantiate`, with a fixed length. Initially, all variables are empty.
+/// Then, calls to `Runtime::set_var` slowly fill up and empty the instance. Each variable slot is filled once and taken out of once.
+/// (I'm not sure if it's possible for a variable slot to never be used, but it definitely can't happen twice)
+/// At the end of the lifetime of Instances, all of them go out of scope and are eventually dropped. Because of the way
+/// the runtime is designed, all slots inside of it must be empty. This is when the `Instance` is destroyed.
 pub struct Instance {
     vars: Arc<InstanceInner>,
 }
@@ -60,6 +76,7 @@ impl Instance {
 
 impl Drop for InstanceInner {
     fn drop(&mut self) {
+        // This is a debugging tool to detect leaks.
         for i in self.0.lock().unwrap().as_mut().iter() {
             if !i.is_none() {
                 panic!(
@@ -73,10 +90,15 @@ impl Drop for InstanceInner {
 }
 
 #[derive(Debug)]
+/// User data; this is data created by the external
 pub enum UserData {
     Primitive(Primitive),
+    /// An external function without captures. This is created externally
+    /// and the function takes in a handle to the value it interacts with
     ExternalFn(ExternalFn),
+    /// An external function with shared captured. This is created externally
     ExternalArc(ExternalArc),
+    /// A one-timer request for a value. The value it interacts with will be send through the sender.
     Request(oneshot::Sender<Node>),
 }
 
@@ -93,9 +115,13 @@ impl Debug for ExternalArc {
 }
 
 #[derive(Clone, Debug)]
+/// A package is a `Global` subgraph that is isolated from the rest of the program
+/// It does not use the same Instance as its environment, and so it requires a
+/// separate Instance to be created when it is expanded.
 pub struct Package {
     pub root: Global,
     pub captures: Global,
+    /// How large the Instance must be.
     pub num_vars: usize,
 }
 
@@ -106,6 +132,7 @@ pub enum Global {
     GlobalPackage(PackagePtr, GlobalPtr),
     Destruct(GlobalCont),
     Value(GlobalValue),
+    /// Fanout; turn the value it interacts with into a nonlinear value.
     Fanout(Index<[Global]>),
 }
 
@@ -122,7 +149,14 @@ pub enum Shared {
     Sync(Arc<SyncShared>),
 }
 
-// A "Value" parametrized by a "pointer type"
+/// A "Value" parametrized by a "pointer type P". This is used to avoid code duplication between
+/// different value containers
+/// Values are either positive types or copyable external functions. They can all be duplicated if their
+/// subnodes are duplicable too.
+///
+/// P is the type of children. Usually, this will be `GlobalPtr`, `Shared`, or `Box<Node>`
+///
+/// There are [`Linear`] values, [`Shared`] values, and [`Global`] values.
 #[derive(Clone, Debug)]
 pub enum Value<P> {
     Break,
@@ -172,9 +206,14 @@ impl From<UserData> for Linear {
 }
 
 #[derive(Clone, Debug)]
+/// A "global continuation"; a negative node stored in the global array
+/// When it interacts with anything, it attempts to destructure it.
 pub enum GlobalCont {
+    /// The continue node; created in continue commands (`value?`)
     Continue,
+    /// The par node; created in receive commands (`value[a]`)
     Par(GlobalPtr, GlobalPtr),
+    /// The choice node; created in case commands (`value.case { ... }`)
     Choice(
         GlobalPtr,
         Arc<HashMap<ArcStr, PackagePtr>>,
@@ -192,6 +231,9 @@ pub struct Runtime {
     pub redexes: Vec<(Node, Node)>,
 }
 
+/// This trait is implemented by everything that knows how to link two nodes together
+/// and that holds a pointer to the arena. This prevents duplication between [`Runtime`] and
+/// [`Handle`], which are the two implementors of this trait.
 pub trait Linker {
     fn link(&mut self, a: Node, b: Node);
     fn arena(&self) -> Arc<Arena>;
@@ -293,6 +335,9 @@ pub trait Linker {
             }
         }
     }
+    /// Turn a node into a `Shared` node which allows duplication
+    /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
+    /// This is the case for linear nodes and negative types.
     fn share(&self, node: Node) -> Option<Shared> {
         match node {
             Node::Shared(shared) => Some(shared),
@@ -371,6 +416,11 @@ impl Runtime {
             }
         }
     }
+    /// Reduce all redexes in the net until a redex requires external action.
+    /// Returns `Some` if there is such redex; returns `None` if no
+    /// external action is needed and the net is in normal form.
+    ///
+    /// This function is analogous to a "VM enter"
     pub fn reduce(&mut self) -> Option<(UserData, Node)> {
         while let Some((a, b)) = self.redexes.pop() {
             if let Some(v) = self.interact(a, b) {
