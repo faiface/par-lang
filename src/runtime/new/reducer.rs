@@ -36,7 +36,7 @@ impl Clone for NetHandle {
 
 impl Drop for NetHandle {
     fn drop(&mut self) {
-        self.0.send(ReducerMessage::Dropped(self.1)).unwrap();
+        let _ = self.0.send(ReducerMessage::Dropped(self.1));
     }
 }
 
@@ -139,7 +139,10 @@ impl Reducer {
                     break;
                 }
             }
-            println!("Reducer State: Waiting for a message");
+            println!(
+                "Reducer State: Waiting for a message ({} senders remaining)",
+                self.inbox.sender_strong_count()
+            );
             if self.inbox.sender_strong_count() == 1 {
                 break;
             }

@@ -53,6 +53,7 @@ impl Transpiled {
         for (id, body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
             this.transpile_package(id, body)
         }
+        println!("{}", this.dest);
         Self {
             arena: Arc::new(this.dest),
             type_defs,
@@ -99,7 +100,6 @@ impl Transpiled {
             .await
             .ok()
     }
-
 }
 
 impl NetTranspiler {
@@ -120,17 +120,25 @@ impl NetTranspiler {
     }
     fn transpile_package(&mut self, id: usize, mut body: Net) {
         // First, allocate the package
-        assert!(body.redexes.is_empty());
         assert!(body.ports.len() == 1);
         let root = body.ports.pop_back().unwrap();
+        let mut redexes = Vec::from(body.redexes.clone());
+        redexes.append(&mut body.waiting_for_reducer.clone());
+        let debug_name = body.debug_name.clone();
         self.source = body;
         self.variable_map.clear();
         self.num_vars = 0;
         let root = self.transpile_tree(root);
+        let redexes: Vec<_> = redexes
+            .into_iter()
+            .map(|(a, b)| (self.transpile_tree(a), self.transpile_tree(b)))
+            .collect();
         let package = Package {
             root: root,
             captures: Global::Destruct(GlobalCont::Continue),
             num_vars: self.num_vars,
+            debug_name,
+            redexes,
         };
         let package_slot = self.package_map.get(&id).unwrap();
         self.dest.get(package_slot.clone()).set(package).unwrap();

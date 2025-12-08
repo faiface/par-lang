@@ -35,7 +35,6 @@ use crate::par::primitive::Primitive;
 use std::collections::HashMap;
 
 use super::arena::*;
-use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 pub type PackagePtr = Index<OnceLock<Package>>;
@@ -123,6 +122,10 @@ pub struct Package {
     pub captures: Global,
     /// How large the Instance must be.
     pub num_vars: usize,
+
+    pub debug_name: String,
+    // TODO: Store this inline in the arena.
+    pub redexes: Vec<(Global, Global)>,
 }
 
 #[derive(Clone, Debug)]
@@ -259,12 +262,12 @@ pub trait Linker {
         }
     }
 
-    fn instantiate(&self, package: PackagePtr) -> (Node, Node) {
+    fn instantiate(&mut self, package: PackagePtr) -> (Node, Node) {
         let (a, b, _, _) = self.instantiate_with_extra_vars(package, 0);
         (a, b)
     }
     fn instantiate_with_extra_vars(
-        &self,
+        &mut self,
         package: PackagePtr,
         extra_vars: usize,
     ) -> (Node, Node, Instance, usize) {
@@ -277,8 +280,14 @@ pub trait Linker {
                     .into_boxed_slice(),
             ))),
         };
-        println!("Instantiate {:x}", instance.identifier());
+        println!("RT Instantiate {:x}", instance.identifier());
         let package = package.get().unwrap();
+        package.redexes.iter().for_each(|(a, b)| {
+            self.link(
+                Node::Global(instance.clone(), a.clone()),
+                Node::Global(instance.clone(), b.clone()),
+            );
+        });
         (
             Node::Global(instance.clone(), package.root.clone()),
             Node::Global(instance.clone(), package.captures.clone()),
@@ -431,7 +440,7 @@ impl Runtime {
     }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         println!(
-            "Redex {:?} {:?} ",
+            "RT Redex   {:?} {:?} ",
             a.variant_tree_name(),
             b.variant_tree_name()
         );

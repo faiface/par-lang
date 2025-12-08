@@ -137,6 +137,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn nat_add(mut handle: Handle) {
+    println!("NATAEDDDD");
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
     handle.provide_nat(x + y).await;

@@ -227,8 +227,9 @@ pub struct Net {
     pub variables: Variables,
     pub packages: Arc<IndexMap<usize, Net>>,
     pub rewrites: Rewrites,
-    waiting_for_reducer: Vec<(Tree, Tree)>,
+    pub waiting_for_reducer: Vec<(Tree, Tree)>,
     reducer: Option<Reducer>,
+    pub debug_name: String,
 }
 
 pub(crate) enum ReducerMessage {

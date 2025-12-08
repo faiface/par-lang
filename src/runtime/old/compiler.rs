@@ -251,7 +251,7 @@ impl Compiler {
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
 
-        let (id, typ) = self.in_package(|this, _| {
+        let (id, typ) = self.in_package(format!("{name}"), |this, _| {
             let mut s = String::new();
             global.pretty(&mut s, 0).unwrap();
             this.compile_expression(global.as_ref())
@@ -313,6 +313,7 @@ impl Compiler {
 
     fn in_package(
         &mut self,
+        debug_name: String,
         f: impl FnOnce(&mut Self, usize) -> Result<TypedTree>,
     ) -> Result<(usize, Type)> {
         let id = self.id_to_package.len();
@@ -358,6 +359,7 @@ impl Compiler {
         net2.redexes.append(&mut self.lazy_redexes.clone().into());
         net2.assert_valid();
 
+        self.net.debug_name = debug_name;
         self.net.normal();
         self.net
             .redexes
@@ -515,17 +517,21 @@ impl Compiler {
                 Ok(self.use_variable(name, usage, false)?)
             }
 
-            Expression::Box(_, captures, expression, typ) => self.with_captures(captures, |this| {
-                let (context_in, pack_data) = this.context.pack(None, None, None, &mut this.net);
-                let (package_id, _) = this.in_package(|this, _| {
-                    let context_out = this.context.unpack(&pack_data, &mut this.net);
-                    let body = this.compile_expression(&expression)?;
-                    this.end_context()?;
-                    Ok(Tree::Par(Box::new(context_out), Box::new(body.tree))
-                        .with_type(Type::Break(Span::default())))
-                })?;
-                Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
-            }),
+            Expression::Box(span, captures, expression, typ) => {
+                self.with_captures(captures, |this| {
+                    let (context_in, pack_data) =
+                        this.context.pack(None, None, None, &mut this.net);
+                    let (package_id, _) =
+                        this.in_package(format!("Box at {span:?}"), |this, _| {
+                            let context_out = this.context.unpack(&pack_data, &mut this.net);
+                            let body = this.compile_expression(&expression)?;
+                            this.end_context()?;
+                            Ok(Tree::Par(Box::new(context_out), Box::new(body.tree))
+                                .with_type(Type::Break(Span::default())))
+                        })?;
+                    Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
+                })
+            }
 
             Expression::Chan {
                 captures,
@@ -691,14 +697,15 @@ impl Compiler {
 
                 for (branch_name, process) in choice_and_process {
                     let branch_type = branch_types.get(branch_name).unwrap();
-                    let (package_id, _) = self.in_package(|this, _| {
-                        let (w0, w1) = this.create_typed_wire(branch_type.clone());
-                        this.bind_variable(name.clone(), w0)?;
-                        let context_out = this.context.unpack(&pack_data, &mut this.net);
-                        this.compile_process(process)?;
-                        Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
-                            .with_type(Type::Break(Default::default())))
-                    })?;
+                    let (package_id, _) =
+                        self.in_package(format!("Branch {branch_name} at {span:?}"), |this, _| {
+                            let (w0, w1) = this.create_typed_wire(branch_type.clone());
+                            this.bind_variable(name.clone(), w0)?;
+                            let context_out = this.context.unpack(&pack_data, &mut this.net);
+                            this.compile_process(process)?;
+                            Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
+                                .with_type(Type::Break(Default::default())))
+                        })?;
                     branches.insert(ArcStr::from(&branch_name.string), package_id);
                 }
 
@@ -709,14 +716,15 @@ impl Compiler {
                             branch_types_in_else.remove(branch_name);
                         }
                         let else_type = Type::Either(Span::None, branch_types_in_else);
-                        let (package_id, _) = self.in_package(|this, _| {
-                            let (w0, w1) = this.create_typed_wire(else_type);
-                            this.bind_variable(name.clone(), w0)?;
-                            let context_out = this.context.unpack(&pack_data, &mut this.net);
-                            this.compile_process(process)?;
-                            Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
-                                .with_type(Type::Break(Default::default())))
-                        })?;
+                        let (package_id, _) =
+                            self.in_package(format!("Else branch at {span:?}"), |this, _| {
+                                let (w0, w1) = this.create_typed_wire(else_type);
+                                this.bind_variable(name.clone(), w0)?;
+                                let context_out = this.context.unpack(&pack_data, &mut this.net);
+                                this.compile_process(process)?;
+                                Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
+                                    .with_type(Type::Break(Default::default())))
+                            })?;
                         Some(package_id)
                     }
                     None => None,
@@ -774,6 +782,7 @@ impl Compiler {
                     self.context
                         .pack(Some(&name), Some(captures), None, &mut self.net);
                 let (id, _) = self.in_package(
+                    format!("Loop body at {span:?}"),
                     |this, _| {
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
                         this.compile_process(body)?;

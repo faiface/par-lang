@@ -143,14 +143,9 @@ impl Handle {
         );
     }
     pub async fn primitive(mut self) -> Result<Primitive> {
-        let primitive = match self.node.take().await {
-            Node::Global(_, Global::Value(Value::Primitive(p))) => p,
-            Node::Linear(Linear::Value(Value::Primitive(p))) => p,
-            Node::Shared(Shared::Sync(p)) => match &*p {
-                SyncShared::Value(Value::Primitive(p)) => p.clone(),
-                _ => return Err(Error::InvalidNode(Node::Shared(Shared::Sync(p)))),
-            },
-            node => return Err(Error::InvalidNode(node)),
+        let primitive = match self.try_destruct().await {
+            Value::Primitive(p) => p,
+            node => return Err(todo!()),
         };
         Ok(primitive)
     }
@@ -180,8 +175,7 @@ impl Handle {
     }
 
     pub async fn receive(&mut self) -> Self {
-        let node = self.node.take().await;
-        let Value::Pair(a, b) = self.destruct(node).unwrap() else {
+        let Value::Pair(a, b) = self.try_destruct().await else {
             unreachable!()
         };
         self.node = a.into();
@@ -201,8 +195,7 @@ impl Handle {
     }
 
     pub async fn case(&mut self) -> ArcStr {
-        let node = self.node.take().await;
-        let Value::Either(name, payload) = self.destruct(node).unwrap() else {
+        let Value::Either(name, payload) = self.try_destruct().await else {
             unreachable!()
         };
         self.node = payload.into();
@@ -221,8 +214,7 @@ impl Handle {
     }
 
     pub async fn continue_(mut self) -> () {
-        let node = self.node.take().await;
-        let Value::Break = self.destruct(node).unwrap() else {
+        let Value::Break = self.try_destruct().await else {
             unreachable!()
         };
         ()
@@ -232,6 +224,29 @@ impl Handle {
     }
     pub async fn duplicate(&mut self) -> Handle {
         todo!()
+    }
+
+    async fn retry(&mut self) {
+        let (tx, rx) = oneshot::channel::<Node>();
+        let mut old_node = core::mem::replace(&mut self.node, rx.into());
+        let old_node = old_node.take().await;
+        self.link(old_node, Node::Linear(Linear::Request(tx)));
+    }
+
+    async fn try_destruct(&mut self) -> Value<Node> {
+        loop {
+            let node = self.node.take().await;
+            match self.destruct(node) {
+                Ok(v) => {
+                    return v;
+                }
+                Err(node) => {
+                    println!("Retrying... {:?}", node);
+                    self.node = node.into();
+                    self.retry().await;
+                }
+            }
+        }
     }
 }
 
