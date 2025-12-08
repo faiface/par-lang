@@ -1,6 +1,6 @@
 use super::io::IO;
 use crate::location::FileName;
-use crate::par::build_result::BuildResult;
+use crate::par::build_result::{BuildConfig, BuildResult};
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -306,7 +306,11 @@ impl Instance {
         let code = self.io.read(&self.uri);
 
         self.build = stacker::grow(32 * 1024 * 1024, || {
-            BuildResult::from_source(&code.unwrap(), self.file.clone())
+            BuildResult::from_source(
+                &BuildConfig { new_runtime: false },
+                &code.unwrap(),
+                self.file.clone(),
+            )
         });
         tracing::info!("Compiled!");
         // reset dirty flag after successful compile attempt

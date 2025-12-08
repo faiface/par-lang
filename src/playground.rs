@@ -9,6 +9,7 @@ use std::{
 
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
+use crate::par::build_result::BuildConfig;
 
 use crate::{
     location::FileName, par::program::CheckedModule, readback::Element, runtime::old::readback::TypedHandle, runtime::old::compiler::IcCompiled,
@@ -22,6 +23,7 @@ pub struct Playground {
     file_path: Option<PathBuf>,
     code: String,
     build: BuildResult,
+    build_config: BuildConfig,
     built_code: Arc<str>,
     editor_font_size: f32,
     show_compiled: bool,
@@ -100,6 +102,9 @@ impl Playground {
             code: "".to_owned(),
             build: BuildResult::None,
             built_code: Arc::from(""),
+            build_config: BuildConfig {
+                new_runtime: false,
+            },
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,
@@ -418,7 +423,7 @@ impl Playground {
 
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
-            self.build = BuildResult::from_source(self.code.as_str(), Self::FILE_NAME);
+            self.build = BuildResult::from_source(&self.build_config, self.code.as_str(), Self::FILE_NAME);
         });
         self.built_code = Arc::from(self.code.as_str());
     }

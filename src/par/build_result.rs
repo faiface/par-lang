@@ -13,6 +13,26 @@ use crate::{
 use std::fmt::Write;
 use std::sync::Arc;
 
+pub struct BuildConfig {
+    pub new_runtime: bool,
+}
+
+impl<'a, T: Iterator<Item=&'a String>> From<T> for BuildConfig {
+    fn from(t: T) -> BuildConfig {
+        let mut default = BuildConfig {
+            new_runtime: false,
+        };
+        for i in t {
+            if i == "rt-v2" {
+                default.new_runtime = false;
+            } else if i == "rt-v3" {
+                default.new_runtime = true;
+            };
+        };
+        default
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Error {
     Syntax(SyntaxError),
@@ -130,17 +150,17 @@ impl BuildResult {
         }
     }
 
-    pub fn from_source(source: &str, file: FileName) -> Self {
+    pub fn from_source(config: &BuildConfig, source: &str, file: FileName) -> Self {
         let mut module = match Module::parse_and_compile(source, file) {
             Ok(module) => module,
             Err(ParseAndCompileError::Parse(error)) => return Self::SyntaxError { error },
             Err(ParseAndCompileError::Compile(error)) => return Self::CompileError { error },
         };
         import_builtins(&mut module);
-        Self::from_compiled(module)
+        Self::from_compiled(config, module)
     }
 
-    pub fn from_compiled(compiled: Module<Arc<Expression<()>>>) -> Self {
+    pub fn from_compiled(config: &BuildConfig, compiled: Module<Arc<Expression<()>>>) -> Self {
         let pretty = compiled
             .definitions
             .iter()
@@ -163,14 +183,12 @@ impl BuildResult {
             Ok(checked) => Arc::new(checked),
             Err(error) => return Self::TypeError { pretty, error },
         };
-        Self::from_checked(pretty, checked)
+        Self::from_checked(config, pretty, checked)
     }
 
-    pub fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
+    pub fn from_checked(config: &BuildConfig, pretty: String, checked: Arc<CheckedModule>) -> Self {
         let type_on_hover = TypeOnHover::new(&checked);
-        let rt_compiled = match Compiled::compile_file(
-            &checked, false, /* BuildResult uses only the old runtime right now */
-        ) {
+        let rt_compiled = match Compiled::compile_file(&checked, config.new_runtime) {
             Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
