@@ -1,7 +1,8 @@
+use crate::par::build_result;
+use crate::par::build_result::BuildConfig;
 use crate::par::build_result::BuildResult;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
-use crate::par::build_result::BuildConfig;
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
@@ -93,7 +94,7 @@ fn main() {
             let flags = BuildConfig::from(flags);
             for file in files {
                 println!("Checking file: {}", file.display());
-                check(&flags, file.clone());
+                let _ = check(&flags, file.clone());
             }
         }
         Some(("lsp", _)) => run_language_server(),
@@ -203,7 +204,7 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
     });
 }
 
-fn check(config: &BuildConfig, file: PathBuf) {
+fn check(config: &BuildConfig, file: PathBuf) -> Result<(), String> {
     let Ok(code) = File::open(&file).and_then(|mut file| {
         use std::io::Read;
         let mut buf = String::new();
@@ -211,15 +212,18 @@ fn check(config: &BuildConfig, file: PathBuf) {
         Ok(buf)
     }) else {
         println!("{} {}", "Could not read file:".bright_red(), file.display());
-        return;
+        return Err(format!("Could not read file: {}", file.display()));
     };
 
     let build = stacker::grow(32 * 1024 * 1024, || {
         BuildResult::from_source(&config, &code, file.into())
     });
     if let Some(error) = build.error() {
-        println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+        let error_string = error.display(Arc::from(code.as_str()));
+        println!("{}", error_string.bright_red());
+        return Err(error_string);
     }
+    Ok(())
 }
 
 fn run_language_server() {
