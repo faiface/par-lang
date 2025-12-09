@@ -175,12 +175,12 @@ def List.Size = <a>[list]
     .item(_) list => do { len->Nat.Add(1) } in list.loop,
   }
 
-//dec List.Concat : <a>[List<a>] [List<a>] List<a>
-//def List.Concat = <a>[list1] [list2] chan yield {
-//  yield->List.Copy(list1)
-//  yield->List.Copy(list2)
-//  yield.end!
-//}
+dec List.Concat : <a>[List<a>] [List<a>] List<a>
+def List.Concat = <a>[list1] [list2] chan yield {
+  yield->List.Copy(list1)
+  yield->List.Copy(list2)
+  yield.end!
+}
 
 dec List.Copy : <a>[dual List<a>] [List<a>] dual List<a>
 def List.Copy = <a>[dst] [src] do {
