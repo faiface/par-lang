@@ -153,7 +153,7 @@ impl Context {
             m_trees.push(tree.tree);
             m_tys.push(tree.ty);
         }
-        let context_in = demultiplex_trees(m_trees);
+        let context_in = multiplex_trees(m_trees);
         (
             context_in,
             PackData {
@@ -174,7 +174,7 @@ impl Context {
         }
         self.loop_points = packed.loop_points.clone();
         self.unguarded_loop_labels = packed.unguarded_loop_labels.clone();
-        let context_out = multiplex_trees(m_trees);
+        let context_out = demultiplex_trees(m_trees);
         context_out
     }
 

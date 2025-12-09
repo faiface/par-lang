@@ -28,10 +28,11 @@
 
 use arcstr::ArcStr;
 use core::panic;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::sync::OnceLock;
 
-use crate::par::primitive::Primitive;
+use crate::runtime::new::show::Shower;
+use crate::{par::primitive::Primitive, runtime::new::show::Showable};
 use std::collections::HashMap;
 
 use super::arena::*;
@@ -174,7 +175,7 @@ pub enum Value<P> {
 }
 
 impl<P> Value<P> {
-    fn map_leaves<Q>(self, mut f: impl FnMut(P) -> Option<Q>) -> Option<Value<Q>> {
+    pub fn map_leaves<Q>(self, mut f: impl FnMut(P) -> Option<Q>) -> Option<Value<Q>> {
         Some(match self {
             Value::Break => Value::Break,
             Value::Pair(a, b) => Value::Pair(f(a)?, f(b)?),
@@ -243,6 +244,10 @@ pub trait Linker {
     fn link(&mut self, a: Node, b: Node);
     fn arena(&self) -> Arc<Arena>;
 
+    fn show<'a, 'b>(&'b self, node: &'a Node) -> String {
+        let arena_ref = self.arena();
+        format!("{}", Showable(node, &mut Shower::from_arena(&arena_ref)))
+    }
     fn destruct(&mut self, node: Node) -> Result<Value<Node>, Node> {
         match node {
             Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(*x)).unwrap()),
@@ -340,41 +345,52 @@ pub trait Linker {
     /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
     /// This is the case for linear nodes and negative types.
     fn share(&self, node: Node) -> Option<Shared> {
-        match node {
+        self.share_inner(node)
+    }
+    fn share_inner(&self, node: Node) -> Option<Shared> {
+        stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
             Node::Shared(shared) => Some(shared),
             Node::Global(_instance, Global::Destruct(..)) => None,
             Node::Global(_instance, Global::Fanout(..)) => None,
             Node::Global(instance, Global::GlobalPackage(package, captures)) => {
                 let captures = Node::Global(instance, self.arena().get(captures).clone());
-                let captures = self.share(captures)?;
+                let captures = self.share_inner(captures)?;
                 Some(Shared::Sync(Arc::new(SyncShared::Package(
                     package, captures,
                 ))))
             }
             Node::Global(instance, Global::Value(value)) => Some(Shared::Sync(Arc::new(
                 SyncShared::Value(value.map_leaves(|p| {
-                    self.share(Node::Global(instance.clone(), self.arena().get(p).clone()))
+                    self.share_inner(Node::Global(instance.clone(), self.arena().get(p).clone()))
                 })?),
             ))),
             Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
-                value.map_leaves(|p| self.share(*p))?,
+                value.map_leaves(|p| self.share_inner(*p))?,
             )))),
-            Node::Linear(Linear::Request(..)) => None,
+            Node::Linear(Linear::Request(h)) => {
+                let (hole, shared) = self.create_share_hole();
+                h.send(hole).unwrap();
+                Some(shared)
+            }
             Node::Linear(Linear::ShareHole(..)) => None,
             Node::Global(instance, Global::Variable(id)) => {
                 let mut lock = instance.vars.0.lock().unwrap();
                 let slot = &mut lock[id];
                 if let Some(slot) = slot.take() {
                     drop(lock);
-                    Some(self.share(slot)?)
+                    Some(self.share_inner(slot)?)
                 } else {
-                    let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
-                    let hole = Node::Linear(Linear::ShareHole(state.clone()));
+                    let (hole, shared) = self.create_share_hole();
                     slot.replace(hole);
-                    Some(Shared::Async(state))
+                    Some(shared)
                 }
             }
-        }
+        })
+    }
+    fn create_share_hole(&self) -> (Node, Shared) {
+        let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
+        let hole = Node::Linear(Linear::ShareHole(state.clone()));
+        (hole, Shared::Async(state))
     }
 }
 
@@ -441,7 +457,6 @@ impl Runtime {
                 return Some((UserData::Request(request), other));
             }
             sym!(Node::Global(instance, Global::Fanout(destinations)), other) => {
-                println!("{other:?}");
                 let other = self.share(other).unwrap();
                 let destinations = self.arena.get(destinations);
                 for dest in destinations {

@@ -7,6 +7,7 @@ use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
+use tokio::time::Instant;
 
 use std::fs::File;
 #[cfg(feature = "playground")]
@@ -194,11 +195,15 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
             );
             return;
         };
+        println!("Running...");
+        let start = Instant::now();
 
         let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
         root.continue_().await;
         reducer_future.await;
+        let end = Instant::now();
+        println!("Took: {:?}", end - start);
         println!("Done :)");
     });
 }

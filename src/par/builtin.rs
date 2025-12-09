@@ -1,3 +1,4 @@
+pub mod bench;
 pub mod boxmap;
 pub mod byte;
 pub mod bytes;
@@ -31,6 +32,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     );
     module.import(Some("Nat"), nat::external_module());
     module.import(Some("Int"), int::external_module());
+    module.import(Some("Bench"), bench::external_module());
     module.import(Some("Char"), char_::external_module());
     module.import(Some("String"), string::external_module());
     module.import(Some("Byte"), byte::external_module());

@@ -10,6 +10,10 @@ pub enum Handle {
     New(super::new::readback::Handle),
 }
 
+pub async fn misc_debug_tasks() {
+    // useful hooking place for debug stuff
+}
+
 macro_rules! do_await {
     ($x:expr, await) => {
         $x.await
@@ -31,6 +35,7 @@ macro_rules! dispatch {
     };
     (transformer, $name:ident  $(,$x:ident)?) => {
         pub async fn $name(&mut self) -> Handle {
+            misc_debug_tasks().await;
             match self {
                 Handle::Old(handle) => Handle::Old(do_await!(handle.$name() $(,$x)?)),
                 Handle::New(handle) => Handle::New(handle.$name().await)

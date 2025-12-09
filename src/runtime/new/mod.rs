@@ -33,7 +33,8 @@
 //! Hopefully, this runtime will work well enough for a long time.
 
 pub mod arena;
-pub mod runtime;
-pub mod transpiler;
 pub mod readback;
 pub mod reducer;
+pub mod runtime;
+pub mod show;
+pub mod transpiler;

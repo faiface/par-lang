@@ -462,9 +462,6 @@ impl Net {
                 self.link(*d1, Package(id, Box::new(b0)));
                 self.rewrites.commute += 1;
             }
-            (Package(..), Package(..)) => {
-                unreachable!("Packages should not interact with packages");
-            }
             (Package(id, cx), a) | (a, Package(id, cx)) => {
                 let b = self.dereference_package(id, *cx);
                 self.interact(a, b);
@@ -638,31 +635,24 @@ impl Net {
 
     pub fn link(&mut self, a: Tree, b: Tree) {
         match (a, b) {
-            (Tree::Var(id), y) | (y, Tree::Var(id)) => match self.variables.remove_linked(id) {
-                Ok(x) => {
-                    self.link(x, y);
-                }
-                Err(state) => {
-                    *state = VarState::Linked(y);
+            (Tree::Var(mut id), y) | (y, Tree::Var(mut id)) => loop {
+                match self.variables.remove_linked(id) {
+                    Ok(Tree::Var(id2)) => {
+                        id = id2;
+                    }
+                    Ok(x) => {
+                        self.link(x, y);
+                        break;
+                    }
+                    Err(state) => {
+                        *state = VarState::Linked(y);
+                        break;
+                    }
                 }
             },
             (Tree::Era, y) | (y, Tree::Era) => self.redexes.push_front((Tree::Era, y)),
             (x, y) => self.redexes.push_back((x, y)),
         }
-        /*if let Tree::Var(id) = a {
-            match self.variables.remove_linked(id) {
-                Ok(a) => {
-                    self.link(a, b);
-                }
-                Err(state) => {
-                    *state = VarState::Linked(b);
-                }
-            }
-        } else if let Tree::Var(id) = b {
-            self.link(Tree::Var(id), a)
-        } else {
-            self.redexes.push_back((a, b))
-        }*/
     }
 
     pub fn create_wire(&mut self) -> (Tree, Tree) {
