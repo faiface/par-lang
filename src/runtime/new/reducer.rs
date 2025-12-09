@@ -24,7 +24,7 @@ pub struct NetHandle(
 
 impl Clone for NetHandle {
     fn clone(&self) -> Self {
-        let mut new = Self(
+        let new = Self(
             self.0.clone(),
             self.2.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
             self.2.clone(),

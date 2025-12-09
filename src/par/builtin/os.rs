@@ -604,7 +604,7 @@ async fn os_traverse_dir(mut handle: Handle) {
     }
 }
 
-async fn envmap_new(mut handle: Handle) {
+async fn envmap_new(handle: Handle) {
     handle
         .provide_box(move |mut handle| async move {
             match handle.case().await.as_str() {

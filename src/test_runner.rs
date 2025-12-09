@@ -65,7 +65,6 @@ pub fn run_tests(config: &BuildConfig, file: Option<PathBuf>, filter: Option<Str
         return;
     }
 
-
     // TODO: placeholder for indicating that we are running tests
     println!("{}", "Running tests...".bright_blue());
     println!();
@@ -105,7 +104,11 @@ fn find_test_files() -> Vec<PathBuf> {
     test_files
 }
 
-pub fn run_test_file(config: &BuildConfig, file: &Path, filter: &Option<String>) -> Vec<TestResult> {
+pub fn run_test_file(
+    config: &BuildConfig,
+    file: &Path,
+    filter: &Option<String>,
+) -> Vec<TestResult> {
     let mut results = Vec::new();
 
     let Ok(code) = fs::read_to_string(file) else {
@@ -226,6 +229,8 @@ async fn run_test_with_test_type(
     name: &crate::par::language::GlobalName,
     _ty: &crate::par::types::Type,
 ) -> Result<TestStatus, String> {
+    println!("{}", rt_compiled);
+
     let (sender, receiver) = create_assertion_channel();
 
     let (mut root, reducer_future) = rt_compiled.start_and_instantiate(name).await;

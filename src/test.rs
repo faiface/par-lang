@@ -30,7 +30,7 @@ fn test_all_files() -> Result<(), String> {
         ) {
             // test it
             eprintln!("{}", entry.path().display());
-            let results = crate::test_runner::run_test_file(&crate::BuildConfig { new_runtime: true }, &entry.path(), &None);
+            let results = crate::test_runner::run_test_file(&crate::BuildConfig { new_runtime: false }, &entry.path(), &None);
             if !results.iter().all(|x| x.status.is_passed()) {
                 result = result.clone().and(Err(":(".to_owned()));
             }

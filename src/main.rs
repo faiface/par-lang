@@ -2,7 +2,6 @@ use crate::par::build_result::BuildResult;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
 use crate::par::build_result::BuildConfig;
-use crate::runtime::Compiled;
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;

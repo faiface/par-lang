@@ -120,7 +120,8 @@ impl NetTranspiler {
     }
     fn transpile_package(&mut self, id: usize, mut body: Net) {
         // First, allocate the package
-        assert!(body.ports.len() == 1);
+        assert!(body.ports.len() == 2);
+        let captures = body.ports.pop_back().unwrap();
         let root = body.ports.pop_back().unwrap();
         let mut redexes = Vec::from(body.redexes.clone());
         redexes.append(&mut body.waiting_for_reducer.clone());
@@ -129,13 +130,14 @@ impl NetTranspiler {
         self.variable_map.clear();
         self.num_vars = 0;
         let root = self.transpile_tree(root);
+        let captures = self.transpile_tree(captures);
         let redexes: Vec<_> = redexes
             .into_iter()
             .map(|(a, b)| (self.transpile_tree(a), self.transpile_tree(b)))
             .collect();
         let package = Package {
             root: root,
-            captures: Global::Destruct(GlobalCont::Continue),
+            captures: captures,
             num_vars: self.num_vars,
             debug_name,
             redexes,
@@ -190,12 +192,9 @@ impl NetTranspiler {
                     els.map(|x| self.package_map.get(&x).unwrap().clone()),
                 ))
             }
-            Tree::Box_(context, package) => {
-                todo!()
-            }
-            Tree::Package(id) => Global::GlobalPackage(
+            Tree::Package(id, context) => Global::GlobalPackage(
                 self.map_package(id),
-                self.dest.alloc(Global::Value(GlobalValue::Break)),
+                self.transpile_tree_and_alloc(*context),
             ),
             Tree::SignalRequest(_sender) => todo!(),
             Tree::Primitive(primitive) => Global::Value(GlobalValue::Primitive(primitive)),

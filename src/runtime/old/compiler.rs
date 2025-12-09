@@ -236,7 +236,7 @@ impl Compiler {
         if let Some(id) = self.global_name_to_id.get(name) {
             let ty = self.id_to_ty.get(*id).unwrap().clone();
             return Ok(TypedTree {
-                tree: Tree::Package(*id),
+                tree: Tree::Package(*id, Box::new(Tree::Break)),
                 ty,
             });
         };
@@ -254,11 +254,14 @@ impl Compiler {
         let (id, typ) = self.in_package(format!("{name}"), |this, _| {
             let mut s = String::new();
             global.pretty(&mut s, 0).unwrap();
-            this.compile_expression(global.as_ref())
+            Ok((
+                this.compile_expression(global.as_ref())?,
+                (Tree::Continue).with_type(Type::Continue(Span::None)),
+            ))
         })?;
         self.global_name_to_id.insert(name.clone(), id);
         self.compile_global_stack.shift_remove(name);
-        Ok(Tree::Package(id).with_type(typ))
+        Ok(Tree::Package(id, Box::new(Tree::Break)).with_type(typ))
     }
 
     /// Optimize away erasure underneath auxiliary ports of DUP and CON nodes where it is safe to do so.
@@ -289,9 +292,9 @@ impl Compiler {
                     }
                 }
             }
-            Tree::Box_(a, id) => {
-                let a = self.apply_safe_rules(*a);
-                Tree::Box_(Box::new(a), id)
+            Tree::Package(id, cx) => {
+                let cx = self.apply_safe_rules(*cx);
+                Tree::Package(id, Box::new(cx))
             }
             Tree::Signal(signal, a) => {
                 let a = self.apply_safe_rules(*a);
@@ -314,7 +317,7 @@ impl Compiler {
     fn in_package(
         &mut self,
         debug_name: String,
-        f: impl FnOnce(&mut Self, usize) -> Result<TypedTree>,
+        f: impl FnOnce(&mut Self, usize) -> Result<(TypedTree, TypedTree)>,
     ) -> Result<(usize, Type)> {
         let id = self.id_to_package.len();
         let old_net = core::mem::take(&mut self.net);
@@ -322,10 +325,11 @@ impl Compiler {
         // Allocate package
         self.id_to_ty.push(Type::Break(Span::default()));
         self.id_to_package.push(Default::default());
-        let mut tree = self.with_captures(&Captures::default(), |this| f(this, id))?;
+        let (mut root, captures) = self.with_captures(&Captures::default(), |this| f(this, id))?;
 
         // Non-principal interaction optimization pass
-        tree.tree = self.non_principal_interactions(tree.tree);
+        root.tree = self.non_principal_interactions(root.tree);
+
         self.lazy_redexes = core::mem::take(&mut self.lazy_redexes)
             .into_iter()
             .map(|(tree, tree1)| {
@@ -345,7 +349,8 @@ impl Compiler {
             })
             .collect();
 
-        self.net.ports.push_back(tree.tree);
+        self.net.ports.push_back(root.tree);
+        self.net.ports.push_back(captures.tree);
 
         self.net.packages = Arc::new(self.id_to_package.clone().into_iter().enumerate().collect());
         // self.net.assert_valid_with(
@@ -365,12 +370,12 @@ impl Compiler {
             .redexes
             .append(&mut core::mem::take(&mut self.lazy_redexes).into());
         self.net.assert_valid();
-        *self.id_to_ty.get_mut(id).unwrap() = tree.ty.clone();
+        *self.id_to_ty.get_mut(id).unwrap() = root.ty.clone();
         *self.id_to_package.get_mut(id).unwrap() = core::mem::take(&mut self.net);
         self.lazy_redexes = old_lazy_redexes;
         self.net = old_net;
 
-        Ok((id, tree.ty))
+        Ok((id, root.ty))
     }
 
     fn with_captures<T>(
@@ -526,10 +531,9 @@ impl Compiler {
                             let context_out = this.context.unpack(&pack_data, &mut this.net);
                             let body = this.compile_expression(&expression)?;
                             this.end_context()?;
-                            Ok(Tree::Par(Box::new(context_out), Box::new(body.tree))
-                                .with_type(Type::Break(Span::default())))
+                            Ok((body, context_out.with_type(Type::Break(Span::default()))))
                         })?;
-                    Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
+                    Ok(Tree::Package(package_id, Box::new(context_in)).with_type(typ.clone()))
                 })
             }
 
@@ -703,8 +707,10 @@ impl Compiler {
                             this.bind_variable(name.clone(), w0)?;
                             let context_out = this.context.unpack(&pack_data, &mut this.net);
                             this.compile_process(process)?;
-                            Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
-                                .with_type(Type::Break(Default::default())))
+                            Ok((
+                                w1,
+                                context_out.with_type(Type::Continue(Default::default())),
+                            ))
                         })?;
                     branches.insert(ArcStr::from(&branch_name.string), package_id);
                 }
@@ -722,8 +728,10 @@ impl Compiler {
                                 this.bind_variable(name.clone(), w0)?;
                                 let context_out = this.context.unpack(&pack_data, &mut this.net);
                                 this.compile_process(process)?;
-                                Ok(Tree::Par(Box::new(context_out), Box::new(w1.tree))
-                                    .with_type(Type::Break(Default::default())))
+                                Ok((
+                                    w1,
+                                    context_out.with_type(Type::Continue(Default::default())),
+                                ))
                             })?;
                         Some(package_id)
                     }
@@ -786,12 +794,17 @@ impl Compiler {
                     |this, _| {
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
                         this.compile_process(body)?;
-                        Ok(context_out.with_type(Type::Break(Span::default())))
+                        Ok((
+                            context_out.with_type(Type::Break(Span::default())),
+                            (Tree::Continue).with_type(Type::Continue(Span::default())),
+                        ))
                     },
                     //true,
                 )?;
-                self.net.link(def1, Tree::Package(id));
-                self.net.link(context_in, Tree::Package(id));
+                self.net
+                    .link(def1, Tree::Package(id, Box::new(Tree::Break)));
+                self.net
+                    .link(context_in, Tree::Package(id, Box::new(Tree::Break)));
             }
             Command::Loop(label, driver, captures) => {
                 let label = LoopLabel(label.clone());

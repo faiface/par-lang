@@ -124,7 +124,7 @@ fn provide_test_inner(
                             provide_test_inner(handle, sender).await;
                         }
                         "leak" => {
-                            fn leak(mut handle: Handle) -> ExternalFnRet {
+                            fn leak(handle: Handle) -> ExternalFnRet {
                                 Box::pin(async {
                                     drop(handle);
                                 })

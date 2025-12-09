@@ -133,9 +133,14 @@ pub enum Global {
     Variable(usize),
     LinearPackage(PackagePtr, GlobalPtr),
     GlobalPackage(PackagePtr, GlobalPtr),
+    /// Destruct attempts to convert the interacting node into a value,
+    /// and then carries out a negative operation on it according to its variant
+    /// This node is created from the Continue, Case, and Receive commands.
     Destruct(GlobalCont),
     Value(GlobalValue),
     /// Fanout; turn the value it interacts with into a nonlinear value.
+    /// This node is created whenever a Par variable is used
+    /// nonlinearly
     Fanout(Index<[Global]>),
 }
 
@@ -299,18 +304,9 @@ pub trait Linker {
         // TODO: This work like this now for compatibility with the old runtime, to make the
         // transpiler simpler
         // The correct approach is just linking the captures together.
-        let (root, internal_captures, instance, extra_var_idx) =
-            self.instantiate_with_extra_vars(package, 1);
-        let var = Global::Variable(extra_var_idx);
-        self.link(internal_captures, Node::Linear(Linear::Value(Value::Break)));
-        self.link(
-            root,
-            Node::Linear(Linear::Value(Value::Pair(
-                Box::new(captures),
-                Box::new(Node::Global(instance.clone(), var.clone())),
-            ))),
-        );
-        Node::Global(instance.clone(), var.clone())
+        let (root, internal_captures, _, _) = self.instantiate_with_extra_vars(package, 0);
+        self.link(internal_captures, captures);
+        root
     }
 
     fn enqueue_to_hole(&mut self, hole: &mut SharedHole, cont: Node) {
@@ -344,7 +340,7 @@ pub trait Linker {
             }
         }
     }
-    /// Turn a node into a `Shared` node which allows duplication
+    /// Recusrively turn a node into a `Shared` node which allows duplication
     /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
     /// This is the case for linear nodes and negative types.
     fn share(&self, node: Node) -> Option<Shared> {
@@ -432,14 +428,17 @@ impl Runtime {
     /// This function is analogous to a "VM enter"
     pub fn reduce(&mut self) -> Option<(UserData, Node)> {
         while let Some((a, b)) = self.redexes.pop() {
-
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
             }
 
             eprint!("RT Rdxs:\n");
             for (a, b) in self.redexes.iter() {
-                eprint!("\t& {} ~ {}\n", a.variant_tree_name(), b.variant_tree_name());
+                eprint!(
+                    "\t& {} ~ {}\n",
+                    a.variant_tree_name(),
+                    b.variant_tree_name()
+                );
             }
         }
         None

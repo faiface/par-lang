@@ -18,9 +18,7 @@ impl Display for Compiled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Compiled::Old(ic_compiled) => ic_compiled.fmt(f),
-            Compiled::New(..) => {
-                f.write_str("New runtime displaying is not implemented yet...")
-            }
+            Compiled::New(new_compiled) => new_compiled.fmt(f),
         }
     }
 }
