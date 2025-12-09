@@ -229,8 +229,6 @@ async fn run_test_with_test_type(
     name: &crate::par::language::GlobalName,
     _ty: &crate::par::types::Type,
 ) -> Result<TestStatus, String> {
-    println!("{}", rt_compiled);
-
     let (sender, receiver) = create_assertion_channel();
 
     let (mut root, reducer_future) = rt_compiled.start_and_instantiate(name).await;

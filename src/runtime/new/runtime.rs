@@ -282,7 +282,6 @@ pub trait Linker {
                     .into_boxed_slice(),
             ))),
         };
-        println!("RT Instantiate {:x}", instance.identifier());
         let package = package.get().unwrap();
         package.redexes.iter().for_each(|(a, b)| {
             self.link(
@@ -406,7 +405,6 @@ impl Linker for Runtime {
 impl Runtime {
     fn set_var(&mut self, instance: Instance, index: usize, value: Node) {
         let mut lock = instance.vars.0.lock().unwrap();
-        println!("{:?} {:?}", index, &mut *lock);
         let slot = lock.get_mut(index).expect("Invalid index in variable!");
         match slot {
             Some(..) => {
@@ -427,24 +425,10 @@ impl Runtime {
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
             }
-
-            eprint!("RT Rdxs:\n");
-            for (a, b) in self.redexes.iter() {
-                eprint!(
-                    "\t& {} ~ {}\n",
-                    a.variant_tree_name(),
-                    b.variant_tree_name()
-                );
-            }
         }
         None
     }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
-        println!(
-            "RT Redex   {:?} {:?} ",
-            a.variant_tree_name(),
-            b.variant_tree_name()
-        );
         match (a, b) {
             sym!(Node::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
@@ -548,8 +532,8 @@ impl Runtime {
             (a, b) => {
                 panic!(
                     "Unimplemented reduction: {:?} {:?}",
-                    a.variant_tree_name(),
-                    b.variant_tree_name()
+                    a.variant_name(),
+                    b.variant_name()
                 )
             }
         };
@@ -558,21 +542,21 @@ impl Runtime {
 }
 
 impl Node {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
-            Node::Linear(l) => format!("Linear.{}", l.variant_tree_name()),
-            Node::Shared(s) => format!("Shared.{}", s.variant_tree_name()),
+            Node::Linear(l) => format!("Linear.{}", l.variant_name()),
+            Node::Shared(s) => format!("Shared.{}", s.variant_name()),
             Node::Global(i, g) => {
-                format!("Global@{:x}.{}", i.identifier(), g.variant_tree_name())
+                format!("Global@{:x}.{}", i.identifier(), g.variant_name())
             }
         }
     }
 }
 
 impl Linear {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
-            Linear::Value(v) => format!("Value({})", v.variant_tree_name()),
+            Linear::Value(v) => format!("Value({})", v.variant_name()),
             Linear::Request(_) => "Request".to_owned(),
             Linear::ShareHole(_) => "ShareHole".to_owned(),
         }
@@ -580,33 +564,33 @@ impl Linear {
 }
 
 impl Shared {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
             Shared::Async(_) => "Async".to_owned(),
-            Shared::Sync(sync) => format!("Sync({})", sync.variant_tree_name()),
+            Shared::Sync(sync) => format!("Sync({})", sync.variant_name()),
         }
     }
 }
 
 impl SyncShared {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
-            SyncShared::Package(_, inner) => format!("Package({})", inner.variant_tree_name()),
-            SyncShared::Value(v) => format!("Value({})", v.variant_tree_name()),
+            SyncShared::Package(_, inner) => format!("Package({})", inner.variant_name()),
+            SyncShared::Value(v) => format!("Value({})", v.variant_name()),
         }
     }
 }
 
 impl Global {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
             Global::Variable(_) => "Variable".into(),
 
             Global::GlobalPackage(_, _g) => "GlobalPackage".into(),
 
-            Global::Destruct(c) => format!("Destruct({})", c.variant_tree_name()),
+            Global::Destruct(c) => format!("Destruct({})", c.variant_name()),
 
-            Global::Value(v) => format!("Value({})", v.variant_tree_name()),
+            Global::Value(v) => format!("Value({})", v.variant_name()),
 
             Global::Fanout(_idx) => "Fanout".into(),
         }
@@ -614,7 +598,7 @@ impl Global {
 }
 
 impl GlobalCont {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
             GlobalCont::Continue => "Continue".into(),
 
@@ -626,7 +610,7 @@ impl GlobalCont {
 }
 
 impl<P> Value<P> {
-    pub fn variant_tree_name(&self) -> String {
+    pub fn variant_name(&self) -> String {
         match self {
             Value::Break => "Break".into(),
 

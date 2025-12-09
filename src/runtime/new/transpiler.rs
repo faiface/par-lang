@@ -53,7 +53,6 @@ impl Transpiled {
         for (id, body) in ic_compiled.id_to_package.as_ref().clone().drain(..) {
             this.transpile_package(id, body)
         }
-        println!("{}", this.dest);
         Self {
             arena: Arc::new(this.dest),
             type_defs,
