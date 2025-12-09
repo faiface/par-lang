@@ -267,7 +267,9 @@ async fn nat_range(mut handle: Handle) {
     let mut i = lo;
     while i < hi {
         handle.signal(literal!("item")).await;
-        handle.send().await.provide_nat(i.clone()).await;
+        handle.send().await.concurrently(|h|
+            h.provide_nat(i.clone())
+        );
         i += 1;
     }
     handle.signal(literal!("end")).await;
