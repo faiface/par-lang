@@ -441,6 +441,7 @@ impl Runtime {
                 return Some((UserData::Request(request), other));
             }
             sym!(Node::Global(instance, Global::Fanout(destinations)), other) => {
+                println!("{other:?}");
                 let other = self.share(other).unwrap();
                 let destinations = self.arena.get(destinations);
                 for dest in destinations {
@@ -484,6 +485,22 @@ impl Runtime {
                 other
             ) => {
                 return Some((UserData::ExternalArc(ext), other));
+            }
+            sym!(Node::Shared(Shared::Sync(shared)), other)
+                if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
+            {
+                let SyncShared::Value(Value::ExternalArc(arc)) = shared.as_ref() else {
+                    unreachable!()
+                };
+                return Some((UserData::ExternalArc(arc.clone()), other));
+            }
+            sym!(Node::Shared(Shared::Sync(shared)), other)
+                if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
+            {
+                let SyncShared::Value(Value::ExternalFn(arc)) = shared.as_ref() else {
+                    unreachable!()
+                };
+                return Some((UserData::ExternalFn(arc.clone()), other));
             }
             sym!(Node::Global(instance, Global::Destruct(destructor)), node) => {
                 match (
