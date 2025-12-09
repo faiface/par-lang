@@ -236,7 +236,6 @@ impl Handle {
                     return v;
                 }
                 Err(node) => {
-                    println!("Retrying... {:?}", node);
                     self.node = node.into();
                     self.retry().await;
                 }

@@ -19,6 +19,7 @@ macro_rules! do_await {
     };
 }
 
+// this macro dispatches various types of methods into either the new handle or the old handle
 macro_rules! dispatch {
     (nilary_destructor, $name:ident, $pati:ident : $patt:ty, ( $($arg_pat:ident : $arg_ty:ty),* ), $ret:ty $(,$x:ident)?) => {
         pub async fn $name($pati : $patt , $($arg_pat : $arg_ty),*) -> $ret {
@@ -49,8 +50,9 @@ macro_rules! dispatch {
             match self {
                 Handle::Old(handle) => handle.$name().await,
                 Handle::New(handle) => {
-                    let Primitive::$variant($var) = handle.primitive().await.unwrap() else {
-                        panic!("Unexpected primitive in Handle!")
+                    let primitive = handle.primitive().await.unwrap();
+                    let Primitive::$variant($var) = primitive else {
+                        panic!("Unexpected primitive in Handle! Expected {}, got {:?}", stringify!($variant), primitive)
                     };
                     $expr
                 }
@@ -118,7 +120,22 @@ impl Handle {
         value.chars().nth(0).unwrap()
     });
     dispatch!(primitive, string, value, ParString, String, value);
-    dispatch!(primitive, bytes, value, Bytes, Bytes, value);
+
+    // this one is a one-off because it requires subtyping.
+    pub async fn bytes(self) -> Bytes {
+        match self {
+            Handle::Old(handle) => handle.bytes().await,
+            Handle::New(handle) => match handle.primitive().await.unwrap() {
+                Primitive::String(e) => e.as_bytes(),
+                Primitive::Bytes(e) => e,
+                primitive => panic!(
+                    "Unexpected primitive in Handle! Expected {}, got {:?}",
+                    stringify!($variant),
+                    primitive
+                ),
+            },
+        }
+    }
     dispatch!(primitive, int, value, BigInt, Int, value);
     dispatch!(primitive, nat, value, BigInt, Int, value);
 
