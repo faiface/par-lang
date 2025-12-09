@@ -1,4 +1,3 @@
-use crate::par::build_result;
 use crate::par::build_result::BuildConfig;
 use crate::par::build_result::BuildResult;
 #[cfg(feature = "playground")]
@@ -22,7 +21,7 @@ mod par;
 mod playground;
 #[cfg(feature = "playground")]
 mod readback;
-mod runtime;
+pub mod runtime;
 mod spawn;
 mod test;
 mod test_assertion;

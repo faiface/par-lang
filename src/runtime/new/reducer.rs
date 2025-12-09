@@ -1,5 +1,5 @@
 use super::readback::Handle;
-use crate::runtime::new::runtime::{Global, Linear, Node, PackagePtr, Runtime, UserData};
+use crate::runtime::new::runtime::{Linear, Node, PackagePtr, Runtime, UserData};
 use crate::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
@@ -101,14 +101,6 @@ impl Reducer {
                             println!("Runtime -> Reducer: Fulfill request");
                             b.send(Node::Linear(a.into())).unwrap();
                         }
-                        (UserData::Primitive(p), Node::Global(instance, Global::Fanout(out))) => {
-                            for i in self.runtime.arena.get(out) {
-                                self.runtime.redexes.push((
-                                    Node::Linear(UserData::Primitive(p.clone()).into()),
-                                    Node::Global(instance.clone(), i.clone()),
-                                ));
-                            }
-                        }
                         (UserData::ExternalFn(f), other) => {
                             println!("Runtime -> Reducer: Run ExternalFn");
                             let handle = Handle::from_node(
@@ -131,7 +123,6 @@ impl Reducer {
                                 .spawn((f.0).as_ref()(crate::runtime::Handle::New(handle)))
                                 .unwrap();
                         }
-                        _ => todo!(),
                     }
                 } else if let Ok(msg) = self.inbox.try_recv() {
                     self.handle_message(msg);

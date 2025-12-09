@@ -75,7 +75,7 @@ impl Tree {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            Self::Package(id, context) => {
+            Self::Package(_, context) => {
                 context.map_vars(m);
             }
             Self::Signal(_, payload) => {
@@ -380,7 +380,7 @@ impl Net {
                 // link anyway
                 self.link(a, b);
             }
-            sym!(Era | Continue, Break) | sym!(Break | Continue, Era) => {
+            sym!(Era | Continue, Break) | sym!(Continue, Era) => {
                 self.rewrites.era += 1;
             }
             sym!(Times(a0, a1), Era) | sym!(Par(a0, a1), Era) | sym!(Dup(a0, a1), Era) => {

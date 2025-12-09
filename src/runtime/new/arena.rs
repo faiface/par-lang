@@ -50,10 +50,6 @@ impl std::fmt::Display for Arena {
                 Global::Variable(id) => {
                     write!(f, "{}", id)?;
                 }
-                Global::LinearPackage(index, captures) => {
-                    write!(f, "@{}", index.0)?;
-                    fmt_captures(f, this, this.get(captures.clone()))?;
-                }
                 Global::GlobalPackage(index, captures) => {
                     write!(f, "@{}", index.0)?;
                     fmt_captures(f, this, this.get(captures.clone()))?;
@@ -220,10 +216,5 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
-    }
-}
-impl<T: Indexable + ?Sized> Index<T> {
-    pub fn get<'s>(self, store: &'s Arena) -> &'s T {
-        T::get(store, self)
     }
 }

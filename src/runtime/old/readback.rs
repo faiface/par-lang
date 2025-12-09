@@ -20,7 +20,7 @@ use crate::{
 
 use super::{compiler::TypedTree, net::Tree, Net};
 pub(crate) mod private {
-    use super::super::{compiler::TypedTree, net::Tree, Net};
+    use super::super::{net::Tree, Net};
     use crate::runtime::old::net::ReducerMessage;
     use crate::runtime::old::readback::Handle;
     use futures::channel::mpsc;
@@ -50,7 +50,7 @@ pub(crate) mod private {
             self.net.lock()
         }
 
-        pub(crate) fn net(&self) -> Arc<Mutex<Net>> {
+        pub fn net(&self) -> Arc<Mutex<Net>> {
             Arc::clone(&self.net)
         }
 
@@ -146,7 +146,7 @@ pub enum TypedReadback {
 }
 
 impl Handle {
-    pub fn new(
+    pub(crate) fn new(
         net: Arc<Mutex<Net>>,
         notify: mpsc::UnboundedSender<ReducerMessage>,
         handle_count: Arc<AtomicUsize>,

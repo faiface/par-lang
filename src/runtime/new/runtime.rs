@@ -91,7 +91,6 @@ impl Drop for InstanceInner {
 #[derive(Debug)]
 /// User data; this is data created by the external
 pub enum UserData {
-    Primitive(Primitive),
     /// An external function without captures. This is created externally
     /// and the function takes in a handle to the value it interacts with
     ExternalFn(ExternalFn),
@@ -131,7 +130,6 @@ pub struct Package {
 #[derive(Clone, Debug)]
 pub enum Global {
     Variable(usize),
-    LinearPackage(PackagePtr, GlobalPtr),
     GlobalPackage(PackagePtr, GlobalPtr),
     /// Destruct attempts to convert the interacting node into a value,
     /// and then carries out a negative operation on it according to its variant
@@ -205,7 +203,6 @@ pub enum Linear {
 impl From<UserData> for Linear {
     fn from(this: UserData) -> Linear {
         match this {
-            UserData::Primitive(p) => Linear::Value(Value::Primitive(p)),
             UserData::ExternalFn(p) => Linear::Value(Value::ExternalFn(p)),
             UserData::ExternalArc(p) => Linear::Value(Value::ExternalArc(p)),
             UserData::Request(p) => Linear::Request(p),
@@ -347,7 +344,6 @@ pub trait Linker {
         match node {
             Node::Shared(shared) => Some(shared),
             Node::Global(_instance, Global::Destruct(..)) => None,
-            Node::Global(_instance, Global::LinearPackage(..)) => None,
             Node::Global(_instance, Global::Fanout(..)) => None,
             Node::Global(instance, Global::GlobalPackage(package, captures)) => {
                 let captures = Node::Global(instance, self.arena().get(captures).clone());
@@ -452,16 +448,6 @@ impl Runtime {
         match (a, b) {
             sym!(Node::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
-            }
-            sym!(
-                Node::Global(instance, Global::LinearPackage(package, captures_in)),
-                other
-            ) => {
-                let root = self.instantiate_with_captures(
-                    package,
-                    Node::Global(instance, self.arena.get(captures_in).clone()),
-                );
-                self.link(root, other);
             }
             sym!(Node::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
@@ -615,8 +601,6 @@ impl Global {
     pub fn variant_tree_name(&self) -> String {
         match self {
             Global::Variable(_) => "Variable".into(),
-
-            Global::LinearPackage(_, _g) => "LinearPackage".into(),
 
             Global::GlobalPackage(_, _g) => "GlobalPackage".into(),
 

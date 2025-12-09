@@ -34,7 +34,7 @@ pub struct Transpiled {
     pub arena: Arc<Arena>,
     pub name_to_package: HashMap<GlobalName, PackagePtr>,
     pub name_to_ty: HashMap<GlobalName, Type>,
-    type_defs: TypeDefs,
+    pub type_defs: TypeDefs,
 }
 
 impl Display for Transpiled {

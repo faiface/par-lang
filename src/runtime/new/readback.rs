@@ -1,7 +1,5 @@
 use super::reducer::{NetHandle, ReducerMessage};
-use super::runtime::{
-    ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, Value,
-};
+use super::runtime::{ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Value};
 use crate::par::primitive::Primitive;
 use crate::runtime::new::arena::Arena;
 use crate::runtime::new::runtime::Linker;
@@ -14,8 +12,8 @@ use tokio::sync::oneshot;
 
 #[derive(Debug)]
 pub enum Error {
-    Cancelled,
     InvalidNode(Node),
+    InvalidValue(Value<Node>),
     Panicked,
 }
 
@@ -40,9 +38,6 @@ impl HandleNode {
             HandleNode::Present(node) => node,
             HandleNode::Waiting(receiver) => receiver.await.expect("Sender dropped!"),
         }
-    }
-    fn put(&mut self, node: Node) {
-        *self = Self::Present(node);
     }
 }
 
@@ -145,7 +140,7 @@ impl Handle {
     pub async fn primitive(mut self) -> Result<Primitive> {
         let primitive = match self.try_destruct().await {
             Value::Primitive(p) => p,
-            node => return Err(todo!()),
+            node => return Err(Error::InvalidValue(node)),
         };
         Ok(primitive)
     }
