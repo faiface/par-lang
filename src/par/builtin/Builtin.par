@@ -77,8 +77,8 @@ type Result<e, a> = either {
   .err e,
 }
 
-dec Result.Always : [type a] [Result<either {}, a>] a
-def Result.Always = [type a] [result] result.case {
+dec Result.Always : <a>[Result<either {}, a>] a
+def Result.Always = <a>[result] result.case {
   .ok value => value,
   .err impossible => impossible.case {},
 }
@@ -111,8 +111,8 @@ def List.Builder = [type a]
     .build => append(.end!),
   }
 
-dec List.Find : [type a] [List<box a>, box [box a] Bool] Option<box a>
-def List.Find = [type a] [list, f] list.begin.case {
+dec List.Find : <a>[List<box a>] [box [box a] Bool] Option<box a>
+def List.Find = <a>[list] [f] list.begin.case {
   .end! => .err!,
   .item(v) list => f(v).case {
     .true! => .ok v,
@@ -120,8 +120,8 @@ def List.Find = [type a] [list, f] list.begin.case {
   },
 }
 
-dec List.FindLast : [type a] [List<box a>, box [box a] Bool] Option<box a>
-def List.FindLast = [type a] [list, f]
+dec List.FindLast : <a>[List<box a>] [box [box a] Bool] Option<box a>
+def List.FindLast = <a>[list] [f]
   let result: Option<box a> = .err! in
   list.begin.case {
     .end! => result,
@@ -131,14 +131,14 @@ def List.FindLast = [type a] [list, f]
     },
   }
 
-dec List.Map : [type a, b] [List<a>, box [a] b] List<b>
-def List.Map = [type a, b] [list, f] list.begin.case {
+dec List.Map : <a>[List<a>] <b>[box [a] b] List<b>
+def List.Map = <a>[list] <b>[f] list.begin.case {
   .end! => .end!
   .item(v) list => .item(f(v)) list.loop,
 }
 
-dec List.FlatMap : [type a, b] [List<a>, box [a] List<b>] List<b>
-def List.FlatMap = [type a, b] [list, f] list.begin.case {
+dec List.FlatMap : <a>[List<a>] <b>[box [a] List<b>] List<b>
+def List.FlatMap = <a>[list] <b>[f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).begin@flat.case {
     .end! => list.loop,
@@ -146,8 +146,8 @@ def List.FlatMap = [type a, b] [list, f] list.begin.case {
   },
 }
 
-dec List.Filter : [type a] [List<box a>, box [box a] Bool] List<box a>
-def List.Filter = [type a] [list, f] list.begin.case {
+dec List.Filter : <a>[List<box a>] [box [box a] Bool] List<box a>
+def List.Filter = <a>[list] [f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).case {
     .true! => .item(v) list.loop,
@@ -155,35 +155,35 @@ def List.Filter = [type a] [list, f] list.begin.case {
   },
 }
 
-dec List.Fold : [type a, r] [List<a>, r, box [r, a] r] r
-def List.Fold = [type a, r] [list, result, f] list.begin.case {
+dec List.Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
+def List.Fold = <a>[list] <r>[result] [f] list.begin.case {
   .end! => result,
   .item(v) list => let result = f(result, v) in list.loop,
 }
 
-dec List.Reduce : [type a] [List<a>, box [a, a] a] Option<a>
-def List.Reduce = [type a] [list, f] list.case {
+dec List.Reduce : <a>[List<a>] [box [a, a] a] Option<a>
+def List.Reduce = <a>[list] [f] list.case {
   .end! => .err!,
-  .item(result) list => .ok List.Fold(type a, a)(list, result, f),
+  .item(result) list => .ok List.Fold(list, result, f),
 }
 
-dec List.Size : [type a] [List<box a>] Nat
-def List.Size = [type a] [list]
+dec List.Size : <a>[List<box a>] Nat
+def List.Size = <a>[list]
   let len = 0 in
   list.begin.case {
     .end! => len,
     .item(_) list => do { len->Nat.Add(1) } in list.loop,
   }
 
-dec List.Concat : [type a] [List<a>, List<a>] List<a>
-def List.Concat = [type a] [list1, list2] chan yield {
-  yield->{List.Copy(type a)}(list1)
-  yield->{List.Copy(type a)}(list2)
-  yield.end!
-}
+//dec List.Concat : <a>[List<a>] [List<a>] List<a>
+//def List.Concat = <a>[list1] [list2] chan yield {
+//  yield->List.Copy(list1)
+//  yield->List.Copy(list2)
+//  yield.end!
+//}
 
-dec List.Copy : [type a] [dual List<a>, List<a>] dual List<a>
-def List.Copy = [type a] [dst, src] do {
+dec List.Copy : <a>[dual List<a>] [List<a>] dual List<a>
+def List.Copy = <a>[dst] [src] do {
   src.begin.case {
     .end! => {},
     .item(v) src => {
@@ -208,8 +208,8 @@ def List.Join = [list, sep]
     },
   }
 
-dec List.MinMax : [type a] [List<box a>, box [box a, box a] Ordering] Option<(box a) box a>
-def List.MinMax = [type a] [list, cmp]
+dec List.MinMax : <a>[List<box a>] [box [box a, box a] Ordering] Option<(box a) box a>
+def List.MinMax = <a>[list] [cmp]
   let result: Option<(box a) box a> = .err! in
   list.begin.case {
     .end! => result,
@@ -228,22 +228,22 @@ def List.MinMax = [type a] [list, cmp]
     },
   }
 
-dec List.Min : [type a] [List<box a>, box [box a, box a] Ordering] Option<box a>
-def List.Min = [type a] [list, cmp]
-  List.MinMax(type a)(list, cmp).case {
+dec List.Min : <a>[List<box a>] [box [box a, box a] Ordering] Option<box a>
+def List.Min = <a>[list] [cmp]
+  List.MinMax(list, cmp).case {
     .err! => .err!,
     .ok(min) _ => .ok min,
   }
 
-dec List.Max : [type a] [List<box a>, box [box a, box a] Ordering] Option<box a>
-def List.Max = [type a] [list, cmp]
-  List.MinMax(type a)(list, cmp).case {
+dec List.Max : <a>[List<box a>] [box [box a, box a] Ordering] Option<box a>
+def List.Max = <a>[list] [cmp]
+  List.MinMax(list, cmp).case {
     .err! => .err!,
     .ok(_) max => .ok max,
   }
 
-dec List.Zip : [type a, b] [List<box a>, List<box b>] List<(box a) box b>
-def List.Zip = [type a, b] [list1, list2] chan yield {
+dec List.Zip : <a>[List<box a>] <b>[List<box b>] List<(box a) box b>
+def List.Zip = <a>[list1] <b>[list2] chan yield {
   list1.begin.case {
     .end! => { yield.end! },
     .item(v1) list1 => {
@@ -258,8 +258,8 @@ def List.Zip = [type a, b] [list1, list2] chan yield {
   }
 }
 
-dec List.Unzip : [type a, b] [List<(a) b>] (List<a>) List<b>
-def List.Unzip = [type a, b] [list] do {
+dec List.Unzip : <a, b>[List<(a) b>] (List<a>) List<b>
+def List.Unzip = <a, b>[list] do {
   let list1 = List.Builder(type a)
   let list2 = List.Builder(type b)
 
@@ -273,8 +273,8 @@ def List.Unzip = [type a, b] [list] do {
   }
 } in (list1.build) list2.build
 
-dec List.All : [type a] [List<box a>, box [a] Bool] Bool
-def List.All = [type a] [list, f]
+dec List.All : <a>[List<box a>] [box [a] Bool] Bool
+def List.All = <a>[list] [f]
 	list.begin.case {
 		.end! => .true!,
 		.item(v) list => f(v).case {
@@ -283,11 +283,11 @@ def List.All = [type a] [list, f]
 		},
 	}
 
-dec List.Any : [type a] [List<box a>, box [a] Bool] Bool
-def List.Any = [type a] [list, f] List.All(type a)(list, box [v] Bool.Not(f(v)))
+dec List.Any : <a>[List<box a>] [box [a] Bool] Bool
+def List.Any = <a>[list] [f] List.All(list, box [v] Bool.Not(f(v)))
 
-dec List.Dedup : [type a] [List<box a>, box [a, a] Bool] List<box a>
-def List.Dedup = [type a] [list, eq]
+dec List.Dedup : <a>[List<box a>] [box [a, a] Bool] List<box a>
+def List.Dedup = <a>[list] [eq]
 	list.case {
 		.end! => .end!,
 		.item(prev) list => .item(prev)
@@ -302,8 +302,8 @@ def List.Dedup = [type a] [list, eq]
 			}
 	}
 
-dec List.Take : [type a] [List<box a>, Nat] List<box a>
-def List.Take = [type a] [list, n]
+dec List.Take : <a>[List<box a>] [Nat] List<box a>
+def List.Take = <a>[list] [n]
 	Nat.Repeat(n).begin.case {
 		.end! => .end!,
 		.step next => list.case {
@@ -312,8 +312,8 @@ def List.Take = [type a] [list, n]
 		}
 	}
 
-dec List.Drop : [type a] [List<box a>, Nat] List<box a>
-def List.Drop = [type a] [list, n]
+dec List.Drop : <a>[List<box a>] [Nat] List<box a>
+def List.Drop = <a>[list] [n]
 	Nat.Repeat(n).begin.case {
 		.end! => list,
 		.step next => list.case {
