@@ -295,7 +295,7 @@ async fn bytes_pipe_reader(mut handle: Handle) {
         match handle.case().await.as_str() {
             "ok" => {
                 result_state.set_result_ok();
-                handle.break_().await;
+                handle.continue_().await;
             }
             "err" => {
                 result_state.set_result_err(handle).await;

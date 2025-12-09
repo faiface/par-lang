@@ -195,7 +195,7 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
             );
             return;
         };
-        println!("Running...");
+        eprintln!("Running...");
         let start = Instant::now();
 
         let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;

@@ -431,6 +431,12 @@ impl Runtime {
             }
         }
     }
+    pub fn status(&self) {
+        println!("Runtime status");
+        for (a, b) in &self.redexes {
+            println!("  {} ~ {}", self.show(&a), self.show(&b));
+        }
+    }
     /// Reduce all redexes in the net until a redex requires external action.
     /// Returns `Some` if there is such redex; returns `None` if no
     /// external action is needed and the net is in normal form.
