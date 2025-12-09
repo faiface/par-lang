@@ -18,7 +18,7 @@ fn solve_constraints(
         lower = union_types(type_defs, span, &lower, &typ)?;
     }
     for typ in upper_bounds {
-        upper = intersect_types(type_defs, span, &lower, &typ)?;
+        upper = intersect_types(type_defs, span, &upper, &typ)?;
     }
     if !Type::is_assignable_to(&lower, &upper, type_defs)? {
         return Ok(None);

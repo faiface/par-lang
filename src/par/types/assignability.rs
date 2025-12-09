@@ -313,12 +313,12 @@ impl Type {
             }
 
             (Self::DualHole(_, _name, hole), t2) => {
-                hole.add_lower_bound(t2.clone());
+                hole.add_lower_bound(t2.clone().dual(Span::None));
                 Compatible
             }
 
             (t1, Self::DualHole(_, _name, hole)) => {
-                hole.add_upper_bound(t1.clone());
+                hole.add_upper_bound(t1.clone().dual(Span::None));
                 Compatible
             }
 
