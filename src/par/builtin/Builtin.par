@@ -155,8 +155,8 @@ def List.Filter = <a>[list] [f] list.begin.case {
   },
 }
 
-dec List.Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
-def List.Fold = <a>[list] <r>[result] [f] list.begin.case {
+dec List.Fold : <a>[List<a>] <r>[box [r, a] r] [r] r
+def List.Fold = <a>[list] <r>[f] [result] list.begin.case {
   .end! => result,
   .item(v) list => let result = f(result, v) in list.loop,
 }
@@ -164,7 +164,7 @@ def List.Fold = <a>[list] <r>[result] [f] list.begin.case {
 dec List.Reduce : <a>[List<a>] [box [a, a] a] Option<a>
 def List.Reduce = <a>[list] [f] list.case {
   .end! => .err!,
-  .item(result) list => .ok List.Fold(list, result, f),
+  .item(result) list => .ok List.Fold(list, f, result),
 }
 
 dec List.Size : <a>[List<box a>] Nat
