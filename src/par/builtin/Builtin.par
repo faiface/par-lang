@@ -442,8 +442,8 @@ dec String.Parser  : [String] String.Parser<either {}>
 
 dec String.ParserFromReader : [type e] [Bytes.Reader<e>] String.Parser<e>
 
-dec String.Lines : [type e] [String.Parser<e>] List.Result<e, String>
-def String.Lines = [type e] [parser]
+dec String.Lines : <e>[String.Parser<e>] List.Result<e, String>
+def String.Lines = <e>[parser]
   catch e => .end .err e in
   parser.begin.match(.repeat.one.any!, .str "\n").case {
     .end try ! => .end .ok!,
