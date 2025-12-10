@@ -275,52 +275,92 @@ def List.Unzip = <a, b>[list] do {
 
 dec List.All : <a>[List<box a>] [box [a] Bool] Bool
 def List.All = <a>[list] [f]
-	list.begin.case {
-		.end! => .true!,
-		.item(v) list => f(v).case {
-			.true! => list.loop,
-			.false! => .false!,
-		},
-	}
+  list.begin.case {
+    .end! => .true!,
+    .item(v) list => f(v).case {
+      .true! => list.loop,
+      .false! => .false!,
+    },
+  }
 
 dec List.Any : <a>[List<box a>] [box [a] Bool] Bool
 def List.Any = <a>[list] [f] List.All(list, box [v] Bool.Not(f(v)))
 
 dec List.Dedup : <a>[List<box a>] [box [a, a] Bool] List<box a>
 def List.Dedup = <a>[list] [eq]
-	list.case {
-		.end! => .end!,
-		.item(prev) list => .item(prev)
-			list.begin.case {
-				.end! => .end!,
-				.item(v) list => eq(prev, v).case {
-					.true! => list.loop,
-					.false! =>
-						let prev = v in
-						.item(v) list.loop,
-				}
-			}
-	}
+  list.case {
+    .end! => .end!,
+    .item(prev) list => .item(prev)
+      list.begin.case {
+        .end! => .end!,
+        .item(v) list => eq(prev, v).case {
+          .true! => list.loop,
+          .false! =>
+            let prev = v in
+            .item(v) list.loop,
+        }
+      }
+  }
 
 dec List.Take : <a>[List<box a>] [Nat] List<box a>
 def List.Take = <a>[list] [n]
-	Nat.Repeat(n).begin.case {
-		.end! => .end!,
-		.step next => list.case {
-			.end! => .end!
-			.item(v) list => .item(v) next.loop,
-		}
-	}
+  Nat.Repeat(n).begin.case {
+    .end! => .end!,
+    .step next => list.case {
+      .end! => .end!
+      .item(v) list => .item(v) next.loop,
+    }
+  }
 
 dec List.Drop : <a>[List<box a>] [Nat] List<box a>
 def List.Drop = <a>[list] [n]
-	Nat.Repeat(n).begin.case {
-		.end! => list,
-		.step next => list.case {
-			.end! => .end!,
-			.item(_) list => next.loop,
-		},
-	}
+  Nat.Repeat(n).begin.case {
+    .end! => list,
+    .step next => list.case {
+      .end! => .end!,
+      .item(_) list => next.loop,
+    },
+  }
+
+dec List.Chunk : <a>[List<a>] [Nat] List<List<a>>
+def List.Chunk = <a>[list] [n] chan outer {
+  let inner: Option<List.Builder<a>> = .err!
+  let i = 0
+
+  list.begin.case {
+    .end! => {
+      inner.case {
+        .err! => {},
+        .ok builder => { outer.item(builder.build) },
+      }
+      outer.end!
+    },
+    .item(v) list => {
+      inner.case {
+        .err! => {
+          let inner = .ok List.Builder(type a).add(v)
+        },
+        .ok builder => {
+          let inner = .ok builder.add(v)
+        },
+      }
+      i->Nat.Add(1)
+      Nat.Equals(i, n).case {
+        .true! => {
+          inner.case {
+            .ok builder => { outer.item(builder.build) },
+          }
+          let inner = .err!
+          let i = 0
+          list.loop
+        },
+        .false! => {
+          list.loop
+        },
+      }
+    },
+  }
+}
 
 
 /// Ordering
