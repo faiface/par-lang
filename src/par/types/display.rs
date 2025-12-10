@@ -62,6 +62,7 @@ impl Type {
             }
 
             Self::Pair(_, arg, then, vars) => {
+                let mut then = then;
                 if !vars.is_empty() {
                     write!(f, "<")?;
                     write!(f, "{}", vars[0])?;
@@ -72,7 +73,6 @@ impl Type {
                     write!(f, "(")?;
                     arg.pretty(f, indent)?;
                 } else {
-                    let mut then = then;
                     write!(f, "(")?;
                     arg.pretty(f, indent)?;
                     while let Self::Pair(_, arg, next, vars) = then.as_ref() {
@@ -93,6 +93,7 @@ impl Type {
             }
 
             Self::Function(_, param, then, vars) => {
+                let mut then = then;
                 if !vars.is_empty() {
                     write!(f, "<")?;
                     write!(f, "{}", vars[0])?;
@@ -103,7 +104,6 @@ impl Type {
                     write!(f, "[")?;
                     param.pretty(f, indent)?;
                 } else {
-                    let mut then = then;
                     write!(f, "[")?;
                     param.pretty(f, indent)?;
                     while let Self::Function(_, arg, next, vars) = then.as_ref() {
@@ -266,6 +266,7 @@ impl Type {
             }
 
             Self::Pair(_, arg, then, vars) => {
+                let mut then = then;
                 if !vars.is_empty() {
                     write!(f, "<")?;
                     write!(f, "{}", vars[0])?;
@@ -276,7 +277,6 @@ impl Type {
                     write!(f, "(")?;
                     arg.pretty_compact(f)?;
                 } else {
-                    let mut then = then;
                     write!(f, "(")?;
                     arg.pretty_compact(f)?;
                     while let Self::Pair(_, arg, next, vars) = then.as_ref() {
@@ -297,6 +297,7 @@ impl Type {
             }
 
             Self::Function(_, param, then, vars) => {
+                let mut then = then;
                 if !vars.is_empty() {
                     write!(f, "<")?;
                     write!(f, "{}", vars[0])?;
@@ -307,7 +308,6 @@ impl Type {
                     write!(f, "[")?;
                     param.pretty_compact(f)?;
                 } else {
-                    let mut then = then;
                     write!(f, "[")?;
                     param.pretty_compact(f)?;
                     while let Self::Function(_, arg, next, vars) = then.as_ref() {
