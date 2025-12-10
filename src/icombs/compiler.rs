@@ -190,9 +190,8 @@ pub struct Compiler {
     net: Net,
     context: Context,
     type_defs: TypeDefs,
-    definitions: IndexMap<GlobalName, Definition<Arc<Expression<Type>>>>,
+    definitions: IndexMap<GlobalName, (Definition<Arc<Expression<Type>>>, Type)>,
     global_name_to_id: IndexMap<GlobalName, usize>,
-    id_to_ty: Vec<Type>,
     id_to_package: Vec<Net>,
     lazy_redexes: Vec<(Tree, Tree)>,
     compile_global_stack: IndexSet<GlobalName>,
@@ -221,10 +220,9 @@ pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
 impl Compiler {
     fn compile_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
         if let Some(id) = self.global_name_to_id.get(name) {
-            let ty = self.id_to_ty.get(*id).unwrap().clone();
             return Ok(TypedTree {
                 tree: Tree::Package(*id),
-                ty,
+                ty: Type::Break(Span::None),
             });
         };
         if !self.compile_global_stack.insert(name.clone()) {
@@ -234,7 +232,7 @@ impl Compiler {
             });
         }
         let global = match self.definitions.get(name).cloned() {
-            Some(def) => def.expression,
+            Some((def, _typ)) => def.expression,
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
 
@@ -306,7 +304,6 @@ impl Compiler {
         let old_net = core::mem::take(&mut self.net);
         let old_lazy_redexes = core::mem::take(&mut self.lazy_redexes);
         // Allocate package
-        self.id_to_ty.push(Type::Break(Span::default()));
         self.id_to_package.push(Default::default());
         let mut tree = self.with_captures(&Captures::default(), |this| f(this, id))?;
 
@@ -350,7 +347,6 @@ impl Compiler {
             .redexes
             .append(&mut core::mem::take(&mut self.lazy_redexes).into());
         self.net.assert_valid();
-        *self.id_to_ty.get_mut(id).unwrap() = tree.ty.clone();
         *self.id_to_package.get_mut(id).unwrap() = core::mem::take(&mut self.net);
         self.lazy_redexes = old_lazy_redexes;
         self.net = old_net;
@@ -439,16 +435,16 @@ impl Compiler {
         self.use_var(&Var::Name(name.clone()), usage, in_command)
     }
 
-    fn create_typed_wire(&mut self, t: Type) -> (TypedTree, TypedTree) {
+    fn create_typed_wire(&mut self) -> (TypedTree, TypedTree) {
         let (v0, v1) = self.net.create_wire();
         (
             TypedTree {
                 tree: v0,
-                ty: t.clone(),
+                ty: Type::Break(Span::None),
             },
             TypedTree {
                 tree: v1,
-                ty: t.dual(Span::None),
+                ty: Type::Break(Span::None),
             },
         )
     }
@@ -468,31 +464,6 @@ impl Compiler {
         else_branch: Option<usize>,
     ) -> Tree {
         Tree::Choice(Box::new(ctx_out), Arc::new(branches), else_branch)
-    }
-
-    fn normalize_type(&mut self, ty: Type) -> Type {
-        match ty {
-            Type::Name(loc, name, args) => {
-                let ty = self.type_defs.get(&loc, &name, &args).unwrap();
-                self.normalize_type(ty)
-            }
-            Type::DualName(loc, name, args) => {
-                let ty = self.type_defs.get_dual(&loc, &name, &args).unwrap();
-                self.normalize_type(ty)
-            }
-            Type::Box(_, inner) => self.normalize_type(*inner),
-            Type::DualBox(_, inner) if inner.is_positive(&self.type_defs).unwrap() => {
-                self.normalize_type(inner.clone().dual(Span::None))
-            }
-            Type::Recursive {
-                asc, label, body, ..
-            } => self.normalize_type(Type::expand_recursive(&asc, &label, &body).unwrap()),
-            Type::Iterative {
-                asc, label, body, ..
-            } => self
-                .normalize_type(Type::expand_iterative(&Span::None, &asc, &label, &body).unwrap()),
-            ty => ty,
-        }
     }
 
     fn compile_expression(&mut self, expr: &Expression<Type>) -> Result<TypedTree> {
@@ -517,11 +488,11 @@ impl Compiler {
             Expression::Chan {
                 captures,
                 chan_name,
-                chan_type,
+                chan_type: _chan_type,
                 process,
                 ..
             } => self.with_captures(captures, |this| {
-                let (v0, v1) = this.create_typed_wire(chan_type.clone());
+                let (v0, v1) = this.create_typed_wire();
                 this.bind_variable(chan_name.clone(), v0)?;
                 this.compile_process(process)?;
                 Ok(v1)
@@ -566,7 +537,7 @@ impl Compiler {
         span: &Span,
         name: LocalName,
         usage: &VariableUsage,
-        ty: Type,
+        _ty: Type,
         cmd: &Command<Type>,
     ) -> Result<()> {
         match cmd {
@@ -577,33 +548,15 @@ impl Compiler {
                 self.end_context()?;
             }
             // types get erased.
-            Command::SendType(argument, process) => {
+            Command::SendType(_argument, process) => {
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Forall(_, type_name, ret_type) = self.normalize_type(subject.ty.clone())
-                else {
-                    panic!("Unexpected type for SendType: {:?}", subject.ty);
-                };
-                let ret_type = ret_type
-                    .substitute(BTreeMap::from([(&type_name, argument)]))
-                    .unwrap();
-                self.bind_variable(name, subject.tree.with_type(ret_type))?;
+                self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
                 self.compile_process(process)?;
             }
             Command::ReceiveType(parameter, process) => {
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Exists(_, type_name, ret_type) = self.normalize_type(subject.ty.clone())
-                else {
-                    panic!("Unexpected type for ReceiveType: {:?}", subject.ty);
-                };
-                let ret_type = ret_type
-                    .clone()
-                    .substitute(BTreeMap::from([(
-                        &type_name,
-                        &Type::Var(span.clone(), parameter.clone()),
-                    )]))
-                    .unwrap();
                 let was_empty_before = self.type_defs.vars.insert(parameter.clone());
-                self.bind_variable(name, subject.tree.with_type(ret_type))?;
+                self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
                 self.compile_process(process)?;
                 if was_empty_before {
                     self.type_defs.vars.shift_remove(parameter);
@@ -616,11 +569,8 @@ impl Compiler {
                 // free = (name < expr >)
                 // < process >
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Function(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
-                    panic!("Unexpected type for Receive: {:?}", subject.ty);
-                };
                 let expr = self.compile_expression(expr)?;
-                let (v0, v1) = self.create_typed_wire(*ret_type);
+                let (v0, v1) = self.create_typed_wire();
                 self.bind_variable(name, v0)?;
                 self.net.link(
                     Tree::Con(Box::new(v1.tree), Box::new(expr.tree)),
@@ -635,12 +585,8 @@ impl Compiler {
                 // free = (name target)
                 // < process >
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Pair(_, arg_type, ret_type) = self.normalize_type(subject.ty.clone())
-                else {
-                    panic!("Unexpected type for Receive: {:?}", subject.ty);
-                };
-                let (v0, v1) = self.create_typed_wire(*arg_type);
-                let (w0, w1) = self.create_typed_wire(*ret_type);
+                let (v0, v1) = self.create_typed_wire();
+                let (w0, w1) = self.create_typed_wire();
                 self.bind_variable(name, w0)?;
                 self.bind_variable(target.clone(), v0)?;
                 self.net.link(
@@ -651,13 +597,7 @@ impl Compiler {
             }
             Command::Signal(chosen, process) => {
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Choice(_, branches) = self.normalize_type(subject.ty.clone()) else {
-                    panic!("Unexpected type for Signal: {:?}", subject.ty);
-                };
-                let Some(branch_type) = branches.get(chosen) else {
-                    unreachable!("branch {chosen} not found in {:}", subject.ty)
-                };
-                let (v0, v1) = self.create_typed_wire(branch_type.clone());
+                let (v0, v1) = self.create_typed_wire();
                 let choosing_tree = self.either_instance(ArcStr::from(&chosen.string), v1.tree);
                 self.net.link(choosing_tree, subject.tree);
                 self.bind_variable(name, v0)?;
@@ -670,16 +610,12 @@ impl Compiler {
                 let (context_in, pack_data) = self.context.pack(None, None, None, &mut self.net);
 
                 let mut branches = HashMap::new();
-                let Type::Either(_, branch_types) = self.normalize_type(ty.clone()) else {
-                    panic!("Unexpected type for Case: {:?}", ty);
-                };
                 let mut choice_and_process: Vec<_> = names.iter().zip(processes.iter()).collect();
                 choice_and_process.sort_by_key(|k| k.0);
 
                 for (branch_name, process) in choice_and_process {
-                    let branch_type = branch_types.get(branch_name).unwrap();
                     let (package_id, _) = self.in_package(|this, _| {
-                        let (w0, w1) = this.create_typed_wire(branch_type.clone());
+                        let (w0, w1) = this.create_typed_wire();
                         this.bind_variable(name.clone(), w0)?;
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
                         this.compile_process(process)?;
@@ -691,13 +627,8 @@ impl Compiler {
 
                 let else_branch = match else_process {
                     Some(process) => {
-                        let mut branch_types_in_else = branch_types.clone();
-                        for branch_name in names.iter() {
-                            branch_types_in_else.remove(branch_name);
-                        }
-                        let else_type = Type::Either(Span::None, branch_types_in_else);
                         let (package_id, _) = self.in_package(|this, _| {
-                            let (w0, w1) = this.create_typed_wire(else_type);
+                            let (w0, w1) = this.create_typed_wire();
                             this.bind_variable(name.clone(), w0)?;
                             let context_out = this.context.unpack(&pack_data, &mut this.net);
                             this.compile_process(process)?;
@@ -815,7 +746,6 @@ pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
         definitions: program.definitions.clone(),
         global_name_to_id: Default::default(),
         id_to_package: Default::default(),
-        id_to_ty: Default::default(),
         compile_global_stack: Default::default(),
         lazy_redexes: vec![],
     };
@@ -827,7 +757,11 @@ pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
     Ok(IcCompiled {
         id_to_package: Arc::new(compiler.id_to_package.into_iter().enumerate().collect()),
         name_to_id: compiler.global_name_to_id,
-        id_to_ty: compiler.id_to_ty.into_iter().enumerate().collect(),
+        name_to_ty: compiler
+            .definitions
+            .iter()
+            .map(|(k, (_def, ty))| (k.clone(), ty.clone()))
+            .collect(),
     })
 }
 
@@ -835,7 +769,7 @@ pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
     pub(crate) name_to_id: IndexMap<GlobalName, usize>,
-    pub(crate) id_to_ty: IndexMap<usize, Type>,
+    pub(crate) name_to_ty: IndexMap<GlobalName, Type>,
 }
 
 impl Display for IcCompiled {
@@ -860,8 +794,7 @@ impl IcCompiled {
     }
 
     pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
-        let id = self.name_to_id.get(name)?;
-        self.id_to_ty.get(id).cloned()
+        self.name_to_ty.get(name).cloned()
     }
 
     pub fn create_net(&self) -> Net {

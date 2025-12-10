@@ -88,12 +88,23 @@ impl Context {
         Ok(checked_type)
     }
 
-    pub fn get_checked_definitions(&self) -> IndexMap<GlobalName, (Span, Arc<Expression<Type>>)> {
+    pub fn get_checked_definitions(
+        &self,
+    ) -> IndexMap<GlobalName, (Span, Arc<Expression<Type>>, Type)> {
         self.checked_definitions
             .read()
             .unwrap()
             .iter()
-            .map(|(name, checked)| (name.clone(), (checked.span.clone(), checked.def.clone())))
+            .map(|(name, checked)| {
+                (
+                    name.clone(),
+                    (
+                        checked.span.clone(),
+                        checked.def.clone(),
+                        checked.typ.clone(),
+                    ),
+                )
+            })
             .collect()
     }
 

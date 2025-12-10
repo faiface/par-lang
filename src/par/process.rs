@@ -676,7 +676,7 @@ impl Expression<Type> {
         match self {
             Self::Global(_, name, typ) => {
                 let def_span = (program.definitions.get(name))
-                    .map(|def| def.name.span())
+                    .map(|(def, _typ)| def.name.span())
                     .unwrap_or_default();
                 let decl_span = (program.declarations.get(name))
                     .map(|decl| decl.name.span())
