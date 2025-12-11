@@ -199,8 +199,16 @@ impl Type {
         Self::Pair(Span::None, Box::new(t), Box::new(u), vec![])
     }
 
+    pub fn generic_pair(t: Self, u: Self, vars: Vec<LocalName>) -> Self {
+        Self::Pair(Span::None, Box::new(t), Box::new(u), vars)
+    }
+
     pub fn function(t: Self, u: Self) -> Self {
         Self::Function(Span::None, Box::new(t), Box::new(u), vec![])
+    }
+
+    pub fn generic_function(t: Self, u: Self, vars: Vec<LocalName>) -> Self {
+        Self::Function(Span::None, Box::new(t), Box::new(u), vars)
     }
 
     pub fn either(branches: Vec<(&'static str, Self)>) -> Self {
