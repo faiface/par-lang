@@ -1,0 +1,58 @@
+// Test with higher-order list functions
+
+// Map function for lists
+def MapNat: [box [Nat] Nat, List<Nat>] List<Nat> = [f, list]
+  list.begin.case {
+    .end! => .end!,
+    .item(x) xs => .item(f(x)) xs.loop,
+  }
+
+// Filter function for lists
+def FilterNat: [box [Nat] Bool, List<Nat>] List<Nat> = [predicate, list]
+  list.begin.case {
+    .end! => .end!,
+    .item(x) xs => predicate(x).case {
+      .true! => .item(x) xs.loop,
+      .false! => xs.loop,
+    },
+  }
+
+// Sum all elements in a list
+def SumList: [List<Nat>] Nat = [list]
+  list.begin.case {
+    .end! => 0,
+    .item(x) xs => Nat.Add(x, xs.loop),
+  }
+
+// Helper: double a number
+def Double: [Nat] Nat = [n]
+  Nat.Mul(n, 2)
+
+// Helper: is even
+def IsEven: [Nat] Bool = [n]
+  Nat.Equals(Nat.Mod(n, 2), 0)
+
+def TestMapAndSum: [Test] ! = [test] do {
+  let original = .item(1) .item(2) .item(3) .end!
+  let doubled = MapNat(box Double, original)
+  let sum = SumList(doubled)
+
+  test.assert("Sum of doubled [1,2,3] is 12", Nat.Equals(sum, 12))
+} in !
+
+def TestFilterAndSum: [Test] ! = [test] do {
+  let original = .item(1) .item(2) .item(3) .item(4) .item(5) .end!
+  let evens = FilterNat(box IsEven, original)
+  let sum = SumList(evens)
+
+  test.assert("Sum of evens from [1,2,3,4,5] is 6", Nat.Equals(sum, 6))
+} in !
+
+def TestChaining: [Test] ! = [test] do {
+  let list = .item(1) .item(2) .item(3) .item(4) .end!
+  let doubled = MapNat(box Double, list)
+  let evens = FilterNat(box IsEven, doubled)
+  let sum = SumList(evens)
+
+  test.assert("Double then filter evens from [1,2,3,4] sums to 20", Nat.Equals(sum, 20))
+} in !

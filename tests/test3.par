@@ -1,0 +1,81 @@
+// Test file with recursion
+
+// Factorial using Nat.Repeat
+def Factorial: [Nat] Nat = [n]
+  let result = 1 in
+  let counter = 1 in
+  Nat.Repeat(n).begin.case {
+    .end! => result,
+    .step s => do {
+      result->Nat.Mul(counter)
+      counter->Nat.Add(1)
+    } in s.loop,
+  }
+
+// Sum all elements in a list recursively
+def SumList: [List<Nat>] Nat = [list]
+  list.begin.case {
+    .end! => 0,
+    .item(x) xs => Nat.Add(x, xs.loop),
+  }
+
+// Count elements in a list recursively (for Nat lists only)
+def LengthNat: [List<Nat>] Nat = [list]
+  list.begin.case {
+    .end! => 0,
+    .item(x) xs => let _ = x in Nat.Add(1, xs.loop),
+  }
+
+// Multiply all elements in a list recursively
+def ProductList: [List<Nat>] Nat = [list]
+  list.begin.case {
+    .end! => 1,
+    .item(x) xs => Nat.Mul(x, xs.loop),
+  }
+
+// Build a simple list manually
+def MakeList123: List<Nat> =
+  .item(1) .item(2) .item(3) .end!
+
+def MakeList2468: List<Nat> =
+  .item(2) .item(4) .item(6) .item(8) .end!
+
+def TestFactorial: [Test] ! = [test] do {
+  test.assert("Factorial of 0 is 1", Nat.Equals(Factorial(0), 1))
+  test.assert("Factorial of 1 is 1", Nat.Equals(Factorial(1), 1))
+  test.assert("Factorial of 5 is 120", Nat.Equals(Factorial(5), 120))
+  test.assert("Factorial of 6 is 720", Nat.Equals(Factorial(6), 720))
+} in !
+
+def TestSumList: [Test] ! = [test] do {
+  let list123 = MakeList123
+  test.assert("Sum of [1,2,3] is 6", Nat.Equals(SumList(list123), 6))
+
+  let list2468 = MakeList2468
+  test.assert("Sum of [2,4,6,8] is 20", Nat.Equals(SumList(list2468), 20))
+
+  let emptyList = .end!
+  test.assert("Sum of [] is 0", Nat.Equals(SumList(emptyList), 0))
+} in !
+
+def TestLength: [Test] ! = [test] do {
+  let list123 = MakeList123
+  test.assert("Length of [1,2,3] is 3", Nat.Equals(LengthNat(list123), 3))
+
+  let list2468 = MakeList2468
+  test.assert("Length of [2,4,6,8] is 4", Nat.Equals(LengthNat(list2468), 4))
+
+  let emptyList = .end!
+  test.assert("Length of [] is 0", Nat.Equals(LengthNat(emptyList), 0))
+} in !
+
+def TestProductList: [Test] ! = [test] do {
+  let list123 = MakeList123
+  test.assert("Product of [1,2,3] is 6", Nat.Equals(ProductList(list123), 6))
+
+  let list2468 = MakeList2468
+  test.assert("Product of [2,4,6,8] is 384", Nat.Equals(ProductList(list2468), 384))
+
+  let emptyList = .end!
+  test.assert("Product of [] is 1", Nat.Equals(ProductList(emptyList), 1))
+} in !

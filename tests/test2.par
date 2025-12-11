@@ -1,0 +1,84 @@
+// More complex test file
+
+type MyBool = either {
+  .false!,
+  .true!,
+}
+
+def Not: [MyBool] MyBool = [b]
+  b.case {
+    .false! => .true!,
+    .true! => .false!,
+  }
+
+def And: [MyBool, MyBool] MyBool = [a, b]
+  a.case {
+    .false! => .false!,
+    .true! => b,
+  }
+
+def Or: [MyBool, MyBool] MyBool = [a, b]
+  a.case {
+    .true! => .true!,
+    .false! => b,
+  }
+
+type Color = either {
+  .red!,
+  .green!,
+  .blue!,
+}
+
+def ColorToNat: [Color] Nat = [c]
+  c.case {
+    .red! => 1,
+    .green! => 2,
+    .blue! => 3,
+  }
+
+type Shape = either {
+  .circle!,
+  .square!,
+  .triangle!,
+}
+
+def ShapeToNat: [Shape] Nat = [s]
+  s.case {
+    .circle! => 10,
+    .square! => 20,
+    .triangle! => 30,
+  }
+
+def TestBoolLogic: [Test] ! = [test] do {
+  test.assert("Not false is true", Not(.false!).case { .true! => .true!, .false! => .false! })
+  test.assert("Not true is false", Not(.true!).case { .false! => .true!, .true! => .false! })
+  test.assert("True and true is true", And(.true!, .true!).case { .true! => .true!, .false! => .false! })
+  test.assert("True and false is false", And(.true!, .false!).case { .false! => .true!, .true! => .false! })
+  test.assert("False or true is true", Or(.false!, .true!).case { .true! => .true!, .false! => .false! })
+} in !
+
+def TestColors: [Test] ! = [test] do {
+  test.assert("Red is 1", Nat.Equals(ColorToNat(.red!), 1))
+  test.assert("Green is 2", Nat.Equals(ColorToNat(.green!), 2))
+  test.assert("Blue is 3", Nat.Equals(ColorToNat(.blue!), 3))
+} in !
+
+def TestShapes: [Test] ! = [test] do {
+  test.assert("Circle is 10", Nat.Equals(ShapeToNat(.circle!), 10))
+  test.assert("Square is 20", Nat.Equals(ShapeToNat(.square!), 20))
+  test.assert("Triangle is 30", Nat.Equals(ShapeToNat(.triangle!), 30))
+} in !
+
+def TestCombined: [Test] ! = [test] do {
+  let redValue = ColorToNat(.red!)
+  let circleValue = ShapeToNat(.circle!)
+  let sum = Nat.Add(redValue, circleValue)
+
+  test.assert("Red + Circle = 11", Nat.Equals(sum, 11))
+
+  let greenValue = ColorToNat(.green!)
+  let squareValue = ShapeToNat(.square!)
+  let sum2 = Nat.Add(greenValue, squareValue)
+
+  test.assert("Green + Square = 22", Nat.Equals(sum2, 22))
+} in !
