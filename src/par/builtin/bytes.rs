@@ -43,12 +43,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "ParserFromReader",
-                Type::forall(
-                    "e",
-                    Type::function(
-                        Type::name(None, "Reader", vec![Type::var("e")]),
-                        Type::name(None, "Parser", vec![Type::var("e")]),
-                    ),
+                Type::generic_function(
+                    Type::name(None, "Reader", vec![Type::var("e")]),
+                    Type::name(None, "Parser", vec![Type::var("e")]),
+                    vec!["e"],
                 ),
                 |handle| Box::pin(bytes_parser_from_reader(handle)),
             ),
@@ -67,15 +65,13 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "PipeReader",
-                Type::forall(
-                    "e",
+                Type::generic_function(
                     Type::function(
-                        Type::function(
-                            Type::name(None, "Writer", vec![Type::break_()]),
-                            Type::either(vec![("ok", Type::break_()), ("err", Type::var("e"))]),
-                        ),
-                        Type::name(None, "Reader", vec![Type::var("e")]),
+                        Type::name(None, "Writer", vec![Type::break_()]),
+                        Type::either(vec![("ok", Type::break_()), ("err", Type::var("e"))]),
                     ),
+                    Type::name(None, "Reader", vec![Type::var("e")]),
+                    vec!["e"],
                 ),
                 |handle| Box::pin(bytes_pipe_reader(handle)),
             ),
