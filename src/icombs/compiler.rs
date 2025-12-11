@@ -616,7 +616,8 @@ impl Compiler {
                 // free = (name < expr >)
                 // < process >
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Function(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
+                let Type::Function(_, _, ret_type, _) = self.normalize_type(subject.ty.clone())
+                else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
                 };
                 let expr = self.compile_expression(expr)?;
@@ -628,14 +629,14 @@ impl Compiler {
                 );
                 self.compile_process(process)?;
             }
-            Command::Receive(target, _, _, process) => {
+            Command::Receive(target, _, _, process, _) => {
                 // < name[target] process >
                 // ==
                 // name = free
                 // free = (name target)
                 // < process >
                 let subject = self.use_variable(&name, usage, true)?;
-                let Type::Pair(_, arg_type, ret_type) = self.normalize_type(subject.ty.clone())
+                let Type::Pair(_, arg_type, ret_type, _) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
                 };

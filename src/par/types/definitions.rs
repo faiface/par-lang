@@ -178,6 +178,26 @@ impl TypeDefs {
                         inner(typ, positive, ctx.clone())
                     })?;
                 }
+                Type::Function(span, arg, res, vars) if !vars.is_empty() => {
+                    ctx.defs.vars.extend(vars.iter().cloned());
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |_typ, positive| {
+                        inner(
+                            &Type::Function(span.clone(), arg.clone(), res.clone(), vec![]),
+                            positive,
+                            ctx.clone(),
+                        )
+                    })?;
+                }
+                Type::Pair(span, arg, res, vars) if !vars.is_empty() => {
+                    ctx.defs.vars.extend(vars.iter().cloned());
+                    visit::continue_deref_polarized(typ, positive, &ctx.defs, |_typ, positive| {
+                        inner(
+                            &Type::Pair(span.clone(), arg.clone(), res.clone(), vec![]),
+                            positive,
+                            ctx.clone(),
+                        )
+                    })?;
+                }
                 Type::Exists(_span, name, _body) | Type::Forall(_span, name, _body) => {
                     ctx.defs.vars.insert(name.clone());
                     visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {

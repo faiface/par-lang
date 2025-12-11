@@ -116,7 +116,7 @@ impl LocalName {
 #[derive(Clone, Debug)]
 pub enum Pattern {
     Name(Span, LocalName, Option<Type>),
-    Receive(Span, Box<Self>, Box<Self>),
+    Receive(Span, Box<Self>, Box<Self>, Vec<LocalName>),
     Continue(Span),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
@@ -164,7 +164,7 @@ pub enum Construct {
     /// wraps an expression
     Then(Box<Expression>),
     Send(Span, Box<Expression>, Box<Self>),
-    Receive(Span, Pattern, Box<Self>),
+    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
     /// constructs an either type
     Signal(Span, LocalName, Box<Self>),
     /// constructs a choice type
@@ -188,7 +188,7 @@ pub struct ConstructBranches(pub BTreeMap<LocalName, ConstructBranch>);
 #[derive(Clone, Debug)]
 pub enum ConstructBranch {
     Then(Span, Expression),
-    Receive(Span, Pattern, Box<Self>),
+    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
     ReceiveType(Span, LocalName, Box<Self>),
 }
 
@@ -217,7 +217,7 @@ pub struct ApplyBranches(pub BTreeMap<LocalName, ApplyBranch>);
 #[derive(Clone, Debug)]
 pub enum ApplyBranch {
     Then(Span, LocalName, Expression),
-    Receive(Span, Pattern, Box<Self>),
+    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
     Continue(Span, Expression),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
@@ -252,7 +252,7 @@ pub enum Command {
     Then(Box<Process>),
     Link(Span, Box<Expression>),
     Send(Span, Expression, Box<Self>),
-    Receive(Span, Pattern, Box<Self>),
+    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
     Signal(Span, LocalName, Box<Self>),
     Case(
         Span,
@@ -283,7 +283,7 @@ pub struct CommandBranches(pub BTreeMap<LocalName, CommandBranch>);
 pub enum CommandBranch {
     Then(Span, Process),
     BindThen(Span, LocalName, Process),
-    Receive(Span, Pattern, Box<Self>),
+    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
     Continue(Span, Process),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
@@ -671,6 +671,7 @@ impl Pattern {
         span: &Span,
         subject: &LocalName,
         process: Arc<process::Process<()>>,
+        vars: Vec<LocalName>,
         pass: &mut Passes,
     ) -> Result<Arc<process::Process<()>>, CompileError> {
         if let Self::Name(_, name, annotation) = self {
@@ -679,7 +680,13 @@ impl Pattern {
                 name: subject.clone(),
                 usage: VariableUsage::Unknown,
                 typ: (),
-                command: process::Command::Receive(name.clone(), annotation.clone(), (), process),
+                command: process::Command::Receive(
+                    name.clone(),
+                    annotation.clone(),
+                    (),
+                    process,
+                    vars,
+                ),
             }));
         }
         Ok(Arc::new(process::Process::Do {
@@ -692,6 +699,7 @@ impl Pattern {
                 self.annotation(),
                 (),
                 self.compile_helper(level, process, pass)?,
+                vars,
             ),
         }))
     }
@@ -717,11 +725,12 @@ impl Pattern {
                 then: process,
             })),
 
-            Self::Receive(span, first, rest) => Ok(first.compile_receive(
+            Self::Receive(span, first, rest, vars) => Ok(first.compile_receive(
                 level + 1,
                 span,
                 &LocalName::match_(level),
                 rest.compile_helper(level, process, pass)?,
+                vars.clone(),
                 pass,
             )?),
 
@@ -769,10 +778,15 @@ impl Pattern {
     fn annotation(&self) -> Option<Type> {
         match self {
             Self::Name(_, _, annotation) => annotation.clone(),
-            Self::Receive(span, first, rest) => {
+            Self::Receive(span, first, rest, vars) => {
                 let first = first.annotation()?;
                 let rest = rest.annotation()?;
-                Some(Type::Pair(span.clone(), Box::new(first), Box::new(rest)))
+                Some(Type::Pair(
+                    span.clone(),
+                    Box::new(first),
+                    Box::new(rest),
+                    vars.clone(),
+                ))
             }
             Self::Continue(span) => Some(Type::Break(span.clone())),
             Self::ReceiveType(span, parameter, rest) => {
@@ -794,7 +808,7 @@ impl Spanning for Pattern {
         match self {
             Self::Name(span, _, _)
             | Self::Continue(span)
-            | Self::Receive(span, _, _)
+            | Self::Receive(span, _, _, _)
             | Self::ReceiveType(span, _, _)
             | Self::Try(span, _, _)
             | Self::Default(span, _, _) => span.clone(),
@@ -1089,9 +1103,16 @@ impl Construct {
                 })
             }
 
-            Self::Receive(span, pattern, construct) => {
+            Self::Receive(span, pattern, construct, vars) => {
                 let process = construct.compile(pass)?;
-                pattern.compile_receive(0, span, &LocalName::result(), process, pass)?
+                pattern.compile_receive(
+                    0,
+                    span,
+                    &LocalName::result(),
+                    process,
+                    vars.clone(),
+                    pass,
+                )?
             }
 
             Self::Signal(span, chosen, construct) => {
@@ -1197,7 +1218,7 @@ impl Spanning for Construct {
     fn span(&self) -> Span {
         match self {
             Self::Send(span, _, _)
-            | Self::Receive(span, _, _)
+            | Self::Receive(span, _, _, _)
             | Self::Signal(span, _, _)
             | Self::Case(span, _, _)
             | Self::Break(span)
@@ -1225,9 +1246,16 @@ impl ConstructBranch {
                 })
             }
 
-            Self::Receive(span, pattern, branch) => {
+            Self::Receive(span, pattern, branch, vars) => {
                 let process = branch.compile(pass)?;
-                pattern.compile_receive(0, span, &LocalName::result(), process, pass)?
+                pattern.compile_receive(
+                    0,
+                    span,
+                    &LocalName::result(),
+                    process,
+                    vars.clone(),
+                    pass,
+                )?
             }
 
             Self::ReceiveType(span, parameter, branch) => {
@@ -1247,7 +1275,7 @@ impl ConstructBranch {
 impl Spanning for ConstructBranch {
     fn span(&self) -> Span {
         match self {
-            Self::Then(span, _) | Self::Receive(span, _, _) | Self::ReceiveType(span, _, _) => {
+            Self::Then(span, _) | Self::Receive(span, _, _, _) | Self::ReceiveType(span, _, _) => {
                 span.clone()
             }
         }
@@ -1421,9 +1449,16 @@ impl ApplyBranch {
                 })
             }
 
-            Self::Receive(span, pattern, branch) => {
+            Self::Receive(span, pattern, branch, vars) => {
                 let process = branch.compile(pass)?;
-                pattern.compile_receive(0, span, &LocalName::object(), process, pass)?
+                pattern.compile_receive(
+                    0,
+                    span,
+                    &LocalName::object(),
+                    process,
+                    vars.clone(),
+                    pass,
+                )?
             }
 
             Self::Continue(span, expression) => {
@@ -1473,7 +1508,7 @@ impl Spanning for ApplyBranch {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _, _)
-            | Self::Receive(span, _, _)
+            | Self::Receive(span, _, _, _)
             | Self::Continue(span, _)
             | Self::ReceiveType(span, _, _)
             | Self::Try(span, _, _)
@@ -1613,9 +1648,9 @@ impl Command {
                 })
             }
 
-            Self::Receive(span, pattern, command) => {
+            Self::Receive(span, pattern, command, vars) => {
                 let process = command.compile(object_name, pass)?;
-                pattern.compile_receive(0, span, object_name, process, pass)?
+                pattern.compile_receive(0, span, object_name, process, vars.clone(), pass)?
             }
 
             Self::Signal(span, chosen, command) => {
@@ -1877,7 +1912,7 @@ impl Spanning for Command {
         match self {
             Self::Link(span, _)
             | Self::Send(span, _, _)
-            | Self::Receive(span, _, _)
+            | Self::Receive(span, _, _, _)
             | Self::Signal(span, _, _)
             | Self::Case(span, _, _, _)
             | Self::Break(span)
@@ -1921,9 +1956,9 @@ impl CommandBranch {
                 })
             }
 
-            Self::Receive(span, pattern, branch) => {
+            Self::Receive(span, pattern, branch, vars) => {
                 let process = branch.compile(object_name, pass)?;
-                pattern.compile_receive(0, span, object_name, process, pass)?
+                pattern.compile_receive(0, span, object_name, process, vars.clone(), pass)?
             }
 
             Self::Continue(span, process) => {
@@ -1967,7 +2002,7 @@ impl Spanning for CommandBranch {
         match self {
             Self::Then(span, _)
             | Self::BindThen(span, _, _)
-            | Self::Receive(span, _, _)
+            | Self::Receive(span, _, _, _)
             | Self::Continue(span, _)
             | Self::ReceiveType(span, _, _)
             | Self::Try(span, _, _)

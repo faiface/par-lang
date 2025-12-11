@@ -292,6 +292,36 @@ impl Type {
                 }
             }
 
+            (Self::Hole(_, name1, _hole1), Self::Hole(_, name2, _hole2)) if name1 == name2 => {
+                Compatible
+            }
+
+            (Self::DualHole(_, name1, _hole1), Self::DualHole(_, name2, _hole2))
+                if name1 == name2 =>
+            {
+                Compatible
+            }
+
+            (Self::Hole(_, _name, hole), t2) => {
+                hole.add_upper_bound(t2.clone());
+                Compatible
+            }
+
+            (t1, Self::Hole(_, _name, hole)) => {
+                hole.add_lower_bound(t1.clone());
+                Compatible
+            }
+
+            (Self::DualHole(_, _name, hole), t2) => {
+                hole.add_lower_bound(t2.clone().dual(Span::None));
+                Compatible
+            }
+
+            (t1, Self::DualHole(_, _name, hole)) => {
+                hole.add_upper_bound(t1.clone().dual(Span::None));
+                Compatible
+            }
+
             (Self::Var(_, name1), Self::Var(_, name2)) => {
                 if name1 == name2 {
                     Compatible
@@ -325,15 +355,45 @@ impl Type {
                 Type::is_subtype_helper(t1, t2, ctx)?
             }
 
-            (Self::Pair(_, t1, u1), Self::Pair(_, t2, u2)) => {
-                Type::is_subtype_helper(*t1, *t2, ctx.clone())?
-                    & Type::is_subtype_helper(*u1, *u2, ctx)?
+            (Self::Pair(_, t1, u1, vars1), Self::Pair(_, t2, u2, vars2)) => {
+                if vars1.len() != vars2.len() {
+                    return Ok(Incompatible);
+                }
+                let mut t2: Type = *t2.clone();
+                let mut u2: Type = *u2.clone();
+                for (var1, var2) in vars1.iter().zip(vars2.iter()) {
+                    t2 = t2.substitute(BTreeMap::from([(
+                        var2,
+                        &Type::Var(Span::None, var1.clone()),
+                    )]))?;
+                    u2 = u2.substitute(BTreeMap::from([(
+                        var2,
+                        &Type::Var(Span::None, var1.clone()),
+                    )]))?;
+                }
+                Type::is_subtype_helper(*t1, t2, ctx.clone())?
+                    & Type::is_subtype_helper(*u1, u2, ctx)?
             }
-            (Self::Function(_, t1, u1), Self::Function(_, t2, u2)) => {
+            (Self::Function(_, t1, u1, vars1), Self::Function(_, t2, u2, vars2)) => {
                 let t1 = t1.clone().dual(Span::None);
                 let t2 = t2.clone().dual(Span::None);
+                if vars1.len() != vars2.len() {
+                    return Ok(Incompatible);
+                }
+                let mut t2: Type = t2;
+                let mut u2: Type = *u2.clone();
+                for (var1, var2) in vars1.iter().zip(vars2.iter()) {
+                    t2 = t2.substitute(BTreeMap::from([(
+                        var2,
+                        &Type::Var(Span::None, var1.clone()),
+                    )]))?;
+                    u2 = u2.substitute(BTreeMap::from([(
+                        var2,
+                        &Type::Var(Span::None, var1.clone()),
+                    )]))?;
+                }
                 Type::is_subtype_helper(t1, t2, ctx.clone())?
-                    & Type::is_subtype_helper(*u1, *u2, ctx)?
+                    & Type::is_subtype_helper(*u1, u2, ctx)?
             }
             (Self::Either(_, branches1), _) if branches1.is_empty() => Compatible,
             (Self::Either(_, branches1), Self::Either(_, branches2)) => {
