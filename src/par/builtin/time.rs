@@ -1,10 +1,10 @@
 use crate::{
-    icombs::readback::Handle,
     par::{
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 use num_bigint::BigInt;
 use std::sync::Arc;
@@ -23,10 +23,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 
 async fn time_now(mut handle: Handle) {
     // return current time in milliseconds since epoch
-    handle.receive().continue_();
+    handle.receive().await.continue_().await;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    handle.provide_nat(BigInt::from(now));
+    handle.provide_nat(BigInt::from(now)).await;
 }

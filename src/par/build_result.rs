@@ -1,23 +1,41 @@
 use crate::{
-    icombs::{self, IcCompiled},
-    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
-};
-use crate::{
     location::FileName,
     par::{
         builtin::import_builtins,
         program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
     },
 };
+use crate::{
+    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
+    runtime::{Compiled, RuntimeCompilerError},
+};
 
 use std::fmt::Write;
 use std::sync::Arc;
+
+pub struct BuildConfig {
+    pub new_runtime: bool,
+}
+
+impl<'a, T: Iterator<Item = &'a String>> From<T> for BuildConfig {
+    fn from(t: T) -> BuildConfig {
+        let mut default = BuildConfig { new_runtime: false };
+        for i in t {
+            if i == "rt-v2" {
+                default.new_runtime = false;
+            } else if i == "rt-v3" {
+                default.new_runtime = true;
+            };
+        }
+        default
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum Error {
     Syntax(SyntaxError),
     Compile(CompileError),
-    InetCompile(crate::icombs::compiler::Error),
+    InetCompile(RuntimeCompilerError),
     Type(TypeError),
 }
 
@@ -62,14 +80,14 @@ pub enum BuildResult {
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
-        error: icombs::compiler::Error,
+        error: RuntimeCompilerError,
     },
     Ok {
         #[allow(dead_code)]
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
-        ic_compiled: IcCompiled,
+        rt_compiled: Compiled,
     },
 }
 
@@ -119,28 +137,28 @@ impl BuildResult {
         }
     }
 
-    pub fn ic_compiled(&self) -> Option<&IcCompiled> {
+    pub fn rt_compiled(&self) -> Option<&Compiled> {
         match self {
             Self::None => None,
             Self::SyntaxError { .. } => None,
             Self::CompileError { .. } => None,
             Self::TypeError { .. } => None,
             Self::InetError { .. } => None,
-            Self::Ok { ic_compiled, .. } => Some(&ic_compiled),
+            Self::Ok { rt_compiled, .. } => Some(&rt_compiled),
         }
     }
 
-    pub fn from_source(source: &str, file: FileName) -> Self {
+    pub fn from_source(config: &BuildConfig, source: &str, file: FileName) -> Self {
         let mut module = match Module::parse_and_compile(source, file) {
             Ok(module) => module,
             Err(ParseAndCompileError::Parse(error)) => return Self::SyntaxError { error },
             Err(ParseAndCompileError::Compile(error)) => return Self::CompileError { error },
         };
         import_builtins(&mut module);
-        Self::from_compiled(module)
+        Self::from_compiled(config, module)
     }
 
-    pub fn from_compiled(compiled: Module<Arc<Expression<()>>>) -> Self {
+    pub fn from_compiled(config: &BuildConfig, compiled: Module<Arc<Expression<()>>>) -> Self {
         let pretty = compiled
             .definitions
             .iter()
@@ -163,13 +181,13 @@ impl BuildResult {
             Ok(checked) => Arc::new(checked),
             Err(error) => return Self::TypeError { pretty, error },
         };
-        Self::from_checked(pretty, checked)
+        Self::from_checked(config, pretty, checked)
     }
 
-    pub fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
+    pub fn from_checked(config: &BuildConfig, pretty: String, checked: Arc<CheckedModule>) -> Self {
         let type_on_hover = TypeOnHover::new(&checked);
-        let ic_compiled = match icombs::compiler::compile_file(&checked) {
-            Ok(ic_compiled) => ic_compiled,
+        let rt_compiled = match Compiled::compile_file(&checked, config.new_runtime) {
+            Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
                     pretty,
@@ -183,7 +201,7 @@ impl BuildResult {
             pretty,
             checked,
             type_on_hover,
-            ic_compiled,
+            rt_compiled,
         }
     }
 }

@@ -11,6 +11,7 @@ use crate::par::{
     process::{Captures, Command, Expression, Process, ProcessMergePoint},
     types::Type,
 };
+use crate::runtime::old::net::FanBehavior;
 use crate::{
     location::{Span, Spanning},
     par::{
@@ -174,7 +175,7 @@ impl Context {
         }
         self.loop_points = packed.loop_points.clone();
         self.unguarded_loop_labels = packed.unguarded_loop_labels.clone();
-        let context_out = multiplex_trees(m_trees);
+        let context_out = demultiplex_trees(m_trees);
         context_out
     }
 
@@ -205,14 +206,27 @@ impl Tree {
 
 pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
     if trees.len() == 0 {
-        Tree::Era
+        Tree::Break
     } else if trees.len() == 1 {
         trees.pop().unwrap()
     } else {
         let new_trees = trees.split_off(trees.len() / 2);
-        Tree::Con(
+        Tree::Times(
             Box::new(multiplex_trees(trees)),
             Box::new(multiplex_trees(new_trees)),
+        )
+    }
+}
+pub(crate) fn demultiplex_trees(mut trees: Vec<Tree>) -> Tree {
+    if trees.len() == 0 {
+        Tree::Continue
+    } else if trees.len() == 1 {
+        trees.pop().unwrap()
+    } else {
+        let new_trees = trees.split_off(trees.len() / 2);
+        Tree::Par(
+            Box::new(demultiplex_trees(trees)),
+            Box::new(demultiplex_trees(new_trees)),
         )
     }
 }
@@ -221,7 +235,7 @@ impl Compiler {
     fn compile_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
         if let Some(id) = self.global_name_to_id.get(name) {
             return Ok(TypedTree {
-                tree: Tree::Package(*id),
+                tree: Tree::Package(*id, Box::new(Tree::Break), FanBehavior::Expand),
                 ty: Type::Break(Span::None),
             });
         };
@@ -236,14 +250,17 @@ impl Compiler {
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
 
-        let (id, typ) = self.in_package(|this, _| {
+        let (id, typ) = self.in_package(format!("{name}"), |this, _| {
             let mut s = String::new();
             global.pretty(&mut s, 0).unwrap();
-            this.compile_expression(global.as_ref())
+            Ok((
+                this.compile_expression(global.as_ref())?,
+                (Tree::Continue).with_type(Type::Continue(Span::None)),
+            ))
         })?;
         self.global_name_to_id.insert(name.clone(), id);
         self.compile_global_stack.shift_remove(name);
-        Ok(Tree::Package(id).with_type(typ))
+        Ok(Tree::Package(id, Box::new(Tree::Break), FanBehavior::Expand).with_type(typ))
     }
 
     /// Optimize away erasure underneath auxiliary ports of DUP and CON nodes where it is safe to do so.
@@ -260,7 +277,7 @@ impl Compiler {
                     (a, b) => Tree::Dup(Box::new(a), Box::new(b)),
                 }
             }
-            Tree::Con(a, b) => {
+            Tree::Times(a, b) => {
                 let a = self.apply_safe_rules(*a);
                 let b = self.apply_safe_rules(*b);
                 match (a, b) {
@@ -270,13 +287,13 @@ impl Compiler {
                     }
                     (a, b) => {
                         // TODO optimize `!` and `?`
-                        Tree::Con(Box::new(a), Box::new(b))
+                        Tree::Times(Box::new(a), Box::new(b))
                     }
                 }
             }
-            Tree::Box_(a, id) => {
-                let a = self.apply_safe_rules(*a);
-                Tree::Box_(Box::new(a), id)
+            Tree::Package(id, cx, b) => {
+                let cx = self.apply_safe_rules(*cx);
+                Tree::Package(id, Box::new(cx), b)
             }
             Tree::Signal(signal, a) => {
                 let a = self.apply_safe_rules(*a);
@@ -298,17 +315,19 @@ impl Compiler {
 
     fn in_package(
         &mut self,
-        f: impl FnOnce(&mut Self, usize) -> Result<TypedTree>,
+        debug_name: String,
+        f: impl FnOnce(&mut Self, usize) -> Result<(TypedTree, TypedTree)>,
     ) -> Result<(usize, Type)> {
         let id = self.id_to_package.len();
         let old_net = core::mem::take(&mut self.net);
         let old_lazy_redexes = core::mem::take(&mut self.lazy_redexes);
         // Allocate package
         self.id_to_package.push(Default::default());
-        let mut tree = self.with_captures(&Captures::default(), |this| f(this, id))?;
+        let (mut root, captures) = self.with_captures(&Captures::default(), |this| f(this, id))?;
 
         // Non-principal interaction optimization pass
-        tree.tree = self.non_principal_interactions(tree.tree);
+        root.tree = self.non_principal_interactions(root.tree);
+
         self.lazy_redexes = core::mem::take(&mut self.lazy_redexes)
             .into_iter()
             .map(|(tree, tree1)| {
@@ -328,7 +347,8 @@ impl Compiler {
             })
             .collect();
 
-        self.net.ports.push_back(tree.tree);
+        self.net.ports.push_back(root.tree);
+        self.net.ports.push_back(captures.tree);
 
         self.net.packages = Arc::new(self.id_to_package.clone().into_iter().enumerate().collect());
         // self.net.assert_valid_with(
@@ -342,6 +362,7 @@ impl Compiler {
         net2.redexes.append(&mut self.lazy_redexes.clone().into());
         net2.assert_valid();
 
+        self.net.debug_name = debug_name;
         self.net.normal();
         self.net
             .redexes
@@ -351,7 +372,7 @@ impl Compiler {
         self.lazy_redexes = old_lazy_redexes;
         self.net = old_net;
 
-        Ok((id, tree.ty))
+        Ok((id, root.ty))
     }
 
     fn with_captures<T>(
@@ -473,17 +494,23 @@ impl Compiler {
                 Ok(self.use_variable(name, usage, false)?)
             }
 
-            Expression::Box(_, captures, expression, typ) => self.with_captures(captures, |this| {
-                let (context_in, pack_data) = this.context.pack(None, None, None, &mut this.net);
-                let (package_id, _) = this.in_package(|this, _| {
-                    let context_out = this.context.unpack(&pack_data, &mut this.net);
-                    let body = this.compile_expression(&expression)?;
-                    this.end_context()?;
-                    Ok(Tree::Con(Box::new(context_out), Box::new(body.tree))
-                        .with_type(Type::Break(Span::default())))
-                })?;
-                Ok(Tree::Box_(Box::new(context_in), package_id).with_type(typ.clone()))
-            }),
+            Expression::Box(span, captures, expression, typ) => {
+                self.with_captures(captures, |this| {
+                    let (context_in, pack_data) =
+                        this.context.pack(None, None, None, &mut this.net);
+                    let (package_id, _) =
+                        this.in_package(format!("Box at {span:?}"), |this, _| {
+                            let context_out = this.context.unpack(&pack_data, &mut this.net);
+                            let body = this.compile_expression(&expression)?;
+                            this.end_context()?;
+                            Ok((body, context_out.with_type(Type::Break(Span::default()))))
+                        })?;
+                    Ok(
+                        Tree::Package(package_id, Box::new(context_in), FanBehavior::Propagate)
+                            .with_type(typ.clone()),
+                    )
+                })
+            }
 
             Expression::Chan {
                 captures,
@@ -580,7 +607,7 @@ impl Compiler {
                 let (v0, v1) = self.create_typed_wire();
                 self.bind_variable(name, v0)?;
                 self.net.link(
-                    Tree::Con(Box::new(v1.tree), Box::new(expr.tree)),
+                    Tree::Times(Box::new(v1.tree), Box::new(expr.tree)),
                     subject.tree,
                 );
                 self.compile_process(process)?;
@@ -597,7 +624,7 @@ impl Compiler {
                 self.bind_variable(name, w0)?;
                 self.bind_variable(target.clone(), v0)?;
                 self.net.link(
-                    Tree::Con(Box::new(w1.tree), Box::new(v1.tree)),
+                    Tree::Par(Box::new(w1.tree), Box::new(v1.tree)),
                     subject.tree,
                 );
                 self.compile_process(process)?;
@@ -610,7 +637,7 @@ impl Compiler {
                 self.bind_variable(name, v0)?;
                 self.compile_process(process)?;
             }
-            Command::Case(names, processes, else_process, lenient) => {
+            Command::Case(names, processes, else_process, _) => {
                 self.context.unguarded_loop_labels.clear();
                 let old_tree = self.use_variable(&name, usage, true)?;
                 // Multiplex all other variables in the context.
@@ -621,27 +648,33 @@ impl Compiler {
                 choice_and_process.sort_by_key(|k| k.0);
 
                 for (branch_name, process) in choice_and_process {
-                    let (package_id, _) = self.in_package(|this, _| {
-                        let (w0, w1) = this.create_typed_wire();
-                        this.bind_variable(name.clone(), w0)?;
-                        let context_out = this.context.unpack(&pack_data, &mut this.net);
-                        this.compile_process(process)?;
-                        Ok(Tree::Con(Box::new(context_out), Box::new(w1.tree))
-                            .with_type(Type::Break(Default::default())))
-                    })?;
+                    let (package_id, _) =
+                        self.in_package(format!("Branch {branch_name} at {span:?}"), |this, _| {
+                            let (w0, w1) = this.create_typed_wire();
+                            this.bind_variable(name.clone(), w0)?;
+                            let context_out = this.context.unpack(&pack_data, &mut this.net);
+                            this.compile_process(process)?;
+                            Ok((
+                                w1,
+                                context_out.with_type(Type::Continue(Default::default())),
+                            ))
+                        })?;
                     branches.insert(ArcStr::from(&branch_name.string), package_id);
                 }
 
                 let else_branch = match else_process {
                     Some(process) => {
-                        let (package_id, _) = self.in_package(|this, _| {
-                            let (w0, w1) = this.create_typed_wire();
-                            this.bind_variable(name.clone(), w0)?;
-                            let context_out = this.context.unpack(&pack_data, &mut this.net);
-                            this.compile_process(process)?;
-                            Ok(Tree::Con(Box::new(context_out), Box::new(w1.tree))
-                                .with_type(Type::Break(Default::default())))
-                        })?;
+                        let (package_id, _) =
+                            self.in_package(format!("Else branch at {span:?}"), |this, _| {
+                                let (w0, w1) = this.create_typed_wire();
+                                this.bind_variable(name.clone(), w0)?;
+                                let context_out = this.context.unpack(&pack_data, &mut this.net);
+                                this.compile_process(process)?;
+                                Ok((
+                                    w1,
+                                    context_out.with_type(Type::Continue(Default::default())),
+                                ))
+                            })?;
                         Some(package_id)
                     }
                     None => None,
@@ -656,7 +689,7 @@ impl Compiler {
                 // ==
                 // name = *
                 let a = self.use_variable(&name, usage, true)?.tree;
-                self.net.link(a, Tree::Era);
+                self.net.link(a, Tree::Break);
                 self.end_context()?;
             }
             Command::Continue(process) => {
@@ -665,7 +698,7 @@ impl Compiler {
                 // name = *
                 // < process >
                 let a = self.use_variable(&name, usage, true)?.tree;
-                self.net.link(a, Tree::Era);
+                self.net.link(a, Tree::Continue);
                 self.compile_process(process)?;
             }
             Command::Begin {
@@ -699,15 +732,25 @@ impl Compiler {
                     self.context
                         .pack(Some(&name), Some(captures), None, &mut self.net);
                 let (id, _) = self.in_package(
+                    format!("Loop body at {span:?}"),
                     |this, _| {
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
                         this.compile_process(body)?;
-                        Ok(context_out.with_type(Type::Break(Span::default())))
+                        Ok((
+                            context_out.with_type(Type::Break(Span::default())),
+                            (Tree::Continue).with_type(Type::Continue(Span::default())),
+                        ))
                     },
                     //true,
                 )?;
-                self.net.link(def1, Tree::Package(id));
-                self.net.link(context_in, Tree::Package(id));
+                self.net.link(
+                    def1,
+                    Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
+                );
+                self.net.link(
+                    context_in,
+                    Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
+                );
             }
             Command::Loop(label, driver, captures) => {
                 let label = LoopLabel(label.clone());
@@ -725,7 +768,7 @@ impl Compiler {
                     Some(&labels_in_scope),
                     &mut self.net,
                 );
-                self.lazy_redexes.push((tree.tree, context_in));
+                self.net.redexes.push_back((tree.tree, context_in));
             }
         };
         Ok(())
@@ -741,42 +784,10 @@ impl Compiler {
     }
 }
 
-pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
-    let mut compiler = Compiler {
-        net: Net::default(),
-        context: Context {
-            vars: BTreeMap::default(),
-            loop_points: BTreeMap::default(),
-            unguarded_loop_labels: Default::default(),
-        },
-        type_defs: program.type_defs.clone(),
-        definitions: program.definitions.clone(),
-        global_name_to_id: Default::default(),
-        id_to_package: Default::default(),
-        compile_global_stack: Default::default(),
-        lazy_redexes: vec![],
-    };
-
-    for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {
-        compiler.compile_global(&name)?;
-    }
-
-    Ok(IcCompiled {
-        id_to_package: Arc::new(compiler.id_to_package.into_iter().enumerate().collect()),
-        name_to_id: compiler.global_name_to_id,
-        name_to_ty: compiler
-            .definitions
-            .iter()
-            .map(|(k, (_def, ty))| (k.clone(), ty.clone()))
-            .collect(),
-    })
-}
-
 #[derive(Clone, Default)]
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
     pub(crate) name_to_id: IndexMap<GlobalName, usize>,
-    pub(crate) name_to_ty: IndexMap<GlobalName, Type>,
 }
 
 impl Display for IcCompiled {
@@ -800,13 +811,36 @@ impl IcCompiled {
         self.id_to_package.get(id).cloned()
     }
 
-    pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
-        self.name_to_ty.get(name).cloned()
-    }
 
     pub fn create_net(&self) -> Net {
         let mut net = Net::default();
         net.packages = self.id_to_package.clone();
         net
+    }
+
+    pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
+        let mut compiler = Compiler {
+            net: Net::default(),
+            context: Context {
+                vars: BTreeMap::default(),
+                loop_points: BTreeMap::default(),
+                unguarded_loop_labels: Default::default(),
+            },
+            type_defs: program.type_defs.clone(),
+            definitions: program.definitions.clone(),
+            global_name_to_id: Default::default(),
+            id_to_package: Default::default(),
+            compile_global_stack: Default::default(),
+            lazy_redexes: vec![],
+        };
+
+        for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {
+            compiler.compile_global(&name)?;
+        }
+
+        Ok(IcCompiled {
+            id_to_package: Arc::new(compiler.id_to_package.into_iter().enumerate().collect()),
+            name_to_id: compiler.global_name_to_id,
+        })
     }
 }

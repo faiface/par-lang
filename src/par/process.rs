@@ -4,9 +4,9 @@ use super::{
     types::Type,
 };
 use crate::{
-    icombs::readback::Handle,
     location::{Span, Spanning},
     par::program::CheckedModule,
+    runtime::Handle,
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{

@@ -4,9 +4,9 @@ use arcstr::ArcStr;
 use indexmap::IndexMap;
 
 use crate::{
-    icombs::readback::Handle,
     location::{FileName, Point, Span, Spanning},
     par::{language::Passes, parse::parse_module},
+    runtime::Handle,
 };
 
 use super::{

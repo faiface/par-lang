@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::icombs::readback::Handle;
+use crate::runtime::Handle;
 
 pub async fn readback_list<T, F>(
     mut handle: Handle,
@@ -13,11 +13,11 @@ where
     loop {
         match handle.case().await.as_str() {
             "end" => {
-                handle.break_();
+                handle.continue_().await;
                 return items;
             }
             "item" => {
-                let item = readback_item(handle.receive()).await;
+                let item = readback_item(handle.receive().await).await;
                 items.push(item);
             }
             _ => unreachable!(),

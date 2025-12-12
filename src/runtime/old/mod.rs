@@ -16,6 +16,5 @@
 
 pub mod compiler;
 pub mod net;
-pub use compiler::IcCompiled;
 pub use net::{Net, Tree};
 pub mod readback;

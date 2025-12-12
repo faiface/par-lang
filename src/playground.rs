@@ -7,14 +7,17 @@ use std::{
     time::SystemTime,
 };
 
+use crate::par::build_result::BuildConfig;
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
+use std::collections::HashMap;
+use crate::par::{types::Type, language::GlobalName};
 use crate::{
-    icombs::readback::TypedHandle, location::FileName, par::program::CheckedModule,
-    readback::Element, spawn::TokioSpawn,
+    location::FileName, par::program::CheckedModule, readback::Element,
+    runtime::old::compiler::IcCompiled, runtime::old::readback::TypedHandle, spawn::TokioSpawn,
 };
-use crate::{icombs::IcCompiled, par::build_result::BuildResult};
+use crate::par::build_result::BuildResult;
 use core::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -22,6 +25,7 @@ pub struct Playground {
     file_path: Option<PathBuf>,
     code: String,
     build: BuildResult,
+    build_config: BuildConfig,
     built_code: Arc<str>,
     editor_font_size: f32,
     show_compiled: bool,
@@ -100,6 +104,7 @@ impl Playground {
             code: "".to_owned(),
             build: BuildResult::None,
             built_code: Arc::from(""),
+            build_config: BuildConfig { new_runtime: false },
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,
@@ -372,6 +377,7 @@ impl Playground {
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
         compiled: &IcCompiled,
+        name_to_ty: &HashMap<GlobalName, Type>
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
@@ -381,7 +387,7 @@ impl Playground {
                 let token = CancellationToken::new();
                 *cancel_token = Some(token.clone());
 
-                let ty = compiled.get_type_of(name).unwrap();
+                let ty = name_to_ty.get(name).unwrap();
                 let mut net = compiled.create_net();
                 let child_net = compiled.get_with_name(name).unwrap();
                 let tree = net.inject_net(child_net).with_type(ty.clone());
@@ -418,7 +424,8 @@ impl Playground {
 
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
-            self.build = BuildResult::from_source(self.code.as_str(), Self::FILE_NAME);
+            self.build =
+                BuildResult::from_source(&self.build_config, self.code.as_str(), Self::FILE_NAME);
         });
         self.built_code = Arc::from(self.code.as_str());
     }
@@ -439,9 +446,14 @@ impl Playground {
                     );
                     ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
 
-                    if let (Some(checked), Some(ic_compiled)) =
-                        (self.build.checked(), self.build.ic_compiled())
+                    if let (Some(checked), Some(rt_compiled)) =
+                        (self.build.checked(), self.build.rt_compiled())
                     {
+                        use crate::runtime::compiler::Backend;
+                        let name_to_ty = &rt_compiled.name_to_ty;
+                        let Backend::Old(ic_compiled) = &rt_compiled.backend else {
+                            panic!("New compiler not yet supported in playground")
+                        };
                         egui::containers::menu::MenuButton::from_button(
                             egui::Button::new(
                                 egui::RichText::new("Run")
@@ -459,6 +471,7 @@ impl Playground {
                                     ui,
                                     checked.clone(),
                                     ic_compiled,
+                                    name_to_ty
                                 );
                             })
                         });
@@ -506,14 +519,14 @@ impl Playground {
                     }
 
                     if self.show_ic {
-                        if let Some(ic_compiled) = self.build.ic_compiled() {
+                        if let Some(rt_compiled) = self.build.rt_compiled() {
                             CodeEditor::default()
-                                .id_source("ic_compiled")
+                                .id_source("rt_compiled")
                                 .with_rows(32)
                                 .with_fontsize(self.editor_font_size)
                                 .with_theme(theme)
                                 .with_numlines(true)
-                                .show(ui, &mut format!("{}", ic_compiled));
+                                .show(ui, &mut format!("{}", rt_compiled));
                         }
                     }
 

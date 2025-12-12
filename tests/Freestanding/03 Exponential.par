@@ -1,0 +1,11 @@
+def BoxedThingy = box !
+
+def Test0: [Test] ! = [test] chan user {
+    test.id[id]
+    let a = id(type box !)(BoxedThingy)
+    let b = a
+    let c = a
+    let d = a
+    b?
+    test.done <> user
+}

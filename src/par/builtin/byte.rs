@@ -4,12 +4,12 @@ use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -46,30 +46,30 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn byte_equals(mut handle: Handle) {
-    let x = handle.receive().byte().await;
-    let y = handle.receive().byte().await;
+    let x = handle.receive().await.byte().await;
+    let y = handle.receive().await.byte().await;
     if x == y {
-        handle.signal(literal!("true"));
+        handle.signal(literal!("true")).await;
     } else {
-        handle.signal(literal!("false"));
+        handle.signal(literal!("false")).await;
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 async fn byte_code(mut handle: Handle) {
-    let c = handle.receive().byte().await;
-    handle.provide_nat(BigInt::from(c))
+    let c = handle.receive().await.byte().await;
+    handle.provide_nat(BigInt::from(c)).await
 }
 
 async fn byte_is(mut handle: Handle) {
-    let b = handle.receive().byte().await;
-    let class = ByteClass::readback(handle.receive()).await;
+    let b = handle.receive().await.byte().await;
+    let class = ByteClass::readback(handle.receive().await).await;
     if class.contains(b) {
-        handle.signal(literal!("true"));
+        handle.signal(literal!("true")).await;
     } else {
-        handle.signal(literal!("false"));
+        handle.signal(literal!("false")).await;
     }
-    handle.break_();
+    handle.break_().await;
 }
 
 #[derive(Debug, Clone)]
@@ -85,9 +85,9 @@ impl ByteClass {
             "any" => Self::Any,
             "byte" => Self::Byte(handle.byte().await),
             "range" => {
-                let min = handle.receive().byte().await;
-                let max = handle.receive().byte().await;
-                handle.continue_();
+                let min = handle.receive().await.byte().await;
+                let max = handle.receive().await.byte().await;
+                handle.continue_().await;
                 Self::Range(min, max)
             }
             _ => unreachable!(),

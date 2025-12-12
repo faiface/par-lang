@@ -1,3 +1,4 @@
+pub mod bench;
 pub mod boxmap;
 pub mod byte;
 pub mod bytes;
@@ -29,9 +30,9 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         Module::parse_and_compile(include_str!("./builtin/Builtin.par"), FileName::BUILTIN)
             .unwrap(),
     );
-
     module.import(Some("Nat"), nat::external_module());
     module.import(Some("Int"), int::external_module());
+    module.import(Some("Bench"), bench::external_module());
     module.import(Some("Char"), char_::external_module());
     module.import(Some("String"), string::external_module());
     module.import(Some("Byte"), byte::external_module());
@@ -44,6 +45,6 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("BoxMap"), boxmap::external_module());
     module.import(Some("Url"), url::external_module());
     module.import(Some("Http"), http::external_module());
-    module.import(Some("Test"), test::external_module());
     module.import(Some("Time"), time::external_module());
+    module.import(Some("Test"), test::external_module());
 }

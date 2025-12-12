@@ -18,18 +18,18 @@ use crate::{
     },
 };
 
-use super::{compiler::TypedTree, Net, Tree};
-
+use super::{compiler::TypedTree, net::Tree, Net};
 pub(crate) mod private {
-    use crate::icombs::net::ReducerMessage;
-    use crate::icombs::Net;
+    use super::super::{net::Tree, Net};
+    use crate::runtime::old::net::ReducerMessage;
+    use crate::runtime::old::readback::Handle;
     use futures::channel::mpsc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Arc, LockResult, Mutex};
 
     pub struct NetWrapper {
         net: Arc<Mutex<Net>>,
-        notify: mpsc::UnboundedSender<crate::icombs::net::ReducerMessage>,
+        notify: mpsc::UnboundedSender<crate::runtime::old::net::ReducerMessage>,
         handle_count: Arc<AtomicUsize>,
     }
 
@@ -50,9 +50,17 @@ pub(crate) mod private {
             self.net.lock()
         }
 
-        #[cfg(feature = "playground")]
-        pub(crate) fn net(&self) -> Arc<Mutex<Net>> {
+        pub fn net(&self) -> Arc<Mutex<Net>> {
             Arc::clone(&self.net)
+        }
+
+        pub fn new_handle(&self, tree: Tree) -> Handle {
+            Handle::new(
+                self.net.clone(),
+                self.notify.clone(),
+                self.handle_count.clone(),
+                tree,
+            )
         }
     }
 
@@ -86,7 +94,7 @@ pub(crate) mod private {
     }
 }
 
-use crate::icombs::net::ReducerMessage;
+use crate::runtime::old::net::ReducerMessage;
 use private::NetWrapper;
 
 pub struct Handle {
@@ -138,7 +146,7 @@ pub enum TypedReadback {
 }
 
 impl Handle {
-    pub fn new(
+    pub(crate) fn new(
         net: Arc<Mutex<Net>>,
         notify: mpsc::UnboundedSender<ReducerMessage>,
         handle_count: Arc<AtomicUsize>,
@@ -196,7 +204,12 @@ impl Handle {
     {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
-            Tree::ExternalBox(Arc::new(move |handle| Box::pin(f(handle)))),
+            Tree::ExternalBox(Arc::new(move |handle| {
+                let crate::runtime::Handle::Old(handle) = handle else {
+                    panic!("Mixed handles!")
+                };
+                Box::pin(f(handle))
+            })),
             self.tree.unwrap(),
         );
         locked.notify_reducer();
@@ -329,7 +342,7 @@ impl Handle {
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
         locked.link(
-            Tree::Con(Box::new(u1), Box::new(t1)),
+            Tree::Times(Box::new(u1), Box::new(t1)),
             self.tree.take().unwrap(),
         );
         locked.notify_reducer();
@@ -347,7 +360,7 @@ impl Handle {
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
         locked.link(
-            Tree::Con(Box::new(u1), Box::new(t1)),
+            Tree::Par(Box::new(u1), Box::new(t1)),
             self.tree.take().unwrap(),
         );
         locked.notify_reducer();
@@ -388,14 +401,19 @@ impl Handle {
     }
 
     pub fn break_(self) {
+        if matches!(self.tree, Some(Tree::Break)) {
+            panic!(
+                "Attempted to break break!. This is probably a type error on an external function. See the backtrace to investigate."
+            );
+        };
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.unwrap());
+        locked.link(Tree::Break, self.tree.unwrap());
         locked.notify_reducer();
     }
 
     pub fn continue_(self) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.unwrap());
+        locked.link(Tree::Continue, self.tree.unwrap());
         locked.notify_reducer();
     }
 }
@@ -679,7 +697,7 @@ impl TypedHandle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
+        locked.link(Tree::Times(Box::new(u1), Box::new(t1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -706,7 +724,7 @@ impl TypedHandle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
+        locked.link(Tree::Par(Box::new(u1), Box::new(t1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -783,7 +801,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.tree);
+        locked.link(Tree::Break, self.tree.tree);
         locked.notify_reducer();
     }
 
@@ -794,7 +812,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree.tree);
+        locked.link(Tree::Continue, self.tree.tree);
         locked.notify_reducer();
     }
 }
@@ -849,9 +867,9 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icombs::compiler::TypedTree;
     use crate::location::Span;
     use crate::par::types::Type;
+    use crate::runtime::old::compiler::TypedTree;
     use std::sync::atomic::AtomicUsize;
 
     #[test]

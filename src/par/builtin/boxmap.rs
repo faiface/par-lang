@@ -1,18 +1,18 @@
-use std::{
-    future::Future,
-    sync::{Arc, Mutex},
-};
+use std::{future::Future, sync::Arc};
+
+use tokio::sync::Mutex;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         builtin::list::readback_list,
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 use arcstr::literal;
+use futures::future::BoxFuture;
 use im::OrdMap;
 use num_bigint::BigInt;
 
@@ -89,16 +89,17 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     }
 }
 
-async fn boxmap_new<K, F>(
+async fn boxmap_new<K, F, G>(
     mut handle: Handle,
     read_key: impl Send + Sync + Copy + 'static + Fn(Handle) -> F,
-    provide_key: impl Send + Sync + Copy + 'static + Fn(Handle, K),
+    provide_key: impl Send + Sync + Copy + 'static + Fn(Handle, K) -> G,
 ) where
     K: Ord + Clone + Send + Sync + 'static,
     F: Send + 'static + Future<Output = K>,
+    G: Send + 'static + Future<Output = ()>,
 {
-    let entries = readback_list(handle.receive(), |mut handle| async {
-        let key = read_key(handle.receive()).await;
+    let entries = readback_list(handle.receive().await, |mut handle| async {
+        let key = read_key(handle.receive().await).await;
         let value = Arc::new(Mutex::new(handle));
         (key, value)
     })
@@ -109,69 +110,71 @@ async fn boxmap_new<K, F>(
         map.insert(k, v);
     }
 
-    provide_boxmap(handle, read_key, provide_key, map);
+    provide_boxmap(handle, read_key, provide_key, map).await;
 }
 
-fn provide_boxmap<K, F>(
+fn provide_boxmap<K, F, G>(
     handle: Handle,
     read_key: impl Send + Sync + Copy + 'static + Fn(Handle) -> F,
-    provide_key: impl Send + Sync + Copy + 'static + Fn(Handle, K),
+    provide_key: impl Send + Sync + Copy + 'static + Fn(Handle, K) -> G,
     map: OrdMap<K, Arc<Mutex<Handle>>>,
-) where
+) -> BoxFuture<'static, ()>
+where
     K: Ord + Clone + Send + Sync + 'static,
     F: Send + 'static + Future<Output = K>,
+    G: Send + 'static + Future<Output = ()>,
 {
-    handle.provide_box(move |mut handle| {
+    Box::pin(handle.provide_box(move |mut handle| {
         let mut map = map.clone();
         async move {
             match handle.case().await.as_str() {
                 "size" => {
-                    return handle.provide_nat(BigInt::from(map.len()));
+                    return handle.provide_nat(BigInt::from(map.len())).await;
                 }
                 "keys" => {
                     for key in map.keys() {
-                        handle.signal(literal!("item"));
-                        provide_key(handle.send(), key.clone());
+                        handle.signal(literal!("item")).await;
+                        provide_key(handle.send().await, key.clone()).await;
                     }
-                    handle.signal(literal!("end"));
-                    return handle.break_();
+                    handle.signal(literal!("end")).await;
+                    return handle.break_().await;
                 }
                 "list" => {
                     for (key, value) in map.iter() {
-                        handle.signal(literal!("item"));
-                        let mut pair = handle.send();
-                        provide_key(pair.send(), key.clone());
-                        pair.link(value.lock().unwrap().duplicate());
+                        handle.signal(literal!("item")).await;
+                        let mut pair = handle.send().await;
+                        provide_key(pair.send().await, key.clone()).await;
+                        pair.link(value.lock().await.duplicate().await).await;
                     }
-                    handle.signal(literal!("end"));
-                    return handle.break_();
+                    handle.signal(literal!("end")).await;
+                    return handle.break_().await;
                 }
                 "get" => {
-                    let key = read_key(handle.receive()).await;
+                    let key = read_key(handle.receive().await).await;
                     match map.get(&key) {
                         Some(value) => {
-                            handle.signal(literal!("ok"));
-                            return handle.link(value.lock().unwrap().duplicate());
+                            handle.signal(literal!("ok")).await;
+                            return handle.link(value.lock().await.duplicate().await).await;
                         }
                         None => {
-                            handle.signal(literal!("err"));
-                            return handle.break_();
+                            handle.signal(literal!("err")).await;
+                            return handle.break_().await;
                         }
                     }
                 }
                 "put" => {
-                    let key = read_key(handle.receive()).await;
-                    let value = handle.receive();
+                    let key = read_key(handle.receive().await).await;
+                    let value = handle.receive().await;
                     map.insert(key, Arc::new(Mutex::new(value)));
-                    return provide_boxmap(handle, read_key, provide_key, map);
+                    return provide_boxmap(handle, read_key, provide_key, map).await;
                 }
                 "delete" => {
-                    let key = read_key(handle.receive()).await;
+                    let key = read_key(handle.receive().await).await;
                     map.remove(&key);
-                    return provide_boxmap(handle, read_key, provide_key, map);
+                    return provide_boxmap(handle, read_key, provide_key, map).await;
                 }
                 _ => unreachable!(),
             }
         }
-    });
+    }))
 }
