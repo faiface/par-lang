@@ -2041,7 +2041,7 @@ struct Restoration {
 fn pattern_to_expression(pattern: &Pattern) -> Option<Expression> {
     match pattern {
         Pattern::Name(span, name, _) => Some(Expression::Variable(span.clone(), name.clone())),
-        Pattern::Receive(span, first, rest) => {
+        Pattern::Receive(span, first, rest, _vars) => {
             let first_expr = pattern_to_expression(first)?;
             let then = construct_from_pattern(rest)?;
             Some(Expression::Construction(Construct::Send(
@@ -2061,7 +2061,7 @@ fn construct_from_pattern(pattern: &Pattern) -> Option<Construct> {
             span.clone(),
             name.clone(),
         )))),
-        Pattern::Receive(span, first, rest) => {
+        Pattern::Receive(span, first, rest, _vars) => {
             let expression = pattern_to_expression(first)?;
             let then = construct_from_pattern(rest)?;
             Some(Construct::Send(

@@ -995,7 +995,7 @@ fn pattern_payload_receive(input: &mut Input) -> Result<Pattern> {
     .map(|(open, (patterns, _close, rest))| {
         let span = open.span.join(rest.span());
         patterns.into_iter().rfold(rest, |rest, arg| {
-            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest))
+            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vec![])
         })
     })
     .parse_next(input)
