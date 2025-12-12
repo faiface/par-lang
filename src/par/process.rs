@@ -13,7 +13,7 @@ use std::{
     fmt::{self, Write},
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 #[derive(Clone, Debug)]
@@ -41,6 +41,7 @@ pub enum Process<Typ> {
         command: Command<Typ>,
     },
     Telltypes(Span, Arc<Self>),
+    MergePoint(Span, Arc<Mutex<ProcessMergePoint>>),
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +60,7 @@ pub enum Command<Typ> {
         Arc<[LocalName]>,
         Box<[Arc<Process<Typ>>]>,
         Option<Arc<Process<Typ>>>,
+        bool,
     ),
     Break,
     Continue(Arc<Process<Typ>>),
@@ -71,6 +73,15 @@ pub enum Command<Typ> {
     Loop(Option<LocalName>, LocalName, Captures),
     SendType(Type, Arc<Process<Typ>>),
     ReceiveType(LocalName, Arc<Process<Typ>>),
+}
+
+#[derive(Clone, Debug)]
+pub enum ProcessMergePoint {
+    Unchecked {
+        paths: IndexMap<Span, Option<IndexMap<LocalName, Type>>>,
+        process: Arc<Process<()>>,
+    },
+    Checked(Arc<Process<Type>>),
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +112,7 @@ impl<Typ> Spanning for Process<Typ> {
             Self::Let { span, .. } => span.clone(),
             Self::Do { span, .. } => span.clone(),
             Self::Telltypes(span, ..) => span.clone(),
+            Self::MergePoint(span, ..) => span.clone(),
         }
     }
 }
@@ -209,6 +221,20 @@ impl Process<()> {
                 let (process, caps) = process.fix_captures(loop_points);
                 (Arc::new(Self::Telltypes(span.clone(), process)), caps)
             }
+            Self::MergePoint(span, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    ProcessMergePoint::Unchecked { paths: _, process } => {
+                        let (fixed, caps) = process.fix_captures(loop_points);
+                        *process = fixed;
+                        (
+                            Arc::new(Self::MergePoint(span.clone(), Arc::clone(merge))),
+                            caps,
+                        )
+                    }
+                    ProcessMergePoint::Checked(_) => unreachable!("fix_captures after typecheck"),
+                }
+            }
         }
     }
 
@@ -285,10 +311,10 @@ impl Process<()> {
                     Command::Signal(chosen, process) => {
                         Command::Signal(chosen.clone(), process.optimize())
                     }
-                    Command::Case(branches, processes, else_process) => {
+                    Command::Case(branches, processes, else_process, lenient) => {
                         let processes = processes.iter().map(|p| p.optimize()).collect();
                         let else_process = else_process.clone().map(|p| p.optimize());
-                        Command::Case(Arc::clone(branches), processes, else_process)
+                        Command::Case(Arc::clone(branches), processes, else_process, *lenient)
                     }
                     Command::Break => Command::Break,
                     Command::Continue(process) => Command::Continue(process.optimize()),
@@ -316,6 +342,16 @@ impl Process<()> {
             }),
             Self::Telltypes(span, process) => {
                 Arc::new(Self::Telltypes(span.clone(), process.optimize()))
+            }
+            Self::MergePoint(span, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    ProcessMergePoint::Unchecked { paths: _, process } => {
+                        *process = process.optimize();
+                    }
+                    ProcessMergePoint::Checked(_) => {}
+                }
+                Arc::new(Self::MergePoint(span.clone(), Arc::clone(merge)))
             }
         }
     }
@@ -366,6 +402,11 @@ impl Process<Type> {
             Process::Telltypes(_, process) => {
                 process.types_at_spans(program, consume);
             }
+            Process::MergePoint(_, merge) => {
+                if let ProcessMergePoint::Checked(process) = &*merge.lock().unwrap() {
+                    process.types_at_spans(program, consume);
+                }
+            }
         }
     }
 }
@@ -405,7 +446,7 @@ impl Command<()> {
                 let (process, caps) = process.fix_captures(loop_points);
                 (Self::Signal(chosen.clone(), process), caps)
             }
-            Self::Case(branches, processes, else_process) => {
+            Self::Case(branches, processes, else_process, lenient) => {
                 let mut fixed_processes = Vec::new();
                 let mut caps = Captures::new();
                 for process in processes {
@@ -423,6 +464,7 @@ impl Command<()> {
                         branches.clone(),
                         fixed_processes.into_boxed_slice(),
                         fixed_else,
+                        *lenient,
                     ),
                     caps,
                 )
@@ -499,7 +541,7 @@ impl Command<Type> {
             Self::Signal(_, process) => {
                 process.types_at_spans(program, consume);
             }
-            Self::Case(_, branches, else_process) => {
+            Self::Case(_, branches, else_process, _) => {
                 for process in branches {
                     process.types_at_spans(program, consume);
                 }
@@ -773,6 +815,13 @@ impl Process<()> {
                 command,
             } => command.qualify(module),
             Self::Telltypes(_span, process) => process.qualify(module),
+            Self::MergePoint(_, merge) => {
+                let mut guard = merge.lock().unwrap();
+                match &mut *guard {
+                    ProcessMergePoint::Unchecked { process, .. } => process.qualify(module),
+                    ProcessMergePoint::Checked(_) => {}
+                }
+            }
         }
     }
 }
@@ -794,7 +843,7 @@ impl Command<()> {
             Self::Signal(_, process) => {
                 process.qualify(module);
             }
-            Self::Case(_, branches, else_process) => {
+            Self::Case(_, branches, else_process, _) => {
                 for process in branches {
                     process.qualify(module);
                 }
@@ -905,7 +954,7 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Case(choices, branches, else_process) => {
+                    Command::Case(choices, branches, else_process, _) => {
                         write!(f, ".case {{")?;
                         for (choice, process) in choices.iter().zip(branches.iter()) {
                             indentation(f, indent + 1)?;
@@ -982,6 +1031,13 @@ impl<Typ> Process<Typ> {
                 indentation(f, indent)?;
                 write!(f, "telltypes")?;
                 process.pretty(f, indent)
+            }
+            Self::MergePoint(_, merge) => {
+                let guard = merge.lock().unwrap();
+                match &*guard {
+                    ProcessMergePoint::Unchecked { process, .. } => process.pretty(f, indent),
+                    ProcessMergePoint::Checked(process) => process.pretty(f, indent),
+                }
             }
         }
     }

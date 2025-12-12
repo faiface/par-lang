@@ -1,7 +1,7 @@
 use super::{
     language::{
-        Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Construct,
-        ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
+        Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Condition,
+        Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
     },
     lexer::{lex, Input, Token, TokenKind},
     primitive::Primitive,
@@ -23,7 +23,7 @@ use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use winnow::token::literal;
 use winnow::{
-    combinator::{alt, cut_err, opt, preceded, repeat, separated, terminated, trace},
+    combinator::{alt, cut_err, not, opt, peek, preceded, repeat, separated, terminated, trace},
     error::{
         AddContext, ContextError, ErrMode, ModalError, ParserError, StrContext, StrContextValue,
     },
@@ -145,13 +145,18 @@ where
 }
 
 fn lowercase_identifier(input: &mut Input) -> Result<(Span, String)> {
-    literal(TokenKind::LowercaseIdentifier)
-        .context(StrContext::Expected(StrContextValue::CharLiteral('_')))
-        .context(StrContext::Expected(StrContextValue::Description(
-            "lower-case alphabetic",
-        )))
-        .map(|token: &[Token]| (token[0].span(), token[0].raw.to_owned()))
-        .parse_next(input)
+    alt((
+        literal(TokenKind::LowercaseIdentifier),
+        literal(TokenKind::And),
+        literal(TokenKind::Or),
+        literal(TokenKind::Not),
+    ))
+    .context(StrContext::Expected(StrContextValue::CharLiteral('_')))
+    .context(StrContext::Expected(StrContextValue::Description(
+        "lower-case alphabetic",
+    )))
+    .map(|token: &[Token]| (token[0].span(), token[0].raw.to_owned()))
+    .parse_next(input)
 }
 
 fn uppercase_identifier(input: &mut Input) -> Result<(Span, String)> {
@@ -895,6 +900,121 @@ fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
+fn condition(input: &mut Input) -> Result<Condition> {
+    condition_or(input)
+}
+
+fn condition_or(input: &mut Input) -> Result<Condition> {
+    (
+        condition_and,
+        repeat(0.., (t(TokenKind::Or), condition_and)),
+    )
+        .map(|(first, rest): (Condition, Vec<(_, Condition)>)| {
+            rest.into_iter().fold(first, |left, (_or_tok, right)| {
+                let span = left.span().join(right.span());
+                Condition::Or(span, Box::new(left), Box::new(right))
+            })
+        })
+        .parse_next(input)
+}
+
+fn condition_and(input: &mut Input) -> Result<Condition> {
+    (
+        condition_not,
+        repeat(0.., (t(TokenKind::And), condition_not)),
+    )
+        .map(|(first, rest): (Condition, Vec<(_, Condition)>)| {
+            rest.into_iter().fold(first, |left, (_and_tok, right)| {
+                let span = left.span().join(right.span());
+                Condition::And(span, Box::new(left), Box::new(right))
+            })
+        })
+        .parse_next(input)
+}
+
+fn condition_not(input: &mut Input) -> Result<Condition> {
+    alt((
+        (t(TokenKind::Not), cut_err(condition_not))
+            .map(|(not_tok, cond)| Condition::Not(not_tok.span.join(cond.span()), Box::new(cond))),
+        condition_primary,
+    ))
+    .parse_next(input)
+}
+
+fn condition_primary(input: &mut Input) -> Result<Condition> {
+    alt((condition_grouped, condition_is, condition_bool)).parse_next(input)
+}
+
+fn condition_grouped(input: &mut Input) -> Result<Condition> {
+    commit_after(t(TokenKind::LCurly), (condition, t(TokenKind::RCurly)))
+        .map(|(_open, (cond, _close))| cond)
+        .parse_next(input)
+}
+
+fn condition_bool(input: &mut Input) -> Result<Condition> {
+    expression
+        .map(|expr| Condition::Bool(expr.span(), expr))
+        .parse_next(input)
+}
+
+fn condition_is(input: &mut Input) -> Result<Condition> {
+    (
+        expression,
+        t(TokenKind::Is),
+        t(TokenKind::Dot),
+        local_name,
+        condition_payload_pattern,
+    )
+        .map(|(value, _is_tok, _, variant, pattern)| {
+            let end_span = pattern.span();
+            Condition::Is {
+                span: value.span().join(end_span),
+                value,
+                variant,
+                pattern,
+            }
+        })
+        .parse_next(input)
+}
+
+fn condition_payload_pattern(input: &mut Input) -> Result<Pattern> {
+    alt((
+        pattern_payload_receive,
+        pattern_payload_recv_type,
+        pattern_continue,
+        pattern_name,
+    ))
+    .parse_next(input)
+}
+
+fn pattern_payload_receive(input: &mut Input) -> Result<Pattern> {
+    commit_after(
+        t(TokenKind::LParen),
+        (list1(pattern), t(TokenKind::RParen), pattern),
+    )
+    .map(|(open, (patterns, _close, rest))| {
+        let span = open.span.join(rest.span());
+        patterns.into_iter().rfold(rest, |rest, arg| {
+            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest))
+        })
+    })
+    .parse_next(input)
+}
+
+fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern> {
+    commit_after(
+        tn!("(type": TokenKind::LParen, TokenKind::Type),
+        (list1(local_name), t(TokenKind::RParen), pattern),
+    )
+    .map(|((open, _), (names, _close, rest))| {
+        let span = open.span.join(rest.span());
+        names.into_iter().rfold(rest, |rest, name| {
+            Pattern::ReceiveType(span.clone(), name, Box::new(rest))
+        })
+    })
+    .parse_next(input)
+}
+
 fn expression(input: &mut Input) -> Result<Expression> {
     alt((
         expr_literal,
@@ -902,6 +1022,7 @@ fn expression(input: &mut Input) -> Result<Expression> {
         expr_let,
         expr_catch,
         expr_throw,
+        expr_if,
         expr_do,
         expr_box,
         expr_chan,
@@ -1068,6 +1189,41 @@ fn expr_throw(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
+fn expr_if(input: &mut Input) -> Result<Expression> {
+    commit_after(
+        t(TokenKind::If),
+        (
+            t(TokenKind::LCurly),
+            repeat(1.., expr_if_branch),
+            t(TokenKind::Else),
+            cut_err((t(TokenKind::FatArrow), expression)),
+            opt(t(TokenKind::Comma)),
+            t(TokenKind::RCurly),
+        ),
+    )
+    .map(
+        |(kw, (_open, branches, _else_kw, (_, else_expr), _trailing_comma, close))| {
+            Expression::If {
+                span: kw.span.join(close.span()),
+                branches,
+                else_: Box::new(else_expr),
+            }
+        },
+    )
+    .parse_next(input)
+}
+
+fn expr_if_branch(input: &mut Input) -> Result<(Condition, Expression)> {
+    (
+        condition,
+        t(TokenKind::FatArrow),
+        expression,
+        opt(t(TokenKind::Comma)),
+    )
+        .map(|(condition, _, body, _)| (condition, body))
+        .parse_next(input)
+}
+
 fn expr_do(input: &mut Input) -> Result<Expression> {
     commit_after(
         t(TokenKind::Do),
@@ -1141,9 +1297,11 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
     alt((
         expr_literal,
         expr_list,
+        expr_if,
         expr_box,
         expr_chan,
         expr_let,
+        expr_throw,
         expr_catch,
         expr_do,
         application,
@@ -1658,6 +1816,7 @@ fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch> {
 
 fn process(input: &mut Input) -> Result<Process> {
     alt((
+        proc_if,
         proc_let,
         proc_catch,
         proc_throw,
@@ -1735,6 +1894,93 @@ fn proc_telltypes(input: &mut Input) -> Result<Process> {
             )
         })
         .parse_next(input)
+}
+
+fn proc_if(input: &mut Input) -> Result<Process> {
+    alt((proc_if_block, proc_if_inline)).parse_next(input)
+}
+
+fn proc_if_block(input: &mut Input) -> Result<Process> {
+    commit_after(
+        (t(TokenKind::If), t(TokenKind::LCurly)),
+        (
+            repeat(1.., proc_if_branch),
+            t(TokenKind::Else),
+            cut_err(proc_if_else_body),
+            opt(t(TokenKind::Comma)),
+            t(TokenKind::RCurly),
+            opt(pass_process),
+        ),
+    )
+    .map(
+        |((kw, open), (branches, _else_kw, else_body, _comma, close, then_process))| Process::If {
+            span: kw.span.join(close.span()),
+            branches,
+            else_: Box::new(else_body.unwrap_or(Process::Noop(open.span.only_end()))),
+            then: then_process.map(Box::new),
+        },
+    )
+    .parse_next(input)
+}
+
+fn proc_if_branch(input: &mut Input) -> Result<(Condition, Process)> {
+    (
+        condition,
+        t(TokenKind::FatArrow),
+        t(TokenKind::LCurly),
+        opt(process),
+        t(TokenKind::RCurly),
+        opt(t(TokenKind::Comma)),
+    )
+        .map(|(condition, _, open, body, close, _)| {
+            (
+                condition,
+                body.unwrap_or(Process::Noop(open.span.join(close.span()))),
+            )
+        })
+        .parse_next(input)
+}
+
+fn proc_if_else_body(input: &mut Input) -> Result<Option<Process>> {
+    (
+        t(TokenKind::FatArrow),
+        t(TokenKind::LCurly),
+        opt(process),
+        t(TokenKind::RCurly),
+    )
+        .map(|(_, open, body, close)| body.unwrap_or(Process::Noop(open.span.join(close.span()))))
+        .map(Some)
+        .parse_next(input)
+}
+
+fn proc_if_inline(input: &mut Input) -> Result<Process> {
+    commit_after(
+        t(TokenKind::If),
+        (
+            not(peek(t(TokenKind::LCurly))),
+            condition,
+            t(TokenKind::FatArrow),
+            t(TokenKind::LCurly),
+            opt(process),
+            t(TokenKind::RCurly),
+            opt(pass_process),
+        ),
+    )
+    .map(
+        |(kw, (_, condition, _, open, then_proc, close, else_process))| {
+            let tail_proc = else_process.unwrap_or(Process::Noop(close.span().only_end()));
+            Process::If {
+                span: kw.span.join(tail_proc.span()),
+                branches: vec![(
+                    condition,
+                    then_proc.unwrap_or(Process::Noop(open.span.join(close.span()))),
+                )],
+                else_: Box::new(Process::Noop(close.span().only_end())),
+                then: Some(Box::new(tail_proc)),
+            }
+        },
+    )
+    .parse_next(input)
 }
 
 fn global_command(input: &mut Input) -> Result<Process> {
@@ -1891,6 +2137,7 @@ fn cmd_case(input: &mut Input) -> Result<Command> {
                 CommandBranches(branches),
                 else_branch,
                 pass_process.map(Box::new),
+                false,
             )
         },
     )
@@ -2058,7 +2305,7 @@ fn cmd_pipe(input: &mut Input) -> Result<Command> {
 }
 
 fn pass_process(input: &mut Input) -> Result<Process> {
-    alt((proc_let, proc_telltypes, global_command, command)).parse_next(input)
+    alt((proc_if, proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
 
 fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
@@ -2223,5 +2470,18 @@ mod test {
         assert!(parse_module(input, "StringManipulation.par".into()).is_ok());
         let input = "begin the errors";
         assert!(parse_module(input, "error.par".into()).is_err());
+    }
+
+    #[test]
+    fn test_parse_if_syntax() {
+        let expr_program = "def IfExpr = if { .true! => .false!, else => .true!, }";
+        assert!(parse_module(expr_program, "if_expr.par".into()).is_ok());
+
+        let proc_program =
+            "def IfProc: ! = chan exit { if { .true! => { exit! } else => { exit! } } }";
+        assert!(parse_module(proc_program, "if_proc.par".into()).is_ok());
+
+        let inline_program = "def IfInline: ! = chan exit { if .true! => { exit! } exit! }";
+        assert!(parse_module(inline_program, "if_inline.par".into()).is_ok());
     }
 }
