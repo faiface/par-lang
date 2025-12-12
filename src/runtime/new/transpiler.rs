@@ -191,9 +191,10 @@ impl NetTranspiler {
                     els.map(|x| self.package_map.get(&x).unwrap().clone()),
                 ))
             }
-            Tree::Package(id, context) => Global::GlobalPackage(
+            Tree::Package(id, context, behavior) => Global::Package(
                 self.map_package(id),
                 self.transpile_tree_and_alloc(*context),
+                behavior,
             ),
             Tree::SignalRequest(_sender) => todo!(),
             Tree::Primitive(primitive) => Global::Value(GlobalValue::Primitive(primitive)),

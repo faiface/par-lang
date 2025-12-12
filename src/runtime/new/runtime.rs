@@ -36,13 +36,14 @@ use crate::{par::primitive::Primitive, runtime::new::show::Showable};
 use std::collections::HashMap;
 
 use super::arena::*;
+use crate::runtime::old::net::FanBehavior;
 use std::sync::{Arc, Mutex};
+
+use tokio::sync::oneshot;
 
 pub type PackagePtr = Index<OnceLock<Package>>;
 pub type GlobalPtr = Index<Global>;
 pub type Str = ArcStr;
-
-use tokio::sync::oneshot;
 
 #[derive(Debug)]
 struct InstanceInner(Mutex<Box<[Option<Node>]>>);
@@ -131,7 +132,7 @@ pub struct Package {
 #[derive(Clone, Debug)]
 pub enum Global {
     Variable(usize),
-    GlobalPackage(PackagePtr, GlobalPtr),
+    Package(PackagePtr, GlobalPtr, FanBehavior),
     /// Destruct attempts to convert the interacting node into a value,
     /// and then carries out a negative operation on it according to its variant
     /// This node is created from the Continue, Case, and Receive commands.
@@ -344,15 +345,21 @@ pub trait Linker {
     /// Recusrively turn a node into a `Shared` node which allows duplication
     /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
     /// This is the case for linear nodes and negative types.
-    fn share(&self, node: Node) -> Option<Shared> {
+    fn share(&mut self, node: Node) -> Option<Shared> {
         self.share_inner(node)
     }
-    fn share_inner(&self, node: Node) -> Option<Shared> {
+    fn share_inner(&mut self, node: Node) -> Option<Shared> {
         stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
             Node::Shared(shared) => Some(shared),
             Node::Global(_instance, Global::Destruct(..)) => None,
             Node::Global(_instance, Global::Fanout(..)) => None,
-            Node::Global(instance, Global::GlobalPackage(package, captures)) => {
+            Node::Global(instance, Global::Package(package, captures, FanBehavior::Expand)) => {
+                let captures = self.arena().get(captures).clone();
+                let root =
+                    self.instantiate_with_captures(package, Node::Global(instance, captures));
+                self.share_inner(root)
+            }
+            Node::Global(instance, Global::Package(package, captures, FanBehavior::Propagate)) => {
                 let captures = Node::Global(instance, self.arena().get(captures).clone());
                 let captures = self.share_inner(captures)?;
                 Some(Shared::Sync(Arc::new(SyncShared::Package(
@@ -474,7 +481,7 @@ impl Runtime {
             }
             sym!(Node::Linear(Linear::ShareHole(hole)), other) => self.fill_hole(hole, other),
             sym!(
-                Node::Global(instance, Global::GlobalPackage(package, captures_in)),
+                Node::Global(instance, Global::Package(package, captures_in, _)),
                 other
             ) => {
                 let root = self.instantiate_with_captures(
@@ -624,7 +631,7 @@ impl Global {
         match self {
             Global::Variable(_) => "Variable".into(),
 
-            Global::GlobalPackage(_, _g) => "GlobalPackage".into(),
+            Global::Package(_, _, _) => "Package".into(),
 
             Global::Destruct(c) => format!("Destruct({})", c.variant_name()),
 

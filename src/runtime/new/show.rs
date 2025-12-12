@@ -111,7 +111,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Global> {
             Global::Variable(id) => {
                 write!(f, "{}", id)?;
             }
-            Global::GlobalPackage(index, captures) => {
+            Global::Package(index, captures, _) => {
                 write!(f, "@{}${}", index.0, Showable(captures, self.1))?;
             }
             Global::Fanout(index) => {

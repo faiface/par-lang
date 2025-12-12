@@ -36,81 +36,14 @@ def QuicksortGo = [input] [suffix] chan out: dual List<Nat> {
 dec Quicksort: [List<Nat>] List<Nat>
 def Quicksort = [x] QuicksortGo(x, .end!)
 
-
-// Helpers
-
-dec FileRead : [String] Result<!, String>
-def FileRead = [path]
-  catch _ => .err! in
-  let try reader = path->Os.Path->Os.OpenFile in
-  let parser = String.ParserFromReader(type Os.Error)(reader) in
-  let try contents = parser.remainder in
-  .ok contents
-
-dec StringLines : [String] List<String>
-def StringLines = [string] String.Parser(string).begin.match(.repeat.non.char "\n", .one.char "\n").case {
-  .end err => let ! = Result.Always(type !)(err) in .end!
-  .fail attempt => .item(Result.Always(type String)(attempt.remainder)).end!
-  .match(line, _) reader => .item(line) reader.loop
-}
-
-dec ListMap : [type a, b] [List<a>, box [a] b] List<b>
-def ListMap = [type a, b] [list, f] list.begin.case {
-  .end! => .end!
-  .item(x) list => .item(f(x)) list.loop,
-}
-
-dec ListMapTry : [type a, e, b] [List<box a>, box [a] Result<e, box b>] Result<e, List<b>>
-def ListMapTry = [type a, e, b] [list, f]
-  let builder: List.Builder<box b> = List.Builder(type box b) in
-  list.begin.case {
-    .end! => .ok builder.build,
-    .item(x) list =>
-      f(x).case {
-        .err err => let _ = builder.build in .err err,
-        .ok y =>
-          let builder = builder.add(y) in
-          list.loop,
-      },
-  }
-
-
-/// Parse a string containing one number per line.
-dec ParseNumbers : [String] Result<!, List<Nat>>
-def ParseNumbers = [input]
-  let lines = StringLines(input) in
-  // lines : List<String>
-  // Convert each line into Nat using Nat.FromString
-  ListMapTry(type String, !, Nat)(lines, box Nat.FromString)
-
-
-dec Main : !
-def Main = chan exit {
+def Main: ! = do {
   let console = Console.Open
-
-  FileRead("input.txt").case {
-    .err! => {
-      console.print("could not read file")
-      console.close
-      exit!
-    }
-    .ok input => {}
+  let numbers = Nat.Range(1, 10)
+  let numbers = Quicksort(numbers)
+  numbers.begin.case {
+    .item(h) => { numbers.loop }
+    .end => {}
   }
-  ParseNumbers(input).case {
-    .err! => {
-      console.print("invalid input")
-      console.close
-      exit!
-    }
-    .ok numbers => {
-      // numbers : List<Nat>
-      let numbers = Quicksort(numbers)
-      numbers.begin.case {
-        .item(h) => { numbers.loop }
-        .end => {}
-      }
-      console.close
-      exit!
-    }
-  }
-}
+  console.print("Finished!")
+  console.close
+} in !

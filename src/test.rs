@@ -65,6 +65,7 @@ fn test_all_files(config: &BuildConfig) -> Result<(), String> {
             entry.path().extension().map(|x| x.to_str()),
             Some(Some("par"))
         ) {
+            eprintln!("Testing {:?}", entry.path());
             let results = crate::test_runner::run_test_file(config, &entry.path(), &None);
             if !results.iter().all(|x| x.status.is_passed()) {
                 result = result.clone().and(Err("A test failed".to_owned()));

@@ -11,6 +11,7 @@ use crate::par::{
     process::{Captures, Command, Expression, Process},
     types::Type,
 };
+use crate::runtime::old::net::FanBehavior;
 use crate::{
     location::{Span, Spanning},
     par::{
@@ -236,7 +237,7 @@ impl Compiler {
         if let Some(id) = self.global_name_to_id.get(name) {
             let ty = self.id_to_ty.get(*id).unwrap().clone();
             return Ok(TypedTree {
-                tree: Tree::Package(*id, Box::new(Tree::Break)),
+                tree: Tree::Package(*id, Box::new(Tree::Break), FanBehavior::Expand),
                 ty,
             });
         };
@@ -261,7 +262,7 @@ impl Compiler {
         })?;
         self.global_name_to_id.insert(name.clone(), id);
         self.compile_global_stack.shift_remove(name);
-        Ok(Tree::Package(id, Box::new(Tree::Break)).with_type(typ))
+        Ok(Tree::Package(id, Box::new(Tree::Break), FanBehavior::Expand).with_type(typ))
     }
 
     /// Optimize away erasure underneath auxiliary ports of DUP and CON nodes where it is safe to do so.
@@ -292,9 +293,9 @@ impl Compiler {
                     }
                 }
             }
-            Tree::Package(id, cx) => {
+            Tree::Package(id, cx, b) => {
                 let cx = self.apply_safe_rules(*cx);
-                Tree::Package(id, Box::new(cx))
+                Tree::Package(id, Box::new(cx), b)
             }
             Tree::Signal(signal, a) => {
                 let a = self.apply_safe_rules(*a);
@@ -533,7 +534,10 @@ impl Compiler {
                             this.end_context()?;
                             Ok((body, context_out.with_type(Type::Break(Span::default()))))
                         })?;
-                    Ok(Tree::Package(package_id, Box::new(context_in)).with_type(typ.clone()))
+                    Ok(
+                        Tree::Package(package_id, Box::new(context_in), FanBehavior::Propagate)
+                            .with_type(typ.clone()),
+                    )
                 })
             }
 
@@ -801,10 +805,14 @@ impl Compiler {
                     },
                     //true,
                 )?;
-                self.net
-                    .link(def1, Tree::Package(id, Box::new(Tree::Break)));
-                self.net
-                    .link(context_in, Tree::Package(id, Box::new(Tree::Break)));
+                self.net.link(
+                    def1,
+                    Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
+                );
+                self.net.link(
+                    context_in,
+                    Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
+                );
             }
             Command::Loop(label, driver, captures) => {
                 let label = LoopLabel(label.clone());

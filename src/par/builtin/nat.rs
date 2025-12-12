@@ -137,7 +137,6 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn nat_add(mut handle: Handle) {
-    println!("NATAEDDDD");
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
     handle.provide_nat(x + y).await;
@@ -267,9 +266,10 @@ async fn nat_range(mut handle: Handle) {
     let mut i = lo;
     while i < hi {
         handle.signal(literal!("item")).await;
-        handle.send().await.concurrently(|h|
-            h.provide_nat(i.clone())
-        );
+        handle
+            .send()
+            .await
+            .concurrently(|h| h.provide_nat(i.clone()));
         i += 1;
     }
     handle.signal(literal!("end")).await;

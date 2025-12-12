@@ -35,6 +35,18 @@ pub fn number_to_string(mut number: usize) -> String {
     result
 }
 
+#[derive(Clone, Debug)]
+/// The behavior of a `Package` node when it interacts
+/// with a fan node (duplicate or erase)
+pub enum FanBehavior {
+    /// Expand the package and then duplicate/erase it
+    /// Used for side-effectful and top level packages
+    Expand,
+    /// Propagate the fan operator through the captures
+    /// Used in boxes.
+    Propagate,
+}
+
 /// A `Tree` corresponds to a port that is the root of a tree of interaction combinators.
 /// The `Tree` enum itself contains the whole tree, although it some parts of it might be inside
 /// half-linked `Tree::Var`s
@@ -48,7 +60,7 @@ pub enum Tree {
     Signal(ArcStr, Box<Tree>),
     Choice(Box<Tree>, Arc<HashMap<ArcStr, usize>>, Option<usize>),
     Var(usize),
-    Package(usize, Box<Tree>),
+    Package(usize, Box<Tree>, FanBehavior),
 
     SignalRequest(oneshot::Sender<(ArcStr, Box<Tree>)>),
 
@@ -75,7 +87,7 @@ impl Tree {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            Self::Package(_, context) => {
+            Self::Package(_, context, _) => {
                 context.map_vars(m);
             }
             Self::Signal(_, payload) => {
@@ -111,9 +123,12 @@ impl core::fmt::Debug for Tree {
             Self::Times(a, b) => f.debug_tuple("Times").field(a).field(b).finish(),
             Self::Par(a, b) => f.debug_tuple("Par").field(a).field(b).finish(),
             Self::Dup(a, b) => f.debug_tuple("Dup").field(a).field(b).finish(),
-            Self::Package(id, context) => {
-                f.debug_tuple("Package").field(id).field(context).finish()
-            }
+            Self::Package(id, context, b) => f
+                .debug_tuple("Package")
+                .field(id)
+                .field(context)
+                .field(b)
+                .finish(),
             Self::Signal(signal, payload) => f
                 .debug_tuple("Signal")
                 .field(signal)
@@ -146,7 +161,9 @@ impl Clone for Tree {
             Self::Times(a, b) => Self::Times(a.clone(), b.clone()),
             Self::Par(a, b) => Self::Par(a.clone(), b.clone()),
             Self::Dup(a, b) => Self::Dup(a.clone(), b.clone()),
-            Self::Package(package, context) => Self::Package(package.clone(), context.clone()),
+            Self::Package(package, context, b) => {
+                Self::Package(package.clone(), context.clone(), b.clone())
+            }
             Self::Signal(signal, payload) => Self::Signal(signal.clone(), payload.clone()),
             Self::Choice(context, branches, else_branch) => {
                 Self::Choice(context.clone(), Arc::clone(branches), else_branch.clone())
@@ -429,11 +446,14 @@ impl Net {
             | (Choice(context, branches, else_branch), Signal(signal, payload)) => {
                 match branches.get(&signal).copied() {
                     Some(package_id) => {
-                        self.link(*payload, Tree::Package(package_id, context));
+                        self.link(
+                            *payload,
+                            Tree::Package(package_id, context, FanBehavior::Expand),
+                        );
                     }
                     None => self.link(
                         Signal(signal, payload),
-                        Tree::Package(else_branch.unwrap(), context),
+                        Tree::Package(else_branch.unwrap(), context, FanBehavior::Expand),
                     ),
                 }
                 self.rewrites.signal += 1;
@@ -450,19 +470,21 @@ impl Net {
                 self.link(*b1, Tree::Signal(signal, Box::new(a10)));
                 self.rewrites.commute += 1;
             }
-            (Package(_, c), Era) | (Era, Package(_, c)) => {
+            (Package(_, c, FanBehavior::Propagate), Era)
+            | (Era, Package(_, c, FanBehavior::Propagate)) => {
                 self.rewrites.era += 1;
                 self.link(*c, Tree::Era);
             }
-            (Package(id, cx), Dup(d0, d1)) | (Dup(d0, d1), Package(id, cx)) => {
+            (Package(id, cx, FanBehavior::Propagate), Dup(d0, d1))
+            | (Dup(d0, d1), Package(id, cx, FanBehavior::Propagate)) => {
                 let (a0, b0) = self.create_wire();
                 let (a1, b1) = self.create_wire();
                 self.link(*cx, Tree::Dup(Box::new(a0), Box::new(a1)));
-                self.link(*d0, Package(id, Box::new(b1)));
-                self.link(*d1, Package(id, Box::new(b0)));
+                self.link(*d0, Package(id, Box::new(b1), FanBehavior::Propagate));
+                self.link(*d1, Package(id, Box::new(b0), FanBehavior::Propagate));
                 self.rewrites.commute += 1;
             }
-            (Package(id, cx), a) | (a, Package(id, cx)) => {
+            (Package(id, cx, _), a) | (a, Package(id, cx, _)) => {
                 let b = self.dereference_package(id, *cx);
                 self.interact(a, b);
                 self.rewrites.expand += 1;
@@ -603,7 +625,7 @@ impl Net {
                 self.substitute_tree(a);
                 self.substitute_tree(b);
             }
-            Tree::Package(_, context) => self.substitute_tree(context),
+            Tree::Package(_, context, _) => self.substitute_tree(context),
             Tree::Signal(_, payload) => self.substitute_tree(payload),
             Tree::Choice(context, _, _) => self.substitute_tree(context),
             Tree::Var(id) => {
@@ -721,8 +743,8 @@ impl Net {
             Tree::Par(a, b) => format!("[{}] {}", self.show_tree(b), self.show_tree(a)),
             Tree::Times(a, b) => format!("({}) {}", self.show_tree(b), self.show_tree(a)),
             Tree::Dup(a, b) => format!("{{{} {}}}", self.show_tree(a), self.show_tree(b)),
-            Tree::Package(id, cx) if matches!(cx.as_ref(), &Tree::Break) => format!("@{}", id),
-            Tree::Package(id, cx) => format!("@{}${}", id, self.show_tree(cx)),
+            Tree::Package(id, cx, _) if matches!(cx.as_ref(), &Tree::Break) => format!("@{}", id),
+            Tree::Package(id, cx, _) => format!("@{}${}", id, self.show_tree(cx)),
             Tree::Signal(signal, payload) => {
                 format!("signal({} {})", signal, self.show_tree(payload))
             }
@@ -763,7 +785,7 @@ impl Net {
                 self.assert_tree_not_contains(a, idx);
                 self.assert_tree_not_contains(b, idx);
             }
-            Tree::Package(_, context) => {
+            Tree::Package(_, context, _) => {
                 self.assert_tree_not_contains(context, idx);
             }
             Tree::Signal(_, payload) => {
@@ -842,7 +864,7 @@ impl Net {
                 a.append(&mut b);
                 a
             }
-            Tree::Package(idx, context) => {
+            Tree::Package(idx, context, _) => {
                 if self.packages.get(idx).is_some() {
                     self.assert_tree_valid(context)
                 } else {
