@@ -553,7 +553,14 @@ impl Expression<()> {
                 )
             }
             Self::Box(span, _, expression, typ) => {
-                let (expression, caps) = expression.fix_captures(loop_points, later_captures);
+                let (expression, mut caps) = expression.fix_captures(loop_points, later_captures);
+                for (name, (_span, usage)) in caps.names.iter_mut() {
+                    if later_captures.contains(name) {
+                        *usage = VariableUsage::Copy;
+                    } else {
+                        *usage = VariableUsage::Move;
+                    }
+                }
                 (
                     Arc::new(Self::Box(
                         span.clone(),
@@ -684,7 +691,7 @@ impl Expression<Type> {
         match self {
             Self::Global(_, name, typ) => {
                 let def_span = (program.definitions.get(name))
-                    .map(|def| def.name.span())
+                    .map(|(def, _typ)| def.name.span())
                     .unwrap_or_default();
                 let decl_span = (program.declarations.get(name))
                     .map(|decl| decl.name.span())

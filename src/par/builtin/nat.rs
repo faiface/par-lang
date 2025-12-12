@@ -23,6 +23,11 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                 |handle| Box::pin(nat_add(handle)),
             ),
             Definition::external(
+                "Sub",
+                Type::function(Type::nat(), Type::function(Type::int(), Type::nat())),
+                |handle| Box::pin(nat_sub(handle)),
+            ),
+            Definition::external(
                 "Mul",
                 Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
                 |handle| Box::pin(nat_mul(handle)),
@@ -134,6 +139,12 @@ async fn nat_add(mut handle: Handle) {
     let x = handle.receive().nat().await;
     let y = handle.receive().nat().await;
     handle.provide_nat(x + y);
+}
+
+async fn nat_sub(mut handle: Handle) {
+    let x = handle.receive().nat().await;
+    let y = handle.receive().int().await;
+    handle.provide_nat((x - y).max(0.into()));
 }
 
 async fn nat_mul(mut handle: Handle) {
