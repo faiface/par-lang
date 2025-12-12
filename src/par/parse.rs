@@ -509,6 +509,7 @@ fn typ(input: &mut Input) -> Result<Type> {
         typ_send, // try after send_type so matching `(` is unambiguous
         typ_recv_type,
         typ_receive, // try after recv_type so matching `[` is unambiguous
+        typ_generic,
     ))
     .context(StrContext::Label("type"))
     .parse_next(input)
@@ -561,7 +562,7 @@ fn typ_send(input: &mut Input) -> Result<Type> {
     .map(|(open, (args, close, then))| {
         let span = open.span.join(close.span());
         args.into_iter().rfold(then, |then, arg| {
-            Type::Pair(span.clone(), Box::new(arg), Box::new(then))
+            Type::Pair(span.clone(), Box::new(arg), Box::new(then), vec![])
         })
     })
     .parse_next(input)
@@ -575,9 +576,57 @@ fn typ_receive(input: &mut Input) -> Result<Type> {
     .map(|(open, (args, close, then))| {
         let span = open.span.join(close.span());
         args.into_iter().rfold(then, |then, arg| {
-            Type::Function(span.clone(), Box::new(arg), Box::new(then))
+            Type::Function(span.clone(), Box::new(arg), Box::new(then), vec![])
         })
     })
+    .parse_next(input)
+}
+
+enum SendOrReceive {
+    Send,
+    Receive,
+}
+
+fn typ_simple_send(input: &mut Input) -> Result<(SendOrReceive, Type, Type, Span)> {
+    commit_after(t(TokenKind::LParen), (typ, t(TokenKind::RParen), typ))
+        .map(|(open, (arg, close, then))| {
+            let span = open.span.join(close.span());
+            (SendOrReceive::Send, arg, then, span)
+        })
+        .parse_next(input)
+}
+
+fn typ_simple_receive(input: &mut Input) -> Result<(SendOrReceive, Type, Type, Span)> {
+    commit_after(t(TokenKind::LBrack), (typ, t(TokenKind::RBrack), typ))
+        .map(|(open, (arg, close, then))| {
+            let span = open.span.join(close.span());
+            (SendOrReceive::Receive, arg, then, span)
+        })
+        .parse_next(input)
+}
+
+fn typ_generic(input: &mut Input) -> Result<Type> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            alt((typ_simple_send, typ_simple_receive)),
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, (snd_or_recv, arg, then, span)))| {
+            let span = vars_open.span.join(span);
+            match snd_or_recv {
+                SendOrReceive::Send => {
+                    Type::Pair(span.clone(), Box::new(arg), Box::new(then), vars)
+                }
+                SendOrReceive::Receive => {
+                    Type::Function(span.clone(), Box::new(arg), Box::new(then), vars)
+                }
+            }
+        },
+    )
     .parse_next(input)
 }
 
@@ -724,7 +773,7 @@ fn typ_branch_receive(input: &mut Input) -> Result<Type> {
     .map(|(open, (args, close, then))| {
         let span = open.span.join(close.span());
         args.into_iter().rfold(then, |then, arg| {
-            Type::Function(span.clone(), Box::new(arg), Box::new(then))
+            Type::Function(span.clone(), Box::new(arg), Box::new(then), vec![])
         })
     })
     .parse_next(input)
@@ -756,6 +805,7 @@ fn pattern(input: &mut Input) -> Result<Pattern> {
         pattern_name,
         pattern_receive_type,
         pattern_receive,
+        pattern_generic_receive,
         pattern_continue,
         pattern_default,
         pattern_try,
@@ -786,9 +836,30 @@ fn pattern_receive(input: &mut Input) -> Result<Pattern> {
     .map(|(open, (patterns, _close, rest))| {
         let span = open.span.join(rest.span());
         patterns.into_iter().rfold(rest, |rest, arg| {
-            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest))
+            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vec![])
         })
     })
+    .parse_next(input)
+}
+
+fn pattern_generic_receive(input: &mut Input) -> Result<Pattern> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            t(TokenKind::LParen),
+            pattern,
+            t(TokenKind::RParen),
+            pattern,
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, _pattern_open, arg, _pattern_close, rest))| {
+            let span = vars_open.span.join(rest.span());
+            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vars)
+        },
+    )
     .parse_next(input)
 }
 
@@ -1216,6 +1287,7 @@ fn construction(input: &mut Input) -> Result<Construct> {
         cons_send,
         cons_recv_type,
         cons_receive,
+        cons_generic_receive,
     ))
     .context(StrContext::Label("construction"))
     .parse_next(input)
@@ -1262,9 +1334,30 @@ fn cons_receive(input: &mut Input) -> Result<Construct> {
     .map(|(open, (patterns, _close, then))| {
         let span = open.span.join(then.span());
         patterns.into_iter().rfold(then, |then, pattern| {
-            Construct::Receive(span.clone(), pattern, Box::new(then))
+            Construct::Receive(span.clone(), pattern, Box::new(then), vec![])
         })
     })
+    .parse_next(input)
+}
+
+fn cons_generic_receive(input: &mut Input) -> Result<Construct> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            t(TokenKind::LBrack),
+            pattern,
+            t(TokenKind::RBrack),
+            construction,
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, _pattern_open, arg, _pattern_close, rest))| {
+            let span = vars_open.span.join(rest.span());
+            Construct::Receive(span.clone(), arg, Box::new(rest), vars)
+        },
+    )
     .parse_next(input)
 }
 
@@ -1356,7 +1449,13 @@ fn cons_recv_type(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_branch(input: &mut Input) -> Result<ConstructBranch> {
-    alt((cons_branch_then, cons_branch_recv_type, cons_branch_receive)).parse_next(input)
+    alt((
+        cons_branch_then,
+        cons_branch_recv_type,
+        cons_branch_receive,
+        cons_branch_generic_receive,
+    ))
+    .parse_next(input)
 }
 
 fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch> {
@@ -1375,9 +1474,30 @@ fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch> {
     .map(|(open, (patterns, _close, rest))| {
         let span = open.span.join(rest.span());
         patterns.into_iter().rfold(rest, |rest, pattern| {
-            ConstructBranch::Receive(span.clone(), pattern, Box::new(rest))
+            ConstructBranch::Receive(span.clone(), pattern, Box::new(rest), vec![])
         })
     })
+    .parse_next(input)
+}
+
+fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            t(TokenKind::LParen),
+            pattern,
+            t(TokenKind::RParen),
+            cons_branch,
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, _pattern_open, arg, _pattern_close, rest))| {
+            let span = vars_open.span.join(rest.span());
+            ConstructBranch::Receive(span.clone(), arg, Box::new(rest), vars)
+        },
+    )
     .parse_next(input)
 }
 
@@ -1602,6 +1722,7 @@ fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
         apply_branch_then,
         apply_branch_recv_type,
         apply_branch_receive,
+        apply_branch_generic_receive,
         apply_branch_continue,
         apply_branch_try,
         apply_branch_default,
@@ -1625,9 +1746,30 @@ fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch> {
     .map(|(open, (patterns, _close, rest))| {
         let span = open.span.join(rest.span());
         patterns.into_iter().rfold(rest, |rest, pattern| {
-            ApplyBranch::Receive(span.clone(), pattern, Box::new(rest))
+            ApplyBranch::Receive(span.clone(), pattern, Box::new(rest), vec![])
         })
     })
+    .parse_next(input)
+}
+
+fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            t(TokenKind::LBrack),
+            pattern,
+            t(TokenKind::RBrack),
+            apply_branch,
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, _pattern_open, arg, _pattern_close, rest))| {
+            let span = vars_open.span.join(rest.span());
+            ApplyBranch::Receive(span.clone(), arg, Box::new(rest), vars)
+        },
+    )
     .parse_next(input)
 }
 
@@ -1884,6 +2026,7 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
             cmd_send,
             cmd_recv_type,
             cmd_receive,
+            cmd_generic_receive,
             cmd_try,
             cmd_default,
             cmd_pipe,
@@ -1939,9 +2082,34 @@ fn cmd_receive(input: &mut Input) -> Result<Command> {
         };
         let span = open.span.join(cmd.span());
         patterns.into_iter().rfold(cmd, |cmd, pattern| {
-            Command::Receive(span.clone(), pattern, Box::new(cmd))
+            Command::Receive(span.clone(), pattern, Box::new(cmd), vec![])
         })
     })
+    .parse_next(input)
+}
+
+fn cmd_generic_receive(input: &mut Input) -> Result<Command> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            t(TokenKind::LBrack),
+            pattern,
+            t(TokenKind::RBrack),
+            cmd,
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, _pattern_open, arg, pattern_close, cmd))| {
+            let cmd = match cmd {
+                Some(cmd) => cmd,
+                None => noop_cmd(pattern_close.span.only_end()),
+            };
+            let span = vars_open.span.join(cmd.span());
+            Command::Receive(span.clone(), arg, Box::new(cmd), vars)
+        },
+    )
     .parse_next(input)
 }
 
@@ -2147,6 +2315,7 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
         cmd_branch_continue,
         cmd_branch_recv_type,
         cmd_branch_receive,
+        cmd_branch_generic_receive,
         cmd_branch_try,
         cmd_branch_default,
     ))
@@ -2199,9 +2368,30 @@ fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch> {
     .map(|(open, (patterns, _close, rest))| {
         let span = open.span.join(rest.span());
         patterns.into_iter().rfold(rest, |rest, pattern| {
-            CommandBranch::Receive(span.clone(), pattern, Box::new(rest))
+            CommandBranch::Receive(span.clone(), pattern, Box::new(rest), vec![])
         })
     })
+    .parse_next(input)
+}
+
+fn cmd_branch_generic_receive(input: &mut Input) -> Result<CommandBranch> {
+    commit_after(
+        t(TokenKind::Lt),
+        (
+            list1(local_name),
+            t(TokenKind::Gt),
+            t(TokenKind::LParen),
+            pattern,
+            t(TokenKind::RParen),
+            cmd_branch,
+        ),
+    )
+    .map(
+        |(vars_open, (vars, _vars_close, _pattern_open, arg, _pattern_close, rest))| {
+            let span = vars_open.span.join(rest.span());
+            CommandBranch::Receive(span.clone(), arg, Box::new(rest), vars)
+        },
+    )
     .parse_next(input)
 }
 

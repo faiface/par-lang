@@ -21,7 +21,7 @@ where
         Type::Box(_, inner) | Type::DualBox(_, inner) => {
             visit(inner)?;
         }
-        Type::Pair(_, left, right) | Type::Function(_, left, right) => {
+        Type::Pair(_, left, right, _) | Type::Function(_, left, right, _) => {
             visit(left)?;
             visit(right)?;
         }
@@ -40,6 +40,8 @@ where
         | Type::DualPrimitive(..)
         | Type::Var(..)
         | Type::DualVar(..)
+        | Type::Hole(..)
+        | Type::DualHole(..)
         | Type::Break(..)
         | Type::Continue(..)
         | Type::Self_(..)
@@ -66,7 +68,7 @@ where
         Type::Box(_, inner) | Type::DualBox(_, inner) => {
             visit(inner)?;
         }
-        Type::Pair(_, left, right) | Type::Function(_, left, right) => {
+        Type::Pair(_, left, right, _) | Type::Function(_, left, right, _) => {
             visit(left)?;
             visit(right)?;
         }
@@ -85,6 +87,8 @@ where
         | Type::DualPrimitive(..)
         | Type::Var(..)
         | Type::DualVar(..)
+        | Type::Hole(..)
+        | Type::DualHole(..)
         | Type::Break(..)
         | Type::Continue(..)
         | Type::Self_(..)
@@ -129,7 +133,7 @@ where
         Type::DualBox(_, inner) => {
             visit(inner, !is_positive)?;
         }
-        Type::Function(_, left, right) => {
+        Type::Function(_, left, right, _) => {
             visit(left, !is_positive)?;
             visit(right, is_positive)?;
         }
@@ -275,7 +279,7 @@ where
         Type::DualBox(_, inner) => {
             visit(inner, polarity.dual())?;
         }
-        Type::Function(_, left, right) => {
+        Type::Function(_, left, right, _) => {
             visit(left, polarity.dual())?;
             visit(right, polarity)?;
         }

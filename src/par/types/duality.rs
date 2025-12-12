@@ -18,11 +18,11 @@ impl Type {
             Self::Box(span, body) => Self::DualBox(span, body),
             Self::DualBox(span, body) => Self::Box(span, body),
 
-            Self::Pair(span, t, u) => {
-                Self::Function(span0.join(span), t, Box::new(u.dual(Span::None)))
+            Self::Pair(span, t, u, vars) => {
+                Self::Function(span0.join(span), t, Box::new(u.dual(Span::None)), vars)
             }
-            Self::Function(span, t, u) => {
-                Self::Pair(span0.join(span), t, Box::new(u.dual(Span::None)))
+            Self::Function(span, t, u, vars) => {
+                Self::Pair(span0.join(span), t, Box::new(u.dual(Span::None)), vars)
             }
             Self::Either(span, branches) => Self::Choice(
                 span0.join(span),
@@ -78,6 +78,9 @@ impl Type {
             Self::Forall(span, name, t) => {
                 Self::Exists(span0.join(span), name, Box::new(t.dual(Span::None)))
             }
+
+            Type::Hole(span, name, hole) => Type::DualHole(span0.join(span), name, hole),
+            Type::DualHole(span, name, hole) => Type::Hole(span0.join(span), name, hole),
         }
     }
 

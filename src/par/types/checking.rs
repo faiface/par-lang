@@ -5,6 +5,7 @@ use super::error::TypeError;
 use super::lattice::union_types;
 use super::{Context, TypeDefs};
 use crate::location::Span;
+use crate::par::types::implicit::infer_holes;
 use crate::par::types::lattice::intersect_types;
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
@@ -211,41 +212,90 @@ impl Context {
             }
 
             Command::Send(argument, process) => {
-                let Type::Function(_, argument_type, then_type) = typ else {
+                let Type::Function(_, argument_type, then_type, vars) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::Send,
                         typ.clone(),
                     ));
                 };
-                let argument = self.check_expression(None, argument, &argument_type)?;
-                self.put(span, object.clone(), *then_type.clone())?;
-                let (process, inferred_types) = analyze_process(self, process)?;
-                (Command::Send(argument, process), inferred_types)
+                if !vars.is_empty() {
+                    let (argument, inferred_arg_type) = self.infer_expression(None, argument)?;
+                    let inferred_holes = infer_holes(
+                        span,
+                        &inferred_arg_type,
+                        argument_type,
+                        vars,
+                        &self.type_defs,
+                    )?;
+                    let then_type = then_type
+                        .clone()
+                        .substitute(inferred_holes.iter().map(|(k, v)| (k, v)).collect())?;
+                    self.put(span, object.clone(), then_type.clone())?;
+                    let (process, inferred_types) = analyze_process(self, process)?;
+                    (Command::Send(argument, process), inferred_types)
+                } else {
+                    let argument = self.check_expression(None, argument, &argument_type)?;
+                    self.put(span, object.clone(), *then_type.clone())?;
+                    let (process, inferred_types) = analyze_process(self, process)?;
+                    (Command::Send(argument, process), inferred_types)
+                }
             }
 
-            Command::Receive(parameter, annotation, (), process) => {
-                let Type::Pair(_, parameter_type, then_type) = typ else {
+            Command::Receive(parameter, annotation, (), process, type_parameters) => {
+                let Type::Pair(_, param_type, then_type, type_names) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Receive,
+                        Operation::Receive {
+                            generics: type_parameters.len(),
+                        },
                         typ.clone(),
                     ));
                 };
+
+                if type_parameters.len() != type_names.len() {
+                    return Err(TypeError::InvalidOperation(
+                        span.clone(),
+                        Operation::Receive {
+                            generics: type_parameters.len(),
+                        },
+                        typ.clone(),
+                    ));
+                }
+
+                let (param_type, then_type) = if !type_names.is_empty() {
+                    let type_vars: Vec<Type> = type_parameters
+                        .iter()
+                        .map(|v| Type::Var(Span::None, v.clone()))
+                        .collect();
+                    let then_type = then_type
+                        .clone()
+                        .substitute(type_names.iter().zip(type_vars.iter()).collect())?;
+                    let param_type = param_type
+                        .clone()
+                        .substitute(type_names.iter().zip(type_vars.iter()).collect())?;
+                    (param_type, then_type)
+                } else {
+                    (*param_type.clone(), *then_type.clone())
+                };
+
+                self.type_defs.vars.extend(type_parameters.iter().cloned());
+
                 if let Some(annotated_type) = annotation {
                     // Validate annotation before using it
                     self.type_defs.validate_type(annotated_type)?;
-                    parameter_type.check_assignable(span, annotated_type, &self.type_defs)?;
+                    param_type.check_assignable(span, annotated_type, &self.type_defs)?;
                 }
-                self.put(span, parameter.clone(), *parameter_type.clone())?;
-                self.put(span, object.clone(), *then_type.clone())?;
+                self.put(span, parameter.clone(), param_type.clone())?;
+                self.put(span, object.clone(), then_type)?;
                 let (process, inferred_types) = analyze_process(self, process)?;
                 (
                     Command::Receive(
                         parameter.clone(),
                         annotation.clone(),
-                        *parameter_type.clone(),
+                        param_type.clone(),
                         process,
+                        type_names.clone(),
                     ),
                     inferred_types,
                 )
@@ -689,11 +739,19 @@ impl Context {
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Send(argument, process),
-                    Type::Function(span.clone(), Box::new(arg_type), Box::new(then_type)),
+                    Type::Function(
+                        span.clone(),
+                        Box::new(arg_type),
+                        Box::new(then_type),
+                        vec![],
+                    ),
                 )
             }
 
-            Command::Receive(parameter, annotation, (), process) => {
+            Command::Receive(parameter, annotation, (), process, vars) => {
+                for var in vars.iter() {
+                    self.type_defs.vars.insert(var.clone());
+                }
                 let Some(param_type) = annotation else {
                     return Err(TypeError::ParameterTypeMustBeKnown(
                         span.clone(),
@@ -701,6 +759,7 @@ impl Context {
                     ));
                 };
                 self.put(span, parameter.clone(), param_type.clone())?;
+                self.type_defs.vars.extend(vars.clone());
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Receive(
@@ -708,11 +767,13 @@ impl Context {
                         annotation.clone(),
                         param_type.clone(),
                         process,
+                        vars.clone(),
                     ),
                     Type::Pair(
                         span.clone(),
                         Box::new(param_type.clone()),
                         Box::new(then_type),
+                        vars.clone(),
                     ),
                 )
             }

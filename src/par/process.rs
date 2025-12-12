@@ -48,7 +48,13 @@ pub enum Process<Typ> {
 pub enum Command<Typ> {
     Link(Arc<Expression<Typ>>),
     Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
-    Receive(LocalName, Option<Type>, Typ, Arc<Process<Typ>>),
+    Receive(
+        LocalName,
+        Option<Type>,
+        Typ,
+        Arc<Process<Typ>>,
+        Vec<LocalName>,
+    ),
     Signal(LocalName, Arc<Process<Typ>>),
     Case(
         Arc<[LocalName]>,
@@ -293,12 +299,15 @@ impl Process<()> {
                     Command::Send(argument, process) => {
                         Command::Send(argument.optimize(), process.optimize())
                     }
-                    Command::Receive(parameter, annotation, typ, process) => Command::Receive(
-                        parameter.clone(),
-                        annotation.clone(),
-                        typ.clone(),
-                        process.optimize(),
-                    ),
+                    Command::Receive(parameter, annotation, typ, process, vars) => {
+                        Command::Receive(
+                            parameter.clone(),
+                            annotation.clone(),
+                            typ.clone(),
+                            process.optimize(),
+                            vars.clone(),
+                        )
+                    }
                     Command::Signal(chosen, process) => {
                         Command::Signal(chosen.clone(), process.optimize())
                     }
@@ -419,11 +428,17 @@ impl Command<()> {
                 caps.extend(caps1);
                 (Self::Send(argument, process), caps)
             }
-            Self::Receive(parameter, annotation, typ, process) => {
+            Self::Receive(parameter, annotation, typ, process, vars) => {
                 let (process, mut caps) = process.fix_captures(loop_points);
                 caps.remove(parameter);
                 (
-                    Self::Receive(parameter.clone(), annotation.clone(), typ.clone(), process),
+                    Self::Receive(
+                        parameter.clone(),
+                        annotation.clone(),
+                        typ.clone(),
+                        process,
+                        vars.clone(),
+                    ),
                     caps,
                 )
             }
@@ -516,7 +531,7 @@ impl Command<Type> {
                 argument.types_at_spans(program, consume);
                 process.types_at_spans(program, consume);
             }
-            Self::Receive(param, annotation, param_type, process) => {
+            Self::Receive(param, annotation, param_type, process, _) => {
                 consume(param.span(), NameWithType::named(param, param_type.clone()));
                 if let Some(annotation) = annotation {
                     annotation.types_at_spans(&program.type_defs, consume);
@@ -580,7 +595,14 @@ impl Expression<()> {
                 )
             }
             Self::Box(span, _, expression, typ) => {
-                let (expression, caps) = expression.fix_captures(loop_points, later_captures);
+                let (expression, mut caps) = expression.fix_captures(loop_points, later_captures);
+                for (name, (_span, usage)) in caps.names.iter_mut() {
+                    if later_captures.contains(name) {
+                        *usage = VariableUsage::Copy;
+                    } else {
+                        *usage = VariableUsage::Move;
+                    }
+                }
                 (
                     Arc::new(Self::Box(
                         span.clone(),
@@ -711,7 +733,7 @@ impl Expression<Type> {
         match self {
             Self::Global(_, name, typ) => {
                 let def_span = (program.definitions.get(name))
-                    .map(|def| def.name.span())
+                    .map(|(def, _typ)| def.name.span())
                     .unwrap_or_default();
                 let decl_span = (program.declarations.get(name))
                     .map(|decl| decl.name.span())
@@ -812,7 +834,7 @@ impl Command<()> {
                 expression.qualify(module);
                 process.qualify(module);
             }
-            Self::Receive(_, annotation, (), process) => {
+            Self::Receive(_, annotation, (), process, _) => {
                 if let Some(annotation) = annotation {
                     annotation.qualify(module);
                 }
@@ -914,7 +936,15 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Receive(parameter, _, _, process) => {
+                    Command::Receive(parameter, _, _, process, vars) => {
+                        if !vars.is_empty() {
+                            write!(f, "<")?;
+                            write!(f, "{}", vars[0])?;
+                            for var in &vars[1..] {
+                                write!(f, ", {}", var)?;
+                            }
+                            write!(f, ">")?;
+                        }
                         write!(f, "[{}]", parameter)?;
                         process.pretty(f, indent)
                     }

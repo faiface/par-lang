@@ -19,7 +19,7 @@ impl Type {
                 | Type::Var(_, _)
                 | Type::DualVar(_, _)
                 | Type::DualBox(_, _)
-                | Type::Function(_, _, _)
+                | Type::Function(_, _, _, _)
                 | Type::Choice(_, _)
                 | Type::Continue(_) => {
                     *result = false;
