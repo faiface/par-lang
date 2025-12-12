@@ -437,7 +437,11 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
                 match best_match {
                     Some((i, j)) => {
                         handle.signal(literal!("match")).await;
-                        handle.send().await.provide_bytes(remainder.pop_bytes(i)).await;
+                        handle
+                            .send()
+                            .await
+                            .provide_bytes(remainder.pop_bytes(i))
+                            .await;
                         handle
                             .send()
                             .await

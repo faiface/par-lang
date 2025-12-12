@@ -17,18 +17,16 @@ pub struct BuildConfig {
     pub new_runtime: bool,
 }
 
-impl<'a, T: Iterator<Item=&'a String>> From<T> for BuildConfig {
+impl<'a, T: Iterator<Item = &'a String>> From<T> for BuildConfig {
     fn from(t: T) -> BuildConfig {
-        let mut default = BuildConfig {
-            new_runtime: false,
-        };
+        let mut default = BuildConfig { new_runtime: false };
         for i in t {
             if i == "rt-v2" {
                 default.new_runtime = false;
             } else if i == "rt-v3" {
                 default.new_runtime = true;
             };
-        };
+        }
         default
     }
 }

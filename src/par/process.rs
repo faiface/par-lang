@@ -4,9 +4,9 @@ use super::{
     types::Type,
 };
 use crate::{
-    runtime::Handle,
     location::{Span, Spanning},
     par::program::CheckedModule,
+    runtime::Handle,
 };
 use indexmap::IndexMap;
 use std::{

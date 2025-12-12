@@ -12,7 +12,7 @@ use crate::{
     runtime::Handle,
 };
 use arcstr::literal;
-use futures::{future::BoxFuture};
+use futures::future::BoxFuture;
 use im::OrdMap;
 use num_bigint::BigInt;
 
