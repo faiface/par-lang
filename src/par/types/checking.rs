@@ -7,7 +7,7 @@ use super::{Context, TypeDefs};
 use crate::location::Span;
 use crate::par::types::implicit::infer_holes;
 use crate::par::types::lattice::intersect_types;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -101,7 +101,8 @@ impl Context {
                             )));
                         }
 
-                        self.variables = merge_path_contexts(&self.type_defs, span, paths)?;
+                        let free = process.free_variables();
+                        self.variables = merge_path_contexts(&self.type_defs, span, paths, &free)?;
                         let typed_process = self.check_process(process)?;
                         *guard = process::ProcessMergePoint::Checked(typed_process.clone());
                         Ok(typed_process)
@@ -711,7 +712,8 @@ impl Context {
                             ));
                         }
 
-                        self.variables = merge_path_contexts(&self.type_defs, span, paths)?;
+                        let free = process.free_variables();
+                        self.variables = merge_path_contexts(&self.type_defs, span, paths, &free)?;
                         let typed_process = self.infer_process(process, inference_subject)?;
                         *guard = process::ProcessMergePoint::Checked(typed_process.0.clone());
                         Ok(typed_process)
@@ -1146,36 +1148,53 @@ fn merge_path_contexts(
     typedefs: &TypeDefs,
     span: &Span,
     paths: &IndexMap<Span, Option<IndexMap<LocalName, Type>>>,
+    free_vars: &IndexSet<LocalName>,
 ) -> Result<IndexMap<LocalName, Type>, TypeError> {
     let maps: Vec<IndexMap<LocalName, Type>> = paths
         .values()
         .map(|p| p.as_ref().expect("all paths filled").clone())
         .collect();
-    let first = maps
-        .first()
-        .cloned()
-        .expect("at least one path for merge point");
-
+    // Collect all variable names present in any path.
+    let mut all_names: IndexSet<LocalName> = IndexSet::new();
     for map in &maps {
-        for name in map.keys() {
-            if !first.contains_key(name) {
-                return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
-            }
-        }
-    }
-    for name in first.keys() {
-        for map in &maps {
-            if !map.contains_key(name) {
-                return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
-            }
-        }
+        all_names.extend(map.keys().cloned());
     }
 
     let mut merged_variables = IndexMap::new();
-    for name in first.keys() {
-        let mut acc = first.get(name).unwrap().clone();
-        for map in maps.iter().skip(1) {
-            let next = map.get(name).unwrap();
+    for name in all_names {
+        let used = free_vars.contains(&name);
+        let mut present_types: Vec<Type> = Vec::new();
+        let mut missing = false;
+        for map in &maps {
+            if let Some(t) = map.get(&name) {
+                present_types.push(t.clone());
+            } else {
+                missing = true;
+            }
+        }
+
+        if !used {
+            // Variable not used in fallthrough: allow it to be missing as long as all present types are non-linear.
+            if present_types
+                .iter()
+                .any(|t| t.is_linear(typedefs).unwrap_or(true))
+            {
+                return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+            }
+            // Drop it.
+            continue;
+        }
+
+        // Variable used: must be present everywhere.
+        if missing {
+            return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+        }
+
+        let mut acc = present_types
+            .get(0)
+            .cloned()
+            .expect("at least one type when not missing");
+        for next in present_types.iter().skip(1) {
             acc = match union_types(typedefs, span, &acc, next) {
                 Ok(t) => t,
                 Err(_) => {

@@ -72,10 +72,11 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
   let try@clearResp file = Os.CreateNewFile(dest)
   catch@clearFile err => { file.close; throw err }
 
-  let default(0) totalSize = catch ! => .err! in
-    headers.get("content-length").try
-      ->String.FromBytes
-      ->Nat.FromString
+  let totalSize = if {
+    not headers.get("content-length") is .ok str => 0,
+    not str->String.FromBytes->Nat.FromString is .ok num => 0,
+    else => num,
+  }
   yield.item((dest) .started totalSize)
 
   let bytesSinceLastEvent = 0
@@ -189,11 +190,12 @@ def NewProgressTracker: ProgressTracker = do {
   } in (numFiles, sumDownloaded, sumExpected) loop,
 
   .file(name) => do {
-    filesInProgress.entry(name)[default((Time.Now(!), 0, 0)!) (
-      startTime,
-      expected,
-      downloaded,
-    )!]
+    filesInProgress.entry(name)[entry]
+    if not entry is .ok(startTime, expected, downloaded)! => {
+      let startTime = Time.Now(!)
+      let expected = 0
+      let downloaded = 0
+    }
   } in case {
     .started(newExpected) => do {
       filesInProgress.put((startTime, newExpected, downloaded)!)
