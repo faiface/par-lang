@@ -8,12 +8,9 @@ type Event = (Os.Path) either {  // destination
 def Main =
   let rootPath = Os.Path(".").append("Downloads") in
   YieldDownloadRequests("127.0.0.1:3000", rootPath)  // : List<(Url, Os.Path)!>
-    ->Map1(box DownloadFile)                         // : List<List<Event>>
-    ->FanIn1                                         // : List<Event>
+    ->Map(type List<Event>)(box DownloadFile)        // : List<List<Event>>
+    ->FanIn                                          // : List<Event>
     ->ShowDownloadProgress(rootPath)                 // : !
-
-def Map1 = Map(type (Url, Os.Path)!, List<Event>)
-def FanIn1 = FanIn(type Event)
 
 dec YieldDownloadRequests : [String, Os.Path] List<(Url, Os.Path)!>
 def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
@@ -218,8 +215,8 @@ def NewProgressTracker: ProgressTracker = do {
 
 // ---
 
-dec FanIn : [type a] [List<List<a>>] List<a>
-def FanIn = [type a] [lists] chan yield {
+dec FanIn : <a>[List<List<a>>] List<a>
+def FanIn = <a>[lists] chan yield {
   let yield = Cell.Share(type dual List<a>)(yield, chan cell {
     lists.begin.case {
       .end! => {
@@ -246,8 +243,8 @@ def FanIn = [type a] [lists] chan yield {
   yield.end!
 }
 
-dec Map : [type a, b] [List<a>, box [a] b] List<b>
-def Map = [type a, b] [list, f] list.begin.case {
+dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
+def Map = <a>[list] [type b] [f] list.begin.case {
   .end! => .end!,
   .item(x) xs => .item(f(x)) xs.loop,
 }
