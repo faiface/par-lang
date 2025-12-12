@@ -13,6 +13,7 @@ pub struct Arena {
     nodes: Vec<Global>,
     strings: String,
     packages: Vec<OnceLock<Package>>,
+    redexes: Vec<(Global, Global)>,
 }
 
 impl Arena {
@@ -41,7 +42,7 @@ impl std::fmt::Display for Arena {
             }
             write!(f, "@{} = {}", idx, Showable(&lock.root, &shower))?;
             write!(f, "\n    $ {}", Showable(&lock.captures, &shower))?;
-            for (a, b) in &lock.redexes {
+            for (a, b) in self.get(lock.redexes.clone()) {
                 write!(
                     f,
                     "\n     {} ~ {}",
@@ -81,6 +82,17 @@ impl Indexable for [Global] {
     fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
         let start = store.nodes.len();
         store.nodes.extend_from_slice(data);
+        Index((start, data.len()))
+    }
+}
+impl Indexable for [(Global, Global)] {
+    type Store = (usize, usize);
+    fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
+        &store.redexes[index.0 .0..index.0 .0 + index.0 .1]
+    }
+    fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
+        let start = store.redexes.len();
+        store.redexes.extend_from_slice(data);
         Index((start, data.len()))
     }
 }

@@ -103,7 +103,7 @@ def TestSieve : [Test] ! =
 	} in !
 
 
-def TestCalcSieve: [Test] ! = [test] do {
+def Main: ! = do {
 	let console = Console.Open
 	let sieve = Sieve
 	let sum = 0
@@ -116,5 +116,7 @@ def TestCalcSieve: [Test] ! = [test] do {
 		}
 	}
 	sieve.end
+	console.print("Finished!")
+	console.print(sum->Nat.ToString)
 	console.close
 } in !
