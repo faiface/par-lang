@@ -578,7 +578,7 @@ impl Compiler {
                 );
                 self.compile_process(process)?;
             }
-            Command::Receive(target, _, _, process) => {
+            Command::Receive(target, _, _, process, _) => {
                 // < name[target] process >
                 // ==
                 // name = free

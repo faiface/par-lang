@@ -444,12 +444,12 @@ impl TypedHandle {
                 TypedReadback::BytesRequest(Box::new(move |value| self.provide_bytes(value)))
             }
 
-            Type::Pair(_, _, _) => {
+            Type::Pair(_, _, _, _) => {
                 let (t_handle, u_handle) = self.receive();
                 TypedReadback::Times(t_handle, u_handle)
             }
 
-            Type::Function(_, _, _) => {
+            Type::Function(_, _, _, _) => {
                 let (t_handle, u_handle) = self.send();
                 TypedReadback::Par(t_handle, u_handle)
             }
@@ -672,7 +672,7 @@ impl TypedHandle {
 
     pub fn send(mut self) -> (Self, Self) {
         self.prepare_for_readback();
-        let Type::Function(_, t, u) = self.tree.ty else {
+        let Type::Function(_, t, u, _) = self.tree.ty else {
             panic!("Incorrect type for `send`: {:?}", self.tree.ty);
         };
 
@@ -699,7 +699,7 @@ impl TypedHandle {
 
     pub fn receive(mut self) -> (Self, Self) {
         self.prepare_for_readback();
-        let Type::Pair(_, t, u) = self.tree.ty else {
+        let Type::Pair(_, t, u, _) = self.tree.ty else {
             panic!("Incorrect type for `receive`: {:?}", self.tree.ty);
         };
 
