@@ -182,6 +182,7 @@ impl Handle {
             // TODO fast path
             node => {
                 let (payload, payload_h) = HandleNode::linked_pair();
+                let chosen = self.arena.interned(chosen.as_str()).expect("Sending a non-interned string!");
                 let other = Node::Linear(Linear::Value(Value::Either(chosen, Box::new(payload))));
                 self.link(node, other);
                 self.node = payload_h;
@@ -194,7 +195,7 @@ impl Handle {
             unreachable!()
         };
         self.node = payload.into();
-        name
+        self.arena.get(name).into()
     }
 
     pub async fn break_(mut self) -> () {

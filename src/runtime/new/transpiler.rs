@@ -25,7 +25,8 @@ pub struct NetTranspiler {
     dest: Arena,
     num_vars: usize,
     variable_map: HashMap<usize, usize>,
-    package_map: HashMap<usize, PackagePtr>,
+    package_map: HashMap<usize, Index<OnceLock<Package>>>,
+    compiled_packages: HashMap<usize, Index<(Str, OnceLock<Package>)>,
 }
 
 #[derive(Clone)]
@@ -74,7 +75,6 @@ impl Transpiled {
     pub fn get_with_name(&self, name: &GlobalName) -> Option<PackagePtr> {
         Some(self.name_to_package.get(name).cloned()?)
     }
-
 
     pub fn new_runtime(&self) -> Runtime {
         Runtime::from(self.arena.clone())
@@ -165,19 +165,23 @@ impl NetTranspiler {
                 Global::Fanout(self.dest.alloc_clone(&s))
             }
             Tree::Signal(arc_str, tree) => Global::Value(GlobalValue::Either(
-                arc_str.clone(),
+                self.dest.intern(arc_str.as_str()),
                 self.transpile_tree_and_alloc(*tree),
             )),
             Tree::Choice(tree, hash_map, els) => {
+                let table: Vec<_> = hash_map
+                    .iter()
+                    .map(|(k, v)| {
+                        (self.dest.intern(k), {
+                            let package = self.package_map.get(v).unwrap().clone();
+                            self.dest.get(package).clone()
+                        })
+                    })
+                    .collect();
                 let tree = self.transpile_tree_and_alloc(*tree);
                 Global::Destruct(GlobalCont::Choice(
                     tree,
-                    Arc::new(
-                        hash_map
-                            .iter()
-                            .map(|(k, v)| (k.clone(), self.package_map.get(v).unwrap().clone()))
-                            .collect(),
-                    ),
+                    self.dest.alloc_clone(table.as_ref()),
                     els.map(|x| self.package_map.get(&x).unwrap().clone()),
                 ))
             }

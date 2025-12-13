@@ -1,9 +1,7 @@
 use std::fmt::Display;
 
 use crate::runtime::new::arena::Arena;
-use crate::runtime::new::runtime::{
-    Global, GlobalPtr, Linear, Node, Shared, SyncShared, Value,
-};
+use crate::runtime::new::runtime::{Global, GlobalPtr, Linear, Node, Shared, SyncShared, Value};
 
 pub struct Shower<'a> {
     pub arena: &'a Arena,
@@ -127,10 +125,10 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Global> {
                     Par(a, b) => {
                         write!(f, "[{}] {}", Showable(b, self.1), Showable(a, self.1))?;
                     }
-                    Choice(captures, hash_map, els) => {
+                    Choice(captures, branches, els) => {
                         write!(f, ".{{")?;
-                        for (k, v) in hash_map.iter() {
-                            write!(f, "{} @{} ", k, v.0)?;
+                        for (k, v) in self.1.arena.get(branches.clone()).iter() {
+                            write!(f, "{} @{} ", todo!(), todo!())?;
                         }
                         if let Some(els) = els {
                             write!(f, "else @{} ", els.0)?;
@@ -170,7 +168,12 @@ where
                 write!(f, "({}) {}", Showable(b, self.1), Showable(a, self.1))?;
             }
             Either(arc_str, payload) => {
-                write!(f, ".{} {}", arc_str, Showable(payload, self.1))?;
+                write!(
+                    f,
+                    ".{} {}",
+                    self.1.arena.get(arc_str.clone()),
+                    Showable(payload, self.1)
+                )?;
             }
             ExternalFn(_) => {
                 write!(f, "<external fn>")?;
