@@ -204,10 +204,12 @@ impl Type {
             Span::None,
             Box::new(t),
             Box::new(u),
-            vars.into_iter().map(|name| LocalName {
-                span: Span::None,
-                string: ArcStr::from(name),
-            }).collect(),
+            vars.into_iter()
+                .map(|name| LocalName {
+                    span: Span::None,
+                    string: ArcStr::from(name),
+                })
+                .collect(),
         )
     }
 
@@ -220,10 +222,12 @@ impl Type {
             Span::None,
             Box::new(t),
             Box::new(u),
-            vars.into_iter().map(|name| LocalName {
-                span: Span::None,
-                string: ArcStr::from(name),
-            }).collect(),
+            vars.into_iter()
+                .map(|name| LocalName {
+                    span: Span::None,
+                    string: ArcStr::from(name),
+                })
+                .collect(),
         )
     }
 
