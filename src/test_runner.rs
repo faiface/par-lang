@@ -169,15 +169,34 @@ pub fn run_test_file(
         })
         .collect();
 
+    // Look for definitions that start with
+
     for (name, _) in test_definitions {
-        let result = run_single_test(&checked, &rt_compiled, name.primary.clone());
+        let result = test_single_definition(&checked, &rt_compiled, name.primary.clone());
+        results.push(result);
+    }
+
+    let run_definitions: Vec<_> = checked
+        .definitions
+        .iter()
+        .filter(|(name, _)| name.primary.starts_with("Run") && name.primary != "Run")
+        .filter(|(name, _)| {
+            filter
+                .as_ref()
+                .map(|f| name.primary.contains(f))
+                .unwrap_or(true)
+        })
+        .collect();
+
+    for (name, _) in run_definitions {
+        let result = run_single_definition(&checked, &rt_compiled, name.primary.clone());
         results.push(result);
     }
 
     results
 }
 
-fn run_single_test(
+fn test_single_definition(
     program: &crate::par::program::CheckedModule,
     rt_compiled: &Compiled,
     test_name: String,
@@ -208,6 +227,55 @@ fn run_single_test(
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
 
         run_test_with_test_type(program, rt_compiled, name, &ty).await
+    });
+
+    let duration = start.elapsed();
+    let final_result = match result {
+        Ok(status) => status,
+        Err(msg) => TestStatus::Failed(msg),
+    };
+
+    TestResult {
+        name: test_name,
+        duration,
+        status: final_result,
+    }
+}
+
+fn run_single_definition(
+    program: &crate::par::program::CheckedModule,
+    rt_compiled: &Compiled,
+    test_name: String,
+) -> TestResult {
+    let start = Instant::now();
+
+    let runtime = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return TestResult {
+                name: test_name,
+                duration: start.elapsed(),
+                status: TestStatus::Failed(format!("Failed to create runtime: {}", e)),
+            };
+        }
+    };
+
+    let result = runtime.block_on(async {
+        let name = program
+            .definitions
+            .iter()
+            .find(|(n, _)| n.primary == test_name)
+            .map(|(n, _)| n)
+            .ok_or_else(|| format!("Test definition '{}' not found", test_name))?;
+
+        let ty = rt_compiled
+            .get_type_of(name)
+            .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
+
+        let (handle, fut) = rt_compiled.start_and_instantiate(name).await;
+        handle.continue_().await;
+        fut.await;
+        Ok(TestStatus::PassedWithNoAssertions)
     });
 
     let duration = start.elapsed();
