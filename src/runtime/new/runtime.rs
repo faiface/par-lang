@@ -289,12 +289,15 @@ pub trait Linker {
             ))),
         };
         let package = package.get().unwrap();
-        self.arena().get(package.redexes.clone()).iter().for_each(|(a, b)| {
-            self.link(
-                Node::Global(instance.clone(), a.clone()),
-                Node::Global(instance.clone(), b.clone()),
-            );
-        });
+        self.arena()
+            .get(package.redexes.clone())
+            .iter()
+            .for_each(|(a, b)| {
+                self.link(
+                    Node::Global(instance.clone(), a.clone()),
+                    Node::Global(instance.clone(), b.clone()),
+                );
+            });
         (
             Node::Global(instance.clone(), package.root.clone()),
             Node::Global(instance.clone(), package.captures.clone()),
@@ -461,6 +464,20 @@ impl Runtime {
         match (a, b) {
             sym!(Node::Global(instance, Global::Variable(index)), value) => {
                 self.set_var(instance, index, value)
+            }
+
+            sym!(
+                Node::Global(
+                    instance,
+                    Global::Package(package, captures_in, FanBehavior::Expand)
+                ),
+                other
+            ) => {
+                let root = self.instantiate_with_captures(
+                    package,
+                    Node::Global(instance, self.arena.get(captures_in).clone()),
+                );
+                self.link(root, other);
             }
             sym!(Node::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
