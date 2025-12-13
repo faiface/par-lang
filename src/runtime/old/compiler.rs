@@ -811,7 +811,6 @@ impl IcCompiled {
         self.id_to_package.get(id).cloned()
     }
 
-
     pub fn create_net(&self) -> Net {
         let mut net = Net::default();
         net.packages = self.id_to_package.clone();

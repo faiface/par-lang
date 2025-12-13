@@ -3,10 +3,10 @@ use std::sync::Arc;
 use futures::FutureExt;
 
 use crate::par::{
-        process,
-        program::{Definition, Module},
-        types::Type,
-    };
+    process,
+    program::{Definition, Module},
+    types::Type,
+};
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

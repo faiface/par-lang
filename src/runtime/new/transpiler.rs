@@ -75,7 +75,6 @@ impl Transpiled {
         Some(self.name_to_package.get(name).cloned()?)
     }
 
-
     pub fn new_runtime(&self) -> Runtime {
         Runtime::from(self.arena.clone())
     }

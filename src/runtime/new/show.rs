@@ -1,9 +1,7 @@
 use std::fmt::Display;
 
 use crate::runtime::new::arena::Arena;
-use crate::runtime::new::runtime::{
-    Global, GlobalPtr, Linear, Node, Shared, SyncShared, Value,
-};
+use crate::runtime::new::runtime::{Global, GlobalPtr, Linear, Node, Shared, SyncShared, Value};
 
 pub struct Shower<'a> {
     pub arena: &'a Arena,
