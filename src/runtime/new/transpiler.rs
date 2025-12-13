@@ -122,6 +122,7 @@ impl NetTranspiler {
             .into_iter()
             .map(|(a, b)| (self.transpile_tree(a), self.transpile_tree(b)))
             .collect();
+        let redexes: Index<_> = self.dest.alloc_clone(redexes.as_ref());
         let package = Package {
             root: root,
             captures: captures,

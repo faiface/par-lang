@@ -126,7 +126,7 @@ pub struct Package {
 
     pub debug_name: String,
     // TODO: Store this inline in the arena.
-    pub redexes: Vec<(Global, Global)>,
+    pub redexes: Index<[(Global, Global)]>,
 }
 
 #[derive(Clone, Debug)]
@@ -289,7 +289,7 @@ pub trait Linker {
             ))),
         };
         let package = package.get().unwrap();
-        package.redexes.iter().for_each(|(a, b)| {
+        self.arena().get(package.redexes.clone()).iter().for_each(|(a, b)| {
             self.link(
                 Node::Global(instance.clone(), a.clone()),
                 Node::Global(instance.clone(), b.clone()),
