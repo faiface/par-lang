@@ -268,7 +268,7 @@ fn run_single_definition(
             .map(|(n, _)| n)
             .ok_or_else(|| format!("Test definition '{}' not found", test_name))?;
 
-        let ty = rt_compiled
+        let _ty = rt_compiled
             .get_type_of(name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
 

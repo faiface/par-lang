@@ -13,7 +13,7 @@ use std::{
     fmt::{self, Write},
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 #[derive(Clone, Debug)]
@@ -41,7 +41,8 @@ pub enum Process<Typ> {
         command: Command<Typ>,
     },
     Telltypes(Span, Arc<Self>),
-    MergePoint(Span, Arc<Mutex<ProcessMergePoint>>),
+    Block(Span, usize, Arc<Self>, Arc<Self>),
+    Goto(Span, usize, Captures),
 }
 
 #[derive(Clone, Debug)]
@@ -76,15 +77,6 @@ pub enum Command<Typ> {
 }
 
 #[derive(Clone, Debug)]
-pub enum ProcessMergePoint {
-    Unchecked {
-        paths: IndexMap<Span, Option<IndexMap<LocalName, Type>>>,
-        process: Arc<Process<()>>,
-    },
-    Checked(Arc<Process<Type>>),
-}
-
-#[derive(Clone, Debug)]
 pub enum Expression<Typ> {
     Global(Span, GlobalName, Typ),
     Variable(Span, LocalName, Typ, VariableUsage),
@@ -112,7 +104,8 @@ impl<Typ> Spanning for Process<Typ> {
             Self::Let { span, .. } => span.clone(),
             Self::Do { span, .. } => span.clone(),
             Self::Telltypes(span, ..) => span.clone(),
-            Self::MergePoint(span, ..) => span.clone(),
+            Self::Block(span, _, _, _) => span.clone(),
+            Self::Goto(span, _, _) => span.clone(),
         }
     }
 }
@@ -166,6 +159,7 @@ impl Process<()> {
     pub fn fix_captures(
         &self,
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
+        blocks: &IndexMap<usize, Captures>,
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Let {
@@ -176,9 +170,9 @@ impl Process<()> {
                 value: expression,
                 then: process,
             } => {
-                let (process, mut caps) = process.fix_captures(loop_points);
+                let (process, mut caps) = process.fix_captures(loop_points, blocks);
                 caps.remove(name);
-                let (expression, caps1) = expression.fix_captures(loop_points, &caps);
+                let (expression, caps1) = expression.fix_captures(loop_points, blocks, &caps);
                 caps.extend(caps1);
                 (
                     Arc::new(Self::Let {
@@ -199,7 +193,7 @@ impl Process<()> {
                 typ,
                 command,
             } => {
-                let (command, mut caps) = command.fix_captures(name, loop_points);
+                let (command, mut caps) = command.fix_captures(name, loop_points, blocks);
                 let usage = if caps.contains(name) {
                     VariableUsage::Copy
                 } else {
@@ -218,22 +212,25 @@ impl Process<()> {
                 )
             }
             Self::Telltypes(span, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
+                let (process, caps) = process.fix_captures(loop_points, blocks);
                 (Arc::new(Self::Telltypes(span.clone(), process)), caps)
             }
-            Self::MergePoint(span, merge) => {
-                let mut guard = merge.lock().unwrap();
-                match &mut *guard {
-                    ProcessMergePoint::Unchecked { paths: _, process } => {
-                        let (fixed, caps) = process.fix_captures(loop_points);
-                        *process = fixed;
-                        (
-                            Arc::new(Self::MergePoint(span.clone(), Arc::clone(merge))),
-                            caps,
-                        )
-                    }
-                    ProcessMergePoint::Checked(_) => unreachable!("fix_captures after typecheck"),
-                }
+            Self::Block(span, index, body, process) => {
+                let (body, body_caps) = body.fix_captures(loop_points, blocks);
+                let mut blocks = blocks.clone();
+                blocks.insert(*index, body_caps);
+                let (process, caps) = process.fix_captures(loop_points, &blocks);
+                (
+                    Arc::new(Self::Block(span.clone(), *index, body, process)),
+                    caps,
+                )
+            }
+            Self::Goto(span, index, _) => {
+                let caps = blocks.get(index).cloned().unwrap();
+                (
+                    Arc::new(Self::Goto(span.clone(), *index, caps.clone())),
+                    caps,
+                )
             }
         }
     }
@@ -343,15 +340,14 @@ impl Process<()> {
             Self::Telltypes(span, process) => {
                 Arc::new(Self::Telltypes(span.clone(), process.optimize()))
             }
-            Self::MergePoint(span, merge) => {
-                let mut guard = merge.lock().unwrap();
-                match &mut *guard {
-                    ProcessMergePoint::Unchecked { paths: _, process } => {
-                        *process = process.optimize();
-                    }
-                    ProcessMergePoint::Checked(_) => {}
-                }
-                Arc::new(Self::MergePoint(span.clone(), Arc::clone(merge)))
+            Self::Block(span, index, body, process) => Arc::new(Self::Block(
+                span.clone(),
+                *index,
+                body.optimize(),
+                process.optimize(),
+            )),
+            Self::Goto(span, index, caps) => {
+                Arc::new(Self::Goto(span.clone(), *index, caps.clone()))
             }
         }
     }
@@ -402,11 +398,11 @@ impl Process<Type> {
             Process::Telltypes(_, process) => {
                 process.types_at_spans(program, consume);
             }
-            Process::MergePoint(_, merge) => {
-                if let ProcessMergePoint::Checked(process) = &*merge.lock().unwrap() {
-                    process.types_at_spans(program, consume);
-                }
+            Process::Block(_, _, body, process) => {
+                body.types_at_spans(program, consume);
+                process.types_at_spans(program, consume);
             }
+            Process::Goto(_, _, _) => {}
         }
     }
 }
@@ -416,20 +412,22 @@ impl Command<()> {
         &self,
         subject: &LocalName,
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
+        blocks: &IndexMap<usize, Captures>,
     ) -> (Self, Captures) {
         match self {
             Self::Link(expression) => {
-                let (expression, caps) = expression.fix_captures(loop_points, &Captures::new());
+                let (expression, caps) =
+                    expression.fix_captures(loop_points, blocks, &Captures::new());
                 (Self::Link(expression), caps)
             }
             Self::Send(argument, process) => {
-                let (process, mut caps) = process.fix_captures(loop_points);
-                let (argument, caps1) = argument.fix_captures(loop_points, &caps);
+                let (process, mut caps) = process.fix_captures(loop_points, blocks);
+                let (argument, caps1) = argument.fix_captures(loop_points, blocks, &caps);
                 caps.extend(caps1);
                 (Self::Send(argument, process), caps)
             }
             Self::Receive(parameter, annotation, typ, process, vars) => {
-                let (process, mut caps) = process.fix_captures(loop_points);
+                let (process, mut caps) = process.fix_captures(loop_points, blocks);
                 caps.remove(parameter);
                 (
                     Self::Receive(
@@ -443,19 +441,19 @@ impl Command<()> {
                 )
             }
             Self::Signal(chosen, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
+                let (process, caps) = process.fix_captures(loop_points, blocks);
                 (Self::Signal(chosen.clone(), process), caps)
             }
             Self::Case(branches, processes, else_process, lenient) => {
                 let mut fixed_processes = Vec::new();
                 let mut caps = Captures::new();
                 for process in processes {
-                    let (process, caps1) = process.fix_captures(loop_points);
+                    let (process, caps1) = process.fix_captures(loop_points, blocks);
                     fixed_processes.push(process);
                     caps.extend(caps1);
                 }
                 let fixed_else = else_process.clone().map(|process| {
-                    let (process, caps1) = process.fix_captures(loop_points);
+                    let (process, caps1) = process.fix_captures(loop_points, blocks);
                     caps.extend(caps1);
                     process
                 });
@@ -471,7 +469,7 @@ impl Command<()> {
             }
             Self::Break => (Self::Break, Captures::new()),
             Self::Continue(process) => {
-                let (process, caps) = process.fix_captures(loop_points);
+                let (process, caps) = process.fix_captures(loop_points, blocks);
                 (Self::Continue(process), caps)
             }
             Self::Begin {
@@ -480,11 +478,11 @@ impl Command<()> {
                 captures: _,
                 body: process,
             } => {
-                let (_, mut loop_caps) = process.fix_captures(loop_points);
+                let (_, mut loop_caps) = process.fix_captures(loop_points, blocks);
                 loop_caps.remove(subject);
                 let mut loop_points = loop_points.clone();
                 loop_points.insert(label.clone(), (subject.clone(), loop_caps.clone()));
-                let (process, caps) = process.fix_captures(&loop_points);
+                let (process, caps) = process.fix_captures(&loop_points, blocks);
                 (
                     Self::Begin {
                         unfounded: unfounded.clone(),
@@ -506,11 +504,11 @@ impl Command<()> {
                 )
             }
             Self::SendType(argument, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
+                let (process, caps) = process.fix_captures(loop_points, blocks);
                 (Self::SendType(argument.clone(), process), caps)
             }
             Self::ReceiveType(parameter, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
+                let (process, caps) = process.fix_captures(loop_points, blocks);
                 (Self::ReceiveType(parameter.clone(), process), caps)
             }
         }
@@ -532,7 +530,7 @@ impl<Typ> Command<Typ> {
                 vars
             }
             Command::Signal(_, process) => process.free_variables(),
-            Command::Case(_branches, processes, else_process, _) => {
+            Command::Case(_, processes, else_process, _) => {
                 let mut vars: IndexSet<LocalName> =
                     processes.iter().flat_map(|p| p.free_variables()).collect();
                 if let Some(p) = else_process {
@@ -547,9 +545,9 @@ impl<Typ> Command<Typ> {
                 vars.extend(body.free_variables());
                 vars
             }
-            Command::Loop(_label, _driver, captures) => captures.names.keys().cloned().collect(),
-            Command::SendType(_argument, process) => process.free_variables(),
-            Command::ReceiveType(_parameter, process) => process.free_variables(),
+            Command::Loop(_, _, captures) => captures.names.keys().cloned().collect(),
+            Command::SendType(_, process) => process.free_variables(),
+            Command::ReceiveType(_, process) => process.free_variables(),
         }
     }
 }
@@ -608,6 +606,7 @@ impl Expression<()> {
     pub fn fix_captures(
         &self,
         loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
+        blocks: &IndexMap<usize, Captures>,
         later_captures: &Captures,
     ) -> (Arc<Self>, Captures) {
         match self {
@@ -632,7 +631,8 @@ impl Expression<()> {
                 )
             }
             Self::Box(span, _, expression, typ) => {
-                let (expression, mut caps) = expression.fix_captures(loop_points, later_captures);
+                let (expression, mut caps) =
+                    expression.fix_captures(loop_points, blocks, later_captures);
                 for (name, (_span, usage)) in caps.names.iter_mut() {
                     if later_captures.contains(name) {
                         *usage = VariableUsage::Copy;
@@ -659,7 +659,7 @@ impl Expression<()> {
                 process,
                 ..
             } => {
-                let (process, mut caps) = process.fix_captures(loop_points);
+                let (process, mut caps) = process.fix_captures(loop_points, blocks);
                 caps.remove(channel);
                 for (name, (_span, usage)) in caps.names.iter_mut() {
                     if later_captures.contains(name) {
@@ -852,13 +852,11 @@ impl Process<()> {
                 command,
             } => command.qualify(module),
             Self::Telltypes(_span, process) => process.qualify(module),
-            Self::MergePoint(_, merge) => {
-                let mut guard = merge.lock().unwrap();
-                match &mut *guard {
-                    ProcessMergePoint::Unchecked { process, .. } => process.qualify(module),
-                    ProcessMergePoint::Checked(_) => {}
-                }
+            Self::Block(_, _, body, process) => {
+                body.qualify(module);
+                process.qualify(module);
             }
+            Self::Goto(_, _, _) => {}
         }
     }
 }
@@ -950,13 +948,8 @@ impl<Typ> Process<Typ> {
                 vars
             }
             Process::Telltypes(_, process) => process.free_variables(),
-            Process::MergePoint(_, merge) => {
-                let guard = merge.lock().unwrap();
-                match &*guard {
-                    ProcessMergePoint::Unchecked { process, .. } => process.free_variables(),
-                    ProcessMergePoint::Checked(process) => process.free_variables(),
-                }
-            }
+            Process::Block(_, _, _body, process) => process.free_variables(),
+            Process::Goto(_, _, caps) => caps.names.keys().cloned().collect(),
         }
     }
 
@@ -1095,12 +1088,19 @@ impl<Typ> Process<Typ> {
                 write!(f, "telltypes")?;
                 process.pretty(f, indent)
             }
-            Self::MergePoint(_, merge) => {
-                let guard = merge.lock().unwrap();
-                match &*guard {
-                    ProcessMergePoint::Unchecked { process, .. } => process.pretty(f, indent),
-                    ProcessMergePoint::Checked(process) => process.pretty(f, indent),
-                }
+
+            Self::Block(_, index, body, process) => {
+                indentation(f, indent)?;
+                write!(f, "block@{} {{", index)?;
+                body.pretty(f, indent + 1)?;
+                indentation(f, indent)?;
+                write!(f, "}}")?;
+                process.pretty(f, indent)
+            }
+
+            Self::Goto(_, index, _) => {
+                indentation(f, indent)?;
+                write!(f, "goto@{}", index)
             }
         }
     }

@@ -14,6 +14,7 @@ pub struct Context {
     current_deps: IndexSet<GlobalName>,
     pub variables: IndexMap<LocalName, Type>,
     pub loop_points: IndexMap<Option<LocalName>, (Type, Arc<IndexMap<LocalName, Type>>)>,
+    pub blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -37,6 +38,7 @@ impl Context {
             current_deps: IndexSet::new(),
             variables: IndexMap::new(),
             loop_points: IndexMap::new(),
+            blocks: IndexMap::new(),
         }
     }
 
@@ -62,6 +64,10 @@ impl Context {
             ));
         }
 
+        let original_variables = self.variables.drain(..).collect();
+        let original_loop_points = self.loop_points.drain(..).collect();
+        let original_blocks = self.blocks.drain(..).collect();
+
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
             Some((_, declared_type)) => {
                 self.type_defs.validate_type(&declared_type)?;
@@ -75,6 +81,10 @@ impl Context {
                 (expr, typ)
             }
         };
+
+        self.variables = original_variables;
+        self.loop_points = original_loop_points;
+        self.blocks = original_blocks;
 
         self.checked_definitions.write().unwrap().insert(
             name_def,
@@ -125,6 +135,7 @@ impl Context {
             current_deps: self.current_deps.clone(),
             variables: IndexMap::new(),
             loop_points: self.loop_points.clone(),
+            blocks: self.blocks.clone(),
         }
     }
 

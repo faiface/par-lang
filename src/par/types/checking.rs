@@ -1,5 +1,5 @@
 use super::super::language::LocalName;
-use super::super::process::{self, Command, Expression, Process};
+use super::super::process::{Command, Expression, Process};
 use super::core::{LoopId, Operation, Type};
 use super::error::TypeError;
 use super::lattice::union_types;
@@ -79,35 +79,42 @@ impl Context {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
 
-            Process::MergePoint(span, merge) => {
-                let mut guard = merge.lock().unwrap();
-                match &mut *guard {
-                    process::ProcessMergePoint::Checked(_) => {
-                        panic!("Merge point already checked before visiting all paths")
-                    }
-                    process::ProcessMergePoint::Unchecked { paths, process } => {
-                        let entry = paths
-                            .get_mut(span)
-                            .expect("Merge point path should have been registered");
-                        if entry.is_some() {
-                            panic!("Merge point path already filled");
-                        }
-                        *entry = Some(self.variables.clone());
-
-                        if paths.values().any(|p| p.is_none()) {
-                            return Ok(Arc::new(Process::MergePoint(
-                                span.clone(),
-                                Arc::clone(merge),
-                            )));
-                        }
-
-                        let free = process.free_variables();
-                        self.variables = merge_path_contexts(&self.type_defs, span, paths, &free)?;
-                        let typed_process = self.check_process(process)?;
-                        *guard = process::ProcessMergePoint::Checked(typed_process.clone());
-                        Ok(typed_process)
-                    }
+            Process::Block(span, index, body, then) => {
+                if self.blocks.insert(*index, Vec::new()).is_some() {
+                    panic!("block {} already defined", index);
                 }
+                let typed_then = self.check_process(then)?;
+                let contexts = self
+                    .blocks
+                    .shift_remove(index)
+                    .expect("block should have been registered");
+                if contexts.is_empty() {
+                    panic!(
+                        "block has no incoming paths at index {} span {:?}",
+                        index, span
+                    );
+                }
+                let free = body.free_variables();
+                let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
+
+                let saved = self.variables.clone();
+                self.variables = merged;
+                let typed_body = self.check_process(body)?;
+                self.variables = saved;
+
+                Ok(Arc::new(Process::Block(
+                    span.clone(),
+                    *index,
+                    typed_body,
+                    typed_then,
+                )))
+            }
+
+            Process::Goto(span, index, caps) => {
+                let entry = self.blocks.get_mut(index).unwrap();
+                entry.push(self.variables.clone());
+                self.variables.clear();
+                Ok(Arc::new(Process::Goto(span.clone(), *index, caps.clone())))
             }
         }
     }
@@ -333,7 +340,7 @@ impl Context {
 
                 let mut remaining_branches = branch_types.clone();
 
-                let original_context = self.clone();
+                let mut original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut inferred_type: Option<Type> = None;
 
@@ -362,6 +369,8 @@ impl Context {
                         }
                         (t1, _) => inferred_type = t1,
                     }
+
+                    original_context.blocks = self.blocks.clone();
                 }
 
                 let typed_else_process = match else_process {
@@ -690,35 +699,42 @@ impl Context {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
 
-            Process::MergePoint(span, merge) => {
-                let mut guard = merge.lock().unwrap();
-                match &mut *guard {
-                    process::ProcessMergePoint::Checked(_) => {
-                        panic!("Merge point already checked before visiting all paths")
-                    }
-                    process::ProcessMergePoint::Unchecked { paths, process } => {
-                        let entry = paths
-                            .get_mut(span)
-                            .expect("Merge point path should have been registered");
-                        if entry.is_some() {
-                            panic!("Merge point path already filled");
-                        }
-                        *entry = Some(self.variables.clone());
-
-                        if paths.values().any(|p| p.is_none()) {
-                            return Ok((
-                                Arc::new(Process::MergePoint(span.clone(), Arc::clone(merge))),
-                                Type::choice(vec![]),
-                            ));
-                        }
-
-                        let free = process.free_variables();
-                        self.variables = merge_path_contexts(&self.type_defs, span, paths, &free)?;
-                        let typed_process = self.infer_process(process, inference_subject)?;
-                        *guard = process::ProcessMergePoint::Checked(typed_process.0.clone());
-                        Ok(typed_process)
-                    }
+            Process::Block(span, index, body, then) => {
+                if self.blocks.insert(*index, Vec::new()).is_some() {
+                    panic!("block {} already defined", index);
                 }
+                let (typed_then, then_type) = self.infer_process(then, inference_subject)?;
+                let contexts = self
+                    .blocks
+                    .shift_remove(index)
+                    .expect("block should have been registered");
+                if contexts.is_empty() {
+                    panic!("block has no incoming paths");
+                }
+                let free = body.free_variables();
+                let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
+
+                let saved = self.variables.clone();
+                self.variables = merged;
+                let (typed_body, body_type) = self.infer_process(body, inference_subject)?;
+                self.variables = saved;
+
+                let final_type = intersect_types(&self.type_defs, span, &then_type, &body_type)?;
+
+                Ok((
+                    Arc::new(Process::Block(span.clone(), *index, typed_body, typed_then)),
+                    final_type,
+                ))
+            }
+
+            Process::Goto(span, index, caps) => {
+                let entry = self.blocks.get_mut(index).unwrap();
+                entry.push(self.variables.clone());
+                self.variables.clear();
+                Ok((
+                    Arc::new(Process::Goto(span.clone(), *index, caps.clone())),
+                    Type::choice(vec![]),
+                ))
             }
         }
     }
@@ -796,7 +812,7 @@ impl Context {
                     ));
                 }
 
-                let original_context = self.clone();
+                let mut original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut branch_types = BTreeMap::new();
 
@@ -805,6 +821,7 @@ impl Context {
                     let (process, typ) = self.infer_process(process, subject)?;
                     typed_processes.push(process);
                     branch_types.insert(branch.clone(), typ);
+                    original_context.blocks = self.blocks.clone();
                 }
 
                 if *lenient {
@@ -1147,16 +1164,12 @@ impl Context {
 fn merge_path_contexts(
     typedefs: &TypeDefs,
     span: &Span,
-    paths: &IndexMap<Span, Option<IndexMap<LocalName, Type>>>,
+    paths: &Vec<IndexMap<LocalName, Type>>,
     free_vars: &IndexSet<LocalName>,
 ) -> Result<IndexMap<LocalName, Type>, TypeError> {
-    let maps: Vec<IndexMap<LocalName, Type>> = paths
-        .values()
-        .map(|p| p.as_ref().expect("all paths filled").clone())
-        .collect();
     // Collect all variable names present in any path.
     let mut all_names: IndexSet<LocalName> = IndexSet::new();
-    for map in &maps {
+    for map in paths {
         all_names.extend(map.keys().cloned());
     }
 
@@ -1165,7 +1178,7 @@ fn merge_path_contexts(
         let used = free_vars.contains(&name);
         let mut present_types: Vec<Type> = Vec::new();
         let mut missing = false;
-        for map in &maps {
+        for map in paths {
             if let Some(t) = map.get(&name) {
                 present_types.push(t.clone());
             } else {

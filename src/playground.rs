@@ -549,6 +549,8 @@ fn par_syntax() -> Syntax {
         comment_multiline: [r#"/*"#, r#"*/"#],
         hyperlinks: BTreeSet::from([]),
         keywords: BTreeSet::from([
+            "block",
+            "goto",
             "dec",
             "def",
             "type",

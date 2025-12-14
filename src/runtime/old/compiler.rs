@@ -8,7 +8,7 @@ use super::net::{Net, Tree};
 use crate::par::process::VariableUsage;
 use crate::par::{
     language::{GlobalName, LocalName},
-    process::{Captures, Command, Expression, Process, ProcessMergePoint},
+    process::{Captures, Command, Expression, Process},
     types::Type,
 };
 use crate::runtime::old::net::FanBehavior;
@@ -196,6 +196,7 @@ pub struct Compiler {
     id_to_package: Vec<Net>,
     lazy_redexes: Vec<(Tree, Tree)>,
     compile_global_stack: IndexSet<GlobalName>,
+    blocks: IndexMap<usize, Arc<Process<Type>>>,
 }
 
 impl Tree {
@@ -556,12 +557,28 @@ impl Compiler {
             } => self.compile_command(span, name.clone(), usage, typ.clone(), command),
 
             Process::Telltypes(_, _) => unreachable!(),
-            Process::MergePoint(_, merge) => {
-                if let ProcessMergePoint::Checked(process) = &*merge.lock().unwrap() {
-                    self.compile_process(process)
-                } else {
-                    unreachable!("Unchecked merge point reached during compilation")
+
+            Process::Block(_, index, body, process) => {
+                let prev = self.blocks.insert(*index, body.clone());
+                self.compile_process(process)?;
+                match prev {
+                    Some(old) => {
+                        self.blocks.insert(*index, old);
+                    }
+                    None => {
+                        self.blocks.shift_remove(index);
+                    }
                 }
+                Ok(())
+            }
+
+            Process::Goto(_, index, _) => {
+                let body = self
+                    .blocks
+                    .get(index)
+                    .expect("goto target missing during compilation")
+                    .clone();
+                self.compile_process(&body)
             }
         }
     }
@@ -831,6 +848,7 @@ impl IcCompiled {
             id_to_package: Default::default(),
             compile_global_stack: Default::default(),
             lazy_redexes: vec![],
+            blocks: IndexMap::new(),
         };
 
         for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {

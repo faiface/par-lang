@@ -121,7 +121,11 @@ impl Module<Arc<process::Expression<()>>> {
                             name,
                             expression: compiled
                                 .optimize()
-                                .fix_captures(&IndexMap::new(), &process::Captures::new())
+                                .fix_captures(
+                                    &IndexMap::new(),
+                                    &IndexMap::new(),
+                                    &process::Captures::new(),
+                                )
                                 .0,
                         })
                 },

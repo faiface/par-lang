@@ -69,11 +69,10 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
   let try@clearResp file = Os.CreateNewFile(dest)
   catch@clearFile err => { file.close; throw err }
 
-  let totalSize = if {
-    not headers.get("content-length") is .ok str => 0,
-    not str->String.FromBytes->Nat.FromString is .ok num => 0,
-    else => num,
-  }
+  let default(0) totalSize = catch ! => .err! in
+    headers.get("content-length").try
+      ->String.FromBytes
+      ->Nat.FromString
   yield.item((dest) .started totalSize)
 
   let bytesSinceLastEvent = 0
