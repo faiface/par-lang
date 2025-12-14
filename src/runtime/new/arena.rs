@@ -30,6 +30,13 @@ impl Arena {
     pub fn alloc_clone<T: Indexable + ?Sized>(&mut self, data: &T) -> Index<T> {
         T::alloc_clone(self, data)
     }
+    pub fn memory_size(&self) -> usize {
+        self.nodes.len() * size_of::<Global>()
+            + self.strings.len()
+            + self.packages.len() * size_of::<OnceLock<Package>>()
+            + self.redexes.len() * size_of::<(Global, Global)>()
+            + self.case_branches.len() * size_of::<(Index<str>, OnceLock<Package>)>()
+    }
     pub fn empty_string(&self) -> Index<str> {
         Index((0, 0))
     }
