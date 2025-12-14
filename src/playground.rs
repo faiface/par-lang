@@ -11,14 +11,14 @@ use crate::par::build_result::BuildConfig;
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
-use std::collections::HashMap;
-use crate::par::{types::Type, language::GlobalName};
+use crate::par::build_result::BuildResult;
+use crate::par::{language::GlobalName, types::Type};
 use crate::{
     location::FileName, par::program::CheckedModule, readback::Element,
     runtime::old::compiler::IcCompiled, runtime::old::readback::TypedHandle, spawn::TokioSpawn,
 };
-use crate::par::build_result::BuildResult;
 use core::time::Duration;
+use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
@@ -377,7 +377,7 @@ impl Playground {
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
         compiled: &IcCompiled,
-        name_to_ty: &HashMap<GlobalName, Type>
+        name_to_ty: &HashMap<GlobalName, Type>,
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
@@ -471,7 +471,7 @@ impl Playground {
                                     ui,
                                     checked.clone(),
                                     ic_compiled,
-                                    name_to_ty
+                                    name_to_ty,
                                 );
                             })
                         });

@@ -36,15 +36,16 @@ impl Compiled {
         use_new: bool,
     ) -> Result<Self, crate::runtime::RuntimeCompilerError> {
         Ok(Self {
-            backend:
-            if use_new {
+            backend: if use_new {
                 Backend::New(Transpiled::compile_file(module)?)
             } else {
                 Backend::Old(IcCompiled::compile_file(module)?)
             },
-            name_to_ty: module.declarations.iter().map(|(a, b)| {
-                (a.clone(), b.typ.clone())
-            }).collect(),
+            name_to_ty: module
+                .declarations
+                .iter()
+                .map(|(a, b)| (a.clone(), b.typ.clone()))
+                .collect(),
         })
     }
     pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
