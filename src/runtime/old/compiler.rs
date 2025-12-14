@@ -654,7 +654,7 @@ impl Compiler {
                 self.bind_variable(name, v0)?;
                 self.compile_process(process)?;
             }
-            Command::Case(names, processes, else_process, _) => {
+            Command::Case(names, processes, else_process) => {
                 self.context.unguarded_loop_labels.clear();
                 let old_tree = self.use_variable(&name, usage, true)?;
                 // Multiplex all other variables in the context.

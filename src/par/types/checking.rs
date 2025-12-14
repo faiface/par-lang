@@ -329,7 +329,7 @@ impl Context {
                 (Command::Signal(chosen.clone(), process), inferred_types)
             }
 
-            Command::Case(branches, processes, else_process, lenient) => {
+            Command::Case(branches, processes, else_process) => {
                 let Type::Either(_, branch_types) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -348,15 +348,11 @@ impl Context {
                     *self = original_context.clone();
 
                     let Some(branch_type) = remaining_branches.remove(branch) else {
-                        if *lenient {
-                            continue;
-                        } else {
-                            return Err(TypeError::RedundantBranch(
-                                span.clone(),
-                                branch.clone(),
-                                typ.clone(),
-                            ));
-                        }
+                        return Err(TypeError::RedundantBranch(
+                            span.clone(),
+                            branch.clone(),
+                            typ.clone(),
+                        ));
                     };
                     self.put(span, object.clone(), branch_type)?;
                     let (process, inferred_in_branch) = analyze_process(self, process)?;
@@ -396,16 +392,12 @@ impl Context {
                     None => None,
                 };
 
-                if !*lenient {
-                    if let Some((missing, _)) = remaining_branches.pop_first() {
-                        return Err(TypeError::MissingBranch(
-                            span.clone(),
-                            missing.clone(),
-                            typ.clone(),
-                        ));
-                    }
-                } else {
-                    *self = original_context;
+                if let Some((missing, _)) = remaining_branches.pop_first() {
+                    return Err(TypeError::MissingBranch(
+                        span.clone(),
+                        missing.clone(),
+                        typ.clone(),
+                    ));
                 }
 
                 (
@@ -413,7 +405,6 @@ impl Context {
                         Arc::clone(branches),
                         Box::from(typed_processes),
                         typed_else_process,
-                        *lenient,
                     ),
                     inferred_type,
                 )
@@ -804,7 +795,7 @@ impl Context {
                 )
             }
 
-            Command::Case(branches, processes, else_process, lenient) => {
+            Command::Case(branches, processes, else_process) => {
                 if else_process.is_some() {
                     return Err(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
@@ -824,17 +815,8 @@ impl Context {
                     original_context.blocks = self.blocks.clone();
                 }
 
-                if *lenient {
-                    *self = original_context;
-                }
-
                 (
-                    Command::Case(
-                        Arc::clone(branches),
-                        Box::from(typed_processes),
-                        None,
-                        *lenient,
-                    ),
+                    Command::Case(Arc::clone(branches), Box::from(typed_processes), None),
                     Type::Either(span.clone(), branch_types),
                 )
             }

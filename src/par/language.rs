@@ -296,7 +296,6 @@ pub enum Command {
         CommandBranches,
         Option<Box<CommandBranch>>,
         Option<Box<Process>>,
-        bool,
     ),
     Break(Span),
     Continue(Span, Box<Process>),
@@ -1281,7 +1280,7 @@ impl Construct {
                     name: LocalName::result(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process, false),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1476,7 +1475,7 @@ impl Apply {
                     name: LocalName::object(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process, false),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1827,13 +1826,7 @@ impl Command {
                 })
             }
 
-            Self::Case(
-                span,
-                CommandBranches(process_branches),
-                else_branch,
-                optional_process,
-                lenient,
-            ) => {
+            Self::Case(span, CommandBranches(process_branches), else_branch, optional_process) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
 
@@ -1855,12 +1848,7 @@ impl Command {
                             name: object_name.clone(),
                             usage: VariableUsage::Unknown,
                             typ: (),
-                            command: process::Command::Case(
-                                branches,
-                                processes,
-                                else_process,
-                                *lenient,
-                            ),
+                            command: process::Command::Case(branches, processes, else_process),
                         }))
                     })?
                 } else {
@@ -1879,12 +1867,7 @@ impl Command {
                         name: object_name.clone(),
                         usage: VariableUsage::Unknown,
                         typ: (),
-                        command: process::Command::Case(
-                            branches,
-                            processes,
-                            else_process,
-                            *lenient,
-                        ),
+                        command: process::Command::Case(branches, processes, else_process),
                     })
                 }
             }
@@ -2023,7 +2006,6 @@ fn compile_try(
                 ok_process,
             ]),
             None,
-            false,
         ),
     })
 }
@@ -2056,7 +2038,6 @@ fn compile_default(
                 ok_process,
             ]),
             None,
-            false,
         ),
     })
 }
@@ -2233,7 +2214,7 @@ fn condition_process_ast(condition: &Condition, success: Process, failure: Proce
                 value: Box::new(expr.clone()),
                 then: Box::new(Process::Command(
                     temp.clone(),
-                    Command::Case(span.clone(), CommandBranches(branches), None, None, true),
+                    Command::Case(span.clone(), CommandBranches(branches), None, None),
                 )),
             }
         }
@@ -2261,7 +2242,6 @@ fn condition_process_ast(condition: &Condition, success: Process, failure: Proce
                     CommandBranches(branches),
                     Some(Box::new(failure_branch)),
                     None,
-                    true,
                 ),
             );
             match binding_value {
@@ -2301,7 +2281,7 @@ impl Spanning for Command {
             | Self::Send(span, _, _)
             | Self::Receive(span, _, _, _)
             | Self::Signal(span, _, _)
-            | Self::Case(span, _, _, _, _)
+            | Self::Case(span, _, _, _)
             | Self::Break(span)
             | Self::Continue(span, _)
             | Self::Begin { span, .. }

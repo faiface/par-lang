@@ -2137,7 +2137,6 @@ fn cmd_case(input: &mut Input) -> Result<Command> {
                 CommandBranches(branches),
                 else_branch,
                 pass_process.map(Box::new),
-                false,
             )
         },
     )
