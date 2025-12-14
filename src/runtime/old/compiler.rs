@@ -196,6 +196,7 @@ pub struct Compiler {
     id_to_package: Vec<Net>,
     lazy_redexes: Vec<(Tree, Tree)>,
     compile_global_stack: IndexSet<GlobalName>,
+    package_is_case_branch: IndexMap<usize, ArcStr>,
 }
 
 impl Tree {
@@ -648,8 +649,11 @@ impl Compiler {
                 choice_and_process.sort_by_key(|k| k.0);
 
                 for (branch_name, process) in choice_and_process {
-                    let (package_id, _) =
-                        self.in_package(format!("Branch {branch_name} at {span:?}"), |this, _| {
+                    let branch_name = ArcStr::from(&branch_name.string);
+                    let (package_id, _) = self.in_package(
+                        format!("Branch {branch_name} at {span:?}"),
+                        |this, id| {
+                            this.package_is_case_branch.insert(id, branch_name.clone());
                             let (w0, w1) = this.create_typed_wire();
                             this.bind_variable(name.clone(), w0)?;
                             let context_out = this.context.unpack(&pack_data, &mut this.net);
@@ -658,14 +662,16 @@ impl Compiler {
                                 w1,
                                 context_out.with_type(Type::Continue(Default::default())),
                             ))
-                        })?;
-                    branches.insert(ArcStr::from(&branch_name.string), package_id);
+                        },
+                    )?;
+                    branches.insert(branch_name, package_id);
                 }
 
                 let else_branch = match else_process {
                     Some(process) => {
                         let (package_id, _) =
-                            self.in_package(format!("Else branch at {span:?}"), |this, _| {
+                            self.in_package(format!("Else branch at {span:?}"), |this, id| {
+                                this.package_is_case_branch.insert(id, ArcStr::from(""));
                                 let (w0, w1) = this.create_typed_wire();
                                 this.bind_variable(name.clone(), w0)?;
                                 let context_out = this.context.unpack(&pack_data, &mut this.net);
@@ -788,6 +794,7 @@ impl Compiler {
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
     pub(crate) name_to_id: IndexMap<GlobalName, usize>,
+    package_is_case_branch: IndexMap<usize, ArcStr>,
 }
 
 impl Display for IcCompiled {
@@ -811,6 +818,9 @@ impl IcCompiled {
         self.id_to_package.get(id).cloned()
     }
 
+    pub fn get_case_branch_name(&self, id: usize) -> Option<ArcStr> {
+        self.package_is_case_branch.get(&id).cloned()
+    }
 
     pub fn create_net(&self) -> Net {
         let mut net = Net::default();
@@ -832,6 +842,7 @@ impl IcCompiled {
             id_to_package: Default::default(),
             compile_global_stack: Default::default(),
             lazy_redexes: vec![],
+            package_is_case_branch: Default::default(),
         };
 
         for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {
@@ -841,6 +852,7 @@ impl IcCompiled {
         Ok(IcCompiled {
             id_to_package: Arc::new(compiler.id_to_package.into_iter().enumerate().collect()),
             name_to_id: compiler.global_name_to_id,
+            package_is_case_branch: compiler.package_is_case_branch,
         })
     }
 }

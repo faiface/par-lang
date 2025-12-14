@@ -32,7 +32,6 @@ use std::sync::OnceLock;
 
 use crate::runtime::new::show::Shower;
 use crate::{par::primitive::Primitive, runtime::new::show::Showable};
-use std::collections::HashMap;
 
 use super::arena::*;
 use crate::runtime::old::net::FanBehavior;
@@ -220,11 +219,7 @@ pub enum GlobalCont {
     /// The par node; created in receive commands (`value[a]`)
     Par(GlobalPtr, GlobalPtr),
     /// The choice node; created in case commands (`value.case { ... }`)
-    Choice(
-        GlobalPtr,
-        Index<[(Str, OnceLock<Package>)]>,
-        Option<PackagePtr>,
-    ),
+    Choice(GlobalPtr, Index<[(Str, OnceLock<Package>)]>),
 }
 
 #[derive(Debug)]
@@ -274,7 +269,6 @@ pub trait Linker {
         package: Package,
         extra_vars: usize,
     ) -> (Node, Node, Instance, usize) {
-        let arena = self.arena();
         let num_vars = package.num_vars;
         let instance = Instance {
             vars: Arc::new(InstanceInner(Mutex::new(
@@ -467,8 +461,8 @@ impl Runtime {
         self.arena
             .get(options)
             .iter()
-            .find(|(a, b)| a.clone() == variant)
-            .map(|x| x.1.get().unwrap().clone())
+            .find(|(a, _)| a.clone() == variant)
+            .map(|(_, b)| b.get().unwrap().clone())
     }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         match (a, b) {
@@ -556,19 +550,20 @@ impl Runtime {
                         );
                         self.link(a1, Node::Global(instance, self.arena.get(b1).clone()));
                     }
-                    (
-                        Value::Either(signal, payload),
-                        GlobalCont::Choice(context, options, default),
-                    ) => {
-                        if let Some(package) = self.lookup_case_branch(options, signal.clone()) {
+                    (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
+                        if let Some(package) =
+                            self.lookup_case_branch(options.clone(), signal.clone())
+                        {
                             let root = self.instantiate_with_captures_direct(
                                 package.clone(),
                                 Node::Global(instance, self.arena.get(context).clone()),
                             );
                             self.link(root, payload);
                         } else {
-                            let root = self.instantiate_with_captures(
-                                default.unwrap().clone(),
+                            let branch =
+                                self.lookup_case_branch(options, self.arena.empty_string());
+                            let root = self.instantiate_with_captures_direct(
+                                branch.unwrap().clone(),
                                 Node::Global(instance, self.arena.get(context).clone()),
                             );
                             // TODO: Optimize this; we're reconstructing the `Either` branch.
