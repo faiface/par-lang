@@ -42,9 +42,9 @@ impl Compiled {
                 Backend::Old(IcCompiled::compile_file(module)?)
             },
             name_to_ty: module
-                .declarations
+                .definitions
                 .iter()
-                .map(|(a, b)| (a.clone(), b.typ.clone()))
+                .map(|(a, (_, typ))| (a.clone(), typ.clone()))
                 .collect(),
         })
     }

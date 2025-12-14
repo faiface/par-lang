@@ -1,5 +1,6 @@
 use crate::par::build_result::BuildConfig;
 use crate::par::build_result::BuildResult;
+use crate::par::types::Type;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
 use crate::runtime::compiler::Backend;
@@ -196,6 +197,16 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
             );
             return;
         };
+
+        let Some(Type::Break(_)) = rt_compiled.get_type_of(name) else {
+            println!(
+                "{}: {}",
+                "Definition does not have the unit (!) type".bright_red(),
+                definition
+            );
+            return;
+        };
+
         eprintln!("Running...");
         let start = Instant::now();
 
