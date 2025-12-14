@@ -182,10 +182,19 @@ impl Handle {
             // TODO fast path
             node => {
                 let (payload, payload_h) = HandleNode::linked_pair();
-                let chosen = self
-                    .arena
-                    .interned(chosen.as_str())
-                    .expect("Sending a non-interned string!");
+                let chosen = self.arena.interned(chosen.as_str()).unwrap_or_else(|| {
+                    // This happens when we send a signal that the program doesn't have
+                    // and that also isn't present in the types
+                    // It might still be handled by an "else" branch then
+                    eprintln!(
+                        "Attempted to signal a non-interned string: `{}`
+                        This is most likely type error with built in definitions.
+                        Sending an empty signal instead, which will always trigger an `else` branch.
+                        ",
+                        chosen
+                    );
+                    self.arena.empty_string()
+                });
                 let other = Node::Linear(Linear::Value(Value::Either(chosen, Box::new(payload))));
                 self.link(node, other);
                 self.node = payload_h;

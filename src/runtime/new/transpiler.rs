@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::readback::Handle;
 use super::reducer::NetHandle;
-use crate::par::types::TypeDefs;
+use crate::par::types::{visit, Type, TypeDefs, TypeError};
 
 use std::sync::OnceLock;
 
@@ -52,8 +52,27 @@ impl Display for Transpiled {
 impl Transpiled {
     pub fn transpile(ic_compiled: IcCompiled, type_defs: TypeDefs) -> Self {
         let this: ProgramTranspiler = ProgramTranspiler::transpile_program(&ic_compiled);
+        let mut arena = this.dest;
+        let mut closure = |ty: &Type| {
+            fn helper(ty: &Type, defs: &TypeDefs, arena: &mut Arena) -> Result<(), TypeError> {
+                match ty {
+                    Type::Either(_, variants) | Type::Choice(_, variants) => {
+                        for k in variants.keys() {
+                            arena.intern(k.string.as_str());
+                        }
+                    }
+                    _ => {}
+                }
+                visit::continue_deref(&ty, defs, |ty: &Type| helper(ty, &defs, arena))
+            }
+            helper(ty, &type_defs, &mut arena)
+        };
+        for (_, _, ty) in type_defs.clone().globals.values() {
+            closure(ty).unwrap();
+        }
+
         Self {
-            arena: Arc::new(this.dest),
+            arena: Arc::new(arena),
             type_defs,
             name_to_package: ic_compiled
                 .name_to_id
