@@ -1094,12 +1094,10 @@ impl Expression {
                 branches,
                 else_,
             } => {
-                let mut process_ast = link_process_from_expr(else_);
-                for (condition, body) in branches.iter().rev() {
-                    process_ast =
-                        condition_process_ast(condition, link_process_from_expr(body), process_ast);
-                }
-                let compiled = process_ast.compile(pass)?;
+                let else_proc = link_process_from_expr(else_).compile(pass)?;
+                let compiled = compile_if_branches(pass, branches, else_proc, |body, pass| {
+                    link_process_from_expr(body).compile(pass)
+                })?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -1666,19 +1664,14 @@ impl Process {
                 if let Some(tail) = then {
                     let tail = tail.compile(pass)?;
                     pass.with_fallthrough(Some(tail), |pass| {
-                        let mut process_ast: Process = *else_.clone();
-                        for (condition, body) in branches.iter().rev() {
-                            process_ast =
-                                condition_process_ast(condition, body.clone(), process_ast);
-                        }
-                        process_ast.compile(pass)
+                        let else_proc = else_.compile(pass)?;
+                        compile_if_branches(pass, branches, else_proc, |body, pass| {
+                            body.compile(pass)
+                        })
                     })?
                 } else {
-                    let mut process_ast: Process = *else_.clone();
-                    for (condition, body) in branches.iter().rev() {
-                        process_ast = condition_process_ast(condition, body.clone(), process_ast);
-                    }
-                    process_ast.compile(pass)?
+                    let else_proc = else_.compile(pass)?;
+                    compile_if_branches(pass, branches, else_proc, |body, pass| body.compile(pass))?
                 }
             }
 
@@ -2176,52 +2169,77 @@ fn collect_restorations(condition: &Condition) -> Vec<Restoration> {
     }
 }
 
-fn apply_restorations(restores: Vec<Restoration>, failure: Process) -> Process {
-    restores
-        .into_iter()
-        .rev()
-        .fold(failure, |acc, restore| Process::Let {
-            span: restore.span.clone(),
-            pattern: Pattern::Name(restore.span.clone(), restore.name.clone(), None),
-            value: Box::new(restore.value.clone()),
-            then: Box::new(acc),
-        })
-}
-
-fn attach_pattern_to_process(pattern: &Pattern, body: Process, subject: &LocalName) -> Process {
+fn attach_pattern_to_process_compiled(
+    pattern: &Pattern,
+    body: Arc<process::Process<()>>,
+    subject: &LocalName,
+    pass: &mut Passes,
+) -> Result<Arc<process::Process<()>>, CompileError> {
     if matches!(pattern, Pattern::Continue(_)) {
-        return body;
+        return Ok(body);
     }
-    Process::Let {
-        span: pattern.span().join(body.span()),
-        pattern: pattern.clone(),
-        value: Box::new(Expression::Variable(pattern.span(), subject.clone())),
-        then: Box::new(body),
-    }
+    pattern.compile_let(
+        &pattern.span().join(body.span()),
+        Arc::new(process::Expression::Variable(
+            pattern.span(),
+            subject.clone(),
+            (),
+            VariableUsage::Unknown,
+        )),
+        body,
+        pass,
+    )
 }
 
-fn condition_process_ast(condition: &Condition, success: Process, failure: Process) -> Process {
-    match condition {
+fn compile_restorations(
+    restores: &[Restoration],
+    tail: Arc<process::Process<()>>,
+    pass: &mut Passes,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    restores.iter().rev().try_fold(tail, |acc, restore| {
+        let value = restore.value.compile(pass)?;
+        Ok(Arc::new(process::Process::Let {
+            span: restore.span.clone(),
+            name: restore.name.clone(),
+            annotation: None,
+            typ: (),
+            value,
+            then: acc,
+        }))
+    })
+}
+
+fn condition_process_core(
+    condition: &Condition,
+    pass: &mut Passes,
+    success: Arc<process::Process<()>>,
+    failure: Arc<process::Process<()>>,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    Ok(match condition {
         Condition::Bool(span, expr) => {
             let temp = LocalName::temp();
-            let mut branches = BTreeMap::new();
-            branches.insert(
-                LocalName::from(literal!("true")),
-                CommandBranch::Then(span.clone(), success),
-            );
-            branches.insert(
-                LocalName::from(literal!("false")),
-                CommandBranch::Then(span.clone(), failure.clone()),
-            );
-            Process::Let {
+            let expr = expr.compile(pass)?;
+            Arc::new(process::Process::Let {
                 span: span.clone(),
-                pattern: Pattern::Name(span.clone(), temp.clone(), None),
-                value: Box::new(expr.clone()),
-                then: Box::new(Process::Command(
-                    temp.clone(),
-                    Command::Case(span.clone(), CommandBranches(branches), None, None),
-                )),
-            }
+                name: temp.clone(),
+                annotation: None,
+                typ: (),
+                value: expr,
+                then: Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: temp.clone(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Case(
+                        Arc::from([
+                            LocalName::from(literal!("false")),
+                            LocalName::from(literal!("true")),
+                        ]),
+                        Box::from([failure, success]),
+                        None,
+                    ),
+                }),
+            })
         }
         Condition::Is {
             span,
@@ -2231,45 +2249,82 @@ fn condition_process_ast(condition: &Condition, success: Process, failure: Proce
         } => {
             let (subject_name, binding_value) = match value {
                 Expression::Variable(_, name) => (name.clone(), None),
-                _ => (LocalName::temp(), Some(value.clone())),
+                _ => (LocalName::temp(), Some(value.compile(pass)?)),
             };
-            let mut branches = BTreeMap::new();
-            let success_process = attach_pattern_to_process(pattern, success, &subject_name);
-            branches.insert(
-                variant.clone(),
-                CommandBranch::Then(success_process.span(), success_process),
-            );
-            let failure_branch = CommandBranch::Then(failure.span(), failure.clone());
-            let command_process = Process::Command(
-                subject_name.clone(),
-                Command::Case(
-                    span.clone(),
-                    CommandBranches(branches),
-                    Some(Box::new(failure_branch)),
-                    None,
+
+            let success_process =
+                attach_pattern_to_process_compiled(pattern, success, &subject_name, pass)?;
+
+            let command_process = Arc::new(process::Process::Do {
+                span: span.clone(),
+                name: subject_name.clone(),
+                usage: VariableUsage::Unknown,
+                typ: (),
+                command: process::Command::Case(
+                    Arc::from([variant.clone()]),
+                    Box::from([success_process]),
+                    Some(failure),
                 ),
-            );
+            });
+
             match binding_value {
-                Some(value) => Process::Let {
+                Some(value) => Arc::new(process::Process::Let {
                     span: span.clone(),
-                    pattern: Pattern::Name(span.clone(), subject_name.clone(), None),
-                    value: Box::new(value),
-                    then: Box::new(command_process),
-                },
+                    name: subject_name.clone(),
+                    annotation: None,
+                    typ: (),
+                    value,
+                    then: command_process,
+                }),
                 None => command_process,
             }
         }
         Condition::And(_, left, right) => {
-            let restored_failure = apply_restorations(collect_restorations(left), failure.clone());
-            let right_process = condition_process_ast(right, success, restored_failure);
-            condition_process_ast(left, right_process, failure)
+            let goto_failure = failure.clone();
+            let restored_failure =
+                compile_restorations(&collect_restorations(left), failure, pass)?;
+            let right_process =
+                condition_process_core(right, pass, success.clone(), restored_failure)?;
+            condition_process_core(left, pass, right_process, goto_failure)?
         }
         Condition::Or(_, left, right) => {
-            let right_process = condition_process_ast(right, success.clone(), failure.clone());
-            condition_process_ast(left, success, right_process)
+            let right_process =
+                condition_process_core(right, pass, success.clone(), failure.clone())?;
+            condition_process_core(left, pass, success, right_process)?
         }
-        Condition::Not(_, inner) => condition_process_ast(inner, failure, success),
-    }
+        Condition::Not(_, inner) => condition_process_core(inner, pass, failure, success)?,
+    })
+}
+
+fn compile_condition_process(
+    condition: &Condition,
+    pass: &mut Passes,
+    success_body: Arc<process::Process<()>>,
+    failure_body: Arc<process::Process<()>>,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    let span = condition.span();
+    pass.with_fallthrough(Some(failure_body), |pass| {
+        let goto_failure = pass.use_fallthrough(&span).unwrap();
+        pass.with_fallthrough(Some(success_body), |pass| {
+            let goto_success = pass.use_fallthrough(&span).unwrap();
+            condition_process_core(condition, pass, goto_success, goto_failure)
+        })
+    })
+}
+
+fn compile_if_branches<B>(
+    pass: &mut Passes,
+    branches: &[(Condition, B)],
+    else_proc: Arc<process::Process<()>>,
+    mut compile_body: impl FnMut(&B, &mut Passes) -> Result<Arc<process::Process<()>>, CompileError>,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    branches
+        .iter()
+        .rev()
+        .try_fold(else_proc, |acc, (condition, body)| {
+            let success = compile_body(body, pass)?;
+            compile_condition_process(condition, pass, success, acc)
+        })
 }
 
 fn link_process_from_expr(expr: &Expression) -> Process {

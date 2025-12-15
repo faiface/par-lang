@@ -1897,7 +1897,7 @@ fn proc_telltypes(input: &mut Input) -> Result<Process> {
 }
 
 fn proc_if(input: &mut Input) -> Result<Process> {
-    alt((proc_if_block, proc_if_inline)).parse_next(input)
+    alt((proc_if_inline, proc_if_block)).parse_next(input)
 }
 
 fn proc_if_block(input: &mut Input) -> Result<Process> {
@@ -1954,20 +1954,20 @@ fn proc_if_else_body(input: &mut Input) -> Result<Option<Process>> {
 }
 
 fn proc_if_inline(input: &mut Input) -> Result<Process> {
-    commit_after(
+    (
         t(TokenKind::If),
-        (
-            not(peek(t(TokenKind::LCurly))),
-            condition,
-            t(TokenKind::FatArrow),
-            t(TokenKind::LCurly),
-            opt(process),
-            t(TokenKind::RCurly),
-            opt(pass_process),
-        ),
+        alt((
+            (t(TokenKind::LCurly), condition, t(TokenKind::RCurly))
+                .map(|(_, condition, _)| condition),
+            (not(peek(t(TokenKind::LCurly))), condition).map(|(_, condition)| condition),
+        )),
+        t(TokenKind::FatArrow),
+        t(TokenKind::LCurly),
+        opt(process),
+        t(TokenKind::RCurly),
+        opt(pass_process),
     )
-    .map(
-        |(kw, (_, condition, _, open, then_proc, close, else_process))| {
+        .map(|(kw, condition, _, open, then_proc, close, else_process)| {
             let tail_proc = else_process.unwrap_or(Process::Noop(close.span().only_end()));
             Process::If {
                 span: kw.span.join(tail_proc.span()),
@@ -1978,9 +1978,8 @@ fn proc_if_inline(input: &mut Input) -> Result<Process> {
                 else_: Box::new(Process::Noop(close.span().only_end())),
                 then: Some(Box::new(tail_proc)),
             }
-        },
-    )
-    .parse_next(input)
+        })
+        .parse_next(input)
 }
 
 fn global_command(input: &mut Input) -> Result<Process> {
