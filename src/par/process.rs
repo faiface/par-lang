@@ -43,6 +43,7 @@ pub enum Process<Typ> {
     Telltypes(Span, Arc<Self>),
     Block(Span, usize, Arc<Self>, Arc<Self>),
     Goto(Span, usize, Captures),
+    Unreachable(Span),
 }
 
 #[derive(Clone, Debug)]
@@ -105,6 +106,7 @@ impl<Typ> Spanning for Process<Typ> {
             Self::Telltypes(span, ..) => span.clone(),
             Self::Block(span, _, _, _) => span.clone(),
             Self::Goto(span, _, _) => span.clone(),
+            Self::Unreachable(span) => span.clone(),
         }
     }
 }
@@ -231,6 +233,7 @@ impl Process<()> {
                     caps,
                 )
             }
+            Self::Unreachable(span) => (Arc::new(Self::Unreachable(span.clone())), Captures::new()),
         }
     }
 
@@ -348,6 +351,7 @@ impl Process<()> {
             Self::Goto(span, index, caps) => {
                 Arc::new(Self::Goto(span.clone(), *index, caps.clone()))
             }
+            Self::Unreachable(span) => Arc::new(Self::Unreachable(span.clone())),
         }
     }
 }
@@ -402,6 +406,7 @@ impl Process<Type> {
                 process.types_at_spans(program, consume);
             }
             Process::Goto(_, _, _) => {}
+            Process::Unreachable(_) => {}
         }
     }
 }
@@ -855,6 +860,7 @@ impl Process<()> {
                 process.qualify(module);
             }
             Self::Goto(_, _, _) => {}
+            Self::Unreachable(_) => {}
         }
     }
 }
@@ -948,6 +954,7 @@ impl<Typ> Process<Typ> {
             Process::Telltypes(_, process) => process.free_variables(),
             Process::Block(_, _, _body, process) => process.free_variables(),
             Process::Goto(_, _, caps) => caps.names.keys().cloned().collect(),
+            Process::Unreachable(_) => IndexSet::new(),
         }
     }
 
@@ -965,6 +972,11 @@ impl<Typ> Process<Typ> {
                 write!(f, "let {} = ", name)?;
                 expression.pretty(f, indent)?;
                 process.pretty(f, indent)
+            }
+
+            Self::Unreachable(_) => {
+                indentation(f, indent)?;
+                write!(f, "unreachable")
             }
 
             Self::Do {

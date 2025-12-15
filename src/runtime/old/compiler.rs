@@ -580,6 +580,11 @@ impl Compiler {
                     .clone();
                 self.compile_process(&body)
             }
+
+            Process::Unreachable(_) => {
+                self.end_context()?;
+                Ok(())
+            }
         }
     }
 

@@ -174,7 +174,7 @@ pub enum Expression {
     If {
         span: Span,
         branches: Vec<(Condition, Expression)>,
-        else_: Box<Self>,
+        else_: Option<Box<Self>>,
     },
     Do {
         span: Span,
@@ -276,7 +276,7 @@ pub enum Process {
     If {
         span: Span,
         branches: Vec<(Condition, Process)>,
-        else_: Box<Process>,
+        else_: Option<Box<Process>>,
         then: Option<Box<Process>>,
     },
     GlobalCommand(GlobalName, Command),
@@ -1151,7 +1151,10 @@ impl Expression {
                 branches,
                 else_,
             } => {
-                let else_proc = link_process_from_expr(else_).compile(pass)?;
+                let else_proc = match else_ {
+                    Some(expr) => link_process_from_expr(expr).compile(pass)?,
+                    None => Arc::new(process::Process::Unreachable(span.clone())),
+                };
                 let compiled = compile_if_branches(pass, branches, else_proc, |body, pass| {
                     link_process_from_expr(body).compile(pass)
                 })?;
@@ -1714,7 +1717,7 @@ impl Process {
     pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::If {
-                span: _,
+                span,
                 branches,
                 else_,
                 then,
@@ -1722,13 +1725,19 @@ impl Process {
                 if let Some(tail) = then {
                     let tail = tail.compile(pass)?;
                     pass.with_fallthrough(Some(tail), |pass| {
-                        let else_proc = else_.compile(pass)?;
+                        let else_proc = match else_ {
+                            Some(proc) => proc.compile(pass)?,
+                            None => Arc::new(process::Process::Unreachable(span.clone())),
+                        };
                         compile_if_branches(pass, branches, else_proc, |body, pass| {
                             body.compile(pass)
                         })
                     })?
                 } else {
-                    let else_proc = else_.compile(pass)?;
+                    let else_proc = match else_ {
+                        Some(proc) => proc.compile(pass)?,
+                        None => Arc::new(process::Process::Unreachable(span.clone())),
+                    };
                     compile_if_branches(pass, branches, else_proc, |body, pass| body.compile(pass))?
                 }
             }

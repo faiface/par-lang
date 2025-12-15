@@ -79,6 +79,26 @@ impl Context {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
 
+            Process::Unreachable(span) => {
+                let impossible = Type::either(vec![]);
+                let mut exhaustive = false;
+                for typ in self.variables.values() {
+                    match typ.is_assignable_to(&impossible, &self.type_defs) {
+                        Ok(true) => {
+                            exhaustive = true;
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                if !exhaustive {
+                    return Err(TypeError::NonExhaustiveIf(span.clone()));
+                }
+                self.variables.clear();
+                Ok(Arc::new(Process::Unreachable(span.clone())))
+            }
+
             Process::Block(span, index, body, then) => {
                 if self.blocks.insert(*index, Vec::new()).is_some() {
                     panic!("block {} already defined", index);
@@ -690,6 +710,29 @@ impl Context {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
 
+            Process::Unreachable(span) => {
+                let impossible = Type::either(vec![]);
+                let mut exhaustive = false;
+                for typ in self.variables.values() {
+                    match typ.is_assignable_to(&impossible, &self.type_defs) {
+                        Ok(true) => {
+                            exhaustive = true;
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                if !exhaustive {
+                    return Err(TypeError::NonExhaustiveIf(span.clone()));
+                }
+                self.variables.clear();
+                Ok((
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::choice(vec![]),
+                ))
+            }
+
             Process::Block(span, index, body, then) => {
                 if self.blocks.insert(*index, Vec::new()).is_some() {
                     panic!("block {} already defined", index);
@@ -703,6 +746,13 @@ impl Context {
                     panic!("block has no incoming paths");
                 }
                 let free = body.free_variables();
+                let contexts: Vec<_> = contexts
+                    .into_iter()
+                    .map(|mut ctx| {
+                        ctx.shift_remove(inference_subject);
+                        ctx
+                    })
+                    .collect();
                 let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
 
                 let saved = self.variables.clone();
@@ -1168,19 +1218,16 @@ fn merge_path_contexts(
             }
         }
 
-        if !used {
-            // Variable not used in fallthrough: allow it to be missing as long as all present types are non-linear.
-            if present_types
-                .iter()
-                .any(|t| t.is_linear(typedefs).unwrap_or(true))
-            {
-                return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
-            }
+        let is_linear = present_types
+            .iter()
+            .any(|t| t.is_linear(typedefs).unwrap_or(true));
+
+        if !used && !is_linear && missing {
             // Drop it.
             continue;
         }
 
-        // Variable used: must be present everywhere.
+        // Variable used or linear: must be present everywhere.
         if missing {
             return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
         }

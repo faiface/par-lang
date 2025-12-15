@@ -41,6 +41,7 @@ pub enum TypeError {
     LoopVariableChangedType(Span, LocalName, Type, Type),
     CannotUseLinearVariableInBox(Span, LocalName),
     Telltypes(Span, IndexMap<LocalName, Type>),
+    NonExhaustiveIf(Span),
 }
 
 /// Create a `LabeledSpan` without a label at `span`
@@ -366,6 +367,10 @@ impl TypeError {
                     buf
                 }
             }
+            Self::NonExhaustiveIf(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(labels = labels, "Conditions are not exhaustive; an `else` branch is required here.")
+            }
             Self::CannotUnrollAscendantIterative(span, _) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
@@ -413,6 +418,7 @@ impl TypeError {
             | Self::LoopVariableChangedType(span, _, _, _)
             | Self::CannotUseLinearVariableInBox(span, _)
             | Self::Telltypes(span, _)
+            | Self::NonExhaustiveIf(span)
             | Self::CannotUnrollAscendantIterative(span, _) => (span.clone(), None),
 
             Self::TypesCannotBeUnified(typ1, typ2) => (typ1.span(), Some(typ2.span())),

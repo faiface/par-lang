@@ -1210,21 +1210,19 @@ fn expr_if(input: &mut Input) -> Result<Expression> {
         (
             t(TokenKind::LCurly),
             repeat(1.., expr_if_branch),
-            t(TokenKind::Else),
-            cut_err((t(TokenKind::FatArrow), expression)),
-            opt(t(TokenKind::Comma)),
+            opt((
+                t(TokenKind::Else),
+                cut_err((t(TokenKind::FatArrow), expression)),
+                opt(t(TokenKind::Comma)),
+            )),
             t(TokenKind::RCurly),
         ),
     )
-    .map(
-        |(kw, (_open, branches, _else_kw, (_, else_expr), _trailing_comma, close))| {
-            Expression::If {
-                span: kw.span.join(close.span()),
-                branches,
-                else_: Box::new(else_expr),
-            }
-        },
-    )
+    .map(|(kw, (_open, branches, else_part, close))| Expression::If {
+        span: kw.span.join(close.span()),
+        branches,
+        else_: else_part.map(|(_, (_, else_expr), _)| Box::new(else_expr)),
+    })
     .parse_next(input)
 }
 
@@ -1920,18 +1918,21 @@ fn proc_if_block(input: &mut Input) -> Result<Process> {
         (t(TokenKind::If), t(TokenKind::LCurly)),
         (
             repeat(1.., proc_if_branch),
-            t(TokenKind::Else),
-            cut_err(proc_if_else_body),
-            opt(t(TokenKind::Comma)),
+            opt((
+                t(TokenKind::Else),
+                cut_err(proc_if_else_body),
+                opt(t(TokenKind::Comma)),
+            )),
             t(TokenKind::RCurly),
             opt(pass_process),
         ),
     )
     .map(
-        |((kw, open), (branches, _else_kw, else_body, _comma, close, then_process))| Process::If {
+        |((kw, open), (branches, else_body, close, then_process))| Process::If {
             span: kw.span.join(close.span()),
             branches,
-            else_: Box::new(else_body.unwrap_or(Process::Noop(open.span.only_end()))),
+            else_: else_body
+                .map(|(_, body, _)| Box::new(body.unwrap_or(Process::Noop(open.span.only_end())))),
             then: then_process.map(Box::new),
         },
     )
@@ -1990,7 +1991,7 @@ fn proc_if_inline(input: &mut Input) -> Result<Process> {
                     condition,
                     then_proc.unwrap_or(Process::Noop(open.span.join(close.span()))),
                 )],
-                else_: Box::new(Process::Noop(close.span().only_end())),
+                else_: Some(Box::new(Process::Noop(close.span().only_end()))),
                 then: Some(Box::new(tail_proc)),
             }
         })
