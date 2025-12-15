@@ -952,14 +952,14 @@ fn condition_grouped(input: &mut Input) -> Result<Condition> {
 }
 
 fn condition_bool(input: &mut Input) -> Result<Condition> {
-    expression
-        .map(|expr| Condition::Bool(expr.span(), expr))
+    expression_no_condition
+        .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
         .parse_next(input)
 }
 
 fn condition_is(input: &mut Input) -> Result<Condition> {
     (
-        expression,
+        expression_no_condition,
         t(TokenKind::Is),
         t(TokenKind::Dot),
         local_name,
@@ -1016,6 +1016,12 @@ fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern> {
 }
 
 fn expression(input: &mut Input) -> Result<Expression> {
+    alt((expr_condition, expression_no_condition))
+        .context(StrContext::Label("expression"))
+        .parse_next(input)
+}
+
+fn expression_no_condition(input: &mut Input) -> Result<Expression> {
     alt((
         expr_literal,
         expr_list,
@@ -1030,7 +1036,6 @@ fn expression(input: &mut Input) -> Result<Expression> {
         construction.map(Expression::Construction),
         expr_grouped,
     ))
-    .context(StrContext::Label("expression"))
     .parse_next(input)
 }
 
@@ -1040,6 +1045,16 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
             Expression::Grouped(open.span.join(close.span()), Box::new(expr))
         })
         .parse_next(input)
+}
+
+fn expr_condition(input: &mut Input) -> Result<Expression> {
+    let cond = condition.parse_next(input)?;
+    if matches!(cond, Condition::Bool(_, _)) {
+        Err(ErrMode::Backtrack(Error_::from_input(input)))
+    } else {
+        let span = cond.span();
+        Ok(Expression::Condition(span, Box::new(cond)))
+    }
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression> {

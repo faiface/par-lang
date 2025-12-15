@@ -125,7 +125,7 @@ pub enum Pattern {
 
 #[derive(Clone, Debug)]
 pub enum Condition {
-    Bool(Span, Expression),
+    Bool(Span, Box<Expression>),
     Is {
         span: Span,
         value: Expression,
@@ -155,6 +155,7 @@ pub enum Expression {
     List(Span, Vec<Self>),
     Global(Span, GlobalName),
     Variable(Span, LocalName),
+    Condition(Span, Box<Condition>),
     Grouped(Span, Box<Self>),
     Let {
         span: Span,
@@ -1005,6 +1006,62 @@ impl Expression {
                 VariableUsage::Unknown,
             )),
 
+            Self::Condition(span, condition) => {
+                let true_process = Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::result(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Signal(
+                        LocalName {
+                            span: span.clone(),
+                            string: literal!("true"),
+                        },
+                        Arc::new(process::Process::Do {
+                            span: span.clone(),
+                            name: LocalName::result(),
+                            usage: VariableUsage::Unknown,
+                            typ: (),
+                            command: process::Command::Break,
+                        }),
+                    ),
+                });
+                let false_process = Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::result(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Signal(
+                        LocalName {
+                            span: span.clone(),
+                            string: literal!("false"),
+                        },
+                        Arc::new(process::Process::Do {
+                            span: span.clone(),
+                            name: LocalName::result(),
+                            usage: VariableUsage::Unknown,
+                            typ: (),
+                            command: process::Command::Break,
+                        }),
+                    ),
+                });
+                let process = compile_condition_process(
+                    condition.as_ref(),
+                    pass,
+                    true_process,
+                    false_process,
+                )?;
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process,
+                })
+            }
+
             Self::Grouped(_, expression) => expression.compile(pass)?,
 
             Self::Box(span, expression) => {
@@ -1196,6 +1253,7 @@ impl Spanning for Expression {
             | Self::List(span, _)
             | Self::Global(span, _)
             | Self::Variable(span, _)
+            | Self::Condition(span, _)
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
             | Self::Catch { span, .. }
