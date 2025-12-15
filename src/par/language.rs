@@ -885,6 +885,7 @@ impl Pattern {
                     LocalName::match_(level),
                     default_expr,
                     rest.compile_helper(level, process, pass)?,
+                    pass,
                 ))
             }
         }
@@ -1526,7 +1527,7 @@ impl Apply {
             Self::Default(span, expr, apply) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = apply.compile(pass)?;
-                compile_default(span, LocalName::object(), default_expr, ok_process)
+                compile_default(span, LocalName::object(), default_expr, ok_process, pass)
             }
 
             Self::Try(span, label, apply) => {
@@ -1634,7 +1635,7 @@ impl ApplyBranch {
             Self::Default(span, expr, branch) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = branch.compile(pass)?;
-                compile_default(span, LocalName::object(), default_expr, ok_process)
+                compile_default(span, LocalName::object(), default_expr, ok_process, pass)
             }
         })
     }
@@ -1959,7 +1960,7 @@ impl Command {
             Self::Default(span, expr, command) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = command.compile(object_name, pass)?;
-                compile_default(span, object_name.clone(), default_expr, ok_process)
+                compile_default(span, object_name.clone(), default_expr, ok_process, pass)
             }
 
             Self::Pipe(span, function, command) => {
@@ -2015,31 +2016,35 @@ fn compile_default(
     variable: LocalName,
     default_expr: Arc<process::Expression<()>>,
     ok_process: Arc<process::Process<()>>,
+    pass: &mut Passes,
 ) -> Arc<process::Process<()>> {
-    Arc::new(process::Process::Do {
-        span: span.clone(),
-        name: variable.clone(),
-        usage: VariableUsage::Unknown,
-        typ: (),
-        command: process::Command::Case(
-            Arc::from([
-                LocalName::from(literal!("err")),
-                LocalName::from(literal!("ok")),
-            ]),
-            Box::from([
-                Arc::new(process::Process::Let {
-                    span: span.clone(),
-                    name: variable.clone(),
-                    annotation: None,
-                    typ: (),
-                    value: default_expr,
-                    then: ok_process.clone(),
-                }),
-                ok_process,
-            ]),
-            None,
-        ),
+    pass.with_fallthrough(Some(ok_process), |pass| {
+        Ok(Arc::new(process::Process::Do {
+            span: span.clone(),
+            name: variable.clone(),
+            usage: VariableUsage::Unknown,
+            typ: (),
+            command: process::Command::Case(
+                Arc::from([
+                    LocalName::from(literal!("err")),
+                    LocalName::from(literal!("ok")),
+                ]),
+                Box::from([
+                    Arc::new(process::Process::Let {
+                        span: span.clone(),
+                        name: variable.clone(),
+                        annotation: None,
+                        typ: (),
+                        value: default_expr,
+                        then: pass.use_fallthrough(span).unwrap(),
+                    }),
+                    pass.use_fallthrough(span).unwrap(),
+                ]),
+                None,
+            ),
+        }))
     })
+    .unwrap()
 }
 
 fn compile_pipe(
@@ -2358,7 +2363,7 @@ impl CommandBranch {
             Self::Default(span, expr, branch) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = branch.compile(object_name, pass)?;
-                compile_default(span, object_name.clone(), default_expr, ok_process)
+                compile_default(span, object_name.clone(), default_expr, ok_process, pass)
             }
         })
     }
