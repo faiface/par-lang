@@ -8,7 +8,7 @@ use super::net::{Net, Tree};
 use crate::par::process::VariableUsage;
 use crate::par::{
     language::{GlobalName, LocalName},
-    process::{Captures, Command, Expression, Process, ProcessMergePoint},
+    process::{Captures, Command, Expression, Process},
     types::Type,
 };
 use crate::runtime::old::net::FanBehavior;
@@ -197,6 +197,7 @@ pub struct Compiler {
     lazy_redexes: Vec<(Tree, Tree)>,
     compile_global_stack: IndexSet<GlobalName>,
     package_is_case_branch: IndexMap<usize, ArcStr>,
+    blocks: IndexMap<usize, Arc<Process<Type>>>,
 }
 
 impl Tree {
@@ -557,12 +558,33 @@ impl Compiler {
             } => self.compile_command(span, name.clone(), usage, typ.clone(), command),
 
             Process::Telltypes(_, _) => unreachable!(),
-            Process::MergePoint(_, merge) => {
-                if let ProcessMergePoint::Checked(process) = &*merge.lock().unwrap() {
-                    self.compile_process(process)
-                } else {
-                    unreachable!("Unchecked merge point reached during compilation")
+
+            Process::Block(_, index, body, process) => {
+                let prev = self.blocks.insert(*index, body.clone());
+                self.compile_process(process)?;
+                match prev {
+                    Some(old) => {
+                        self.blocks.insert(*index, old);
+                    }
+                    None => {
+                        self.blocks.shift_remove(index);
+                    }
                 }
+                Ok(())
+            }
+
+            Process::Goto(_, index, _) => {
+                let body = self
+                    .blocks
+                    .get(index)
+                    .expect("goto target missing during compilation")
+                    .clone();
+                self.compile_process(&body)
+            }
+
+            Process::Unreachable(_) => {
+                self.end_context()?;
+                Ok(())
             }
         }
     }
@@ -638,7 +660,7 @@ impl Compiler {
                 self.bind_variable(name, v0)?;
                 self.compile_process(process)?;
             }
-            Command::Case(names, processes, else_process, _) => {
+            Command::Case(names, processes, else_process) => {
                 self.context.unguarded_loop_labels.clear();
                 let old_tree = self.use_variable(&name, usage, true)?;
                 // Multiplex all other variables in the context.
@@ -843,6 +865,7 @@ impl IcCompiled {
             compile_global_stack: Default::default(),
             lazy_redexes: vec![],
             package_is_case_branch: Default::default(),
+            blocks: IndexMap::new(),
         };
 
         for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {

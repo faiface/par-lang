@@ -256,15 +256,11 @@ pub fn intersect_types(
             Type::Either(span.clone(), new_branches)
         }
         (Type::Choice(_, branches1), Type::Choice(_, branches2)) => {
-            println!("CHOICES");
             let mut new_branches = branches1.clone();
             for (name, typ2) in branches2 {
-                println!("BRANCH: {}", &name.string);
                 if let Some(typ1) = new_branches.get(name) {
-                    println!("INTERSECTED");
                     new_branches.insert(name.clone(), intersect_types(typedefs, span, typ1, typ2)?);
                 } else {
-                    println!("INSERTED");
                     new_branches.insert(name.clone(), typ2.clone());
                 }
             }

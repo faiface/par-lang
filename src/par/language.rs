@@ -4,18 +4,17 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt::Display,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use arcstr::{literal, ArcStr};
-use indexmap::IndexMap;
 
 use super::{
     primitive::Primitive,
     process::{self, Captures},
     types::Type,
 };
-use crate::par::process::{ProcessMergePoint, VariableUsage};
+use crate::par::process::VariableUsage;
 use crate::{
     location::{Span, Spanning},
     par::types::error::labels_from_span,
@@ -126,7 +125,7 @@ pub enum Pattern {
 
 #[derive(Clone, Debug)]
 pub enum Condition {
-    Bool(Span, Expression),
+    Bool(Span, Box<Expression>),
     Is {
         span: Span,
         value: Expression,
@@ -156,6 +155,7 @@ pub enum Expression {
     List(Span, Vec<Self>),
     Global(Span, GlobalName),
     Variable(Span, LocalName),
+    Condition(Span, Box<Condition>),
     Grouped(Span, Box<Self>),
     Let {
         span: Span,
@@ -174,7 +174,7 @@ pub enum Expression {
     If {
         span: Span,
         branches: Vec<(Condition, Expression)>,
-        else_: Box<Self>,
+        else_: Option<Box<Self>>,
     },
     Do {
         span: Span,
@@ -276,7 +276,7 @@ pub enum Process {
     If {
         span: Span,
         branches: Vec<(Condition, Process)>,
-        else_: Box<Process>,
+        else_: Option<Box<Process>>,
         then: Option<Box<Process>>,
     },
     GlobalCommand(GlobalName, Command),
@@ -297,7 +297,6 @@ pub enum Command {
         CommandBranches,
         Option<Box<CommandBranch>>,
         Option<Box<Process>>,
-        bool,
     ),
     Break(Span),
     Continue(Span, Box<Process>),
@@ -477,6 +476,7 @@ impl CompileError {
 
 #[derive(Clone, Debug)]
 pub struct Passes {
+    next_block_index: usize,
     fallthrough: Option<Pass>,
     fallthrough_stash: Vec<Option<Pass>>,
     catch: HashMap<Option<LocalName>, Pass>,
@@ -485,7 +485,8 @@ pub struct Passes {
 
 #[derive(Clone, Debug)]
 pub struct Pass {
-    merge_point: Arc<Mutex<ProcessMergePoint>>,
+    block_index: usize,
+    used: bool,
     // Stack of reasons that currently disable this catch (LIFO).
     disabled_reasons: Vec<CatchDisabledReason>,
 }
@@ -493,6 +494,7 @@ pub struct Pass {
 impl Passes {
     pub fn new() -> Self {
         Passes {
+            next_block_index: 1,
             fallthrough: None,
             fallthrough_stash: Vec::new(),
             catch: HashMap::new(),
@@ -500,63 +502,137 @@ impl Passes {
         }
     }
 
-    fn set_fallthrough(
+    fn get_block_index(&mut self) -> usize {
+        let index = self.next_block_index;
+        self.next_block_index += 1;
+        index
+    }
+
+    fn with_fallthrough(
         &mut self,
-        p: Option<Arc<process::Process<()>>>,
-    ) -> Result<&mut Self, CompileError> {
+        body: Option<Arc<process::Process<()>>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         self.fallthrough_stash.push(self.fallthrough.take());
-        self.fallthrough = p.map(|process| {
-            Pass::new(Arc::new(Mutex::new(ProcessMergePoint::Unchecked {
-                paths: IndexMap::new(),
+
+        let result = if let Some(body) = body {
+            let block_index = self.get_block_index();
+            self.fallthrough = Some(Pass::new(block_index));
+            let process = f(self)?;
+            if !self
+                .fallthrough
+                .take()
+                .expect("fallthrough must be present")
+                .used
+            {
+                return Err(CompileError::UnreachableCode(body.span()));
+            }
+            Ok(Arc::new(process::Process::Block(
+                body.span(),
+                block_index,
+                body,
                 process,
-            })))
-        });
-        Ok(self)
+            )))
+        } else {
+            f(self)
+        };
+
+        self.fallthrough = self
+            .fallthrough_stash
+            .pop()
+            .expect("fallthrough was supposed be stashed");
+
+        result
+    }
+
+    fn expr_with_fallthrough(
+        &mut self,
+        body: Option<Arc<process::Process<()>>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
+    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        Ok(Arc::new(process::Expression::Chan {
+            span: Span::None,
+            captures: Captures::new(),
+            chan_name: LocalName::result(),
+            chan_annotation: None,
+            chan_type: (),
+            expr_type: (),
+            process: self.with_fallthrough(body, |pass| {
+                Ok(Arc::new(process::Process::Do {
+                    span: Span::None,
+                    name: LocalName::result(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Link(f(pass)?),
+                }))
+            })?,
+        }))
     }
 
     fn use_fallthrough(&mut self, span: &Span) -> Option<Arc<process::Process<()>>> {
         self.fallthrough.as_mut().map(|pass| pass.use_at(span))
     }
 
-    fn unset_fallthrough(&mut self) -> Result<&mut Self, CompileError> {
-        if let Some(previous) = self.fallthrough.take() {
-            match &*previous.merge_point.lock().unwrap() {
-                ProcessMergePoint::Unchecked { paths, process } => {
-                    if paths.is_empty() {
-                        return Err(CompileError::UnreachableCode(process.span()));
-                    }
-                }
-                ProcessMergePoint::Checked(_) => {
-                    panic!("fallthrough merge point was already checked")
-                }
-            }
-        }
-        self.fallthrough = self
-            .fallthrough_stash
-            .pop()
-            .expect("fallthrough was supposed be stashed");
-        Ok(self)
-    }
-
-    fn set_catch(
+    fn with_catch(
         &mut self,
         label: Option<LocalName>,
-        p: Option<Arc<process::Process<()>>>,
-    ) -> Result<&mut Self, CompileError> {
+        body: Arc<process::Process<()>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         self.catch_stash
             .entry(label.clone())
             .or_default()
             .push(self.catch.remove(&label));
-        if let Some(p) = p {
-            self.catch.insert(
-                label,
-                Pass::new(Arc::new(Mutex::new(ProcessMergePoint::Unchecked {
-                    paths: IndexMap::new(),
-                    process: p,
-                }))),
-            );
+        let block_index = self.get_block_index();
+        self.catch.insert(label.clone(), Pass::new(block_index));
+
+        let result = f(self);
+
+        let current = self.catch.remove(&label);
+        let stashed = self
+            .catch_stash
+            .entry(label.clone())
+            .or_default()
+            .pop()
+            .expect("catch was supposed be stashed");
+        if let Some(stashed) = stashed {
+            self.catch.insert(label, stashed);
         }
-        Ok(self)
+        let process = result?;
+        if !current.expect("catch must be present").used {
+            return Err(CompileError::UnreachableCode(body.span()));
+        }
+        Ok(Arc::new(process::Process::Block(
+            body.span(),
+            block_index,
+            body,
+            process,
+        )))
+    }
+
+    fn expr_with_catch(
+        &mut self,
+        label: Option<LocalName>,
+        body: Arc<process::Process<()>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
+    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        Ok(Arc::new(process::Expression::Chan {
+            span: Span::None,
+            captures: Captures::new(),
+            chan_name: LocalName::result(),
+            chan_annotation: None,
+            chan_type: (),
+            expr_type: (),
+            process: self.with_catch(label, body, |pass| {
+                Ok(Arc::new(process::Process::Do {
+                    span: Span::None,
+                    name: LocalName::result(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Link(f(pass)?),
+                }))
+            })?,
+        }))
     }
 
     fn use_catch(
@@ -573,31 +649,6 @@ impl Passes {
             }
             None => Err(CompileError::NoMatchingCatch(span.clone())),
         }
-    }
-
-    fn unset_catch(&mut self, label: Option<LocalName>) -> Result<&mut Self, CompileError> {
-        if let Some(previous) = self.catch.remove(&label) {
-            match &*previous.merge_point.lock().unwrap() {
-                ProcessMergePoint::Unchecked { paths, process } => {
-                    if paths.is_empty() {
-                        return Err(CompileError::UnreachableCode(process.span()));
-                    }
-                }
-                ProcessMergePoint::Checked(_) => {
-                    panic!("catch merge point was already checked")
-                }
-            }
-        }
-        let stashed = self
-            .catch_stash
-            .entry(label.clone())
-            .or_default()
-            .pop()
-            .expect("catch was supposed be stashed");
-        if let Some(stashed) = stashed {
-            self.catch.insert(label, stashed);
-        }
-        Ok(self)
     }
 
     fn disable_catches(&mut self, reason: CatchDisabledReason) -> &mut Self {
@@ -620,27 +671,20 @@ impl Passes {
 }
 
 impl Pass {
-    fn new(merge_point: Arc<Mutex<ProcessMergePoint>>) -> Self {
+    fn new(block_index: usize) -> Self {
         Pass {
-            merge_point,
+            block_index,
+            used: false,
             disabled_reasons: Vec::new(),
         }
     }
 
     fn use_at(&mut self, span: &Span) -> Arc<process::Process<()>> {
-        if let ProcessMergePoint::Unchecked { paths, .. } = &mut *self.merge_point.lock().unwrap() {
-            if let Some(_) = paths.insert(span.clone(), None) {
-                panic!(
-                    "merging path was already registered from this span: {:?}",
-                    span
-                );
-            }
-        } else {
-            panic!("merge point was already checked")
-        }
-        Arc::new(process::Process::MergePoint(
+        self.used = true;
+        Arc::new(process::Process::Goto(
             span.clone(),
-            Arc::clone(&self.merge_point),
+            self.block_index,
+            Captures::new(),
         ))
     }
 }
@@ -842,6 +886,7 @@ impl Pattern {
                     LocalName::match_(level),
                     default_expr,
                     rest.compile_helper(level, process, pass)?,
+                    pass,
                 ))
             }
         }
@@ -961,6 +1006,62 @@ impl Expression {
                 VariableUsage::Unknown,
             )),
 
+            Self::Condition(span, condition) => {
+                let true_process = Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::result(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Signal(
+                        LocalName {
+                            span: span.clone(),
+                            string: literal!("true"),
+                        },
+                        Arc::new(process::Process::Do {
+                            span: span.clone(),
+                            name: LocalName::result(),
+                            usage: VariableUsage::Unknown,
+                            typ: (),
+                            command: process::Command::Break,
+                        }),
+                    ),
+                });
+                let false_process = Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: LocalName::result(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Signal(
+                        LocalName {
+                            span: span.clone(),
+                            string: literal!("false"),
+                        },
+                        Arc::new(process::Process::Do {
+                            span: span.clone(),
+                            name: LocalName::result(),
+                            usage: VariableUsage::Unknown,
+                            typ: (),
+                            command: process::Command::Break,
+                        }),
+                    ),
+                });
+                let process = compile_condition_process(
+                    condition.as_ref(),
+                    pass,
+                    true_process,
+                    false_process,
+                )?;
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process,
+                })
+            }
+
             Self::Grouped(_, expression) => expression.compile(pass)?,
 
             Self::Box(span, expression) => {
@@ -1020,33 +1121,29 @@ impl Expression {
                     command: process::Command::Link(block.compile(pass)?),
                 });
                 let block = pattern.compile_catch_block(span, block, pass)?;
-                pass.set_catch(label.clone(), Some(block))?;
-                let expression = then.compile(pass)?;
-                pass.unset_catch(label.clone())?;
-                expression
+                pass.expr_with_catch(label.clone(), block, |pass| then.compile(pass))?
             }
 
             Self::Throw(span, label, expression) => {
                 let catch_block = pass.use_catch(span, label)?;
-                pass.set_fallthrough(None)?;
-                let expression = expression.compile(pass)?;
-                pass.unset_fallthrough()?;
-                Arc::new(process::Expression::Chan {
-                    span: span.clone(),
-                    captures: Captures::new(),
-                    chan_name: LocalName::result(),
-                    chan_annotation: None,
-                    chan_type: (),
-                    expr_type: (),
-                    process: Arc::new(process::Process::Let {
+                pass.expr_with_fallthrough(None, |pass| {
+                    Ok(Arc::new(process::Expression::Chan {
                         span: span.clone(),
-                        name: LocalName::error(),
-                        annotation: None,
-                        typ: (),
-                        value: expression,
-                        then: catch_block,
-                    }),
-                })
+                        captures: Captures::new(),
+                        chan_name: LocalName::result(),
+                        chan_annotation: None,
+                        chan_type: (),
+                        expr_type: (),
+                        process: Arc::new(process::Process::Let {
+                            span: span.clone(),
+                            name: LocalName::error(),
+                            annotation: None,
+                            typ: (),
+                            value: expression.compile(pass)?,
+                            then: catch_block,
+                        }),
+                    }))
+                })?
             }
 
             Self::If {
@@ -1054,12 +1151,13 @@ impl Expression {
                 branches,
                 else_,
             } => {
-                let mut process_ast = link_process_from_expr(else_);
-                for (condition, body) in branches.iter().rev() {
-                    process_ast =
-                        condition_process_ast(condition, link_process_from_expr(body), process_ast);
-                }
-                let compiled = process_ast.compile(pass)?;
+                let else_proc = match else_ {
+                    Some(expr) => link_process_from_expr(expr).compile(pass)?,
+                    None => Arc::new(process::Process::Unreachable(span.clone())),
+                };
+                let compiled = compile_if_branches(pass, branches, else_proc, |body, pass| {
+                    link_process_from_expr(body).compile(pass)
+                })?;
                 Arc::new(process::Expression::Chan {
                     span: span.clone(),
                     captures: Captures::new(),
@@ -1077,24 +1175,26 @@ impl Expression {
                 then: expression,
             } => {
                 let expression = expression.compile(pass)?;
-                pass.set_fallthrough(Some(Arc::new(process::Process::Do {
-                    span: span.clone(),
-                    name: LocalName::result(),
-                    usage: VariableUsage::Unknown,
-                    typ: (),
-                    command: process::Command::Link(expression),
-                })))?;
-                let body = process.compile(pass)?;
-                pass.unset_fallthrough()?;
-                Arc::new(process::Expression::Chan {
-                    span: span.clone(),
-                    captures: Captures::new(),
-                    chan_name: LocalName::result(),
-                    chan_annotation: None,
-                    chan_type: (),
-                    expr_type: (),
-                    process: body,
-                })
+                pass.expr_with_fallthrough(
+                    Some(Arc::new(process::Process::Do {
+                        span: span.clone(),
+                        name: LocalName::result(),
+                        usage: VariableUsage::Unknown,
+                        typ: (),
+                        command: process::Command::Link(expression),
+                    })),
+                    |pass| {
+                        Ok(Arc::new(process::Expression::Chan {
+                            span: span.clone(),
+                            captures: Captures::new(),
+                            chan_name: LocalName::result(),
+                            chan_annotation: None,
+                            chan_type: (),
+                            expr_type: (),
+                            process: process.compile(pass)?,
+                        }))
+                    },
+                )?
             }
 
             Self::Chan {
@@ -1156,6 +1256,7 @@ impl Spanning for Expression {
             | Self::List(span, _)
             | Self::Global(span, _)
             | Self::Variable(span, _)
+            | Self::Condition(span, _)
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
             | Self::Catch { span, .. }
@@ -1239,7 +1340,7 @@ impl Construct {
                     name: LocalName::result(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process, false),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1434,7 +1535,7 @@ impl Apply {
                     name: LocalName::object(),
                     usage: VariableUsage::Unknown,
                     typ: (),
-                    command: process::Command::Case(branches, processes, else_process, false),
+                    command: process::Command::Case(branches, processes, else_process),
                 })
             }
 
@@ -1485,7 +1586,7 @@ impl Apply {
             Self::Default(span, expr, apply) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = apply.compile(pass)?;
-                compile_default(span, LocalName::object(), default_expr, ok_process)
+                compile_default(span, LocalName::object(), default_expr, ok_process, pass)
             }
 
             Self::Try(span, label, apply) => {
@@ -1593,7 +1694,7 @@ impl ApplyBranch {
             Self::Default(span, expr, branch) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = branch.compile(pass)?;
-                compile_default(span, LocalName::object(), default_expr, ok_process)
+                compile_default(span, LocalName::object(), default_expr, ok_process, pass)
             }
         })
     }
@@ -1616,26 +1717,29 @@ impl Process {
     pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::If {
-                span: _,
+                span,
                 branches,
                 else_,
                 then,
             } => {
                 if let Some(tail) = then {
                     let tail = tail.compile(pass)?;
-                    pass.set_fallthrough(Some(tail))?;
+                    pass.with_fallthrough(Some(tail), |pass| {
+                        let else_proc = match else_ {
+                            Some(proc) => proc.compile(pass)?,
+                            None => Arc::new(process::Process::Unreachable(span.clone())),
+                        };
+                        compile_if_branches(pass, branches, else_proc, |body, pass| {
+                            body.compile(pass)
+                        })
+                    })?
+                } else {
+                    let else_proc = match else_ {
+                        Some(proc) => proc.compile(pass)?,
+                        None => Arc::new(process::Process::Unreachable(span.clone())),
+                    };
+                    compile_if_branches(pass, branches, else_proc, |body, pass| body.compile(pass))?
                 }
-
-                let mut process_ast: Process = *else_.clone();
-                for (condition, body) in branches.iter().rev() {
-                    process_ast = condition_process_ast(condition, body.clone(), process_ast);
-                }
-                let compiled = process_ast.compile(pass)?;
-
-                if then.is_some() {
-                    pass.unset_fallthrough()?;
-                }
-                compiled
             }
 
             Self::Let {
@@ -1644,11 +1748,12 @@ impl Process {
                 value,
                 then,
             } => {
-                pass.set_fallthrough(None)?;
-                pass.disable_catches(CatchDisabledReason::DifferentProcess);
-                let value = value.compile(pass)?;
-                pass.enable_catches();
-                pass.unset_fallthrough()?;
+                let value = pass.expr_with_fallthrough(None, |pass| {
+                    pass.disable_catches(CatchDisabledReason::DifferentProcess);
+                    let value = value.compile(pass)?;
+                    pass.enable_catches();
+                    Ok(value)
+                })?;
                 pattern.compile_let(span, value, then.compile(pass)?, pass)?
             }
 
@@ -1659,22 +1764,21 @@ impl Process {
                 block,
                 then,
             } => {
-                pass.set_fallthrough(None)?;
-                let block = pattern.compile_catch_block(span, block.compile(pass)?, pass)?;
-                pass.unset_fallthrough()?;
-                pass.set_catch(label.clone(), Some(block))?;
-                let process = then.compile(pass)?;
-                pass.unset_catch(label.clone())?;
+                let block = pass.with_fallthrough(None, |pass| {
+                    pattern.compile_catch_block(span, block.compile(pass)?, pass)
+                })?;
+                let process = pass.with_catch(label.clone(), block, |pass| then.compile(pass))?;
                 process
             }
 
             Self::Throw(span, label, expression) => {
                 let catch_block = pass.use_catch(span, label)?;
-                pass.set_fallthrough(None)?;
-                pass.disable_catches(CatchDisabledReason::DifferentProcess);
-                let expression = expression.compile(pass)?;
-                pass.enable_catches();
-                pass.unset_fallthrough()?;
+                let expression = pass.expr_with_fallthrough(None, |pass| {
+                    pass.disable_catches(CatchDisabledReason::DifferentProcess);
+                    let expression = expression.compile(pass);
+                    pass.enable_catches();
+                    expression
+                })?;
                 Arc::new(process::Process::Let {
                     span: span.clone(),
                     name: LocalName::error(),
@@ -1783,42 +1887,50 @@ impl Command {
                 })
             }
 
-            Self::Case(
-                span,
-                CommandBranches(process_branches),
-                else_branch,
-                optional_process,
-                lenient,
-            ) => {
+            Self::Case(span, CommandBranches(process_branches), else_branch, optional_process) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
 
                 if let Some(process) = optional_process {
                     let process = process.compile(pass)?;
-                    pass.set_fallthrough(Some(process))?;
+                    pass.with_fallthrough(Some(process), |pass| {
+                        for (branch_name, process_branch) in process_branches {
+                            branches.push(branch_name.clone());
+                            processes.push(process_branch.compile(object_name, pass)?);
+                        }
+                        let else_process = match else_branch {
+                            Some(branch) => Some(branch.compile(object_name, pass)?),
+                            None => None,
+                        };
+                        let branches = Arc::from(branches);
+                        let processes = Box::from(processes);
+                        Ok(Arc::new(process::Process::Do {
+                            span: span.clone(),
+                            name: object_name.clone(),
+                            usage: VariableUsage::Unknown,
+                            typ: (),
+                            command: process::Command::Case(branches, processes, else_process),
+                        }))
+                    })?
+                } else {
+                    for (branch_name, process_branch) in process_branches {
+                        branches.push(branch_name.clone());
+                        processes.push(process_branch.compile(object_name, pass)?);
+                    }
+                    let else_process = match else_branch {
+                        Some(branch) => Some(branch.compile(object_name, pass)?),
+                        None => None,
+                    };
+                    let branches = Arc::from(branches);
+                    let processes = Box::from(processes);
+                    Arc::new(process::Process::Do {
+                        span: span.clone(),
+                        name: object_name.clone(),
+                        usage: VariableUsage::Unknown,
+                        typ: (),
+                        command: process::Command::Case(branches, processes, else_process),
+                    })
                 }
-
-                for (branch_name, process_branch) in process_branches {
-                    branches.push(branch_name.clone());
-                    processes.push(process_branch.compile(object_name, pass)?);
-                }
-                let else_process = match else_branch {
-                    Some(branch) => Some(branch.compile(object_name, pass)?),
-                    None => None,
-                };
-                if optional_process.is_some() {
-                    pass.unset_fallthrough()?;
-                }
-
-                let branches = Arc::from(branches);
-                let processes = Box::from(processes);
-                Arc::new(process::Process::Do {
-                    span: span.clone(),
-                    name: object_name.clone(),
-                    usage: VariableUsage::Unknown,
-                    typ: (),
-                    command: process::Command::Case(branches, processes, else_process, *lenient),
-                })
             }
 
             Self::Break(span) => Arc::new(process::Process::Do {
@@ -1908,7 +2020,7 @@ impl Command {
             Self::Default(span, expr, command) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = command.compile(object_name, pass)?;
-                compile_default(span, object_name.clone(), default_expr, ok_process)
+                compile_default(span, object_name.clone(), default_expr, ok_process, pass)
             }
 
             Self::Pipe(span, function, command) => {
@@ -1955,7 +2067,6 @@ fn compile_try(
                 ok_process,
             ]),
             None,
-            false,
         ),
     })
 }
@@ -1965,32 +2076,35 @@ fn compile_default(
     variable: LocalName,
     default_expr: Arc<process::Expression<()>>,
     ok_process: Arc<process::Process<()>>,
+    pass: &mut Passes,
 ) -> Arc<process::Process<()>> {
-    Arc::new(process::Process::Do {
-        span: span.clone(),
-        name: variable.clone(),
-        usage: VariableUsage::Unknown,
-        typ: (),
-        command: process::Command::Case(
-            Arc::from([
-                LocalName::from(literal!("err")),
-                LocalName::from(literal!("ok")),
-            ]),
-            Box::from([
-                Arc::new(process::Process::Let {
-                    span: span.clone(),
-                    name: variable.clone(),
-                    annotation: None,
-                    typ: (),
-                    value: default_expr,
-                    then: ok_process.clone(),
-                }),
-                ok_process,
-            ]),
-            None,
-            false,
-        ),
+    pass.with_fallthrough(Some(ok_process), |pass| {
+        Ok(Arc::new(process::Process::Do {
+            span: span.clone(),
+            name: variable.clone(),
+            usage: VariableUsage::Unknown,
+            typ: (),
+            command: process::Command::Case(
+                Arc::from([
+                    LocalName::from(literal!("err")),
+                    LocalName::from(literal!("ok")),
+                ]),
+                Box::from([
+                    Arc::new(process::Process::Let {
+                        span: span.clone(),
+                        name: variable.clone(),
+                        annotation: None,
+                        typ: (),
+                        value: default_expr,
+                        then: pass.use_fallthrough(span).unwrap(),
+                    }),
+                    pass.use_fallthrough(span).unwrap(),
+                ]),
+                None,
+            ),
+        }))
     })
+    .unwrap()
 }
 
 fn compile_pipe(
@@ -2122,52 +2236,77 @@ fn collect_restorations(condition: &Condition) -> Vec<Restoration> {
     }
 }
 
-fn apply_restorations(restores: Vec<Restoration>, failure: Process) -> Process {
-    restores
-        .into_iter()
-        .rev()
-        .fold(failure, |acc, restore| Process::Let {
-            span: restore.span.clone(),
-            pattern: Pattern::Name(restore.span.clone(), restore.name.clone(), None),
-            value: Box::new(restore.value.clone()),
-            then: Box::new(acc),
-        })
-}
-
-fn attach_pattern_to_process(pattern: &Pattern, body: Process, subject: &LocalName) -> Process {
+fn attach_pattern_to_process_compiled(
+    pattern: &Pattern,
+    body: Arc<process::Process<()>>,
+    subject: &LocalName,
+    pass: &mut Passes,
+) -> Result<Arc<process::Process<()>>, CompileError> {
     if matches!(pattern, Pattern::Continue(_)) {
-        return body;
+        return Ok(body);
     }
-    Process::Let {
-        span: pattern.span().join(body.span()),
-        pattern: pattern.clone(),
-        value: Box::new(Expression::Variable(pattern.span(), subject.clone())),
-        then: Box::new(body),
-    }
+    pattern.compile_let(
+        &pattern.span().join(body.span()),
+        Arc::new(process::Expression::Variable(
+            pattern.span(),
+            subject.clone(),
+            (),
+            VariableUsage::Unknown,
+        )),
+        body,
+        pass,
+    )
 }
 
-fn condition_process_ast(condition: &Condition, success: Process, failure: Process) -> Process {
-    match condition {
+fn compile_restorations(
+    restores: &[Restoration],
+    tail: Arc<process::Process<()>>,
+    pass: &mut Passes,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    restores.iter().rev().try_fold(tail, |acc, restore| {
+        let value = restore.value.compile(pass)?;
+        Ok(Arc::new(process::Process::Let {
+            span: restore.span.clone(),
+            name: restore.name.clone(),
+            annotation: None,
+            typ: (),
+            value,
+            then: acc,
+        }))
+    })
+}
+
+fn condition_process_core(
+    condition: &Condition,
+    pass: &mut Passes,
+    success: Arc<process::Process<()>>,
+    failure: Arc<process::Process<()>>,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    Ok(match condition {
         Condition::Bool(span, expr) => {
             let temp = LocalName::temp();
-            let mut branches = BTreeMap::new();
-            branches.insert(
-                LocalName::from(literal!("true")),
-                CommandBranch::Then(span.clone(), success),
-            );
-            branches.insert(
-                LocalName::from(literal!("false")),
-                CommandBranch::Then(span.clone(), failure.clone()),
-            );
-            Process::Let {
+            let expr = expr.compile(pass)?;
+            Arc::new(process::Process::Let {
                 span: span.clone(),
-                pattern: Pattern::Name(span.clone(), temp.clone(), None),
-                value: Box::new(expr.clone()),
-                then: Box::new(Process::Command(
-                    temp.clone(),
-                    Command::Case(span.clone(), CommandBranches(branches), None, None, true),
-                )),
-            }
+                name: temp.clone(),
+                annotation: None,
+                typ: (),
+                value: expr,
+                then: Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: temp.clone(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Case(
+                        Arc::from([
+                            LocalName::from(literal!("false")),
+                            LocalName::from(literal!("true")),
+                        ]),
+                        Box::from([failure, success]),
+                        None,
+                    ),
+                }),
+            })
         }
         Condition::Is {
             span,
@@ -2177,46 +2316,82 @@ fn condition_process_ast(condition: &Condition, success: Process, failure: Proce
         } => {
             let (subject_name, binding_value) = match value {
                 Expression::Variable(_, name) => (name.clone(), None),
-                _ => (LocalName::temp(), Some(value.clone())),
+                _ => (LocalName::temp(), Some(value.compile(pass)?)),
             };
-            let mut branches = BTreeMap::new();
-            let success_process = attach_pattern_to_process(pattern, success, &subject_name);
-            branches.insert(
-                variant.clone(),
-                CommandBranch::Then(success_process.span(), success_process),
-            );
-            let failure_branch = CommandBranch::Then(failure.span(), failure.clone());
-            let command_process = Process::Command(
-                subject_name.clone(),
-                Command::Case(
-                    span.clone(),
-                    CommandBranches(branches),
-                    Some(Box::new(failure_branch)),
-                    None,
-                    true,
+
+            let success_process =
+                attach_pattern_to_process_compiled(pattern, success, &subject_name, pass)?;
+
+            let command_process = Arc::new(process::Process::Do {
+                span: span.clone(),
+                name: subject_name.clone(),
+                usage: VariableUsage::Unknown,
+                typ: (),
+                command: process::Command::Case(
+                    Arc::from([variant.clone()]),
+                    Box::from([success_process]),
+                    Some(failure),
                 ),
-            );
+            });
+
             match binding_value {
-                Some(value) => Process::Let {
+                Some(value) => Arc::new(process::Process::Let {
                     span: span.clone(),
-                    pattern: Pattern::Name(span.clone(), subject_name.clone(), None),
-                    value: Box::new(value),
-                    then: Box::new(command_process),
-                },
+                    name: subject_name.clone(),
+                    annotation: None,
+                    typ: (),
+                    value,
+                    then: command_process,
+                }),
                 None => command_process,
             }
         }
         Condition::And(_, left, right) => {
-            let restored_failure = apply_restorations(collect_restorations(left), failure.clone());
-            let right_process = condition_process_ast(right, success, restored_failure);
-            condition_process_ast(left, right_process, failure)
+            let goto_failure = failure.clone();
+            let restored_failure =
+                compile_restorations(&collect_restorations(left), failure, pass)?;
+            let right_process =
+                condition_process_core(right, pass, success.clone(), restored_failure)?;
+            condition_process_core(left, pass, right_process, goto_failure)?
         }
         Condition::Or(_, left, right) => {
-            let right_process = condition_process_ast(right, success.clone(), failure.clone());
-            condition_process_ast(left, success, right_process)
+            let right_process =
+                condition_process_core(right, pass, success.clone(), failure.clone())?;
+            condition_process_core(left, pass, success, right_process)?
         }
-        Condition::Not(_, inner) => condition_process_ast(inner, failure, success),
-    }
+        Condition::Not(_, inner) => condition_process_core(inner, pass, failure, success)?,
+    })
+}
+
+fn compile_condition_process(
+    condition: &Condition,
+    pass: &mut Passes,
+    success_body: Arc<process::Process<()>>,
+    failure_body: Arc<process::Process<()>>,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    let span = condition.span();
+    pass.with_fallthrough(Some(failure_body), |pass| {
+        let goto_failure = pass.use_fallthrough(&span).unwrap();
+        pass.with_fallthrough(Some(success_body), |pass| {
+            let goto_success = pass.use_fallthrough(&span).unwrap();
+            condition_process_core(condition, pass, goto_success, goto_failure)
+        })
+    })
+}
+
+fn compile_if_branches<B>(
+    pass: &mut Passes,
+    branches: &[(Condition, B)],
+    else_proc: Arc<process::Process<()>>,
+    mut compile_body: impl FnMut(&B, &mut Passes) -> Result<Arc<process::Process<()>>, CompileError>,
+) -> Result<Arc<process::Process<()>>, CompileError> {
+    branches
+        .iter()
+        .rev()
+        .try_fold(else_proc, |acc, (condition, body)| {
+            let success = compile_body(body, pass)?;
+            compile_condition_process(condition, pass, success, acc)
+        })
 }
 
 fn link_process_from_expr(expr: &Expression) -> Process {
@@ -2233,7 +2408,7 @@ impl Spanning for Command {
             | Self::Send(span, _, _)
             | Self::Receive(span, _, _, _)
             | Self::Signal(span, _, _)
-            | Self::Case(span, _, _, _, _)
+            | Self::Case(span, _, _, _)
             | Self::Break(span)
             | Self::Continue(span, _)
             | Self::Begin { span, .. }
@@ -2310,7 +2485,7 @@ impl CommandBranch {
             Self::Default(span, expr, branch) => {
                 let default_expr = expr.compile(pass)?;
                 let ok_process = branch.compile(object_name, pass)?;
-                compile_default(span, object_name.clone(), default_expr, ok_process)
+                compile_default(span, object_name.clone(), default_expr, ok_process, pass)
             }
         })
     }

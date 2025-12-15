@@ -952,14 +952,14 @@ fn condition_grouped(input: &mut Input) -> Result<Condition> {
 }
 
 fn condition_bool(input: &mut Input) -> Result<Condition> {
-    expression
-        .map(|expr| Condition::Bool(expr.span(), expr))
+    expression_no_condition
+        .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
         .parse_next(input)
 }
 
 fn condition_is(input: &mut Input) -> Result<Condition> {
     (
-        expression,
+        expression_no_condition,
         t(TokenKind::Is),
         t(TokenKind::Dot),
         local_name,
@@ -1016,6 +1016,12 @@ fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern> {
 }
 
 fn expression(input: &mut Input) -> Result<Expression> {
+    alt((expr_condition, expression_no_condition))
+        .context(StrContext::Label("expression"))
+        .parse_next(input)
+}
+
+fn expression_no_condition(input: &mut Input) -> Result<Expression> {
     alt((
         expr_literal,
         expr_list,
@@ -1030,7 +1036,6 @@ fn expression(input: &mut Input) -> Result<Expression> {
         construction.map(Expression::Construction),
         expr_grouped,
     ))
-    .context(StrContext::Label("expression"))
     .parse_next(input)
 }
 
@@ -1040,6 +1045,16 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
             Expression::Grouped(open.span.join(close.span()), Box::new(expr))
         })
         .parse_next(input)
+}
+
+fn expr_condition(input: &mut Input) -> Result<Expression> {
+    let cond = condition.parse_next(input)?;
+    if matches!(cond, Condition::Bool(_, _)) {
+        Err(ErrMode::Backtrack(Error_::from_input(input)))
+    } else {
+        let span = cond.span();
+        Ok(Expression::Condition(span, Box::new(cond)))
+    }
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression> {
@@ -1195,21 +1210,19 @@ fn expr_if(input: &mut Input) -> Result<Expression> {
         (
             t(TokenKind::LCurly),
             repeat(1.., expr_if_branch),
-            t(TokenKind::Else),
-            cut_err((t(TokenKind::FatArrow), expression)),
-            opt(t(TokenKind::Comma)),
+            opt((
+                t(TokenKind::Else),
+                cut_err((t(TokenKind::FatArrow), expression)),
+                opt(t(TokenKind::Comma)),
+            )),
             t(TokenKind::RCurly),
         ),
     )
-    .map(
-        |(kw, (_open, branches, _else_kw, (_, else_expr), _trailing_comma, close))| {
-            Expression::If {
-                span: kw.span.join(close.span()),
-                branches,
-                else_: Box::new(else_expr),
-            }
-        },
-    )
+    .map(|(kw, (_open, branches, else_part, close))| Expression::If {
+        span: kw.span.join(close.span()),
+        branches,
+        else_: else_part.map(|(_, (_, else_expr), _)| Box::new(else_expr)),
+    })
     .parse_next(input)
 }
 
@@ -1897,7 +1910,7 @@ fn proc_telltypes(input: &mut Input) -> Result<Process> {
 }
 
 fn proc_if(input: &mut Input) -> Result<Process> {
-    alt((proc_if_block, proc_if_inline)).parse_next(input)
+    alt((proc_if_inline, proc_if_block)).parse_next(input)
 }
 
 fn proc_if_block(input: &mut Input) -> Result<Process> {
@@ -1905,18 +1918,21 @@ fn proc_if_block(input: &mut Input) -> Result<Process> {
         (t(TokenKind::If), t(TokenKind::LCurly)),
         (
             repeat(1.., proc_if_branch),
-            t(TokenKind::Else),
-            cut_err(proc_if_else_body),
-            opt(t(TokenKind::Comma)),
+            opt((
+                t(TokenKind::Else),
+                cut_err(proc_if_else_body),
+                opt(t(TokenKind::Comma)),
+            )),
             t(TokenKind::RCurly),
             opt(pass_process),
         ),
     )
     .map(
-        |((kw, open), (branches, _else_kw, else_body, _comma, close, then_process))| Process::If {
+        |((kw, open), (branches, else_body, close, then_process))| Process::If {
             span: kw.span.join(close.span()),
             branches,
-            else_: Box::new(else_body.unwrap_or(Process::Noop(open.span.only_end()))),
+            else_: else_body
+                .map(|(_, body, _)| Box::new(body.unwrap_or(Process::Noop(open.span.only_end())))),
             then: then_process.map(Box::new),
         },
     )
@@ -1954,20 +1970,20 @@ fn proc_if_else_body(input: &mut Input) -> Result<Option<Process>> {
 }
 
 fn proc_if_inline(input: &mut Input) -> Result<Process> {
-    commit_after(
+    (
         t(TokenKind::If),
-        (
-            not(peek(t(TokenKind::LCurly))),
-            condition,
-            t(TokenKind::FatArrow),
-            t(TokenKind::LCurly),
-            opt(process),
-            t(TokenKind::RCurly),
-            opt(pass_process),
-        ),
+        alt((
+            (t(TokenKind::LCurly), condition, t(TokenKind::RCurly))
+                .map(|(_, condition, _)| condition),
+            (not(peek(t(TokenKind::LCurly))), condition).map(|(_, condition)| condition),
+        )),
+        t(TokenKind::FatArrow),
+        t(TokenKind::LCurly),
+        opt(process),
+        t(TokenKind::RCurly),
+        opt(pass_process),
     )
-    .map(
-        |(kw, (_, condition, _, open, then_proc, close, else_process))| {
+        .map(|(kw, condition, _, open, then_proc, close, else_process)| {
             let tail_proc = else_process.unwrap_or(Process::Noop(close.span().only_end()));
             Process::If {
                 span: kw.span.join(tail_proc.span()),
@@ -1975,12 +1991,11 @@ fn proc_if_inline(input: &mut Input) -> Result<Process> {
                     condition,
                     then_proc.unwrap_or(Process::Noop(open.span.join(close.span()))),
                 )],
-                else_: Box::new(Process::Noop(close.span().only_end())),
+                else_: Some(Box::new(Process::Noop(close.span().only_end()))),
                 then: Some(Box::new(tail_proc)),
             }
-        },
-    )
-    .parse_next(input)
+        })
+        .parse_next(input)
 }
 
 fn global_command(input: &mut Input) -> Result<Process> {
@@ -2137,7 +2152,6 @@ fn cmd_case(input: &mut Input) -> Result<Command> {
                 CommandBranches(branches),
                 else_branch,
                 pass_process.map(Box::new),
-                false,
             )
         },
     )
