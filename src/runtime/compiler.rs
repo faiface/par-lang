@@ -44,7 +44,7 @@ impl Compiled {
             name_to_ty: module
                 .definitions
                 .iter()
-                .map(|(a, (_def, typ))| (a.clone(), typ.clone()))
+                .map(|(a, (_, typ))| (a.clone(), typ.clone()))
                 .collect(),
         })
     }

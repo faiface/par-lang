@@ -3,6 +3,7 @@ use crate::par::build_result::BuildResult;
 use crate::par::types::Type;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
+use crate::runtime::compiler::Backend;
 use crate::spawn::TokioSpawn;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
@@ -214,8 +215,11 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
         root.continue_().await;
         reducer_future.await;
         let end = Instant::now();
-        println!("Took: {:?}", end - start);
-        println!("Done :)");
+        eprintln!("Took: {:?}", end - start);
+        if let Backend::New(new) = &rt_compiled.backend {
+            eprintln!("Arena size: {}", new.arena.memory_size());
+        }
+        eprintln!("Done :)");
     });
 }
 
