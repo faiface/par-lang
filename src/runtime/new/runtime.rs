@@ -270,11 +270,12 @@ pub trait Linker {
         extra_vars: usize,
     ) -> (Node, Node, Instance, usize) {
         let num_vars = package.num_vars;
+        let mut vars = Vec::with_capacity(num_vars + extra_vars);
+        for _ in 0 .. num_vars + extra_vars {
+            vars.push(None);
+        }
         let instance = Instance {
-            vars: Arc::new(InstanceInner(Mutex::new(
-                Vec::from_iter(std::iter::from_fn(|| Some(None)).take(num_vars + extra_vars))
-                    .into_boxed_slice(),
-            ))),
+            vars: Arc::new(InstanceInner(Mutex::new(vars.into_boxed_slice()))),
         };
         self.arena()
             .get(package.redexes.clone())
