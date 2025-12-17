@@ -149,11 +149,11 @@ impl ProgramTranspiler {
         current_net.num_vars = 0;
         self.stack.push(current_net);
 
-        let root = self.transpile_tree(root);
-        let captures = self.transpile_tree(captures);
+        let root = self.transpile_tree_and_alloc(root);
+        let captures = self.transpile_tree_and_alloc(captures);
         let redexes: Vec<_> = redexes
             .into_iter()
-            .map(|(a, b)| (self.transpile_tree(a), self.transpile_tree(b)))
+            .map(|(a, b)| (self.transpile_tree_and_alloc(a), self.transpile_tree_and_alloc(b)))
             .collect();
         let redexes: Index<_> = self.dest.alloc_clone(redexes.as_ref());
         let package = Package {

@@ -117,14 +117,14 @@ impl Debug for ExternalArc {
 /// It does not use the same Instance as its environment, and so it requires a
 /// separate Instance to be created when it is expanded.
 pub struct Package {
-    pub root: Global,
-    pub captures: Global,
+    pub root: Index<Global>,
+    pub captures: Index<Global>,
     /// How large the Instance must be.
     pub num_vars: usize,
 
     pub debug_name: String,
     // TODO: Store this inline in the arena.
-    pub redexes: Index<[(Global, Global)]>,
+    pub redexes: Index<[(Index<Global>, Index<Global>)]>,
 }
 
 #[derive(Clone, Debug)]
@@ -146,7 +146,7 @@ pub enum Global {
 pub enum Node {
     Linear(Linear),
     Shared(Shared),
-    Global(Instance, Global),
+    Global(Instance, Index<Global>),
 }
 
 #[derive(Clone, Debug)]
@@ -182,6 +182,17 @@ impl<P> Value<P> {
             Value::ExternalFn(e) => Value::ExternalFn(e),
             Value::ExternalArc(e) => Value::ExternalArc(e),
             Value::Primitive(primitive) => Value::Primitive(primitive),
+        })
+    }
+
+    pub fn map_ref_leaves<Q>(&self, mut f: impl FnMut(&P) -> Option<Q>) -> Option<Value<Q>> {
+        Some(match self {
+            Value::Break => Value::Break,
+            Value::Pair(a, b) => Value::Pair(f(a)?, f(b)?),
+            Value::Either(s, v) => Value::Either(*s, f(v)?),
+            Value::ExternalFn(e) => Value::ExternalFn(*e),
+            Value::ExternalArc(e) => Value::ExternalArc(e.clone()),
+            Value::Primitive(primitive) => Value::Primitive(primitive.clone()),
         })
     }
 }
@@ -249,7 +260,7 @@ pub trait Linker {
             Node::Shared(Shared::Sync(shared)) => match &*shared {
                 SyncShared::Package(package, shared) => {
                     let node = self
-                        .instantiate_with_captures(package.clone(), Node::Shared(shared.clone()));
+                        .instantiate_with_captures(*package, Node::Shared(shared.clone()));
                     self.destruct(node)
                 }
                 SyncShared::Value(shared) => Ok(shared
@@ -257,9 +268,12 @@ pub trait Linker {
                     .map_leaves(|x| Some(Node::Shared(x)))
                     .unwrap()),
             },
-            Node::Global(instance, Global::Value(v)) => Ok(v
-                .map_leaves(|x| Some(Node::Global(instance.clone(), self.arena().get(x).clone())))
-                .unwrap()),
+            Node::Global(instance, global_index) => match self.arena().get(global_index) {
+                Global::Value(v) => Ok(v
+                    .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
+                    .unwrap()),
+                _ => Err(Node::Global(instance, global_index)),
+            }
             node => Err(node),
         }
     }
@@ -278,17 +292,17 @@ pub trait Linker {
             vars: Arc::new(InstanceInner(Mutex::new(vars.into_boxed_slice()))),
         };
         self.arena()
-            .get(package.redexes.clone())
+            .get(package.redexes)
             .iter()
             .for_each(|(a, b)| {
                 self.link(
-                    Node::Global(instance.clone(), a.clone()),
-                    Node::Global(instance.clone(), b.clone()),
+                    Node::Global(instance.clone(), *a),
+                    Node::Global(instance.clone(), *b),
                 );
             });
         (
-            Node::Global(instance.clone(), package.root.clone()),
-            Node::Global(instance.clone(), package.captures.clone()),
+            Node::Global(instance.clone(), package.root),
+            Node::Global(instance.clone(), package.captures),
             instance,
             num_vars,
         )
@@ -348,26 +362,38 @@ pub trait Linker {
     fn share_inner(&mut self, node: Node) -> Option<Shared> {
         stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
             Node::Shared(shared) => Some(shared),
-            Node::Global(_instance, Global::Destruct(..)) => None,
-            Node::Global(_instance, Global::Fanout(..)) => None,
-            Node::Global(instance, Global::Package(package, captures, FanBehavior::Expand)) => {
-                let captures = self.arena().get(captures).clone();
-                let root =
-                    self.instantiate_with_captures(package, Node::Global(instance, captures));
-                self.share_inner(root)
+            Node::Global(instance, global_index) => match self.arena().get(global_index) {
+                Global::Destruct(..) => None,
+                Global::Fanout(..) => None,
+                Global::Package(package, captures, FanBehavior::Expand) => {
+                    let root =
+                        self.instantiate_with_captures(package.clone(), Node::Global(instance, captures.clone()));
+                    self.share_inner(root)
+                }
+                Global::Package(package, captures, FanBehavior::Propagate) => {
+                    let captures = self.share_inner(Node::Global(instance, *captures))?;
+                    Some(Shared::Sync(Arc::new(SyncShared::Package(
+                        *package, captures,
+                    ))))
+                }
+                Global::Value(value) => Some(Shared::Sync(Arc::new(
+                    SyncShared::Value(value.map_ref_leaves(|p| {
+                        self.share_inner(Node::Global(instance.clone(), *p))
+                    })?),
+                ))),
+                Global::Variable(id) => {
+                    let mut lock = instance.vars.0.lock().unwrap();
+                    let slot = &mut lock[*id];
+                    if let Some(slot) = slot.take() {
+                        drop(lock);
+                        Some(self.share_inner(slot)?)
+                    } else {
+                        let (hole, shared) = self.create_share_hole();
+                        slot.replace(hole);
+                        Some(shared)
+                    }
+                }
             }
-            Node::Global(instance, Global::Package(package, captures, FanBehavior::Propagate)) => {
-                let captures = Node::Global(instance, self.arena().get(captures).clone());
-                let captures = self.share_inner(captures)?;
-                Some(Shared::Sync(Arc::new(SyncShared::Package(
-                    package, captures,
-                ))))
-            }
-            Node::Global(instance, Global::Value(value)) => Some(Shared::Sync(Arc::new(
-                SyncShared::Value(value.map_leaves(|p| {
-                    self.share_inner(Node::Global(instance.clone(), self.arena().get(p).clone()))
-                })?),
-            ))),
             Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
                 value.map_leaves(|p| self.share_inner(*p))?,
             )))),
@@ -377,18 +403,6 @@ pub trait Linker {
                 Some(shared)
             }
             Node::Linear(Linear::ShareHole(..)) => None,
-            Node::Global(instance, Global::Variable(id)) => {
-                let mut lock = instance.vars.0.lock().unwrap();
-                let slot = &mut lock[id];
-                if let Some(slot) = slot.take() {
-                    drop(lock);
-                    Some(self.share_inner(slot)?)
-                } else {
-                    let (hole, shared) = self.create_share_hole();
-                    slot.replace(hole);
-                    Some(shared)
-                }
-            }
         })
     }
     fn create_share_hole(&self) -> (Node, Shared) {
@@ -467,51 +481,17 @@ impl Runtime {
     }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         match (a, b) {
-            sym!(Node::Global(instance, Global::Variable(index)), value) => {
-                self.set_var(instance, index, value)
-            }
-
-            sym!(
-                Node::Global(
-                    instance,
-                    Global::Package(package, captures_in, FanBehavior::Expand)
-                ),
-                other
-            ) => {
-                let root = self.instantiate_with_captures(
-                    package,
-                    Node::Global(instance, self.arena.get(captures_in).clone()),
-                );
-                self.link(root, other);
-            }
             sym!(Node::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
                 self.enqueue_to_hole(&mut *lock, other);
             }
+
             sym!(Node::Linear(Linear::Request(request)), other) => {
                 return Some((UserData::Request(request), other));
             }
-            sym!(Node::Global(instance, Global::Fanout(destinations)), other) => {
-                let other = self.share(other).unwrap();
-                let destinations = self.arena.get(destinations);
-                for dest in destinations {
-                    self.redexes.push((
-                        Node::Global(instance.clone(), dest.clone()),
-                        Node::Shared(other.clone()),
-                    ));
-                }
-            }
+
             sym!(Node::Linear(Linear::ShareHole(hole)), other) => self.fill_hole(hole, other),
-            sym!(
-                Node::Global(instance, Global::Package(package, captures_in, _)),
-                other
-            ) => {
-                let root = self.instantiate_with_captures(
-                    package,
-                    Node::Global(instance, self.arena.get(captures_in).clone()),
-                );
-                self.link(root, other);
-            }
+
             sym!(Node::Shared(Shared::Sync(x)), other)
                 if matches!(&*x, SyncShared::Package(..)) =>
             {
@@ -523,15 +503,13 @@ impl Runtime {
                 self.link(root, other);
             }
             sym!(
-                Node::Linear(Linear::Value(Value::ExternalFn(ext)))
-                    | Node::Global(_, Global::Value(Value::ExternalFn(ext))),
+                Node::Linear(Linear::Value(Value::ExternalFn(ext))),
                 other
             ) => {
                 return Some((UserData::ExternalFn(ext), other));
             }
             sym!(
-                Node::Linear(Linear::Value(Value::ExternalArc(ext)))
-                    | Node::Global(_, Global::Value(Value::ExternalArc(ext))),
+                Node::Linear(Linear::Value(Value::ExternalArc(ext))),
                 other
             ) => {
                 return Some((UserData::ExternalArc(ext), other));
@@ -552,51 +530,111 @@ impl Runtime {
                 };
                 return Some((UserData::ExternalFn(arc.clone()), other));
             }
-            sym!(Node::Global(instance, Global::Destruct(destructor)), node) => {
-                match (
-                    self.destruct(node).expect("Continuation-continuation!"),
-                    destructor,
-                ) {
-                    (Value::Break, GlobalCont::Continue) => (),
-                    (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
-                        self.link(
-                            a0,
-                            Node::Global(instance.clone(), self.arena.get(b0).clone()),
-                        );
-                        self.link(a1, Node::Global(instance, self.arena.get(b1).clone()));
+
+            sym!(Node::Global(instance, global_index), other) => match self.arena.clone().get(global_index) {
+                Global::Variable(index) => {
+                    self.set_var(instance, *index, other)
+                }
+
+                Global::Package(package, captures_in, FanBehavior::Expand) => {
+                    let root = self.instantiate_with_captures(
+                        *package,
+                        Node::Global(instance, *captures_in),
+                    );
+                    self.link(root, other);
+                }
+
+                Global::Fanout(destinations) => {
+                    let other = self.share(other).unwrap();
+                    for i in 0..destinations.0.1 {
+                        self.redexes.push((
+                            Node::Global(instance.clone(), Index(destinations.0.0 + i)),
+                            Node::Shared(other.clone()),
+                        ));
                     }
-                    (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
-                        if let Some(package) =
-                            self.lookup_case_branch(options.clone(), signal.clone())
-                        {
-                            let root = self.instantiate_with_captures_direct(
-                                package.clone(),
-                                Node::Global(instance, self.arena.get(context).clone()),
-                            );
-                            self.link(root, payload);
-                        } else {
-                            let branch =
-                                self.lookup_case_branch(options, self.arena.empty_string());
-                            let root = self.instantiate_with_captures_direct(
-                                branch.unwrap().clone(),
-                                Node::Global(instance, self.arena.get(context).clone()),
-                            );
-                            // TODO: Optimize this; we're reconstructing the `Either` branch.
-                            // This could make us lose sharing.
+                }
+
+                Global::Package(package, captures_in, _) => {
+                    let root = self.instantiate_with_captures(
+                        *package,
+                        Node::Global(instance, *captures_in),
+                    );
+                    self.link(root, other);
+                }
+
+                Global::Value(Value::ExternalFn(ext)) => {
+                    return Some((UserData::ExternalFn(*ext), other));
+                }
+
+                Global::Value(Value::ExternalArc(ext)) => {
+                    return Some((UserData::ExternalArc(ext.clone()), other));
+                }
+
+                Global::Destruct(destructor) => {
+                    match (
+                        match self.destruct(other) {
+                            Ok(value) => value,
+                            Err(Node::Global(_, i)) => {
+                                panic!("continuation-continuation: {:?} {:?}", destructor, self.arena.get(i))
+                            }
+                            _ => panic!("continuation-continuation"),
+                        },
+                        destructor,
+                    ) {
+                        (Value::Break, GlobalCont::Continue) => (),
+                        (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
                             self.link(
-                                Node::Linear(Linear::Value(Value::Either(
-                                    signal,
-                                    Box::new(payload),
-                                ))),
-                                root,
+                                a0,
+                                Node::Global(instance.clone(), *b0),
                             );
+                            self.link(a1, Node::Global(instance, *b1));
+                        }
+                        (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
+                            if let Some(package) =
+                                self.lookup_case_branch(options.clone(), signal.clone())
+                            {
+                                let root = self.instantiate_with_captures_direct(
+                                    package.clone(),
+                                    Node::Global(instance, *context),
+                                );
+                                self.link(root, payload);
+                            } else {
+                                let branch =
+                                    self.lookup_case_branch(*options, self.arena.empty_string());
+                                let root = self.instantiate_with_captures_direct(
+                                    branch.unwrap().clone(),
+                                    Node::Global(instance, *context),
+                                );
+                                // TODO: Optimize this; we're reconstructing the `Either` branch.
+                                // This could make us lose sharing.
+                                self.link(
+                                    Node::Linear(Linear::Value(Value::Either(
+                                        signal,
+                                        Box::new(payload),
+                                    ))),
+                                    root,
+                                );
+                            }
+                        }
+                        (a, b) => {
+                            panic!("Unimplemented destruction between: {:?} {:?}", a, b)
                         }
                     }
-                    (a, b) => {
-                        panic!("Unimplemented destruction between: {:?} {:?}", a, b)
+                }
+
+                _ => {
+                    match other {
+                        Node::Global(other_instance, other_global_index) => {
+                            match self.arena.clone().get(other_global_index) {
+                                Global::Destruct(_) => return self.interact(Node::Global(other_instance, other_global_index), Node::Global(instance, global_index)),
+                                _ => panic!("unimplemented interaction between: {:?} {:?}", self.arena.clone().get(global_index), self.arena.clone().get(other_global_index)),
+                            }
+                        }
+                        _ => panic!("unimplemented interaction between: {:?} {:?}", self.arena.clone().get(global_index), other),
                     }
                 }
             }
+
             (a, b) => {
                 panic!(
                     "Unimplemented reduction: {:?} {:?}",
@@ -614,8 +652,11 @@ impl Node {
         match self {
             Node::Linear(l) => format!("Linear.{}", l.variant_name()),
             Node::Shared(s) => format!("Shared.{}", s.variant_name()),
-            Node::Global(i, g) => {
+            /*Node::Global(i, g) => {
                 format!("Global@{:x}.{}", i.identifier(), g.variant_name())
+            }*/
+            Node::Global(i, _g) => {
+                format!("Global@{:x}.{}", i.identifier(), "REF")
             }
         }
     }

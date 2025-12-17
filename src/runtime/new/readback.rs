@@ -212,7 +212,7 @@ impl Handle {
 
     pub async fn break_(mut self) -> () {
         match self.node.take().await {
-            Node::Global(_, Global::Destruct(GlobalCont::Continue)) => (),
+            Node::Global(_, global_index) if matches!(self.arena.get(global_index), Global::Destruct(GlobalCont::Continue)) => (),
             node => {
                 let other = Node::Linear(Linear::Value(Value::Break));
                 self.link(node, other);

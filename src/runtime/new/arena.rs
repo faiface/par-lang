@@ -14,7 +14,7 @@ pub struct Arena {
     nodes: Vec<Global>,
     strings: String,
     packages: Vec<OnceLock<Package>>,
-    redexes: Vec<(Global, Global)>,
+    redexes: Vec<(Index<Global>, Index<Global>)>,
     case_branches: Vec<(Index<str>, OnceLock<Package>)>,
     string_to_location: BTreeMap<String, Index<str>>,
 }
@@ -89,13 +89,15 @@ impl std::fmt::Display for Arena {
 
 pub struct Index<T: Indexable + ?Sized>(pub T::Store);
 
+impl<T: Indexable + ?Sized> Copy for Index<T> {}
+
 /// The `Indexable` trait is implemented by all types that are contained by an `Arena`.
 /// It defines a [`Indexable::Store`] associated type, which determines what is needed to
 /// index into a value of this type. For example, sized values usually require a `usize` to index them,
 /// which represents the offset into the array that contains it
 /// but a slice type requires a pair of offset and length.
 pub trait Indexable {
-    type Store: Clone + PartialEq + Eq + PartialOrd + Ord;
+    type Store: Copy + PartialEq + Eq + PartialOrd + Ord;
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self;
     fn alloc<'s>(store: &'s mut Arena, data: Self) -> Index<Self>
     where
@@ -137,7 +139,7 @@ macro_rules! sized_indexable {
 }
 slice_indexable!(case_branches, (Index<str>, OnceLock<Package>));
 slice_indexable!(nodes, Global);
-slice_indexable!(redexes, (Global, Global));
+slice_indexable!(redexes, (Index<Global>, Index<Global>));
 sized_indexable!(case_branches, (Index<str>, OnceLock<Package>));
 sized_indexable!(packages, OnceLock<Package>);
 sized_indexable!(nodes, Global);
