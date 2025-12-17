@@ -1222,7 +1222,11 @@ fn merge_path_contexts(
             .iter()
             .any(|t| t.is_linear(typedefs).unwrap_or(true));
 
-        if !used && !is_linear && missing {
+        let is_absurd = present_types
+            .iter()
+            .any(|t| t.is_assignable_to(&Type::either(vec![]), typedefs).unwrap());
+
+        if !used && !is_linear && !is_absurd {
             // Drop it.
             continue;
         }
