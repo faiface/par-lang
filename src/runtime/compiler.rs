@@ -107,20 +107,20 @@ impl RunResult {
             RunResult::Old(rewrites) => {
                 use std::fmt::Write;
                 let mut s = String::new();
-                writeln!(&mut s, "Annihilate: {}", rewrites.annihilate).unwrap();
-                writeln!(&mut s, "Commute: {}", rewrites.commute).unwrap();
-                writeln!(&mut s, "Signal: {}", rewrites.signal).unwrap();
-                writeln!(&mut s, "Erase: {}", rewrites.era).unwrap();
-                writeln!(&mut s, "Expand: {}", rewrites.expand).unwrap();
-                writeln!(&mut s, "Responds: {}", rewrites.resp).unwrap();
-                writeln!(&mut s, "Total: {}", rewrites.total()).unwrap();
+                writeln!(&mut s, "\tAnnihilate: {}", rewrites.annihilate).unwrap();
+                writeln!(&mut s, "\tCommute: {}", rewrites.commute).unwrap();
+                writeln!(&mut s, "\tSignal: {}", rewrites.signal).unwrap();
+                writeln!(&mut s, "\tErase: {}", rewrites.era).unwrap();
+                writeln!(&mut s, "\tExpand: {}", rewrites.expand).unwrap();
+                writeln!(&mut s, "\tResponds: {}", rewrites.resp).unwrap();
+                writeln!(&mut s, "\tTotal: {}", rewrites.total()).unwrap();
                 writeln!(
                     &mut s,
-                    "Busy time (ms): {}",
+                    "\tBusy time (ms): {}",
                     rewrites.busy_duration.as_millis()
                 )
                 .unwrap();
-                writeln!(&mut s, "Total / s: {}", rewrites.total_per_second()).unwrap();
+                writeln!(&mut s, "\tTotal / s: {}", rewrites.total_per_second()).unwrap();
                 s
             }
             RunResult::New(rewrites) => rewrites.show(elapsed),

@@ -31,6 +31,7 @@ impl Rewrites {
             \tExternal Call: {}\n\
             \tExternal Send: {}\n\
             \tTotal: {}\n\
+            \tTime (ms): {}\n\
             \tPer second: {}\n\
         ",
             self.r#continue,
@@ -40,6 +41,7 @@ impl Rewrites {
             self.ext_call,
             self.ext_send,
             self.total(),
+            elapsed.as_millis(),
             (self.total() as f64 / elapsed.as_secs_f64()) as u64,
         )
     }
