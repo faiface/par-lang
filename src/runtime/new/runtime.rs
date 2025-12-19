@@ -26,14 +26,12 @@
 //! are pairs of nodes that interact with each other, and reduces them until the program is finished.
 //! The `Runtime` does not know what to do with IO operations; that is handled by the `Reducer`
 
-use arcstr::ArcStr;
 use core::panic;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
 use crate::runtime::new::show::Shower;
 use crate::{par::primitive::Primitive, runtime::new::show::Showable};
-use std::collections::HashMap;
 
 use super::arena::*;
 use crate::runtime::new::stats::Rewrites;
@@ -44,7 +42,7 @@ use tokio::sync::oneshot;
 
 pub type PackagePtr = Index<OnceLock<Package>>;
 pub type GlobalPtr = Index<Global>;
-pub type Str = ArcStr;
+type Str = Index<str>;
 
 #[derive(Debug)]
 struct InstanceInner(Mutex<Box<[Option<Node>]>>);
@@ -222,11 +220,7 @@ pub enum GlobalCont {
     /// The par node; created in receive commands (`value[a]`)
     Par(GlobalPtr, GlobalPtr),
     /// The choice node; created in case commands (`value.case { ... }`)
-    Choice(
-        GlobalPtr,
-        Arc<HashMap<ArcStr, PackagePtr>>,
-        Option<PackagePtr>,
-    ),
+    Choice(GlobalPtr, Index<[(Str, OnceLock<Package>)]>),
 }
 
 #[derive(Debug)]
@@ -272,25 +266,19 @@ pub trait Linker {
         }
     }
 
-    fn instantiate(&mut self, package: PackagePtr) -> (Node, Node) {
-        let (a, b, _, _) = self.instantiate_with_extra_vars(package, 0);
-        (a, b)
-    }
-    fn instantiate_with_extra_vars(
+    fn instatiate_inner(
         &mut self,
-        package: PackagePtr,
+        package: Package,
         extra_vars: usize,
     ) -> (Node, Node, Instance, usize) {
-        let arena = self.arena();
-        let package = arena.get(package);
-        let num_vars = package.get().unwrap().num_vars;
+        let num_vars = package.num_vars;
+        let mut vars = Vec::with_capacity(num_vars + extra_vars);
+        for _ in 0..num_vars + extra_vars {
+            vars.push(None);
+        }
         let instance = Instance {
-            vars: Arc::new(InstanceInner(Mutex::new(
-                Vec::from_iter(std::iter::from_fn(|| Some(None)).take(num_vars + extra_vars))
-                    .into_boxed_slice(),
-            ))),
+            vars: Arc::new(InstanceInner(Mutex::new(vars.into_boxed_slice()))),
         };
-        let package = package.get().unwrap();
         self.arena()
             .get(package.redexes.clone())
             .iter()
@@ -308,14 +296,20 @@ pub trait Linker {
         )
     }
     fn instantiate_with_captures(&mut self, package: PackagePtr, captures: Node) -> Node {
-        // TODO: This work like this now for compatibility with the old runtime, to make the
-        // transpiler simpler
-        // The correct approach is just linking the captures together.
-        let (root, internal_captures, _, _) = self.instantiate_with_extra_vars(package, 0);
+        let package = self.arena().get(package).get().unwrap().clone();
+        self.instantiate_with_captures_direct(package, captures)
+    }
+    fn instantiate_with_captures_direct(&mut self, package: Package, captures: Node) -> Node {
+        let (root, internal_captures, _, _) = self.instatiate_inner(package, 0);
         self.link(internal_captures, captures);
         root
     }
 
+    fn instantiate(&mut self, package: PackagePtr) -> (Node, Node) {
+        let package = self.arena().get(package).get().unwrap().clone();
+        let (a, b, _, _) = self.instatiate_inner(package, 0);
+        (a, b)
+    }
     fn enqueue_to_hole(&mut self, hole: &mut SharedHole, cont: Node) {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
@@ -491,6 +485,17 @@ impl Runtime {
         );
         self.link(root, other);
     }
+    fn lookup_case_branch(
+        &mut self,
+        options: Index<[(Str, OnceLock<Package>)]>,
+        variant: Str,
+    ) -> Option<Package> {
+        self.arena
+            .get(options)
+            .iter()
+            .find(|(a, _)| a.clone() == variant)
+            .map(|(_, b)| b.get().unwrap().clone())
+    }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         match (a, b) {
             sym!(Node::Global(instance, Global::Variable(index)), value) => {
@@ -580,20 +585,21 @@ impl Runtime {
                         );
                         self.link(a1, Node::Global(instance, self.arena.get(b1).clone()));
                     }
-                    (
-                        Value::Either(signal, payload),
-                        GlobalCont::Choice(context, options, default),
-                    ) => {
+                    (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
                         self.rewrites.r#match += 1;
-                        if let Some(package) = options.get(&signal) {
-                            let root = self.instantiate_with_captures(
+                        if let Some(package) =
+                            self.lookup_case_branch(options.clone(), signal.clone())
+                        {
+                            let root = self.instantiate_with_captures_direct(
                                 package.clone(),
                                 Node::Global(instance, self.arena.get(context).clone()),
                             );
                             self.link(root, payload);
                         } else {
-                            let root = self.instantiate_with_captures(
-                                default.unwrap().clone(),
+                            let branch =
+                                self.lookup_case_branch(options, self.arena.empty_string());
+                            let root = self.instantiate_with_captures_direct(
+                                branch.unwrap().clone(),
                                 Node::Global(instance, self.arena.get(context).clone()),
                             );
                             // TODO: Optimize this; we're reconstructing the `Either` branch.

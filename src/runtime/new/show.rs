@@ -125,13 +125,15 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Global> {
                     Par(a, b) => {
                         write!(f, "[{}] {}", Showable(b, self.1), Showable(a, self.1))?;
                     }
-                    Choice(captures, hash_map, els) => {
+                    Choice(captures, branches) => {
                         write!(f, ".{{")?;
-                        for (k, v) in hash_map.iter() {
-                            write!(f, "{} @{} ", k, v.0)?;
-                        }
-                        if let Some(els) = els {
-                            write!(f, "else @{} ", els.0)?;
+                        for (k, v) in self.1.arena.get(branches.clone()).iter() {
+                            write!(
+                                f,
+                                "{} @{} ",
+                                self.1.arena.get(k.clone()),
+                                Showable(v, self.1)
+                            )?;
                         }
                         write!(f, "}}${}", Showable(captures, self.1))?;
                     }
@@ -168,7 +170,12 @@ where
                 write!(f, "({}) {}", Showable(b, self.1), Showable(a, self.1))?;
             }
             Either(arc_str, payload) => {
-                write!(f, ".{} {}", arc_str, Showable(payload, self.1))?;
+                write!(
+                    f,
+                    ".{} {}",
+                    self.1.arena.get(arc_str.clone()),
+                    Showable(payload, self.1)
+                )?;
             }
             ExternalFn(_) => {
                 write!(f, "<external fn>")?;
@@ -180,6 +187,29 @@ where
                 write!(f, "#{:?}", primitive)?;
             }
         };
+        Ok(())
+    }
+}
+
+use super::runtime::Package;
+use std::sync::OnceLock;
+
+impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a OnceLock<Package>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let package = self.0;
+
+        let Some(lock) = package.get() else {
+            write!(f, "<unfilled>")?;
+            return Ok(());
+        };
+        if lock.debug_name.len() > 0 {
+            write!(f, "/* {} */", lock.debug_name)?;
+        }
+        write!(f, "@{}", Showable(&lock.root, self.1))?;
+        write!(f, "${}", Showable(&lock.captures, self.1))?;
+        for (a, b) in self.1.arena.get(lock.redexes.clone()) {
+            write!(f, "& {} ~ {}", Showable(a, self.1), Showable(b, &self.1))?;
+        }
         Ok(())
     }
 }
