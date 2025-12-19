@@ -307,7 +307,7 @@ impl Instance {
 
         self.build = stacker::grow(32 * 1024 * 1024, || {
             BuildResult::from_source(
-                &BuildConfig { new_runtime: false },
+                &BuildConfig::default(),
                 &code.unwrap(),
                 self.file.clone(),
             )

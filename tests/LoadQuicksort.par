@@ -17,12 +17,13 @@ def QuicksortGo = [input] [suffix] chan out: dual List<Nat> {
 			let cmp = Nat.Compare(i, pivot)
 			cmp.case {
 				.less => { b.add(i) }
-				else => { a.add(i) }
+				.equal => { a.add(i) }
+				.greater => { a.add(i) }
 			}
 			input.loop@inner
 		}
 		.end => {
-			let suffix = chan out {
+			let suffix: List<Nat> = chan out {
 				let input = a.build
 				input.loop@outer
 			}

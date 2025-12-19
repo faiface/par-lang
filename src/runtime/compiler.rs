@@ -1,11 +1,15 @@
-use futures::future::RemoteHandle;
+use futures::{future::RemoteHandle, task::SpawnExt};
 
 use crate::{
     par::{language::GlobalName, types::Type},
-    runtime::{new::transpiler::Transpiled, old::compiler::IcCompiled, readback::Handle},
+    runtime::{
+        new::{self, transpiler::Transpiled},
+        old::{self, compiler::IcCompiled},
+        readback::Handle,
+    },
     spawn::TokioSpawn,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use std::{fmt::Display, sync::Arc};
 
@@ -51,7 +55,10 @@ impl Compiled {
     pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
         self.name_to_ty.get(name).cloned()
     }
-    pub async fn start_and_instantiate(&self, name: &GlobalName) -> (Handle, RemoteHandle<()>) {
+    pub async fn start_and_instantiate(
+        &self,
+        name: &GlobalName,
+    ) -> (Handle, RemoteHandle<RunResult>) {
         match &self.backend {
             Backend::Old(ic_compiled) => {
                 let mut net = ic_compiled.create_net();
@@ -59,17 +66,64 @@ impl Compiled {
                 let tree = net.inject_net(child_net);
                 let spawner = Arc::new(TokioSpawn::new());
                 let (net_wrapper, reducer_future) = net.start_reducer(spawner.clone());
-                (Handle::Old(net_wrapper.new_handle(tree)), reducer_future)
+                let net_2 = net_wrapper.clone().net();
+                (
+                    Handle::Old(net_wrapper.new_handle(tree)),
+                    spawner
+                        .spawn_with_handle(async move {
+                            reducer_future.await;
+                            RunResult::Old(net_2.lock().unwrap().rewrites.clone())
+                        })
+                        .unwrap(),
+                )
             }
             Backend::New(transpiled) => {
                 let mut reducer = transpiled.new_reducer();
                 let net_handle = reducer.net_handle().clone();
+                let spawner = reducer.spawner();
                 let reducer_future = reducer.spawn_reducer();
                 (
                     Handle::New(transpiled.instantiate(net_handle, name).await.unwrap()),
-                    reducer_future,
+                    spawner
+                        .spawn_with_handle(async move {
+                            let reducer = reducer_future.await;
+                            RunResult::New(reducer.runtime.rewrites)
+                        })
+                        .unwrap(),
                 )
             }
+        }
+    }
+}
+
+pub enum RunResult {
+    Old(old::net::Rewrites),
+    New(new::stats::Rewrites),
+}
+
+impl RunResult {
+    pub fn show(&self, elapsed: Duration) -> String {
+        match self {
+            RunResult::Old(rewrites) => {
+                use std::fmt::Write;
+                let mut s = String::new();
+                writeln!(&mut s, "Annihilate: {}", rewrites.annihilate).unwrap();
+                writeln!(&mut s, "Commute: {}", rewrites.commute).unwrap();
+                writeln!(&mut s, "Signal: {}", rewrites.signal).unwrap();
+                writeln!(&mut s, "Erase: {}", rewrites.era).unwrap();
+                writeln!(&mut s, "Expand: {}", rewrites.expand).unwrap();
+                writeln!(&mut s, "Responds: {}", rewrites.resp).unwrap();
+                writeln!(&mut s, "Total: {}", rewrites.total()).unwrap();
+                writeln!(
+                    &mut s,
+                    "Busy time (ms): {}",
+                    rewrites.busy_duration.as_millis()
+                )
+                .unwrap();
+                writeln!(&mut s, "Total / s: {}", rewrites.total_per_second()).unwrap();
+                s
+            }
+            RunResult::New(rewrites) => rewrites.show(elapsed),
         }
     }
 }

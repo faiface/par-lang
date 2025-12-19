@@ -206,15 +206,14 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
             return;
         };
 
-        eprintln!("Running...");
         let start = Instant::now();
 
         let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
         root.continue_().await;
-        reducer_future.await;
-        let end = Instant::now();
-        println!("Took: {:?}", end - start);
+        let stats = reducer_future.await;
+
+        println!("{}", stats.show(start.elapsed()));
         println!("Done :)");
     });
 }

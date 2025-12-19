@@ -104,7 +104,7 @@ impl Playground {
             code: "".to_owned(),
             build: BuildResult::None,
             built_code: Arc::from(""),
-            build_config: BuildConfig { new_runtime: false },
+            build_config: BuildConfig::default(),
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,

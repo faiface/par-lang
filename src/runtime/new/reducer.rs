@@ -1,5 +1,6 @@
 use super::readback::Handle;
 use crate::runtime::new::runtime::{Linear, Node, PackagePtr, Runtime, UserData};
+use crate::runtime::new::stats::Rewrites;
 use crate::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
@@ -124,12 +125,19 @@ impl Reducer {
             }
         }
     }
-    pub fn spawn_reducer(mut self) -> RemoteHandle<()> {
+    pub fn spawn_reducer(mut self) -> RemoteHandle<Self> {
         self.spawner
             .clone()
             .spawn_with_handle(async move {
                 self.run().await;
+                self
             })
             .unwrap()
+    }
+    pub fn stats(&self) -> Rewrites {
+        self.runtime.rewrites.clone()
+    }
+    pub fn spawner(&self) -> Arc<dyn Spawn + Send + Sync> {
+        self.spawner.clone()
     }
 }
