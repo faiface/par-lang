@@ -207,19 +207,17 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
             return;
         };
 
-        eprintln!("Running...");
         let start = Instant::now();
 
         let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
         root.continue_().await;
-        reducer_future.await;
-        let end = Instant::now();
-        eprintln!("Took: {:?}", end - start);
+        let stats = reducer_future.await;
+
+        println!("{}", stats.show(start.elapsed()));
         if let Backend::New(new) = &rt_compiled.backend {
-            eprintln!("Arena size: {}", new.arena.memory_size());
+            eprintln!("\tArena size: {}", new.arena.memory_size());
         }
-        eprintln!("Done :)");
     });
 }
 

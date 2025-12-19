@@ -34,6 +34,7 @@ use crate::runtime::new::show::Shower;
 use crate::{par::primitive::Primitive, runtime::new::show::Showable};
 
 use super::arena::*;
+use crate::runtime::new::stats::Rewrites;
 use crate::runtime::old::net::FanBehavior;
 use std::sync::{Arc, Mutex};
 
@@ -230,6 +231,7 @@ pub enum SharedHole {
 pub struct Runtime {
     pub arena: Arc<Arena>,
     pub redexes: Vec<(Node, Node)>,
+    pub rewrites: Rewrites,
 }
 
 /// This trait is implemented by everything that knows how to link two nodes together
@@ -271,7 +273,7 @@ pub trait Linker {
     ) -> (Node, Node, Instance, usize) {
         let num_vars = package.num_vars;
         let mut vars = Vec::with_capacity(num_vars + extra_vars);
-        for _ in 0 .. num_vars + extra_vars {
+        for _ in 0..num_vars + extra_vars {
             vars.push(None);
         }
         let instance = Instance {
@@ -403,6 +405,7 @@ impl From<Arc<Arena>> for Runtime {
         Self {
             arena,
             redexes: vec![],
+            rewrites: Rewrites::default(),
         }
     }
 }
@@ -454,6 +457,34 @@ impl Runtime {
         }
         None
     }
+    fn interact_set_var(&mut self, instance: Instance, index: usize, value: Node) {
+        self.set_var(instance, index, value)
+    }
+    fn interact_fanout(&mut self, instance: Instance, destinations: Index<[Global]>, other: Node) {
+        self.rewrites.fanout += 1;
+        let other = self.share(other).unwrap();
+        let destinations = self.arena.get(destinations);
+        for dest in destinations {
+            self.redexes.push((
+                Node::Global(instance.clone(), dest.clone()),
+                Node::Shared(other.clone()),
+            ));
+        }
+    }
+    fn interact_instantiate(
+        &mut self,
+        instance: Instance,
+        package: PackagePtr,
+        captures_in: GlobalPtr,
+        other: Node,
+    ) {
+        self.rewrites.instantiate += 1;
+        let root = self.instantiate_with_captures(
+            package,
+            Node::Global(instance, self.arena.get(captures_in).clone()),
+        );
+        self.link(root, other);
+    }
     fn lookup_case_branch(
         &mut self,
         options: Index<[(Str, OnceLock<Package>)]>,
@@ -468,53 +499,35 @@ impl Runtime {
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         match (a, b) {
             sym!(Node::Global(instance, Global::Variable(index)), value) => {
-                self.set_var(instance, index, value)
+                self.interact_set_var(instance, index, value)
             }
-
             sym!(
                 Node::Global(
                     instance,
                     Global::Package(package, captures_in, FanBehavior::Expand)
                 ),
                 other
-            ) => {
-                let root = self.instantiate_with_captures(
-                    package,
-                    Node::Global(instance, self.arena.get(captures_in).clone()),
-                );
-                self.link(root, other);
-            }
+            ) => self.interact_instantiate(instance, package, captures_in, other),
             sym!(Node::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
                 self.enqueue_to_hole(&mut *lock, other);
             }
             sym!(Node::Linear(Linear::Request(request)), other) => {
+                self.rewrites.ext_send += 1;
                 return Some((UserData::Request(request), other));
             }
             sym!(Node::Global(instance, Global::Fanout(destinations)), other) => {
-                let other = self.share(other).unwrap();
-                let destinations = self.arena.get(destinations);
-                for dest in destinations {
-                    self.redexes.push((
-                        Node::Global(instance.clone(), dest.clone()),
-                        Node::Shared(other.clone()),
-                    ));
-                }
+                self.interact_fanout(instance, destinations, other)
             }
             sym!(Node::Linear(Linear::ShareHole(hole)), other) => self.fill_hole(hole, other),
             sym!(
                 Node::Global(instance, Global::Package(package, captures_in, _)),
                 other
-            ) => {
-                let root = self.instantiate_with_captures(
-                    package,
-                    Node::Global(instance, self.arena.get(captures_in).clone()),
-                );
-                self.link(root, other);
-            }
+            ) => self.interact_instantiate(instance, package, captures_in, other),
             sym!(Node::Shared(Shared::Sync(x)), other)
                 if matches!(&*x, SyncShared::Package(..)) =>
             {
+                self.rewrites.instantiate += 1;
                 let SyncShared::Package(package, captures_in) = &*x else {
                     unreachable!()
                 };
@@ -527,6 +540,7 @@ impl Runtime {
                     | Node::Global(_, Global::Value(Value::ExternalFn(ext))),
                 other
             ) => {
+                self.rewrites.ext_call += 1;
                 return Some((UserData::ExternalFn(ext), other));
             }
             sym!(
@@ -534,11 +548,13 @@ impl Runtime {
                     | Node::Global(_, Global::Value(Value::ExternalArc(ext))),
                 other
             ) => {
+                self.rewrites.ext_call += 1;
                 return Some((UserData::ExternalArc(ext), other));
             }
             sym!(Node::Shared(Shared::Sync(shared)), other)
                 if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
             {
+                self.rewrites.ext_call += 1;
                 let SyncShared::Value(Value::ExternalArc(arc)) = shared.as_ref() else {
                     unreachable!()
                 };
@@ -547,6 +563,7 @@ impl Runtime {
             sym!(Node::Shared(Shared::Sync(shared)), other)
                 if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
             {
+                self.rewrites.ext_call += 1;
                 let SyncShared::Value(Value::ExternalFn(arc)) = shared.as_ref() else {
                     unreachable!()
                 };
@@ -557,8 +574,11 @@ impl Runtime {
                     self.destruct(node).expect("Continuation-continuation!"),
                     destructor,
                 ) {
-                    (Value::Break, GlobalCont::Continue) => (),
+                    (Value::Break, GlobalCont::Continue) => {
+                        self.rewrites.r#continue += 1;
+                    }
                     (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
+                        self.rewrites.receive += 1;
                         self.link(
                             a0,
                             Node::Global(instance.clone(), self.arena.get(b0).clone()),
@@ -566,6 +586,7 @@ impl Runtime {
                         self.link(a1, Node::Global(instance, self.arena.get(b1).clone()));
                     }
                     (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
+                        self.rewrites.r#match += 1;
                         if let Some(package) =
                             self.lookup_case_branch(options.clone(), signal.clone())
                         {
