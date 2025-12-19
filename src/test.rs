@@ -50,6 +50,7 @@ fn check_all_examples() -> Result<(), String> {
         ) {
             return ();
         };
+        eprintln!("Checking {:?}", entry.path());
         result = result.clone().and(check(&config, entry.path()));
     })
     .unwrap();
@@ -59,19 +60,34 @@ fn check_all_examples() -> Result<(), String> {
 fn test_all_files(config: &BuildConfig) -> Result<(), String> {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.push("tests");
-    let mut result = Ok(());
+    let mut all_results = vec![];
     visit_dirs(&d, &mut |entry| {
-        if matches!(
+        if !matches!(
             entry.path().extension().map(|x| x.to_str()),
             Some(Some("par"))
         ) {
-            eprintln!("Testing {:?}", entry.path());
-            let results = crate::test_runner::run_test_file(config, &entry.path(), &None);
-            if !results.iter().all(|x| x.status.is_passed()) {
-                result = result.clone().and(Err("A test failed".to_owned()));
-            }
+            return ();
         }
+        eprintln!("Testing {:?}", entry.path());
+        let results = crate::test_runner::run_test_file(config, &entry.path(), &None);
+        all_results.extend(
+            results
+                .into_iter()
+                .filter(|x| !x.status.is_passed())
+                .map(|x| (x, entry.path())),
+        )
     })
     .unwrap();
-    result
+    if all_results.is_empty() {
+        Ok(())
+    } else {
+        use std::fmt::Write;
+        let mut output = String::new();
+        writeln!(&mut output, "Some tests failed:").unwrap();
+        for (result, file) in all_results {
+            writeln!(&mut output, "{}: {:?}", file.display(), result.status).unwrap()
+        }
+        eprintln!("{}", output);
+        Err(output)
+    }
 }

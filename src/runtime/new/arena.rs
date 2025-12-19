@@ -120,6 +120,19 @@ macro_rules! slice_indexable {
                 Index((start, data.len()))
             }
         }
+        impl Iterator for Index<[$element]> {
+            type Item = Index<$element>;
+            fn next(&mut self) -> Option<Index<$element>> {
+                if self.0 .1 == 0 {
+                    None
+                } else {
+                    let ret = Index(self.0 .0);
+                    self.0 .0 += 1;
+                    self.0 .1 -= 1;
+                    Some(ret)
+                }
+            }
+        }
     };
 }
 macro_rules! sized_indexable {
@@ -140,6 +153,7 @@ macro_rules! sized_indexable {
 slice_indexable!(case_branches, (Index<str>, OnceLock<Package>));
 slice_indexable!(nodes, Global);
 slice_indexable!(redexes, (Index<Global>, Index<Global>));
+sized_indexable!(redexes, (Index<Global>, Index<Global>));
 sized_indexable!(case_branches, (Index<str>, OnceLock<Package>));
 sized_indexable!(packages, OnceLock<Package>);
 sized_indexable!(nodes, Global);

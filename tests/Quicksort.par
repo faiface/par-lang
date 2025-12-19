@@ -22,7 +22,7 @@ def QuicksortGo = [input] [suffix] chan out: dual List<Nat> {
 			input.loop@inner
 		}
 		.end => {
-			let suffix = chan out {
+			let suffix: List<Nat> = chan out {
 				let input = a.build
 				input.loop@outer
 			}

@@ -239,7 +239,7 @@ fn check(config: &BuildConfig, file: PathBuf) -> Result<(), String> {
     });
     if let Some(error) = build.error() {
         let error_string = error.display(Arc::from(code.as_str()));
-        println!("{}", error_string.bright_red());
+        eprintln!("{}", error_string.bright_red());
         return Err(error_string);
     }
     Ok(())

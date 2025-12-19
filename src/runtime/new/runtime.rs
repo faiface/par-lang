@@ -259,8 +259,8 @@ pub trait Linker {
             Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(*x)).unwrap()),
             Node::Shared(Shared::Sync(shared)) => match &*shared {
                 SyncShared::Package(package, shared) => {
-                    let node = self
-                        .instantiate_with_captures(*package, Node::Shared(shared.clone()));
+                    let node =
+                        self.instantiate_with_captures(*package, Node::Shared(shared.clone()));
                     self.destruct(node)
                 }
                 SyncShared::Value(shared) => Ok(shared
@@ -273,7 +273,7 @@ pub trait Linker {
                     .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
                     .unwrap()),
                 _ => Err(Node::Global(instance, global_index)),
-            }
+            },
             node => Err(node),
         }
     }
@@ -285,21 +285,18 @@ pub trait Linker {
     ) -> (Node, Node, Instance, usize) {
         let num_vars = package.num_vars;
         let mut vars = Vec::with_capacity(num_vars + extra_vars);
-        for _ in 0 .. num_vars + extra_vars {
+        for _ in 0..num_vars + extra_vars {
             vars.push(None);
         }
         let instance = Instance {
             vars: Arc::new(InstanceInner(Mutex::new(vars.into_boxed_slice()))),
         };
-        self.arena()
-            .get(package.redexes)
-            .iter()
-            .for_each(|(a, b)| {
-                self.link(
-                    Node::Global(instance.clone(), *a),
-                    Node::Global(instance.clone(), *b),
-                );
-            });
+        self.arena().get(package.redexes).iter().for_each(|(a, b)| {
+            self.link(
+                Node::Global(instance.clone(), *a),
+                Node::Global(instance.clone(), *b),
+            );
+        });
         (
             Node::Global(instance.clone(), package.root),
             Node::Global(instance.clone(), package.captures),
@@ -366,8 +363,10 @@ pub trait Linker {
                 Global::Destruct(..) => None,
                 Global::Fanout(..) => None,
                 Global::Package(package, captures, FanBehavior::Expand) => {
-                    let root =
-                        self.instantiate_with_captures(package.clone(), Node::Global(instance, captures.clone()));
+                    let root = self.instantiate_with_captures(
+                        package.clone(),
+                        Node::Global(instance, captures.clone()),
+                    );
                     self.share_inner(root)
                 }
                 Global::Package(package, captures, FanBehavior::Propagate) => {
@@ -376,11 +375,10 @@ pub trait Linker {
                         *package, captures,
                     ))))
                 }
-                Global::Value(value) => Some(Shared::Sync(Arc::new(
-                    SyncShared::Value(value.map_ref_leaves(|p| {
-                        self.share_inner(Node::Global(instance.clone(), *p))
-                    })?),
-                ))),
+                Global::Value(value) => Some(Shared::Sync(Arc::new(SyncShared::Value(
+                    value
+                        .map_ref_leaves(|p| self.share_inner(Node::Global(instance.clone(), *p)))?,
+                )))),
                 Global::Variable(id) => {
                     let mut lock = instance.vars.0.lock().unwrap();
                     let slot = &mut lock[*id];
@@ -393,7 +391,7 @@ pub trait Linker {
                         Some(shared)
                     }
                 }
-            }
+            },
             Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
                 value.map_leaves(|p| self.share_inner(*p))?,
             )))),
@@ -480,166 +478,179 @@ impl Runtime {
             .map(|(_, b)| b.get().unwrap().clone())
     }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
+        pub enum NodeRef<'a> {
+            Linear(Linear),
+            Shared(Shared),
+            Global(Instance, Index<Global>, &'a Global),
+        }
+        impl<'a> NodeRef<'a> {
+            fn from_node(arena: &'a Arena, node: Node) -> NodeRef<'a> {
+                match node {
+                    Node::Linear(linear) => NodeRef::Linear(linear),
+                    Node::Shared(shared) => NodeRef::Shared(shared),
+                    Node::Global(instance, index) => {
+                        NodeRef::Global(instance, index, arena.get(index))
+                    }
+                }
+            }
+            fn to_node(self) -> Node {
+                match self {
+                    NodeRef::Linear(linear) => Node::Linear(linear),
+                    NodeRef::Shared(shared) => Node::Shared(shared),
+                    NodeRef::Global(instance, index, _) => Node::Global(instance, index),
+                }
+            }
+            fn as_external_fn(&self) -> Option<ExternalFn> {
+                match self {
+                    NodeRef::Linear(Linear::Value(Value::ExternalFn(ext))) => Some(ext.clone()),
+                    NodeRef::Global(_, _, Global::Value(Value::ExternalFn(ext))) => {
+                        Some(ext.clone())
+                    }
+                    NodeRef::Shared(Shared::Sync(shared))
+                        if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
+                    {
+                        let SyncShared::Value(Value::ExternalFn(ext)) = shared.as_ref() else {
+                            unreachable!()
+                        };
+                        Some(ext.clone())
+                    }
+                    _ => None,
+                }
+            }
+            fn as_external_arc(&self) -> Option<ExternalArc> {
+                match self {
+                    NodeRef::Linear(Linear::Value(Value::ExternalArc(ext))) => Some(ext.clone()),
+                    NodeRef::Global(_, _, Global::Value(Value::ExternalArc(ext))) => {
+                        Some(ext.clone())
+                    }
+                    NodeRef::Shared(Shared::Sync(shared))
+                        if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
+                    {
+                        let SyncShared::Value(Value::ExternalArc(ext)) = shared.as_ref() else {
+                            unreachable!()
+                        };
+                        Some(ext.clone())
+                    }
+                    _ => None,
+                }
+            }
+        }
+        let a = NodeRef::from_node(&self.arena, a);
+        let b = NodeRef::from_node(&self.arena, b);
+
         match (a, b) {
-            sym!(Node::Shared(Shared::Async(state)), other) => {
+            sym!(NodeRef::Global(instance, _, Global::Variable(index)), value) => {
+                self.set_var(instance, *index, value.to_node())
+            }
+            sym!(NodeRef::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
-                self.enqueue_to_hole(&mut *lock, other);
+                self.enqueue_to_hole(&mut *lock, other.to_node());
             }
-
-            sym!(Node::Linear(Linear::Request(request)), other) => {
-                return Some((UserData::Request(request), other));
+            sym!(NodeRef::Linear(Linear::Request(request)), other) => {
+                return Some((UserData::Request(request), other.to_node()));
             }
-
-            sym!(Node::Linear(Linear::ShareHole(hole)), other) => self.fill_hole(hole, other),
-
-            sym!(Node::Shared(Shared::Sync(x)), other)
+            sym!(
+                NodeRef::Global(instance, _, Global::Fanout(destinations)),
+                other
+            ) => {
+                let other = other.to_node();
+                let destinations = *destinations;
+                let other = self.share(other).unwrap();
+                for dest in destinations {
+                    self.redexes.push((
+                        Node::Global(instance.clone(), dest),
+                        Node::Shared(other.clone()),
+                    ));
+                }
+            }
+            sym!(NodeRef::Linear(Linear::ShareHole(hole)), other) => {
+                self.fill_hole(hole, other.to_node())
+            }
+            sym!(
+                NodeRef::Global(instance, _, Global::Package(package, captures_in, _)),
+                other
+            ) => {
+                let other = other.to_node();
+                let root =
+                    self.instantiate_with_captures(*package, Node::Global(instance, *captures_in));
+                self.link(root, other);
+            }
+            sym!(NodeRef::Shared(Shared::Sync(x)), other)
                 if matches!(&*x, SyncShared::Package(..)) =>
             {
                 let SyncShared::Package(package, captures_in) = &*x else {
                     unreachable!()
                 };
+
+                let other = other.to_node();
                 let root = self
                     .instantiate_with_captures(package.clone(), Node::Shared(captures_in.clone()));
                 self.link(root, other);
             }
-            sym!(
-                Node::Linear(Linear::Value(Value::ExternalFn(ext))),
-                other
-            ) => {
-                return Some((UserData::ExternalFn(ext), other));
-            }
-            sym!(
-                Node::Linear(Linear::Value(Value::ExternalArc(ext))),
-                other
-            ) => {
-                return Some((UserData::ExternalArc(ext), other));
-            }
-            sym!(Node::Shared(Shared::Sync(shared)), other)
-                if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
-            {
-                let SyncShared::Value(Value::ExternalArc(arc)) = shared.as_ref() else {
+            sym!(node, other) if node.as_external_fn().is_some() => {
+                let Some(ext) = node.as_external_fn() else {
                     unreachable!()
                 };
-                return Some((UserData::ExternalArc(arc.clone()), other));
+                return Some((UserData::ExternalFn(ext), other.to_node()));
             }
-            sym!(Node::Shared(Shared::Sync(shared)), other)
-                if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
-            {
-                let SyncShared::Value(Value::ExternalFn(arc)) = shared.as_ref() else {
+            sym!(node, other) if node.as_external_arc().is_some() => {
+                let Some(ext) = node.as_external_arc() else {
                     unreachable!()
                 };
-                return Some((UserData::ExternalFn(arc.clone()), other));
+                return Some((UserData::ExternalArc(ext), other.to_node()));
             }
-
-            sym!(Node::Global(instance, global_index), other) => match self.arena.clone().get(global_index) {
-                Global::Variable(index) => {
-                    self.set_var(instance, *index, other)
-                }
-
-                Global::Package(package, captures_in, FanBehavior::Expand) => {
-                    let root = self.instantiate_with_captures(
-                        *package,
-                        Node::Global(instance, *captures_in),
-                    );
-                    self.link(root, other);
-                }
-
-                Global::Fanout(destinations) => {
-                    let other = self.share(other).unwrap();
-                    for i in 0..destinations.0.1 {
-                        self.redexes.push((
-                            Node::Global(instance.clone(), Index(destinations.0.0 + i)),
-                            Node::Shared(other.clone()),
-                        ));
+            sym!(
+                NodeRef::Global(instance, _, Global::Destruct(destructor)),
+                node
+            ) => {
+                let node = node.to_node();
+                let destructor = destructor.clone();
+                match (
+                    self.destruct(node).expect("Continuation-continuation!"),
+                    destructor,
+                ) {
+                    (Value::Break, GlobalCont::Continue) => (),
+                    (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
+                        self.link(a0, Node::Global(instance.clone(), b0));
+                        self.link(a1, Node::Global(instance, b1));
                     }
-                }
-
-                Global::Package(package, captures_in, _) => {
-                    let root = self.instantiate_with_captures(
-                        *package,
-                        Node::Global(instance, *captures_in),
-                    );
-                    self.link(root, other);
-                }
-
-                Global::Value(Value::ExternalFn(ext)) => {
-                    return Some((UserData::ExternalFn(*ext), other));
-                }
-
-                Global::Value(Value::ExternalArc(ext)) => {
-                    return Some((UserData::ExternalArc(ext.clone()), other));
-                }
-
-                Global::Destruct(destructor) => {
-                    match (
-                        match self.destruct(other) {
-                            Ok(value) => value,
-                            Err(Node::Global(_, i)) => {
-                                panic!("continuation-continuation: {:?} {:?}", destructor, self.arena.get(i))
-                            }
-                            _ => panic!("continuation-continuation"),
-                        },
-                        destructor,
-                    ) {
-                        (Value::Break, GlobalCont::Continue) => (),
-                        (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
-                            self.link(
-                                a0,
-                                Node::Global(instance.clone(), *b0),
+                    (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
+                        if let Some(package) =
+                            self.lookup_case_branch(options.clone(), signal.clone())
+                        {
+                            let root = self.instantiate_with_captures_direct(
+                                package.clone(),
+                                Node::Global(instance, context),
                             );
-                            self.link(a1, Node::Global(instance, *b1));
-                        }
-                        (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
-                            if let Some(package) =
-                                self.lookup_case_branch(options.clone(), signal.clone())
-                            {
-                                let root = self.instantiate_with_captures_direct(
-                                    package.clone(),
-                                    Node::Global(instance, *context),
-                                );
-                                self.link(root, payload);
-                            } else {
-                                let branch =
-                                    self.lookup_case_branch(*options, self.arena.empty_string());
-                                let root = self.instantiate_with_captures_direct(
-                                    branch.unwrap().clone(),
-                                    Node::Global(instance, *context),
-                                );
-                                // TODO: Optimize this; we're reconstructing the `Either` branch.
-                                // This could make us lose sharing.
-                                self.link(
-                                    Node::Linear(Linear::Value(Value::Either(
-                                        signal,
-                                        Box::new(payload),
-                                    ))),
-                                    root,
-                                );
-                            }
-                        }
-                        (a, b) => {
-                            panic!("Unimplemented destruction between: {:?} {:?}", a, b)
+                            self.link(root, payload);
+                        } else {
+                            let branch =
+                                self.lookup_case_branch(options, self.arena.empty_string());
+                            let root = self.instantiate_with_captures_direct(
+                                branch.unwrap().clone(),
+                                Node::Global(instance, context),
+                            );
+                            // TODO: Optimize this; we're reconstructing the `Either` branch.
+                            // This could make us lose sharing.
+                            self.link(
+                                Node::Linear(Linear::Value(Value::Either(
+                                    signal,
+                                    Box::new(payload),
+                                ))),
+                                root,
+                            );
                         }
                     }
-                }
-
-                _ => {
-                    match other {
-                        Node::Global(other_instance, other_global_index) => {
-                            match self.arena.clone().get(other_global_index) {
-                                Global::Destruct(_) => return self.interact(Node::Global(other_instance, other_global_index), Node::Global(instance, global_index)),
-                                _ => panic!("unimplemented interaction between: {:?} {:?}", self.arena.clone().get(global_index), self.arena.clone().get(other_global_index)),
-                            }
-                        }
-                        _ => panic!("unimplemented interaction between: {:?} {:?}", self.arena.clone().get(global_index), other),
+                    (a, b) => {
+                        panic!("Unimplemented destruction between: {:?} {:?}", a, b)
                     }
                 }
             }
-
             (a, b) => {
                 panic!(
                     "Unimplemented reduction: {:?} {:?}",
-                    a.variant_name(),
-                    b.variant_name()
+                    a.to_node().variant_name(),
+                    b.to_node().variant_name()
                 )
             }
         };
