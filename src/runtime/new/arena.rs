@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
-use crate::runtime::new::show::{Showable, Shower};
+use crate::runtime::new::{
+    runtime::PackageBody,
+    show::{Showable, Shower},
+};
 
 use super::runtime::{Global, Package};
 
@@ -15,7 +18,7 @@ pub struct Arena {
     strings: String,
     packages: Vec<OnceLock<Package>>,
     redexes: Vec<(Index<Global>, Index<Global>)>,
-    case_branches: Vec<(Index<str>, OnceLock<Package>)>,
+    case_branches: Vec<(Index<str>, PackageBody)>,
     string_to_location: BTreeMap<String, Index<str>>,
 }
 
@@ -35,7 +38,7 @@ impl Arena {
             + self.strings.len()
             + self.packages.len() * size_of::<OnceLock<Package>>()
             + self.redexes.len() * size_of::<(Global, Global)>()
-            + self.case_branches.len() * size_of::<(Index<str>, OnceLock<Package>)>()
+            + self.case_branches.len() * size_of::<(Index<str>, PackageBody)>()
     }
     pub fn empty_string(&self) -> Index<str> {
         Index((0, 0))
@@ -151,11 +154,11 @@ macro_rules! sized_indexable {
         }
     };
 }
-slice_indexable!(case_branches, (Index<str>, OnceLock<Package>));
+slice_indexable!(case_branches, (Index<str>, PackageBody));
 slice_indexable!(nodes, Global);
 slice_indexable!(redexes, (Index<Global>, Index<Global>));
 sized_indexable!(redexes, (Index<Global>, Index<Global>));
-sized_indexable!(case_branches, (Index<str>, OnceLock<Package>));
+sized_indexable!(case_branches, (Index<str>, PackageBody));
 sized_indexable!(packages, OnceLock<Package>);
 sized_indexable!(nodes, Global);
 

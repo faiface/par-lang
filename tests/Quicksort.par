@@ -36,3 +36,15 @@ def QuicksortGo = [input] [suffix] chan out: dual List<Nat> {
 
 dec Quicksort: [List<Nat>] List<Nat>
 def Quicksort = [x] QuicksortGo(x, .end!)
+
+def Main: ! = do {
+  let console = Console.Open
+  let numbers = Nat.Range(1, 10)
+  let numbers = Quicksort(numbers)
+  numbers.begin.case {
+    .item(h) => { numbers.loop }
+    .end => {}
+  }
+  console.print("Finished!")
+  console.close
+} in !

@@ -136,20 +136,14 @@ impl ProgramTranspiler {
     fn current_net_mut(&mut self) -> &mut NetTranspiler {
         self.stack.last_mut().unwrap()
     }
-    fn transpile_package_go(&mut self, _: usize, mut body: Net) -> Package {
-        // First, allocate the package
+    fn transpile_package_body(&mut self) -> PackageBody {
+        let body = &mut self.current_net_mut().source;
         assert!(body.ports.len() == 2);
         let captures = body.ports.pop_back().unwrap();
         let root = body.ports.pop_back().unwrap();
         let mut redexes = Vec::from(body.redexes.clone());
         redexes.append(&mut body.waiting_for_reducer.clone());
         let debug_name = body.debug_name.clone();
-
-        let mut current_net = NetTranspiler::default();
-        current_net.source = body;
-        current_net.variable_map.clear();
-        current_net.num_vars = 0;
-        self.stack.push(current_net);
 
         let root = self.transpile_tree_and_alloc(root);
         let captures = self.transpile_tree_and_alloc(captures);
@@ -163,13 +157,20 @@ impl ProgramTranspiler {
             })
             .collect();
         let redexes: Index<_> = self.dest.alloc_clone(redexes.as_ref());
+        PackageBody {
+            root: root,
+            captures: captures,
+            debug_name,
+            redexes,
+        }
+    }
+    fn transpile_package_go(&mut self, body: Net) -> Package {
+        let mut current_net = NetTranspiler::default();
+        current_net.source = body;
+        self.stack.push(current_net);
+        let body = self.transpile_package_body();
         let package = Package {
-            body: PackageBody {
-                root: root,
-                captures: captures,
-                debug_name,
-                redexes,
-            },
+            body,
             num_vars: self.current_net().num_vars,
         };
         self.stack.pop();
@@ -178,12 +179,18 @@ impl ProgramTranspiler {
     fn transpile_definition_package(&mut self, id: usize, body: Net) -> Index<OnceLock<Package>> {
         let package_index = self.dest.alloc(OnceLock::new());
         self.packages_in_nodes.insert(id, package_index.clone());
-        let package = self.transpile_package_go(id, body);
+        let package = self.transpile_package_go(body);
         self.dest.get(package_index.clone()).set(package).unwrap();
         package_index
     }
-    fn transpile_casebranch_package(&mut self, id: usize, body: Net) -> Package {
-        self.transpile_package_go(id, body)
+    fn transpile_casebranch_package(&mut self, body: Net) -> (PackageBody, usize) {
+        let mut current_net = NetTranspiler::default();
+        current_net.source = body;
+        current_net.num_vars = self.current_net().num_vars;
+        self.stack.push(current_net);
+        let body = self.transpile_package_body();
+        let num_vars = self.stack.pop().unwrap().num_vars;
+        (body, num_vars)
     }
     fn transpile_program(compiled: &IcCompiled) -> Self {
         let mut this = Self::default();
@@ -236,6 +243,7 @@ impl ProgramTranspiler {
                 self.transpile_tree_and_alloc(*tree),
             )),
             Tree::Choice(captures, hash_map, els) => {
+                let mut maximum_casebranch_length = 0;
                 let mut table: Vec<_> = hash_map
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
@@ -243,11 +251,12 @@ impl ProgramTranspiler {
                     .map(|(signal, id)| {
                         let signal = self.dest.intern(signal.as_str());
                         let package = self.id_to_package.get(&id).unwrap().clone();
-                        let package =
-                            OnceLock::from(self.transpile_casebranch_package(id, package));
+                        let (package, length) = self.transpile_casebranch_package(package);
+                        maximum_casebranch_length = maximum_casebranch_length.max(length);
                         (signal, package)
                     })
                     .collect();
+                self.current_net_mut().num_vars = maximum_casebranch_length;
                 table.sort_by_key(|x| x.0 .0);
                 let tree = self.transpile_tree_and_alloc(*captures);
                 Global::Destruct(GlobalCont::Choice(

@@ -1,0 +1,194 @@
+dec Quicksort: [type a] [box [a] [a] (a) (a) Ordering] [List<a>] List<a>
+def Quicksort = [type a] [cmp] [input] chan out: dual List<a> {
+    let suffix: List<a> = .end!
+	input.unfounded@outer
+	input.case {
+		.item(pivot) => {
+		}
+		.end => { out <> suffix }
+	}
+
+	// now, split the rest of the list
+	let a = List.Builder(type a)
+	let b = List.Builder(type a)
+
+	input.begin@inner.case {
+		.item(i) => {
+			let (i) (pivot) res = cmp(i, pivot)
+			res.case {
+				.less => { b.add(i) }
+				.equal => { a.add(i) }
+				.greater => { a.add(i) }
+			}
+			input.loop@inner
+		}
+		.end => {
+			let suffix: List<a> = chan out {
+				let input = a.build
+				input.loop@outer
+			}
+			let suffix = .item (pivot) suffix
+			let input = b.build
+			input.loop@outer
+		}
+	}
+}
+
+
+type BNat = recursive either {
+    .i self
+    .o self
+    .e!
+}
+
+def Driver : recursive ! = !
+
+def BNat.FromNat : [Nat] BNat = [nat] chan out {
+    let acc = [x: BNat] x
+    Driver.unfounded
+    let mod = Nat.Mod(nat, 2)
+    let nat = Nat.Div(nat, 2)
+    let mod = Nat.Equals(mod, 1)
+    Nat.Equals(nat, 0).case {
+        .true => {
+    out <> mod.case {
+        .true! => acc(.i .e!),
+        .false! => acc(.e!),
+    }
+        }
+        .false => {
+    let acc = [u: BNat] mod.case {
+        .true! => acc(.i u),
+        .false! => acc(.o u),
+    }
+            Driver.loop
+        }
+    }
+}
+
+def BNat.ToNat : [BNat] Nat = [input] chan out {
+    let acc = 0
+    let mult = 1
+    input.begin.case {
+        .e => {
+            out <> acc
+        }
+        .i => {
+            let acc = Nat.Add(acc, mult)
+
+            let mult = Nat.Mul(mult, 2)
+            input.loop
+        }
+        .o => {
+            let mult = Nat.Mul(mult, 2)
+            input.loop
+        }
+    }
+}
+
+def Ordering.Flip : [Ordering] Ordering = [x] x.case {
+    .less! => .greater!,
+    .equal! => .equal!,
+    .greater! => .greater!,
+}
+
+def BNat.Cmp : [BNat] [BNat] Ordering = [a] [b] chan out {
+    let current: Ordering = .equal!
+    a.begin@a
+    b.begin@b
+    a.case {
+        .i => {
+        b.case {
+            .i => {
+                a.loop@a
+            }
+            .o => {
+                let current = .greater!
+                a.loop@a
+            }
+            .e => {
+                out <> .greater!
+            }
+        }
+        }
+        .o => {
+        b.case {
+            .i => {
+                let current = .less!
+                a.loop@a
+            }
+            .o => {
+                a.loop@a
+            }
+            .e => {
+                out <> .greater!
+            }
+        }
+        }
+        .e => {
+        b.case {
+            .i => {
+                out <> .less!
+            }
+            .o => {
+                out <> .less!
+            }
+            .e => {
+                out <> current
+            }
+        }
+        }
+    }
+
+}
+
+def RT: [Nat] Nat = [x] BNat.ToNat(BNat.FromNat(x))
+
+dec ListMap : [type a, b] [List<a>, box [a] b] List<b>
+def ListMap = [type a, b] [list, f] list.begin.case {
+  .end! => .end!
+  .item(x) list => .item(f(x)) list.loop,
+}
+
+def TestRoundtrip: [Test]! = [test] chan user {
+    let range = Nat.Range(0, 32)
+    range.begin.case {
+        .item (head) => {
+            test.assert("Round-trip did not work", Nat.Equals(RT(head), head))
+            range.loop
+        }
+        .end => {}
+    }
+    test.done?
+    user!
+}
+
+def Reverse: [type a] [List<a>] List<a> = [type a] [list] chan yield {
+	let tail: List<a> = .end!
+	list.begin.case {
+		.item(head) => {
+			let tail: List<a> = .item (head) tail
+			list.loop
+		}
+		.end => {
+			yield <> tail
+		}
+	}
+}
+
+def Main = chan user {
+    let list = Nat.Range(0, 256)
+    let list = Reverse(type Nat)(list)
+    let list = ListMap(type Nat)(type BNat)(list)(box BNat.FromNat)
+    let list = Quicksort(type BNat)(box [a] [b] (a) (b) BNat.Cmp(a, b))(list)
+    let list = ListMap(type BNat)(type Nat)(list)(box BNat.ToNat)
+    user!
+}
+def TestQuicksort: [Test]! = [test] chan user {
+    let list = Reverse(type Nat)(Nat.Range(0, 32))
+    let list = ListMap(type Nat)(type BNat)(list)(box BNat.FromNat)
+    let list = Quicksort(type BNat)(box [a] [b] (a) (b) BNat.Cmp(a, b))(list)
+    let list = ListMap(type BNat)(type Nat)(list)(box BNat.ToNat)
+    test.done?
+    user!
+}

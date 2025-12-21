@@ -236,7 +236,7 @@ pub enum GlobalCont {
     /// The par node; created in receive commands (`value[a]`)
     Par(GlobalPtr, GlobalPtr),
     /// The choice node; created in case commands (`value.case { ... }`)
-    Choice(GlobalPtr, Index<[(Str, OnceLock<Package>)]>),
+    Choice(GlobalPtr, Index<[(Str, PackageBody)]>),
 }
 
 #[derive(Debug)]
@@ -496,14 +496,14 @@ impl Runtime {
     }
     fn lookup_case_branch(
         &mut self,
-        options: Index<[(Str, OnceLock<Package>)]>,
+        options: Index<[(Str, PackageBody)]>,
         variant: Str,
-    ) -> Option<Package> {
+    ) -> Option<PackageBody> {
         self.arena
             .get(options)
             .iter()
             .find(|(a, _)| a.clone() == variant)
-            .map(|(_, b)| b.get().unwrap().clone())
+            .map(|(_, b)| b.clone())
     }
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
         pub enum NodeRef<'a> {
@@ -647,7 +647,8 @@ impl Runtime {
                         if let Some(package) =
                             self.lookup_case_branch(options.clone(), signal.clone())
                         {
-                            let root = self.instantiate_package_captures_direct(
+                            let root = self.instantiate_package_body_captures(
+                                instance.clone(),
                                 &package,
                                 Node::Global(instance, context),
                             );
@@ -655,7 +656,8 @@ impl Runtime {
                         } else {
                             let branch =
                                 self.lookup_case_branch(options, self.arena.empty_string());
-                            let root = self.instantiate_package_captures_direct(
+                            let root = self.instantiate_package_body_captures(
+                                instance.clone(),
                                 &branch.unwrap(),
                                 Node::Global(instance, context),
                             );
