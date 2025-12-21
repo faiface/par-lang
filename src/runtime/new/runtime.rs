@@ -317,6 +317,7 @@ pub trait Linker {
         }
     }
 
+    // Package-related methods
     fn create_package_instance(&mut self, package: &Package) -> Instance {
         let num_vars = package.num_vars;
         let mut vars = Vec::with_capacity(num_vars);
@@ -363,6 +364,8 @@ pub trait Linker {
         self.link(captures_in, captures);
         root
     }
+
+    // Share-related methods
     fn enqueue_to_hole(&mut self, hole: &mut SharedHole, cont: Node) {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
@@ -373,79 +376,6 @@ pub trait Linker {
             }
             SharedHole::Unfilled(values) => values.push(cont),
         }
-    }
-    fn fill_hole(&mut self, hole: Arc<Mutex<SharedHole>>, value: Node) {
-        let value = self.share(value).unwrap();
-        match value {
-            Shared::Async(value) => self.enqueue_to_hole(
-                &mut value.lock().unwrap(),
-                Node::Linear(Linear::ShareHole(hole)),
-            ),
-            Shared::Sync(value) => {
-                let mut lock = hole.lock().unwrap();
-                let SharedHole::Unfilled(continuations) =
-                    core::mem::replace(&mut *lock, SharedHole::Filled((*value).clone()))
-                else {
-                    unreachable!()
-                };
-                for i in continuations {
-                    self.link(i, Node::Shared(Shared::Sync(value.clone())));
-                }
-            }
-        }
-    }
-    /// Recusrively turn a node into a `Shared` node which allows duplication
-    /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
-    /// This is the case for linear nodes and negative types.
-    fn share(&mut self, node: Node) -> Option<Shared> {
-        self.share_inner(node)
-    }
-    fn share_inner(&mut self, node: Node) -> Option<Shared> {
-        stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
-            Node::Shared(shared) => Some(shared),
-            Node::Global(instance, global_index) => match self.arena().get(global_index) {
-                Global::Destruct(..) => None,
-                Global::Fanout(..) => None,
-                Global::Package(package, captures, FanBehavior::Expand) => {
-                    let root = self.instantiate_package_captures(
-                        package.clone(),
-                        Node::Global(instance, captures.clone()),
-                    );
-                    self.share_inner(root)
-                }
-                Global::Package(package, captures, FanBehavior::Propagate) => {
-                    let captures = self.share_inner(Node::Global(instance, *captures))?;
-                    Some(Shared::Sync(Arc::new(SyncShared::Package(
-                        *package, captures,
-                    ))))
-                }
-                Global::Value(value) => Some(Shared::Sync(Arc::new(SyncShared::Value(
-                    value
-                        .map_ref_leaves(|p| self.share_inner(Node::Global(instance.clone(), *p)))?,
-                )))),
-                Global::Variable(id) => {
-                    let mut lock = instance.vars.0.lock().unwrap();
-                    let slot = &mut lock[*id];
-                    if let Some(slot) = slot.take() {
-                        drop(lock);
-                        Some(self.share_inner(slot)?)
-                    } else {
-                        let (hole, shared) = self.create_share_hole();
-                        slot.replace(hole);
-                        Some(shared)
-                    }
-                }
-            },
-            Node::Linear(Linear::Value(value)) => Some(Shared::Sync(Arc::new(SyncShared::Value(
-                value.map_leaves(|p| self.share_inner(*p))?,
-            )))),
-            Node::Linear(Linear::Request(h)) => {
-                let (hole, shared) = self.create_share_hole();
-                h.send(hole).unwrap();
-                Some(shared)
-            }
-            Node::Linear(Linear::ShareHole(..)) => None,
-        })
     }
     fn create_share_hole(&self) -> (Node, Shared) {
         let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
@@ -480,6 +410,7 @@ impl Linker for Runtime {
 }
 
 impl Runtime {
+    // Misc methods.
     fn set_var(&mut self, instance: Instance, index: usize, value: Node) {
         let mut lock = instance.vars.0.lock().unwrap();
         let slot = lock.get_mut(index).expect("Invalid index in variable!");
@@ -511,6 +442,96 @@ impl Runtime {
         }
         None
     }
+
+    // Share-related methods
+
+    /// Recusrively turn a node into a `Shared` node which allows duplication
+    /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
+    /// This is the case for linear nodes and negative types.
+    fn share(&mut self, node: Node) -> Option<Shared> {
+        self.share_inner(node)
+    }
+    fn share_inner(&mut self, node: Node) -> Option<Shared> {
+        stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
+            Node::Shared(shared) => Some(shared),
+            Node::Global(instance, global_index) => match self.arena().get(global_index) {
+                Global::Destruct(..) => None,
+                Global::Fanout(..) => None,
+                Global::Package(package, captures, FanBehavior::Expand) => {
+                    let root = self.instantiate_package_captures(
+                        package.clone(),
+                        Node::Global(instance, captures.clone()),
+                    );
+                    self.share_inner(root)
+                }
+                Global::Package(package, captures, FanBehavior::Propagate) => {
+                    self.rewrites.share_sync += 1;
+                    let captures = self.share_inner(Node::Global(instance, *captures))?;
+                    Some(Shared::Sync(Arc::new(SyncShared::Package(
+                        *package, captures,
+                    ))))
+                }
+                Global::Value(value) => {
+                    self.rewrites.share_sync += 1;
+                    Some(Shared::Sync(Arc::new(SyncShared::Value(
+                        value.map_ref_leaves(|p| {
+                            self.share_inner(Node::Global(instance.clone(), *p))
+                        })?,
+                    ))))
+                }
+                Global::Variable(id) => {
+                    let mut lock = instance.vars.0.lock().unwrap();
+                    let slot = &mut lock[*id];
+                    if let Some(slot) = slot.take() {
+                        drop(lock);
+                        self.rewrites.share_sync += 1;
+                        Some(self.share_inner(slot)?)
+                    } else {
+                        self.rewrites.share_async += 1;
+                        let (hole, shared) = self.create_share_hole();
+                        slot.replace(hole);
+                        Some(shared)
+                    }
+                }
+            },
+            Node::Linear(Linear::Value(value)) => {
+                self.rewrites.share_sync += 1;
+                Some(Shared::Sync(Arc::new(SyncShared::Value(
+                    value.map_leaves(|p| self.share_inner(*p))?,
+                ))))
+            }
+            Node::Linear(Linear::Request(h)) => {
+                self.rewrites.share_async += 1;
+                let (hole, shared) = self.create_share_hole();
+                h.send(hole).unwrap();
+                Some(shared)
+            }
+            Node::Linear(Linear::ShareHole(..)) => None,
+        })
+    }
+
+    fn fill_hole(&mut self, hole: Arc<Mutex<SharedHole>>, value: Node) {
+        let value = self.share(value).unwrap();
+        match value {
+            Shared::Async(value) => self.enqueue_to_hole(
+                &mut value.lock().unwrap(),
+                Node::Linear(Linear::ShareHole(hole)),
+            ),
+            Shared::Sync(value) => {
+                let mut lock = hole.lock().unwrap();
+                let SharedHole::Unfilled(continuations) =
+                    core::mem::replace(&mut *lock, SharedHole::Filled((*value).clone()))
+                else {
+                    unreachable!()
+                };
+                for i in continuations {
+                    self.link(i, Node::Shared(Shared::Sync(value.clone())));
+                }
+            }
+        }
+    }
+
+    // Interact-related methods
     fn interact_fanout(&mut self, instance: Instance, destinations: Index<[Global]>, other: Node) {
         self.rewrites.fanout += 1;
         let other = self.share(other).unwrap();

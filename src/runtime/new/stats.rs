@@ -9,6 +9,8 @@ pub struct Rewrites {
     pub instantiate: u64,
     pub ext_call: u64,
     pub ext_send: u64,
+    pub share_sync: u64,
+    pub share_async: u64,
 }
 
 impl Rewrites {
@@ -20,6 +22,8 @@ impl Rewrites {
             + self.instantiate
             + self.ext_call
             + self.ext_send
+            + self.share_sync
+            + self.share_async
     }
     pub fn show(&self, elapsed: Duration) -> String {
         format!(
@@ -31,6 +35,8 @@ impl Rewrites {
             \tFanout: {}\n\
             \tExternal Call: {}\n\
             \tExternal Send: {}\n\
+            \tShare Sync: {}\n\
+            \tShare Async: {}\n\
             \tTotal: {}\n\
             \tTime (ms): {}\n\
             \tPer second: {}\n\
@@ -42,6 +48,8 @@ impl Rewrites {
             self.fanout,
             self.ext_call,
             self.ext_send,
+            self.share_sync,
+            self.share_async,
             self.total(),
             elapsed.as_millis(),
             (self.total() as f64 / elapsed.as_secs_f64()) as u64,
