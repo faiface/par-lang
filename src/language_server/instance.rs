@@ -306,11 +306,7 @@ impl Instance {
         let code = self.io.read(&self.uri);
 
         self.build = stacker::grow(32 * 1024 * 1024, || {
-            BuildResult::from_source(
-                &BuildConfig::default(),
-                &code.unwrap(),
-                self.file.clone(),
-            )
+            BuildResult::from_source(&BuildConfig::default(), &code.unwrap(), self.file.clone())
         });
         tracing::info!("Compiled!");
         // reset dirty flag after successful compile attempt
