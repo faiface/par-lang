@@ -79,16 +79,16 @@ impl Handle {
         net: NetHandle,
         package: PackagePtr,
     ) -> Result<Handle> {
-        let (tx, rx) = oneshot::channel::<(Node, Node)>();
-        net.0
-            .send(ReducerMessage::Instantiate(package, tx))
-            .unwrap();
-        let (root, _captures) = rx.await.map_err(|_| Error::Panicked).unwrap();
-        Ok(Handle {
+        let (node, handle) = HandleNode::linked_pair();
+        let mut handle = Handle {
             net: net,
-            node: root.into(),
+            node: handle,
             arena,
-        })
+        };
+        let root =
+            handle.instantiate_package_captures(package, Node::Linear(Linear::Value(Value::Break)));
+        handle.link(root, node);
+        Ok(handle)
     }
 
     pub async fn link_with(mut self, mut dual: Handle) {
@@ -212,7 +212,14 @@ impl Handle {
 
     pub async fn break_(mut self) -> () {
         match self.node.take().await {
-            Node::Global(_, Global::Destruct(GlobalCont::Continue)) => (),
+            Node::Global(_, global_index)
+                if matches!(
+                    self.arena.get(global_index),
+                    Global::Destruct(GlobalCont::Continue)
+                ) =>
+            {
+                ()
+            }
             node => {
                 let other = Node::Linear(Linear::Value(Value::Break));
                 self.link(node, other);

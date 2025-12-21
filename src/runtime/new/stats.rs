@@ -28,6 +28,7 @@ impl Rewrites {
             \tReceive: {}\n\
             \tMatch: {}\n\
             \tInstantiate: {}\n\
+            \tFanout: {}\n\
             \tExternal Call: {}\n\
             \tExternal Send: {}\n\
             \tTotal: {}\n\
@@ -38,6 +39,7 @@ impl Rewrites {
             self.receive,
             self.r#match,
             self.instantiate,
+            self.fanout,
             self.ext_call,
             self.ext_send,
             self.total(),

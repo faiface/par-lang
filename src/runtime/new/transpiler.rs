@@ -12,7 +12,9 @@ use std::sync::OnceLock;
 use crate::par::language::GlobalName;
 use crate::runtime::new::arena::{Arena, Index};
 use crate::runtime::new::reducer::Reducer;
-use crate::runtime::new::runtime::{ExternalArc, GlobalCont, GlobalValue, Package, PackagePtr};
+use crate::runtime::new::runtime::{
+    ExternalArc, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
+};
 use crate::runtime::{new, old};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -149,19 +151,26 @@ impl ProgramTranspiler {
         current_net.num_vars = 0;
         self.stack.push(current_net);
 
-        let root = self.transpile_tree(root);
-        let captures = self.transpile_tree(captures);
+        let root = self.transpile_tree_and_alloc(root);
+        let captures = self.transpile_tree_and_alloc(captures);
         let redexes: Vec<_> = redexes
             .into_iter()
-            .map(|(a, b)| (self.transpile_tree(a), self.transpile_tree(b)))
+            .map(|(a, b)| {
+                (
+                    self.transpile_tree_and_alloc(a),
+                    self.transpile_tree_and_alloc(b),
+                )
+            })
             .collect();
         let redexes: Index<_> = self.dest.alloc_clone(redexes.as_ref());
         let package = Package {
-            root: root,
-            captures: captures,
+            body: PackageBody {
+                root: root,
+                captures: captures,
+                debug_name,
+                redexes,
+            },
             num_vars: self.current_net().num_vars,
-            debug_name,
-            redexes,
         };
         self.stack.pop();
         package

@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
 use crate::runtime::new::arena::Arena;
-use crate::runtime::new::runtime::{Global, GlobalPtr, Linear, Node, Shared, SyncShared, Value};
+use crate::runtime::new::runtime::{
+    Global, GlobalPtr, Linear, Node, PackageBody, Shared, SyncShared, Value,
+};
 
 pub struct Shower<'a> {
     pub arena: &'a Arena,
@@ -202,12 +204,20 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a OnceLock<Package>> {
             write!(f, "<unfilled>")?;
             return Ok(());
         };
-        if lock.debug_name.len() > 0 {
-            write!(f, "/* {} */", lock.debug_name)?;
+        write!(f, "{}", Showable(&lock.body, self.1))?;
+        Ok(())
+    }
+}
+
+impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a PackageBody> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let package = self.0;
+        if package.debug_name.len() > 0 {
+            write!(f, "/* {} */", package.debug_name)?;
         }
-        write!(f, "@{}", Showable(&lock.root, self.1))?;
-        write!(f, "${}", Showable(&lock.captures, self.1))?;
-        for (a, b) in self.1.arena.get(lock.redexes.clone()) {
+        write!(f, "@{}", Showable(&package.root, self.1))?;
+        write!(f, "${}", Showable(&package.captures, self.1))?;
+        for (a, b) in self.1.arena.get(package.redexes.clone()) {
             write!(f, "& {} ~ {}", Showable(a, self.1), Showable(b, &self.1))?;
         }
         Ok(())

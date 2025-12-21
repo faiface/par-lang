@@ -1,5 +1,5 @@
 use super::readback::Handle;
-use crate::runtime::new::runtime::{Linear, Node, PackagePtr, Runtime, UserData};
+use crate::runtime::new::runtime::{Linear, Node, Runtime, UserData};
 use crate::runtime::new::stats::Rewrites;
 use crate::TokioSpawn;
 use futures::future::RemoteHandle;
@@ -7,12 +7,10 @@ use futures::task::{FutureObj, Spawn, SpawnExt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 
 pub enum ReducerMessage {
     Redex(Node, Node),
     Spawn(FutureObj<'static, ()>),
-    Instantiate(PackagePtr, oneshot::Sender<(Node, Node)>),
     Dropped(usize),
     Created(usize),
 }
@@ -68,10 +66,6 @@ impl Reducer {
             }
             ReducerMessage::Spawn(s) => {
                 self.spawner.spawn_obj(s).unwrap();
-            }
-            ReducerMessage::Instantiate(package, ret) => {
-                use crate::runtime::new::runtime::Linker;
-                ret.send(self.runtime.instantiate(package)).unwrap();
             }
             ReducerMessage::Dropped(_) => {}
             ReducerMessage::Created(_) => {}

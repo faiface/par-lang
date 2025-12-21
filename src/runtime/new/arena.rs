@@ -14,7 +14,7 @@ pub struct Arena {
     nodes: Vec<Global>,
     strings: String,
     packages: Vec<OnceLock<Package>>,
-    redexes: Vec<(Global, Global)>,
+    redexes: Vec<(Index<Global>, Index<Global>)>,
     case_branches: Vec<(Index<str>, OnceLock<Package>)>,
     string_to_location: BTreeMap<String, Index<str>>,
 }
@@ -68,6 +68,7 @@ impl std::fmt::Display for Arena {
                 write!(f, "@{} = <unfilled>\n", idx)?;
                 continue;
             };
+            let lock = &lock.body;
             if lock.debug_name.len() > 0 {
                 write!(f, "// {}\n", lock.debug_name)?;
             }
@@ -89,13 +90,15 @@ impl std::fmt::Display for Arena {
 
 pub struct Index<T: Indexable + ?Sized>(pub T::Store);
 
+impl<T: Indexable + ?Sized> Copy for Index<T> {}
+
 /// The `Indexable` trait is implemented by all types that are contained by an `Arena`.
 /// It defines a [`Indexable::Store`] associated type, which determines what is needed to
 /// index into a value of this type. For example, sized values usually require a `usize` to index them,
 /// which represents the offset into the array that contains it
 /// but a slice type requires a pair of offset and length.
 pub trait Indexable {
-    type Store: Clone + PartialEq + Eq + PartialOrd + Ord;
+    type Store: Copy + PartialEq + Eq + PartialOrd + Ord;
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self;
     fn alloc<'s>(store: &'s mut Arena, data: Self) -> Index<Self>
     where
@@ -118,6 +121,19 @@ macro_rules! slice_indexable {
                 Index((start, data.len()))
             }
         }
+        impl Iterator for Index<[$element]> {
+            type Item = Index<$element>;
+            fn next(&mut self) -> Option<Index<$element>> {
+                if self.0 .1 == 0 {
+                    None
+                } else {
+                    let ret = Index(self.0 .0);
+                    self.0 .0 += 1;
+                    self.0 .1 -= 1;
+                    Some(ret)
+                }
+            }
+        }
     };
 }
 macro_rules! sized_indexable {
@@ -137,7 +153,8 @@ macro_rules! sized_indexable {
 }
 slice_indexable!(case_branches, (Index<str>, OnceLock<Package>));
 slice_indexable!(nodes, Global);
-slice_indexable!(redexes, (Global, Global));
+slice_indexable!(redexes, (Index<Global>, Index<Global>));
+sized_indexable!(redexes, (Index<Global>, Index<Global>));
 sized_indexable!(case_branches, (Index<str>, OnceLock<Package>));
 sized_indexable!(packages, OnceLock<Package>);
 sized_indexable!(nodes, Global);
