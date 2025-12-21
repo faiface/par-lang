@@ -59,9 +59,9 @@ struct InstanceInner(Mutex<Box<[Option<Node>]>>);
 ///
 /// ## Lifetime of an `Instance`
 ///
-/// They are created empty by `Linker::instantiate`, with a fixed length. Initially, all variables are empty.
+/// They are created empty by `Linker::create_package_instance`, with a fixed length. Initially, all variables are empty.
 /// Then, calls to `Runtime::set_var` slowly fill up and empty the instance. Each variable slot is filled once and taken out of once.
-/// (I'm not sure if it's possible for a variable slot to never be used, but it definitely can't happen twice)
+/// (I'm not sure if it's possible for a variable slot to never be used, but it definitely can't be linked to twice)
 /// At the end of the lifetime of Instances, all of them go out of scope and are eventually dropped. Because of the way
 /// the runtime is designed, all slots inside of it must be empty. This is when the `Instance` is destroyed.
 pub struct Instance {
@@ -90,7 +90,7 @@ impl Drop for InstanceInner {
 }
 
 #[derive(Debug)]
-/// User data; this is data created by the external
+/// User data; this is data created by the external environment.
 pub enum UserData {
     /// An external function without captures. This is created externally
     /// and the function takes in a handle to the value it interacts with
@@ -114,6 +114,9 @@ impl Debug for ExternalArc {
 }
 
 #[derive(Clone, Debug)]
+/// A PackageBody is the inner body of a package.
+/// The difference with `Package` is that `PackageBody` does not contain `num_vars`
+/// (because a package inside a PackageBody might not require a new instance)
 pub struct PackageBody {
     pub root: Index<Global>,
     pub captures: Index<Global>,
@@ -141,10 +144,12 @@ pub enum Global {
     /// and then carries out a negative operation on it according to its variant
     /// This node is created from the Continue, Case, and Receive commands.
     Destruct(GlobalCont),
+    /// Value carries out a positive operation.
+    /// This node is created from the Break, Signal, and Send commands.
     Value(GlobalValue),
     /// Fanout; turn the value it interacts with into a nonlinear value.
     /// This node is created whenever a Par variable is used
-    /// nonlinearly
+    /// nonlinearly. Fanout subsumes both erasure and duplication.
     Fanout(Index<[Global]>),
 }
 
@@ -156,8 +161,14 @@ pub enum Node {
 }
 
 #[derive(Clone, Debug)]
+/// Shared nodes are created by Fanout to make duplication fast.
+/// They are reference-counted internally and can be cheaply cloned.
 pub enum Shared {
+    /// Async values are created when sharing
+    /// something that is not yet ready; a variable or a request.
     Async(Arc<Mutex<SharedHole>>),
+    /// Sync values are created when sharing
+    /// a value or a package.
     Sync(Arc<SyncShared>),
 }
 
@@ -171,11 +182,18 @@ pub enum Shared {
 /// There are [`Linear`] values, [`Shared`] values, and [`Global`] values.
 #[derive(Clone, Debug)]
 pub enum Value<P> {
+    /// The break node; created in break commands (`value!`)
     Break,
+    /// The pair node; created in send commands (`value(a)`)
     Pair(P, P),
+    /// The either node; created in signal commands (`value.name`)
     Either(Str, P),
+    /// ExternalFns contain `fn` nodes which are called with a handle to value they interact with
     ExternalFn(ExternalFn),
+    /// ExternalFns contain `fn` nodes which are called with a handle to value they interact with
+    /// They internally contain a `Fn` dyn object which allows this type of functions to have captures.
     ExternalArc(ExternalArc),
+    /// Primitive values are data provided externally.
     Primitive(Primitive),
 }
 
@@ -211,9 +229,23 @@ pub enum SyncShared {
 
 pub type GlobalValue = Value<GlobalPtr>;
 #[derive(Debug)]
+/// Linear nodes are not stored in the global arena; instead, they
+/// are created by the runtime and by the external dynamically, as needed
 pub enum Linear {
     Value(Value<Box<Node>>),
+    /// This variant is created by external
+    /// tasks. Whatever node it interacts with will get sent to `Node`
+    /// This is not true for variable, package, or fanout nodes, which
+    /// are of a higher priority than Request nodes.
     Request(oneshot::Sender<Node>),
+    /// This variant is created on `Fanout` ~ `Variable` interactions
+    /// and is substituted into the variable's slot
+    /// It is a "hole" that will get filled with whatever
+    /// value the variable is filled with
+    /// This allows "suspending" the duplication
+    /// until we know what to duplicate.
+    ///
+    /// This is also created in Fanout ~ Request interactions
     ShareHole(Arc<Mutex<SharedHole>>),
 }
 
@@ -229,7 +261,7 @@ impl From<UserData> for Linear {
 
 #[derive(Clone, Debug)]
 /// A "global continuation"; a negative node stored in the global array
-/// When it interacts with anything, it attempts to destructure it.
+/// When it interacts with a value, it attempts to destructure it.
 pub enum GlobalCont {
     /// The continue node; created in continue commands (`value?`)
     Continue,
@@ -505,8 +537,14 @@ impl Runtime {
             .find(|(a, _)| a.clone() == variant)
             .map(|(_, b)| b.clone())
     }
+    /// Carry out an interaction between two nodes.
+    /// Returns Some if an external operation with `UserData` was attempted.
+    /// and None otherwise
     fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
-        pub enum NodeRef<'a> {
+        /// NodeRef is an internal structure to make matching on Nodes easier.
+        /// It is like a Node but includes a reference to the Global in the Global branch
+        /// to allow matching on it
+        enum NodeRef<'a> {
             Linear(Linear),
             Shared(Shared),
             Global(Instance, Index<Global>, &'a Global),
@@ -521,7 +559,7 @@ impl Runtime {
                     }
                 }
             }
-            fn to_node(self) -> Node {
+            fn into_node(self) -> Node {
                 match self {
                     NodeRef::Linear(linear) => Node::Linear(linear),
                     NodeRef::Shared(shared) => Node::Shared(shared),
@@ -565,27 +603,83 @@ impl Runtime {
         }
         let a = NodeRef::from_node(&self.arena, a);
         let b = NodeRef::from_node(&self.arena, b);
-
+        // This is the match expression that is the core of the runtime
+        // The priority order is very important and is probably
+        // one of the most complex parts of the V3 runtime.
+        //
+        //
+        // (1) Expanding packages with FanBehavior::Propagate (definition-like packages)
+        //
+        // Definitions are meant to be just aliases; so they have to behave exactly as if they
+        // were inlined. This is why this is has highest priority
+        //
+        // (2) Linking variables
+        //
+        // This is the second step in reducing {[x] x}(1); the first one is
+        // destructuring the pair the application compiles to with the par the function
+        // compiles to. Linking variables is a fast operation that involves no duplication
+        // that's why it is high priority. It is higher priority than (3) because otherwise
+        // all duplication of variables would create ShareHoles
+        //
+        // (3) Fanout & Filling ShareHoles
+        //
+        // An interaction can't match both at the same time; that's why they're listed together
+        // These two are the interactions that involve calling `share()` on the other side.
+        // This is higher priority than (4) because share() on packages is what allows duplicating
+        // boxes. It is higher priority than (5) to simplify external code.
+        //
+        // (4) Expanding packages with FanBehavior::Expand (box-like packages)
+        //
+        // This happens when the box interacts with Request, ExtFns, ExtArcs, and GlobalContinuations (and Values)
+        // Since none of these are duplications, the only way to progress is to expand the box (dereliction)
+        // and expose the inner value.
+        //
+        // (5) External calls: Requests, ExtFns and ExtArcs
+        //
+        // External calls could be higher priority if the external code knew how to handle
+        // the nodes that are currently of a higher priority.
+        //
+        // When we implement readback duplication, this will have to get swapped with (4)
+        //
+        // (6) Destructuring values
+        //
+        // At this point, the only possible valid interaction left is Value ~ GlobalContinuation
+        // This is the part of the runtime that corresponds to linear logic cut elimination
+        // it does the "real" computation (unless you include duplication as computation);
+        // everything else is just bookkeeping.
+        //
+        // This doesn't have to be this low priority, but knowing what variants we'll have simplifies
+        // the matching code.
         match (a, b) {
+            sym!(
+                NodeRef::Global(
+                    instance,
+                    _,
+                    Global::Package(package, captures_in, FanBehavior::Expand)
+                ),
+                other
+            ) => {
+                self.interact_instantiate(
+                    *package,
+                    Node::Global(instance, *captures_in),
+                    other.into_node(),
+                );
+            }
             sym!(NodeRef::Global(instance, _, Global::Variable(index)), value) => {
-                self.set_var(instance, *index, value.to_node())
+                self.set_var(instance, *index, value.into_node())
             }
             sym!(NodeRef::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
-                self.enqueue_to_hole(&mut *lock, other.to_node());
-            }
-            sym!(NodeRef::Linear(Linear::Request(request)), other) => {
-                self.rewrites.ext_send += 1;
-                return Some((UserData::Request(request), other.to_node()));
+                self.enqueue_to_hole(&mut *lock, other.into_node());
             }
             sym!(
                 NodeRef::Global(instance, _, Global::Fanout(destinations)),
                 other
             ) => {
-                self.interact_fanout(instance, *destinations, other.to_node());
+                self.interact_fanout(instance, *destinations, other.into_node());
             }
             sym!(NodeRef::Linear(Linear::ShareHole(hole)), other) => {
-                self.fill_hole(hole, other.to_node())
+                self.fill_hole(hole, other.into_node())
             }
             sym!(
                 NodeRef::Global(instance, _, Global::Package(package, captures_in, _)),
@@ -594,7 +688,7 @@ impl Runtime {
                 self.interact_instantiate(
                     *package,
                     Node::Global(instance, *captures_in),
-                    other.to_node(),
+                    other.into_node(),
                 );
             }
             sym!(NodeRef::Shared(Shared::Sync(x)), other)
@@ -607,28 +701,33 @@ impl Runtime {
                 self.interact_instantiate(
                     *package,
                     Node::Shared(captures_in.clone()),
-                    other.to_node(),
+                    other.into_node(),
                 );
+            }
+
+            sym!(NodeRef::Linear(Linear::Request(request)), other) => {
+                self.rewrites.ext_send += 1;
+                return Some((UserData::Request(request), other.into_node()));
             }
             sym!(node, other) if node.as_external_fn().is_some() => {
                 let Some(ext) = node.as_external_fn() else {
                     unreachable!()
                 };
                 self.rewrites.ext_call += 1;
-                return Some((UserData::ExternalFn(ext), other.to_node()));
+                return Some((UserData::ExternalFn(ext), other.into_node()));
             }
             sym!(node, other) if node.as_external_arc().is_some() => {
                 let Some(ext) = node.as_external_arc() else {
                     unreachable!()
                 };
                 self.rewrites.ext_call += 1;
-                return Some((UserData::ExternalArc(ext), other.to_node()));
+                return Some((UserData::ExternalArc(ext), other.into_node()));
             }
             sym!(
                 NodeRef::Global(instance, _, Global::Destruct(destructor)),
                 node
             ) => {
-                let node = node.to_node();
+                let node = node.into_node();
                 let destructor = destructor.clone();
                 match (
                     self.destruct(node).expect("Continuation-continuation!"),
@@ -680,8 +779,8 @@ impl Runtime {
             (a, b) => {
                 panic!(
                     "Unimplemented reduction: {:?} {:?}",
-                    a.to_node().variant_name(),
-                    b.to_node().variant_name()
+                    a.into_node().variant_name(),
+                    b.into_node().variant_name()
                 )
             }
         };
