@@ -190,21 +190,6 @@ def List.Copy = <a>[dst] [src] do {
   }
 } in dst
 
-dec List.Join : [List<String>, String] String
-def List.Join = [list, sep]
-  let builder = String.Builder in
-  list.case {
-    .end! => builder.build,
-    .item(v) list => do {
-      builder.add(v)
-    } in list.begin.case {
-      .end! => builder.build,
-      .item(v) list => do {
-        builder.add(sep).add(v)
-      } in list.loop,
-    },
-  }
-
 dec List.MinMax : <a>[List<box a>] [box [box a, box a] Ordering] Option<(box a) box a>
 def List.MinMax = <a>[list] [cmp]
   let result: Option<(box a) box a> = .err! in
@@ -446,6 +431,21 @@ def String.Lines = <e>[parser]
     .end try ! => .end .ok!,
     .fail parser => let try r = parser.remainder in .item(r) .end .ok!,
     .match(line, _) parser => .item(line) parser.loop,
+  }
+
+dec String.Join : [List<String>, String] String
+def String.Join = [list, sep]
+  let builder = String.Builder in
+  list.case {
+    .end! => builder.build,
+    .item(v) list => do {
+      builder.add(v)
+    } in list.begin.case {
+      .end! => builder.build,
+      .item(v) list => do {
+        builder.add(sep).add(v)
+      } in list.loop,
+    },
   }
 
 
