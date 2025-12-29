@@ -941,9 +941,9 @@ impl<Typ> Process<Typ> {
             Process::Let {
                 name, value, then, ..
             } => {
-                let mut vars = value.free_variables();
-                vars.extend(then.free_variables());
+                let mut vars = then.free_variables();
                 vars.shift_remove(name);
+                vars.extend(value.free_variables());
                 vars
             }
             Process::Do { name, command, .. } => {
