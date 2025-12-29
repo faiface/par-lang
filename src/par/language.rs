@@ -508,50 +508,59 @@ impl Passes {
         index
     }
 
+    fn without_fallthrough(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        self.fallthrough_stash.push(self.fallthrough.take());
+        let result = f(self);
+        self.fallthrough = self.fallthrough_stash.pop().unwrap();
+        result
+    }
+
     fn with_fallthrough(
         &mut self,
-        body: Option<Arc<process::Process<()>>>,
+        body: Arc<process::Process<()>>,
         f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
     ) -> Result<Arc<process::Process<()>>, CompileError> {
         self.fallthrough_stash.push(self.fallthrough.take());
 
-        let result = if let Some(body) = body {
-            let block_index = self.get_block_index();
-            self.fallthrough = Some(Pass::new(block_index));
-            let process = f(self)?;
-            if !self
-                .fallthrough
-                .take()
-                .expect("fallthrough must be present")
-                .used
-            {
-                return Err(CompileError::UnreachableCode(body.span()));
-            }
-            Ok(Arc::new(process::Process::Block(
-                body.span(),
-                block_index,
-                body,
-                process,
-            )))
-        } else {
-            f(self)
-        };
+        let block_index = self.get_block_index();
+        self.fallthrough = Some(Pass::new(block_index));
+        let process = f(self)?;
+        if !self.fallthrough.take().unwrap().used {
+            return Err(CompileError::UnreachableCode(body.span()));
+        }
+        let result = Arc::new(process::Process::Block(
+            body.span(),
+            block_index,
+            body,
+            process,
+        ));
 
-        self.fallthrough = self
-            .fallthrough_stash
-            .pop()
-            .expect("fallthrough was supposed be stashed");
+        self.fallthrough = self.fallthrough_stash.pop().unwrap();
 
+        Ok(result)
+    }
+
+    fn expr_without_fallthrough(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
+    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        self.fallthrough_stash.push(self.fallthrough.take());
+        let result = f(self);
+        self.fallthrough = self.fallthrough_stash.pop().unwrap();
         result
     }
 
     fn expr_with_fallthrough(
         &mut self,
-        body: Option<Arc<process::Process<()>>>,
+        span: &Span,
+        body: Arc<process::Process<()>>,
         f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
     ) -> Result<Arc<process::Expression<()>>, CompileError> {
         Ok(Arc::new(process::Expression::Chan {
-            span: Span::None,
+            span: span.clone(),
             captures: Captures::new(),
             chan_name: LocalName::result(),
             chan_annotation: None,
@@ -559,7 +568,7 @@ impl Passes {
             expr_type: (),
             process: self.with_fallthrough(body, |pass| {
                 Ok(Arc::new(process::Process::Do {
-                    span: Span::None,
+                    span: span.clone(),
                     name: LocalName::result(),
                     usage: VariableUsage::Unknown,
                     typ: (),
@@ -594,12 +603,12 @@ impl Passes {
             .entry(label.clone())
             .or_default()
             .pop()
-            .expect("catch was supposed be stashed");
+            .unwrap();
         if let Some(stashed) = stashed {
             self.catch.insert(label, stashed);
         }
         let process = result?;
-        if !current.expect("catch must be present").used {
+        if !current.unwrap().used {
             return Err(CompileError::UnreachableCode(body.span()));
         }
         Ok(Arc::new(process::Process::Block(
@@ -612,12 +621,13 @@ impl Passes {
 
     fn expr_with_catch(
         &mut self,
+        span: &Span,
         label: Option<LocalName>,
         body: Arc<process::Process<()>>,
         f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
     ) -> Result<Arc<process::Expression<()>>, CompileError> {
         Ok(Arc::new(process::Expression::Chan {
-            span: Span::None,
+            span: span.clone(),
             captures: Captures::new(),
             chan_name: LocalName::result(),
             chan_annotation: None,
@@ -625,7 +635,7 @@ impl Passes {
             expr_type: (),
             process: self.with_catch(label, body, |pass| {
                 Ok(Arc::new(process::Process::Do {
-                    span: Span::None,
+                    span: span.clone(),
                     name: LocalName::result(),
                     usage: VariableUsage::Unknown,
                     typ: (),
@@ -661,9 +671,7 @@ impl Passes {
     fn enable_catches(&mut self) -> &mut Self {
         for pass in self.catch.values_mut() {
             if !pass.disabled_reasons.is_empty() {
-                pass.disabled_reasons
-                    .pop()
-                    .expect("disabled reason must exist (well-parenthesized)");
+                pass.disabled_reasons.pop().unwrap();
             }
         }
         self
@@ -1121,12 +1129,12 @@ impl Expression {
                     command: process::Command::Link(block.compile(pass)?),
                 });
                 let block = pattern.compile_catch_block(span, block, pass)?;
-                pass.expr_with_catch(label.clone(), block, |pass| then.compile(pass))?
+                pass.expr_with_catch(span, label.clone(), block, |pass| then.compile(pass))?
             }
 
             Self::Throw(span, label, expression) => {
                 let catch_block = pass.use_catch(span, label)?;
-                pass.expr_with_fallthrough(None, |pass| {
+                pass.expr_without_fallthrough(|pass| {
                     Ok(Arc::new(process::Expression::Chan {
                         span: span.clone(),
                         captures: Captures::new(),
@@ -1176,13 +1184,14 @@ impl Expression {
             } => {
                 let expression = expression.compile(pass)?;
                 pass.expr_with_fallthrough(
-                    Some(Arc::new(process::Process::Do {
+                    span,
+                    Arc::new(process::Process::Do {
                         span: span.clone(),
                         name: LocalName::result(),
                         usage: VariableUsage::Unknown,
                         typ: (),
                         command: process::Command::Link(expression),
-                    })),
+                    }),
                     |pass| {
                         Ok(Arc::new(process::Expression::Chan {
                             span: span.clone(),
@@ -1724,7 +1733,7 @@ impl Process {
             } => {
                 if let Some(tail) = then {
                     let tail = tail.compile(pass)?;
-                    pass.with_fallthrough(Some(tail), |pass| {
+                    pass.with_fallthrough(tail, |pass| {
                         let else_proc = match else_ {
                             Some(proc) => proc.compile(pass)?,
                             None => Arc::new(process::Process::Unreachable(span.clone())),
@@ -1748,7 +1757,7 @@ impl Process {
                 value,
                 then,
             } => {
-                let value = pass.expr_with_fallthrough(None, |pass| {
+                let value = pass.expr_without_fallthrough(|pass| {
                     pass.disable_catches(CatchDisabledReason::DifferentProcess);
                     let value = value.compile(pass)?;
                     pass.enable_catches();
@@ -1764,7 +1773,7 @@ impl Process {
                 block,
                 then,
             } => {
-                let block = pass.with_fallthrough(None, |pass| {
+                let block = pass.without_fallthrough(|pass| {
                     pattern.compile_catch_block(span, block.compile(pass)?, pass)
                 })?;
                 let process = pass.with_catch(label.clone(), block, |pass| then.compile(pass))?;
@@ -1773,7 +1782,7 @@ impl Process {
 
             Self::Throw(span, label, expression) => {
                 let catch_block = pass.use_catch(span, label)?;
-                let expression = pass.expr_with_fallthrough(None, |pass| {
+                let expression = pass.expr_without_fallthrough(|pass| {
                     pass.disable_catches(CatchDisabledReason::DifferentProcess);
                     let expression = expression.compile(pass);
                     pass.enable_catches();
@@ -1893,7 +1902,7 @@ impl Command {
 
                 if let Some(process) = optional_process {
                     let process = process.compile(pass)?;
-                    pass.with_fallthrough(Some(process), |pass| {
+                    pass.with_fallthrough(process, |pass| {
                         for (branch_name, process_branch) in process_branches {
                             branches.push(branch_name.clone());
                             processes.push(process_branch.compile(object_name, pass)?);
@@ -2078,7 +2087,7 @@ fn compile_default(
     ok_process: Arc<process::Process<()>>,
     pass: &mut Passes,
 ) -> Arc<process::Process<()>> {
-    pass.with_fallthrough(Some(ok_process), |pass| {
+    pass.with_fallthrough(ok_process, |pass| {
         Ok(Arc::new(process::Process::Do {
             span: span.clone(),
             name: variable.clone(),
@@ -2370,9 +2379,9 @@ fn compile_condition_process(
     failure_body: Arc<process::Process<()>>,
 ) -> Result<Arc<process::Process<()>>, CompileError> {
     let span = condition.span();
-    pass.with_fallthrough(Some(failure_body), |pass| {
+    pass.with_fallthrough(failure_body, |pass| {
         let goto_failure = pass.use_fallthrough(&span).unwrap();
-        pass.with_fallthrough(Some(success_body), |pass| {
+        pass.with_fallthrough(success_body, |pass| {
             let goto_success = pass.use_fallthrough(&span).unwrap();
             condition_process_core(condition, pass, goto_success, goto_failure)
         })
