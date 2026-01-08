@@ -42,7 +42,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Linear> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Linear::Value(value) => {
-                write!(f, "{}", Showable(value, self.1))?;
+                write!(f, "{}", Showable(value.as_ref(), self.1))?;
             }
             Linear::Request(_sender) => {
                 write!(f, "<external request>")?;

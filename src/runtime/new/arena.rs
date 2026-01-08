@@ -16,10 +16,10 @@ use super::runtime::{Global, Package};
 pub struct Arena {
     nodes: Vec<Global>,
     strings: String,
+    string_to_location: BTreeMap<String, Index<str>>,
+    case_branches: Vec<(Index<str>, PackageBody)>,
     packages: Vec<OnceLock<Package>>,
     redexes: Vec<(Index<Global>, Index<Global>)>,
-    case_branches: Vec<(Index<str>, PackageBody)>,
-    string_to_location: BTreeMap<String, Index<str>>,
 }
 
 impl Arena {

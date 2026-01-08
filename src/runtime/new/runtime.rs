@@ -232,7 +232,7 @@ pub type GlobalValue = Value<GlobalPtr>;
 /// Linear nodes are not stored in the global arena; instead, they
 /// are created by the runtime and by the external dynamically, as needed
 pub enum Linear {
-    Value(Value<Box<Node>>),
+    Value(Box<Value<Node>>),
     /// This variant is created by external
     /// tasks. Whatever node it interacts with will get sent to `Node`
     /// This is not true for variable, package, or fanout nodes, which
@@ -252,8 +252,8 @@ pub enum Linear {
 impl From<UserData> for Linear {
     fn from(this: UserData) -> Linear {
         match this {
-            UserData::ExternalFn(p) => Linear::Value(Value::ExternalFn(p)),
-            UserData::ExternalArc(p) => Linear::Value(Value::ExternalArc(p)),
+            UserData::ExternalFn(p) => Linear::Value(Box::new(Value::ExternalFn(p))),
+            UserData::ExternalArc(p) => Linear::Value(Box::new(Value::ExternalArc(p))),
             UserData::Request(p) => Linear::Request(p),
         }
     }
@@ -295,7 +295,7 @@ pub trait Linker {
     }
     fn destruct(&mut self, node: Node) -> Result<Value<Node>, Node> {
         match node {
-            Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(*x)).unwrap()),
+            Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(x)).unwrap()),
             Node::Shared(Shared::Sync(shared)) => match &*shared {
                 SyncShared::Package(package, shared) => {
                     let node =
@@ -497,7 +497,7 @@ impl Runtime {
             Node::Linear(Linear::Value(value)) => {
                 self.rewrites.share_sync += 1;
                 Some(Shared::Sync(Arc::new(SyncShared::Value(
-                    value.map_leaves(|p| self.share_inner(*p))?,
+                    value.map_leaves(|p| self.share_inner(p))?,
                 ))))
             }
             Node::Linear(Linear::Request(h)) => {
@@ -589,7 +589,10 @@ impl Runtime {
             }
             fn as_external_fn(&self) -> Option<ExternalFn> {
                 match self {
-                    NodeRef::Linear(Linear::Value(Value::ExternalFn(ext))) => Some(ext.clone()),
+                    NodeRef::Linear(Linear::Value(val)) => match val.as_ref() {
+                        Value::ExternalFn(ext) => Some(ext.clone()),
+                        _ => None,
+                    },
                     NodeRef::Global(_, _, Global::Value(Value::ExternalFn(ext))) => {
                         Some(ext.clone())
                     }
@@ -606,7 +609,10 @@ impl Runtime {
             }
             fn as_external_arc(&self) -> Option<ExternalArc> {
                 match self {
-                    NodeRef::Linear(Linear::Value(Value::ExternalArc(ext))) => Some(ext.clone()),
+                    NodeRef::Linear(Linear::Value(val)) => match val.as_ref() {
+                        Value::ExternalArc(ext) => Some(ext.clone()),
+                        _ => None,
+                    },
                     NodeRef::Global(_, _, Global::Value(Value::ExternalArc(ext))) => {
                         Some(ext.clone())
                     }
@@ -784,10 +790,9 @@ impl Runtime {
                             // TODO: Optimize this; we're reconstructing the `Either` branch.
                             // This could make us lose sharing.
                             self.link(
-                                Node::Linear(Linear::Value(Value::Either(
-                                    signal,
-                                    Box::new(payload),
-                                ))),
+                                Node::Linear(Linear::Value(Box::new(Value::Either(
+                                    signal, payload,
+                                )))),
                                 root,
                             );
                         }

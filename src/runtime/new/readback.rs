@@ -85,8 +85,10 @@ impl Handle {
             node: handle,
             arena,
         };
-        let root =
-            handle.instantiate_package_captures(package, Node::Linear(Linear::Value(Value::Break)));
+        let root = handle.instantiate_package_captures(
+            package,
+            Node::Linear(Linear::Value(Box::new(Value::Break))),
+        );
         handle.link(root, node);
         Ok(handle)
     }
@@ -99,7 +101,10 @@ impl Handle {
     pub async fn provide_external(mut self, ext: ExternalFn) {
         // TODO add fast variant.
         let node = self.node.take().await;
-        self.link(node, Node::Linear(Linear::Value(Value::ExternalFn(ext))));
+        self.link(
+            node,
+            Node::Linear(Linear::Value(Box::new(Value::ExternalFn(ext)))),
+        );
     }
 
     pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
@@ -120,22 +125,24 @@ impl Handle {
         let node = self.node.take().await;
         self.link(
             node,
-            Node::Linear(Linear::Value(Value::ExternalArc(
+            Node::Linear(Linear::Value(Box::new(Value::ExternalArc(
                 super::runtime::ExternalArc(Arc::new(move |x| match x {
                     crate::runtime::Handle::New(x) => Box::pin(f(x)),
                     _ => panic!("Mixed runtime handles"),
                 })),
-            ))),
+            )))),
         );
     }
 
-    pub async fn provide_primitive(mut self, primitive: Primitive) {
+    pub async fn provide_primitive(self, primitive: Primitive) {
         // TODO add fast variant.
-        let node = self.node.take().await;
-        self.link(
-            node,
-            Node::Linear(Linear::Value(Value::Primitive(primitive))),
-        );
+        self.concurrently(|mut this| async move {
+            let node = this.node.take().await;
+            this.link(
+                node,
+                Node::Linear(Linear::Value(Box::new(Value::Primitive(primitive)))),
+            );
+        });
     }
     pub async fn primitive(mut self) -> Result<Primitive> {
         let primitive = match self.try_destruct().await {
@@ -146,27 +153,16 @@ impl Handle {
     }
 
     pub async fn send(&mut self) -> Self {
-        match self.node.take().await {
-            /* TODO fast path:
-            Node::Global(instance, Global::Destruct(GlobalCont::Par(left, right))) => {
-                let left = Node::Global(instance.clone(), left.get(&self.arena).clone());
-                let right = Node::Global(instance, right.get(&self.arena).clone());
-
-                self.node = Some(left);
-
-                Ok(self.child_handle_with(right))
-            }
-            */
-            node => {
-                let (left, left_h) = HandleNode::linked_pair();
-                let (right, right_h) = HandleNode::linked_pair();
-                let other =
-                    Node::Linear(Linear::Value(Value::Pair(Box::new(left), Box::new(right))));
-                self.link(node, other);
-                self.node = left_h;
-                self.child_handle_with(right_h)
-            }
-        }
+        let (left, left_h) = HandleNode::linked_pair();
+        let (right, right_h) = HandleNode::linked_pair();
+        let par = core::mem::replace(&mut self.node, left_h);
+        let times = Node::Linear(Linear::Value(Box::new(Value::Pair(left, right))));
+        self.child_handle_with(par)
+            .concurrently(|mut this| async move {
+                let par = this.node.take().await;
+                this.link(par, times);
+            });
+        self.child_handle_with(right_h)
     }
 
     pub async fn receive(&mut self) -> Self {
@@ -195,7 +191,7 @@ impl Handle {
                     );
                     self.arena.empty_string()
                 });
-                let other = Node::Linear(Linear::Value(Value::Either(chosen, Box::new(payload))));
+                let other = Node::Linear(Linear::Value(Box::new(Value::Either(chosen, payload))));
                 self.link(node, other);
                 self.node = payload_h;
             }
@@ -221,7 +217,7 @@ impl Handle {
                 ()
             }
             node => {
-                let other = Node::Linear(Linear::Value(Value::Break));
+                let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
                 self.link(node, other);
                 ()
             }
