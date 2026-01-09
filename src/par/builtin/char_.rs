@@ -49,27 +49,27 @@ async fn char_equals(mut handle: Handle) {
     let x = handle.receive().await.char().await;
     let y = handle.receive().await.char().await;
     if x == y {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn char_code(mut handle: Handle) {
     let c = handle.receive().await.char().await;
-    handle.provide_nat(BigInt::from(c as u32)).await;
+    handle.provide_nat(BigInt::from(c as u32));
 }
 
 async fn char_is(mut handle: Handle) {
     let ch = handle.receive().await.char().await;
     let class = CharClass::readback(handle.receive().await).await;
     if class.contains(ch) {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 #[derive(Debug, Clone)]

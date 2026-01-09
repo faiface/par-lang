@@ -102,7 +102,7 @@ async fn http_fetch(mut handle: Handle) {
     let method = request.receive().await.string().await;
 
     let mut url_handle = request.receive().await;
-    url_handle.signal(literal!("full")).await;
+    url_handle.signal(literal!("full"));
     let url = url_handle.string().await;
 
     let header_pairs = readback_list(request.receive().await, |mut handle| async move {
@@ -128,10 +128,8 @@ async fn http_fetch(mut handle: Handle) {
     {
         Ok(c) => c,
         Err(err) => {
-            handle.signal(literal!("err")).await;
-            return handle
-                .provide_string(ParString::from(err.to_string()))
-                .await;
+            handle.signal(literal!("err"));
+            return handle.provide_string(ParString::from(err.to_string()));
         }
     };
 
@@ -158,29 +156,25 @@ async fn http_fetch(mut handle: Handle) {
     let response = match response_result {
         Ok(response) => {
             if let Err(body_err) = body_result {
-                handle.signal(literal!("err")).await;
-                return handle.provide_string(ParString::from(body_err)).await;
+                handle.signal(literal!("err"));
+                return handle.provide_string(ParString::from(body_err));
             }
             response
         }
         Err(err) => {
-            handle.signal(literal!("err")).await;
+            handle.signal(literal!("err"));
             if let Err(body_err) = body_result {
-                return handle.provide_string(ParString::from(body_err)).await;
+                return handle.provide_string(ParString::from(body_err));
             }
-            return handle
-                .provide_string(ParString::from(err.to_string()))
-                .await;
+            return handle.provide_string(ParString::from(err.to_string()));
         }
     };
 
-    handle.signal(literal!("ok")).await;
+    handle.signal(literal!("ok"));
     handle
         .send()
-        .await
-        .provide_nat(BigInt::from(response.status().as_u16()))
-        .await;
-    provide_headers_list(handle.send().await, response.headers()).await;
+        .provide_nat(BigInt::from(response.status().as_u16()));
+    provide_headers_list(handle.send(), response.headers());
     provide_body_reader(handle, response).await;
 }
 
@@ -189,26 +183,24 @@ async fn provide_body_reader(mut handle: Handle, response: reqwest::Response) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.signal(literal!("ok")).await;
-                return handle.break_().await;
+                handle.signal(literal!("ok"));
+                return handle.break_();
             }
             "read" => match stream.next().await {
                 Some(Ok(bytes)) => {
-                    handle.signal(literal!("ok")).await;
-                    handle.signal(literal!("chunk")).await;
-                    handle.send().await.provide_bytes(bytes).await;
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("chunk"));
+                    handle.send().provide_bytes(bytes);
                     continue;
                 }
                 Some(Err(err)) => {
-                    handle.signal(literal!("err")).await;
-                    return handle
-                        .provide_string(ParString::from(err.to_string()))
-                        .await;
+                    handle.signal(literal!("err"));
+                    return handle.provide_string(ParString::from(err.to_string()));
                 }
                 None => {
-                    handle.signal(literal!("ok")).await;
-                    handle.signal(literal!("end")).await;
-                    return handle.break_().await;
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("end"));
+                    return handle.break_();
                 }
             },
             _ => unreachable!(),
@@ -216,20 +208,20 @@ async fn provide_body_reader(mut handle: Handle, response: reqwest::Response) {
     }
 }
 
-async fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::HeaderMap) {
+fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::HeaderMap) {
     for (name, value) in headers {
-        handle.signal(literal!("item")).await;
+        handle.signal(literal!("item"));
         let (name, value) = (
             ParString::copy_from_slice(name.as_str().as_bytes()),
             Bytes::copy_from_slice(value.as_bytes()),
         );
-        handle.send().await.concurrently(|mut handle| async {
-            handle.send().await.provide_string(name).await;
-            handle.provide_bytes(value).await;
+        handle.send().concurrently(|mut handle| async {
+            handle.send().provide_string(name);
+            handle.provide_bytes(value);
         });
     }
-    handle.signal(literal!("end")).await;
-    handle.break_().await;
+    handle.signal(literal!("end"));
+    handle.break_();
 }
 
 async fn consume_http_reader(
@@ -240,7 +232,7 @@ async fn consume_http_reader(
     let mut done = Some(done);
 
     loop {
-        handle.signal(literal!("read")).await;
+        handle.signal(literal!("read"));
         match handle.case().await.as_str() {
             "ok" => match handle.case().await.as_str() {
                 "chunk" => {
@@ -257,7 +249,7 @@ async fn consume_http_reader(
                     }
                 }
                 "end" => {
-                    handle.continue_().await;
+                    handle.continue_();
                     tx.disconnect();
                     if let Some(done) = done.take() {
                         let _ = done.send(Ok(()));
@@ -281,10 +273,10 @@ async fn consume_http_reader(
 }
 
 async fn close_reader(mut handle: Handle) -> Result<(), ParString> {
-    handle.signal(literal!("close")).await;
+    handle.signal(literal!("close"));
     match handle.case().await.as_str() {
         "ok" => {
-            handle.continue_().await;
+            handle.continue_();
             Ok(())
         }
         "err" => Err(handle.string().await),
@@ -299,9 +291,9 @@ async fn http_listen(mut handle: Handle) {
     match start_listener(address.as_str().to_string()).await {
         Ok(state) => provide_listener_value(handle, state).await,
         Err(err) => {
-            handle.signal(literal!("shutdown")).await;
-            handle.signal(literal!("err")).await;
-            handle.provide_string(err).await;
+            handle.signal(literal!("shutdown"));
+            handle.signal(literal!("err"));
+            handle.provide_string(err);
         }
     }
 }
@@ -539,7 +531,7 @@ async fn handle_request(
 async fn provide_listener_value(mut handle: Handle, mut state: ListenerState) {
     match state.next_event().await {
         ListenerEvent::Incoming(request) => {
-            handle.signal(literal!("incoming")).await;
+            handle.signal(literal!("incoming"));
             let IncomingRequest {
                 method,
                 url,
@@ -548,26 +540,25 @@ async fn provide_listener_value(mut handle: Handle, mut state: ListenerState) {
                 responder,
             } = request;
 
-            handle.send().await.concurrently(|handle| {
+            handle.send().concurrently(|handle| {
                 provide_http_request_value(handle, method, url, headers, body)
             });
             handle
                 .send()
-                .await
                 .concurrently(|handle| provide_responder_function(handle, responder));
             Box::pin(provide_listener_value(handle, state)).await;
         }
 
         ListenerEvent::Shutdown(result) => {
-            handle.signal(literal!("shutdown")).await;
+            handle.signal(literal!("shutdown"));
             match result {
                 Ok(()) => {
-                    handle.signal(literal!("ok")).await;
-                    handle.break_().await;
+                    handle.signal(literal!("ok"));
+                    handle.break_();
                 }
                 Err(err) => {
-                    handle.signal(literal!("err")).await;
-                    handle.provide_string(ParString::from(err)).await;
+                    handle.signal(literal!("err"));
+                    handle.provide_string(ParString::from(err));
                 }
             }
         }
@@ -581,37 +572,29 @@ async fn provide_http_request_value(
     headers: Vec<(String, String)>,
     body: Incoming,
 ) {
-    handle
-        .send()
-        .await
-        .provide_string(ParString::from(method))
-        .await;
-    provide_url_value(handle.send().await, url).await;
-    provide_header_list_value(handle.send().await, headers).await;
+    handle.send().provide_string(ParString::from(method));
+    provide_url_value(handle.send(), url);
+    provide_header_list_value(handle.send(), headers);
     provide_request_body_reader(handle, body).await;
 }
 
-async fn provide_header_list_value(mut handle: Handle, headers: Vec<(String, String)>) {
+fn provide_header_list_value(mut handle: Handle, headers: Vec<(String, String)>) {
     for (name, value) in headers {
-        handle.signal(literal!("item")).await;
-        handle.send().await.concurrently(|mut pair| async move {
-            pair.send()
-                .await
-                .provide_string(ParString::from(name))
-                .await;
-            pair.provide_bytes(Bytes::from(value)).await;
-        });
+        handle.signal(literal!("item"));
+        let mut pair = handle.send();
+        pair.send().provide_string(ParString::from(name));
+        pair.provide_bytes(Bytes::from(value));
     }
-    handle.signal(literal!("end")).await;
-    handle.break_().await;
+    handle.signal(literal!("end"));
+    handle.break_();
 }
 
 async fn provide_request_body_reader(mut handle: Handle, mut body: Incoming) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.signal(literal!("ok")).await;
-                return handle.break_().await;
+                handle.signal(literal!("ok"));
+                return handle.break_();
             }
             "read" => match body.frame().await {
                 Some(Ok(frame)) => {
@@ -620,9 +603,9 @@ async fn provide_request_body_reader(mut handle: Handle, mut body: Incoming) {
                             if chunk.is_empty() {
                                 continue;
                             }
-                            handle.signal(literal!("ok")).await;
-                            handle.signal(literal!("chunk")).await;
-                            handle.send().await.provide_bytes(chunk).await;
+                            handle.signal(literal!("ok"));
+                            handle.signal(literal!("chunk"));
+                            handle.send().provide_bytes(chunk);
                         }
                         Err(_) => {
                             // Skip non-data frames such as trailers.
@@ -631,16 +614,14 @@ async fn provide_request_body_reader(mut handle: Handle, mut body: Incoming) {
                     }
                 }
                 Some(Err(err)) => {
-                    handle.signal(literal!("err")).await;
-                    handle
-                        .provide_string(ParString::from(err.to_string()))
-                        .await;
+                    handle.signal(literal!("err"));
+                    handle.provide_string(ParString::from(err.to_string()));
                     return;
                 }
                 None => {
-                    handle.signal(literal!("ok")).await;
-                    handle.signal(literal!("end")).await;
-                    return handle.break_().await;
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("end"));
+                    return handle.break_();
                 }
             },
             _ => unreachable!(),
@@ -655,13 +636,13 @@ async fn provide_responder_function(
     match build_response(handle.receive().await).await {
         Ok(response) => {
             let _ = responder.send(Ok(response));
-            handle.signal(literal!("ok")).await;
-            handle.break_().await;
+            handle.signal(literal!("ok"));
+            handle.break_();
         }
         Err(err) => {
             let _ = responder.send(Err(BodyError(err.clone())));
-            handle.signal(literal!("err")).await;
-            handle.provide_string(err).await;
+            handle.signal(literal!("err"));
+            handle.provide_string(err);
         }
     }
 }
@@ -709,17 +690,17 @@ fn reader_to_body(reader: Handle) -> StreamBody<mpsc::Receiver<Result<Frame<Byte
 
     reader.concurrently(|mut reader| async move {
         loop {
-            reader.signal(literal!("read")).await;
+            reader.signal(literal!("read"));
             match reader.case().await.as_str() {
                 "ok" => match reader.case().await.as_str() {
                     "chunk" => {
                         let bytes = reader.receive().await.bytes().await;
                         if tx.send(Ok(Frame::data(bytes))).await.is_err() {
-                            reader.signal(literal!("close")).await;
+                            reader.signal(literal!("close"));
                             match reader.case().await.as_str() {
-                                "ok" => reader.continue_().await,
+                                "ok" => reader.continue_(),
                                 "err" => {
-                                    let _ = reader.string().await;
+                                    let _ = reader.string();
                                 }
                                 _ => unreachable!(),
                             }
@@ -728,7 +709,7 @@ fn reader_to_body(reader: Handle) -> StreamBody<mpsc::Receiver<Result<Frame<Byte
                         continue;
                     }
                     "end" => {
-                        reader.continue_().await;
+                        reader.continue_();
                         return;
                     }
                     _ => unreachable!(),

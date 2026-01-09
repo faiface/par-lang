@@ -83,7 +83,7 @@ impl Compiled {
                 let spawner = reducer.spawner();
                 let reducer_future = reducer.spawn_reducer();
                 (
-                    Handle::New(transpiled.instantiate(net_handle, name).await.unwrap()),
+                    Handle::New(transpiled.instantiate(net_handle, name).unwrap()),
                     spawner
                         .spawn_with_handle(async move {
                             let reducer = reducer_future.await;

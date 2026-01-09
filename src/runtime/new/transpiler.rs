@@ -103,11 +103,9 @@ impl Transpiled {
     pub fn new_reducer(&self) -> Reducer {
         Reducer::from(Runtime::from(self.arena.clone()))
     }
-    pub async fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
+    pub fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
         let package = self.get_with_name(name)?;
-        Handle::from_package(self.arena.clone(), handle, package)
-            .await
-            .ok()
+        Handle::from_package(self.arena.clone(), handle, package).ok()
     }
 }
 

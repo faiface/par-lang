@@ -13,7 +13,7 @@ where
     loop {
         match handle.case().await.as_str() {
             "end" => {
-                handle.continue_().await;
+                handle.continue_();
                 return items;
             }
             "item" => {

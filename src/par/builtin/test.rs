@@ -1,5 +1,3 @@
-use futures::{future::BoxFuture, FutureExt};
-
 use crate::runtime::new::runtime::ExternalFnRet;
 use std::sync::{mpsc, Arc};
 
@@ -61,86 +59,77 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 pub async fn provide_test(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
-    provide_test_inner(handle, sender).await;
+    provide_test_inner(handle, sender);
 }
 
-fn provide_test_inner(
-    handle: Handle,
-    sender: mpsc::Sender<AssertionResult>,
-) -> BoxFuture<'static, ()> {
-    async move {
-        handle
-            .provide_box(move |mut handle| {
-                let sender = sender.clone();
-                async move {
-                    match handle.case().await.as_str() {
-                        "assert" => {
-                            let description =
-                                handle.receive().await.string().await.as_str().to_string();
-                            println!("{}", description);
-                            let mut bool_handle = handle.receive().await;
+fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
+    handle.provide_box(move |mut handle| {
+        let sender = sender.clone();
+        async move {
+            match handle.case().await.as_str() {
+                "assert" => {
+                    let description = handle.receive().await.string().await.as_str().to_string();
+                    println!("{}", description);
+                    let mut bool_handle = handle.receive().await;
 
-                            let passed = match bool_handle.case().await.as_str() {
-                                "true" => {
-                                    bool_handle.continue_().await;
-                                    true
-                                }
-                                "false" => {
-                                    bool_handle.continue_().await;
-                                    false
-                                }
-                                variant => {
-                                    panic!(
-                                        "Test.assert expected Bool, got unexpected variant: {}",
-                                        variant
-                                    );
-                                }
-                            };
-
-                            // Send the assertion result
-                            let result = AssertionResult {
-                                description,
-                                passed,
-                            };
-
-                            let _ = sender.send(result);
-
-                            // Continue to next assertion - provide a new box for the next iteration
-                            provide_test_inner(handle, sender).await;
+                    let passed = match bool_handle.case().await.as_str() {
+                        "true" => {
+                            bool_handle.continue_();
+                            true
                         }
-                        "done" => {
-                            handle.break_().await;
+                        "false" => {
+                            bool_handle.continue_();
+                            false
                         }
-                        "id" => {
-                            fn identity(mut handle: Handle) -> ExternalFnRet {
-                                Box::pin(async {
-                                    let arg = handle.receive().await;
-                                    handle.link(arg).await;
-                                })
-                            }
-                            let argument = handle.send().await;
-                            argument.provide_box(|x| identity(x)).await;
+                        variant => {
+                            panic!(
+                                "Test.assert expected Bool, got unexpected variant: {}",
+                                variant
+                            );
+                        }
+                    };
 
-                            provide_test_inner(handle, sender).await;
-                        }
-                        "leak" => {
-                            fn leak(handle: Handle) -> ExternalFnRet {
-                                Box::pin(async {
-                                    drop(handle);
-                                })
-                            }
-                            let argument = handle.send().await;
-                            argument.provide_box(|x| leak(x)).await;
+                    // Send the assertion result
+                    let result = AssertionResult {
+                        description,
+                        passed,
+                    };
 
-                            provide_test_inner(handle, sender).await;
-                        }
-                        other => {
-                            panic!("Unexpected method call on Test: {}", other);
-                        }
-                    }
+                    let _ = sender.send(result);
+
+                    // Continue to next assertion - provide a new box for the next iteration
+                    provide_test_inner(handle, sender);
                 }
-            })
-            .await;
-    }
-    .boxed()
+                "done" => {
+                    handle.break_();
+                }
+                "id" => {
+                    fn identity(mut handle: Handle) -> ExternalFnRet {
+                        Box::pin(async {
+                            let arg = handle.receive().await;
+                            handle.link(arg);
+                        })
+                    }
+                    let argument = handle.send();
+                    argument.provide_box(|x| identity(x));
+
+                    provide_test_inner(handle, sender);
+                }
+                "leak" => {
+                    fn leak(handle: Handle) -> ExternalFnRet {
+                        Box::pin(async {
+                            drop(handle);
+                        })
+                    }
+                    let argument = handle.send();
+                    argument.provide_box(|x| leak(x));
+
+                    provide_test_inner(handle, sender);
+                }
+                other => {
+                    panic!("Unexpected method call on Test: {}", other);
+                }
+            }
+        }
+    })
 }

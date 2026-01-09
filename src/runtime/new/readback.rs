@@ -59,13 +59,14 @@ pub struct Handle {
 }
 
 impl Handle {
-    fn child_handle_with(&self, node: HandleNode) -> Self {
+    fn new(&self, node: HandleNode) -> Self {
         Self {
             arena: self.arena.clone(),
             net: self.net.clone(),
             node: node,
         }
     }
+
     pub fn from_node(arena: Arc<Arena>, net: NetHandle, node: Node) -> Self {
         Self {
             arena,
@@ -74,11 +75,7 @@ impl Handle {
         }
     }
 
-    pub async fn from_package(
-        arena: Arc<Arena>,
-        net: NetHandle,
-        package: PackagePtr,
-    ) -> Result<Handle> {
+    pub fn from_package(arena: Arc<Arena>, net: NetHandle, package: PackagePtr) -> Result<Handle> {
         let (node, handle) = HandleNode::linked_pair();
         let mut handle = Handle {
             net: net,
@@ -93,18 +90,22 @@ impl Handle {
         Ok(handle)
     }
 
-    pub async fn link_with(mut self, mut dual: Handle) {
-        let this = self.node.take().await;
-        self.link(this, dual.node.take().await);
+    pub fn link_with(self, mut dual: Handle) {
+        self.concurrently(|mut this| async move {
+            let node = this.node.take().await;
+            this.link(node, dual.node.take().await);
+        });
     }
 
-    pub async fn provide_external(mut self, ext: ExternalFn) {
+    pub fn provide_external(self, ext: ExternalFn) {
         // TODO add fast variant.
-        let node = self.node.take().await;
-        self.link(
-            node,
-            Node::Linear(Linear::Value(Box::new(Value::ExternalFn(ext)))),
-        );
+        self.concurrently(|mut this| async move {
+            let node = this.node.take().await;
+            this.link(
+                node,
+                Node::Linear(Linear::Value(Box::new(Value::ExternalFn(ext)))),
+            );
+        });
     }
 
     pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
@@ -117,24 +118,27 @@ impl Handle {
             .send(ReducerMessage::Spawn(FutureObj::from(Box::new(f(self)))))
             .unwrap();
     }
-    pub async fn provide_external_closure<Fun, Fut>(mut self, f: Fun)
+
+    pub fn provide_external_closure<Fun, Fut>(self, f: Fun)
     where
         Fun: 'static + Send + Sync + Fn(Handle) -> Fut,
         Fut: 'static + Send + Future<Output = ()>,
     {
-        let node = self.node.take().await;
-        self.link(
-            node,
-            Node::Linear(Linear::Value(Box::new(Value::ExternalArc(
-                super::runtime::ExternalArc(Arc::new(move |x| match x {
-                    crate::runtime::Handle::New(x) => Box::pin(f(x)),
-                    _ => panic!("Mixed runtime handles"),
-                })),
-            )))),
-        );
+        self.concurrently(|mut this| async move {
+            let node = this.node.take().await;
+            this.link(
+                node,
+                Node::Linear(Linear::Value(Box::new(Value::ExternalArc(
+                    super::runtime::ExternalArc(Arc::new(move |x| match x {
+                        crate::runtime::Handle::New(x) => Box::pin(f(x)),
+                        _ => panic!("Mixed runtime handles"),
+                    })),
+                )))),
+            );
+        });
     }
 
-    pub async fn provide_primitive(self, primitive: Primitive) {
+    pub fn provide_primitive(self, primitive: Primitive) {
         // TODO add fast variant.
         self.concurrently(|mut this| async move {
             let node = this.node.take().await;
@@ -144,6 +148,7 @@ impl Handle {
             );
         });
     }
+
     pub async fn primitive(mut self) -> Result<Primitive> {
         let primitive = match self.try_destruct().await {
             Value::Primitive(p) => p,
@@ -152,17 +157,16 @@ impl Handle {
         Ok(primitive)
     }
 
-    pub async fn send(&mut self) -> Self {
+    pub fn send(&mut self) -> Self {
         let (left, left_h) = HandleNode::linked_pair();
         let (right, right_h) = HandleNode::linked_pair();
         let par = core::mem::replace(&mut self.node, left_h);
         let times = Node::Linear(Linear::Value(Box::new(Value::Pair(left, right))));
-        self.child_handle_with(par)
-            .concurrently(|mut this| async move {
-                let par = this.node.take().await;
-                this.link(par, times);
-            });
-        self.child_handle_with(right_h)
+        self.new(par).concurrently(|mut this| async move {
+            let par = this.node.take().await;
+            this.link(par, times);
+        });
+        self.new(right_h)
     }
 
     pub async fn receive(&mut self) -> Self {
@@ -170,32 +174,30 @@ impl Handle {
             unreachable!()
         };
         self.node = a.into();
-        self.child_handle_with(b.into())
+        self.new(b.into())
     }
 
-    pub async fn signal(&mut self, chosen: ArcStr) {
-        match self.node.take().await {
-            // TODO fast path
-            node => {
-                let (payload, payload_h) = HandleNode::linked_pair();
-                let chosen = self.arena.interned(chosen.as_str()).unwrap_or_else(|| {
-                    // This happens when we send a signal that the program doesn't have
-                    // and that also isn't present in the types
-                    // It might still be handled by an "else" branch then
-                    eprintln!(
-                        "Attempted to signal a non-interned string: `{}`
-                        This is most likely type error with built in definitions.
-                        Sending an empty signal instead, which will always trigger an `else` branch.
-                        ",
-                        chosen
-                    );
-                    self.arena.empty_string()
-                });
-                let other = Node::Linear(Linear::Value(Box::new(Value::Either(chosen, payload))));
-                self.link(node, other);
-                self.node = payload_h;
-            }
-        }
+    pub fn signal(&mut self, chosen: ArcStr) {
+        let (payload, payload_h) = HandleNode::linked_pair();
+        let chosen = self.arena.interned(chosen.as_str()).unwrap_or_else(|| {
+            // This happens when we send a signal that the program doesn't have
+            // and that also isn't present in the types
+            // It might still be handled by an "else" branch then
+            eprintln!(
+                "Attempted to signal a non-interned string: `{}`
+                This is most likely type error with built in definitions.
+                Sending an empty signal instead, which will always trigger an `else` branch.
+                ",
+                chosen
+            );
+            self.arena.empty_string()
+        });
+        let either = Node::Linear(Linear::Value(Box::new(Value::Either(chosen, payload))));
+        let choice = core::mem::replace(&mut self.node, payload_h);
+        self.new(choice).concurrently(|mut this| async move {
+            let choice = this.node.take().await;
+            this.link(choice, either);
+        });
     }
 
     pub async fn case(&mut self) -> ArcStr {
@@ -206,34 +208,38 @@ impl Handle {
         self.arena.get(name).into()
     }
 
-    pub async fn break_(mut self) -> () {
-        match self.node.take().await {
-            Node::Global(_, global_index)
-                if matches!(
-                    self.arena.get(global_index),
-                    Global::Destruct(GlobalCont::Continue)
-                ) =>
-            {
-                ()
+    pub fn break_(self) {
+        self.concurrently(|mut this| async move {
+            match this.node.take().await {
+                Node::Global(_, global_index)
+                    if matches!(
+                        this.arena.get(global_index),
+                        Global::Destruct(GlobalCont::Continue)
+                    ) =>
+                {
+                    ()
+                }
+                node => {
+                    let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
+                    this.link(node, other);
+                }
             }
-            node => {
-                let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
-                self.link(node, other);
-                ()
-            }
-        }
+        })
     }
 
-    pub async fn continue_(mut self) -> () {
-        let Value::Break = self.try_destruct().await else {
-            unreachable!()
-        };
-        ()
+    pub fn continue_(self) {
+        self.concurrently(|mut this| async move {
+            let Value::Break = this.try_destruct().await else {
+                unreachable!()
+            };
+        })
     }
-    pub async fn erase(self) -> () {
+
+    pub fn erase(self) -> () {
         todo!()
     }
-    pub async fn duplicate(&mut self) -> Handle {
+
+    pub fn duplicate(&mut self) -> Handle {
         todo!()
     }
 
@@ -264,6 +270,7 @@ impl Linker for Handle {
     fn arena(&self) -> Arc<Arena> {
         self.arena.clone()
     }
+
     fn link(&mut self, a: Node, b: Node) {
         self.net.0.send(ReducerMessage::Redex(a, b)).unwrap()
     }

@@ -23,10 +23,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 
 async fn time_now(mut handle: Handle) {
     // return current time in milliseconds since epoch
-    handle.receive().await.continue_().await;
+    handle.receive().await.continue_();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    handle.provide_nat(BigInt::from(now)).await;
+    handle.provide_nat(BigInt::from(now));
 }

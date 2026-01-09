@@ -49,27 +49,27 @@ async fn byte_equals(mut handle: Handle) {
     let x = handle.receive().await.byte().await;
     let y = handle.receive().await.byte().await;
     if x == y {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn byte_code(mut handle: Handle) {
     let c = handle.receive().await.byte().await;
-    handle.provide_nat(BigInt::from(c)).await
+    handle.provide_nat(BigInt::from(c))
 }
 
 async fn byte_is(mut handle: Handle) {
     let b = handle.receive().await.byte().await;
     let class = ByteClass::readback(handle.receive().await).await;
     if class.contains(b) {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ impl ByteClass {
             "range" => {
                 let min = handle.receive().await.byte().await;
                 let max = handle.receive().await.byte().await;
-                handle.continue_().await;
+                handle.continue_();
                 Self::Range(min, max)
             }
             _ => unreachable!(),

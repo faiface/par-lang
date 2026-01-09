@@ -1,5 +1,4 @@
 use arcstr::literal;
-use futures::{future::BoxFuture, FutureExt};
 use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
 
@@ -139,124 +138,115 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 async fn nat_add(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle.provide_nat(x + y).await;
+    handle.provide_nat(x + y);
 }
 
 async fn nat_sub(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.int().await;
-    handle.provide_nat((x - y).max(0.into())).await;
+    handle.provide_nat((x - y).max(0.into()));
 }
 
 async fn nat_mul(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle.provide_nat(x * y).await;
+    handle.provide_nat(x * y);
 }
 
 async fn nat_div(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle
-        .provide_nat(if y == BigInt::ZERO {
-            BigInt::ZERO
-        } else {
-            x / y
-        })
-        .await;
+    handle.provide_nat(if y == BigInt::ZERO {
+        BigInt::ZERO
+    } else {
+        x / y
+    });
 }
 
 async fn nat_mod(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle
-        .provide_nat(if y == BigInt::ZERO {
-            BigInt::ZERO
-        } else {
-            x % y
-        })
-        .await;
+    handle.provide_nat(if y == BigInt::ZERO {
+        BigInt::ZERO
+    } else {
+        x % y
+    });
 }
 
 async fn nat_min(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
-    handle.provide_nat(x.min(y)).await;
+    handle.provide_nat(x.min(y));
 }
 
 async fn nat_max(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.int().await;
-    handle.provide_nat(x.max(y)).await;
+    handle.provide_nat(x.max(y));
 }
 
 async fn nat_clamp(mut handle: Handle) {
     let int = handle.receive().await.int().await;
     let min = handle.receive().await.nat().await;
     let max = handle.receive().await.nat().await;
-    handle.provide_nat(int.min(max).max(min)).await;
+    handle.provide_nat(int.min(max).max(min));
 }
 
 async fn nat_equals(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
     if x == y {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn nat_compare(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
     let y = handle.receive().await.nat().await;
     match x.cmp(&y) {
-        Ordering::Less => handle.signal(literal!("less")).await,
-        Ordering::Equal => handle.signal(literal!("equal")).await,
-        Ordering::Greater => handle.signal(literal!("greater")).await,
+        Ordering::Less => handle.signal(literal!("less")),
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
     };
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn nat_repeat(mut handle: Handle) {
     let mut n = handle.receive().await.nat().await;
     while n > BigInt::ZERO {
-        handle.signal(literal!("step")).await;
+        handle.signal(literal!("step"));
         n -= 1;
     }
-    handle.signal(literal!("end")).await;
-    handle.break_().await;
+    handle.signal(literal!("end"));
+    handle.break_();
 }
 
 async fn nat_repeat_lazy(mut handle: Handle) {
     let n = handle.receive().await.nat().await;
-    nat_repeat_lazy_inner(handle, n.clone()).await;
+    nat_repeat_lazy_inner(handle, n.clone());
 }
 
-fn nat_repeat_lazy_inner(mut handle: Handle, n: BigInt) -> BoxFuture<'static, ()> {
-    async move {
-        if n > BigInt::ZERO {
-            handle.signal(literal!("step")).await;
-            handle
-                .provide_box(move |mut handle| {
-                    let mut n = n.clone();
-                    n -= 1;
-                    async move {
-                        let n = n.clone();
-                        match handle.case().await.as_str() {
-                            "next" => nat_repeat_lazy_inner(handle, n.clone()).await,
-                            _ => unreachable!(),
-                        }
-                    }
-                })
-                .await;
-        } else {
-            handle.signal(literal!("end")).await;
-            handle.break_().await;
-        }
+fn nat_repeat_lazy_inner(mut handle: Handle, n: BigInt) {
+    if n > BigInt::ZERO {
+        handle.signal(literal!("step"));
+        handle.provide_box(move |mut handle| {
+            let mut n = n.clone();
+            n -= 1;
+            async move {
+                let n = n.clone();
+                match handle.case().await.as_str() {
+                    "next" => nat_repeat_lazy_inner(handle, n.clone()),
+                    _ => unreachable!(),
+                }
+            }
+        });
+    } else {
+        handle.signal(literal!("end"));
+        handle.break_();
     }
-    .boxed()
 }
 
 async fn nat_range(mut handle: Handle) {
@@ -265,19 +255,17 @@ async fn nat_range(mut handle: Handle) {
 
     let mut i = lo;
     while i < hi {
-        handle.signal(literal!("item")).await;
-        handle.send().await.provide_nat(i.clone()).await;
+        handle.signal(literal!("item"));
+        handle.send().provide_nat(i.clone());
         i += 1;
     }
-    handle.signal(literal!("end")).await;
-    handle.break_().await;
+    handle.signal(literal!("end"));
+    handle.break_();
 }
 
 async fn nat_to_string(mut handle: Handle) {
     let x = handle.receive().await.nat().await;
-    handle
-        .provide_string(ParString::from(x.to_str_radix(10)))
-        .await
+    handle.provide_string(ParString::from(x.to_str_radix(10)));
 }
 
 async fn nat_from_string(mut handle: Handle) {
@@ -285,16 +273,16 @@ async fn nat_from_string(mut handle: Handle) {
     match string.as_str().parse::<BigInt>() {
         Ok(num) => {
             if num >= BigInt::ZERO {
-                handle.signal(literal!("ok")).await;
-                handle.provide_nat(num).await;
+                handle.signal(literal!("ok"));
+                handle.provide_nat(num);
             } else {
-                handle.signal(literal!("err")).await;
-                handle.break_().await;
+                handle.signal(literal!("err"));
+                handle.break_();
             }
         }
         Err(_) => {
-            handle.signal(literal!("err")).await;
-            handle.break_().await;
+            handle.signal(literal!("err"));
+            handle.break_();
         }
     };
 }

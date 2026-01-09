@@ -115,7 +115,7 @@ async fn bytes_builder(mut handle: Handle) {
                 buf.extend(handle.receive().await.bytes().await.as_ref());
             }
             "build" => {
-                handle.provide_bytes(Bytes::from(buf)).await;
+                handle.provide_bytes(Bytes::from(buf));
                 break;
             }
             _ => unreachable!(),
@@ -142,13 +142,13 @@ async fn bytes_empty_reader(mut handle: Handle) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.signal(literal!("ok")).await;
-                return handle.break_().await;
+                handle.signal(literal!("ok"));
+                return handle.break_();
             }
             "read" => {
-                handle.signal(literal!("ok")).await;
-                handle.signal(literal!("end")).await;
-                return handle.break_().await;
+                handle.signal(literal!("ok"));
+                handle.signal(literal!("end"));
+                return handle.break_();
             }
             _ => unreachable!(),
         }
@@ -159,22 +159,22 @@ async fn bytes_equals(mut handle: Handle) {
     let left = handle.receive().await.bytes().await;
     let right = handle.receive().await.bytes().await;
     if left == right {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn bytes_compare(mut handle: Handle) {
     let left = handle.receive().await.bytes().await;
     let right = handle.receive().await.bytes().await;
     match left.cmp(&right) {
-        Ordering::Equal => handle.signal(literal!("equal")).await,
-        Ordering::Greater => handle.signal(literal!("greater")).await,
-        Ordering::Less => handle.signal(literal!("less")).await,
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.signal(literal!("less")),
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {
@@ -183,20 +183,20 @@ async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {
     loop {
         match handle.case().await.as_str() {
             "close" => {
-                handle.signal(literal!("ok")).await;
-                return handle.break_().await;
+                handle.signal(literal!("ok"));
+                return handle.break_();
             }
             "read" => {
                 if offset >= len {
-                    handle.signal(literal!("ok")).await;
-                    handle.signal(literal!("end")).await;
-                    return handle.break_().await;
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("end"));
+                    return handle.break_();
                 }
                 let chunk = bytes.slice(offset..len);
                 offset = len;
-                handle.signal(literal!("ok")).await;
-                handle.signal(literal!("chunk")).await;
-                handle.send().await.provide_bytes(chunk).await;
+                handle.signal(literal!("ok"));
+                handle.signal(literal!("chunk"));
+                handle.send().provide_bytes(chunk);
             }
             _ => unreachable!(),
         }
@@ -261,7 +261,7 @@ impl PipeReaderState {
                 Some(err)
             }
         } {
-            err.erase().await;
+            err.erase();
         }
         self.result_ready.store(true, AtomicOrdering::SeqCst);
         self.notify.notify_waiters();
@@ -286,7 +286,7 @@ async fn bytes_pipe_reader(mut handle: Handle) {
     let state = PipeReaderState::new(tx);
 
     let writer_state = Arc::clone(&state);
-    closure.send().await.concurrently(move |handle| async move {
+    closure.send().concurrently(move |handle| async move {
         provide_pipe_reader_writer(handle, writer_state).await;
     });
 
@@ -295,7 +295,7 @@ async fn bytes_pipe_reader(mut handle: Handle) {
         match handle.case().await.as_str() {
             "ok" => {
                 result_state.set_result_ok();
-                handle.continue_().await;
+                handle.continue_();
             }
             "err" => {
                 result_state.set_result_err(handle).await;
@@ -312,28 +312,28 @@ async fn provide_pipe_reader_writer(mut handle: Handle, state: Arc<PipeReaderSta
         match handle.case().await.as_str() {
             "close" => {
                 if state.reader_closed() || state.error_present() {
-                    handle.signal(literal!("err")).await;
-                    return handle.break_().await;
+                    handle.signal(literal!("err"));
+                    return handle.break_();
                 }
                 state.take_sender();
-                handle.signal(literal!("ok")).await;
-                return handle.break_().await;
+                handle.signal(literal!("ok"));
+                return handle.break_();
             }
             "flush" => {
                 if state.reader_closed() || state.error_present() {
-                    handle.signal(literal!("err")).await;
-                    return handle.break_().await;
+                    handle.signal(literal!("err"));
+                    return handle.break_();
                 }
-                handle.signal(literal!("ok")).await;
+                handle.signal(literal!("ok"));
             }
             "write" => {
                 let bytes = handle.receive().await.bytes().await;
                 if write_chunk(&state, bytes) {
-                    handle.signal(literal!("ok")).await;
+                    handle.signal(literal!("ok"));
                     continue;
                 }
-                handle.signal(literal!("err")).await;
-                return handle.break_().await;
+                handle.signal(literal!("err"));
+                return handle.break_();
             }
             _ => unreachable!(),
         }
@@ -361,31 +361,31 @@ async fn provide_pipe_reader_output(
                 state.mark_reader_closed();
                 state.wait_result().await;
                 if let Some(err) = state.take_error() {
-                    handle.signal(literal!("err")).await;
-                    handle.link(err).await;
+                    handle.signal(literal!("err"));
+                    handle.link(err);
                     return;
                 } else {
-                    handle.signal(literal!("ok")).await;
-                    return handle.break_().await;
+                    handle.signal(literal!("ok"));
+                    return handle.break_();
                 }
             }
             "read" => match rx.next().await {
                 Some(PipeMessage::Chunk(bytes)) => {
-                    handle.signal(literal!("ok")).await;
-                    handle.signal(literal!("chunk")).await;
-                    handle.send().await.provide_bytes(bytes).await;
+                    handle.signal(literal!("ok"));
+                    handle.signal(literal!("chunk"));
+                    handle.send().provide_bytes(bytes);
                 }
                 None => {
                     state.mark_reader_closed();
                     state.wait_result().await;
                     if let Some(err) = state.take_error() {
-                        handle.signal(literal!("err")).await;
-                        handle.link(err).await;
+                        handle.signal(literal!("err"));
+                        handle.link(err);
                         return;
                     } else {
-                        handle.signal(literal!("ok")).await;
-                        handle.signal(literal!("end")).await;
-                        return handle.break_().await;
+                        handle.signal(literal!("ok"));
+                        handle.signal(literal!("end"));
+                        return handle.break_();
                     }
                 }
             },
@@ -396,7 +396,7 @@ async fn provide_pipe_reader_output(
 
 async fn bytes_length(mut handle: Handle) {
     let bytes = handle.receive().await.bytes().await;
-    handle.provide_nat(BigInt::from(bytes.len())).await;
+    handle.provide_nat(BigInt::from(bytes.len()));
 }
 
 #[derive(Debug, Clone)]
@@ -441,7 +441,7 @@ impl BytesPattern {
             }
             "empty" => {
                 // .empty!
-                handle.break_().await;
+                handle.break_();
                 Box::new(Self::Empty)
             }
             "min" => {

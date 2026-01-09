@@ -273,7 +273,7 @@ fn run_single_definition(
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
 
         let (handle, fut) = rt_compiled.start_and_instantiate(name).await;
-        handle.continue_().await;
+        handle.continue_();
         fut.await;
         Ok(TestStatus::PassedWithNoAssertions)
     });
@@ -305,14 +305,14 @@ async fn run_test_with_test_type(
     //
     // The test function expects [Test.Test] !
     // We need to send a Test instance
-    let test_handle = root.send().await;
+    let test_handle = root.send();
 
     // Provide the Test instance with the sender directly
     use crate::par::builtin::test::provide_test;
     provide_test(test_handle, sender).await;
 
     // Continue with the test execution
-    root.continue_().await;
+    root.continue_();
     // collect results from the receiver
     reducer_future.await;
 

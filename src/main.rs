@@ -211,7 +211,7 @@ fn run_definition(config: &BuildConfig, file: PathBuf, definition: String) {
 
         let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
-        root.continue_().await;
+        root.continue_();
         let stats = reducer_future.await;
 
         println!("{}", stats.show(start.elapsed()));

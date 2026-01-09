@@ -18,7 +18,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             |mut handle| {
                 async move {
                     let x = handle.receive().await;
-                    handle.link(x).await;
+                    handle.link(x);
                 }
                 .boxed()
             },

@@ -86,7 +86,7 @@ async fn string_builder(mut handle: Handle) {
                 buf += handle.receive().await.string().await.as_str();
             }
             "build" => {
-                handle.provide_string(ParString::from(buf)).await;
+                handle.provide_string(ParString::from(buf));
                 break;
             }
             _ => unreachable!(),
@@ -96,9 +96,7 @@ async fn string_builder(mut handle: Handle) {
 
 async fn string_quote(mut handle: Handle) {
     let s = handle.receive().await.string().await;
-    handle
-        .provide_string(ParString::from(format!("{:?}", s)))
-        .await;
+    handle.provide_string(ParString::from(format!("{:?}", s)));
 }
 
 async fn string_parser(mut handle: Handle) {
@@ -113,33 +111,31 @@ async fn string_parser_from_reader(mut handle: Handle) {
 
 async fn string_from_bytes(mut handle: Handle) {
     let bytes = handle.receive().await.bytes().await;
-    handle
-        .provide_string(ParString::copy_from_slice(
-            String::from_utf8_lossy(&bytes).as_bytes(),
-        ))
-        .await;
+    handle.provide_string(ParString::copy_from_slice(
+        String::from_utf8_lossy(&bytes).as_bytes(),
+    ));
 }
 
 async fn string_equals(mut handle: Handle) {
     let left = handle.receive().await.string().await;
     let right = handle.receive().await.string().await;
     if left == right {
-        handle.signal(literal!("true")).await;
+        handle.signal(literal!("true"));
     } else {
-        handle.signal(literal!("false")).await;
+        handle.signal(literal!("false"));
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 async fn string_compare(mut handle: Handle) {
     let left = handle.receive().await.string().await;
     let right = handle.receive().await.string().await;
     match left.cmp(&right) {
-        Ordering::Equal => handle.signal(literal!("equal")).await,
-        Ordering::Greater => handle.signal(literal!("greater")).await,
-        Ordering::Less => handle.signal(literal!("less")).await,
+        Ordering::Equal => handle.signal(literal!("equal")),
+        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.signal(literal!("less")),
     }
-    handle.break_().await;
+    handle.break_();
 }
 
 #[derive(Debug, Clone)]
@@ -184,7 +180,7 @@ impl StringPattern {
             }
             "empty" => {
                 // .empty!
-                handle.break_().await;
+                handle.break_();
                 Box::new(Self::Empty)
             }
             "min" => {

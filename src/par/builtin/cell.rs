@@ -50,7 +50,7 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'stati
     async move {
         loop {
             match handle.case().await.as_str() {
-                "end" => break handle.continue_().await,
+                "end" => break handle.continue_(),
 
                 "split" => {
                     let mutex = Arc::clone(&mutex);
@@ -63,7 +63,7 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'stati
                 "take" => {
                     let mut locked = mutex.lock().await;
                     let current_value = locked.shared.take().unwrap();
-                    handle.send().await.link(current_value).await;
+                    handle.send().link(current_value);
                     match handle.case().await.as_str() {
                         "put" => {
                             let new_value = handle.receive().await;
@@ -90,6 +90,6 @@ impl Drop for Cell {
     fn drop(&mut self) {
         let value = self.shared.take().unwrap();
         let handle = self.finally.take().unwrap();
-        handle.concurrently(move |x| x.link(value))
+        handle.link(value);
     }
 }

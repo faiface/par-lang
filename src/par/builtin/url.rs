@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use arcstr::literal;
-use futures::{future::BoxFuture, FutureExt};
 use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
@@ -37,84 +36,74 @@ async fn url_from_string(mut handle: Handle) {
     let input = handle.receive().await.string().await;
     match ParsedUrl::parse(input.as_str()) {
         Ok(url) => {
-            handle.signal(literal!("ok")).await;
-            provide_url_value(handle, url).await;
+            handle.signal(literal!("ok"));
+            provide_url_value(handle, url);
         }
         Err(err) => {
-            handle.signal(literal!("err")).await;
-            handle
-                .provide_string(ParString::from(err.to_string()))
-                .await;
+            handle.signal(literal!("err"));
+            handle.provide_string(ParString::from(err.to_string()));
         }
     }
 }
 
-pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) -> BoxFuture<'static, ()> {
-    handle
-        .provide_box(move |mut handle| {
-            let mut url = url.clone();
-            async move {
-                loop {
-                    match handle.case().await.as_str() {
-                        "full" => {
-                            handle
-                                .provide_string(ParString::copy_from_slice(url.as_str().as_bytes()))
-                                .await;
-                            return;
-                        }
-                        "protocol" => {
-                            handle
-                                .provide_string(ParString::copy_from_slice(url.scheme().as_bytes()))
-                                .await;
-                            return;
-                        }
-                        "host" => {
-                            let host = match url.port() {
-                                Some(port) => format!("{}:{}", url.host_str().unwrap_or(""), port),
-                                None => url.host_str().unwrap_or("").to_string(),
-                            };
-                            handle.provide_string(ParString::from(host)).await;
-                            return;
-                        }
-                        "path" => {
-                            let decoded = percent_decode_str(url.path()).decode_utf8_lossy();
-                            handle
-                                .provide_string(ParString::copy_from_slice(decoded.as_bytes()))
-                                .await;
-                            return;
-                        }
-                        "query" => {
-                            for (key, value) in url.query_pairs() {
-                                handle.signal(literal!("item")).await;
-                                let key = key.into_owned();
-                                let value = value.into_owned();
-                                handle.send().await.concurrently(|mut pair| async move {
-                                    pair.send().await.provide_string(ParString::from(key)).await;
-                                    pair.provide_string(ParString::from(value)).await;
-                                });
-                            }
-                            handle.signal(literal!("end")).await;
-                            handle.break_().await;
-                            return;
-                        }
-                        "appendPath" => {
-                            let segment = handle.receive().await.string().await;
-                            append_path(&mut url, segment.as_str());
-                            return provide_url_value(handle, url).await;
-                        }
-                        "addQuery" => {
-                            let key = handle.receive().await.string().await;
-                            let value = handle.receive().await.string().await;
-                            url.query_pairs_mut()
-                                .append_pair(key.as_str(), value.as_str());
-                            return provide_url_value(handle, url).await;
-                        }
-                        _ => unreachable!(),
+pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
+    handle.provide_box(move |mut handle| {
+        let mut url = url.clone();
+        async move {
+            loop {
+                match handle.case().await.as_str() {
+                    "full" => {
+                        handle.provide_string(ParString::copy_from_slice(url.as_str().as_bytes()));
+                        return;
                     }
+                    "protocol" => {
+                        handle.provide_string(ParString::copy_from_slice(url.scheme().as_bytes()));
+                        return;
+                    }
+                    "host" => {
+                        let host = match url.port() {
+                            Some(port) => format!("{}:{}", url.host_str().unwrap_or(""), port),
+                            None => url.host_str().unwrap_or("").to_string(),
+                        };
+                        handle.provide_string(ParString::from(host));
+                        return;
+                    }
+                    "path" => {
+                        let decoded = percent_decode_str(url.path()).decode_utf8_lossy();
+                        handle.provide_string(ParString::copy_from_slice(decoded.as_bytes()));
+                        return;
+                    }
+                    "query" => {
+                        for (key, value) in url.query_pairs() {
+                            handle.signal(literal!("item"));
+                            let key = key.into_owned();
+                            let value = value.into_owned();
+                            handle.send().concurrently(|mut pair| async move {
+                                pair.send().provide_string(ParString::from(key));
+                                pair.provide_string(ParString::from(value));
+                            });
+                        }
+                        handle.signal(literal!("end"));
+                        handle.break_();
+                        return;
+                    }
+                    "appendPath" => {
+                        let segment = handle.receive().await.string().await;
+                        append_path(&mut url, segment.as_str());
+                        return provide_url_value(handle, url);
+                    }
+                    "addQuery" => {
+                        let key = handle.receive().await.string().await;
+                        let value = handle.receive().await.string().await;
+                        url.query_pairs_mut()
+                            .append_pair(key.as_str(), value.as_str());
+                        return provide_url_value(handle, url);
+                    }
+                    _ => unreachable!(),
                 }
             }
-        })
-        .boxed()
+        }
+    })
 }
 
 fn append_path(url: &mut ParsedUrl, segment: &str) {
