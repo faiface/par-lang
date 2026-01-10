@@ -96,9 +96,9 @@ async fn boxmap_new<K, F>(
     K: Ord + Clone + Send + Sync + 'static,
     F: Send + 'static + Future<Output = K>,
 {
-    let entries = readback_list(handle.receive().await, |mut handle| async {
+    let entries = readback_list(handle.receive().await, |mut handle| async move {
         let key = read_key(handle.receive().await).await;
-        let value = Arc::new(Mutex::new(handle));
+        let value = Arc::new(Mutex::new(handle.duplicate()));
         (key, value)
     })
     .await;
