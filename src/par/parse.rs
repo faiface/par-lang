@@ -1067,6 +1067,7 @@ fn expression_no_condition(input: &mut Input) -> Result<Expression> {
         expr_let,
         expr_catch,
         expr_throw,
+        expr_type_in,
         expr_if,
         expr_do,
         expr_box,
@@ -1243,6 +1244,16 @@ fn expr_throw(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
+fn expr_type_in(input: &mut Input) -> Result<Expression> {
+    commit_after(t(TokenKind::Type), (typ, t(TokenKind::In), expression))
+        .map(|(pre, (typ, _in_tok, expr))| Expression::TypeIn {
+            span: pre.span.join(expr.span()),
+            typ,
+            expr: Box::new(expr),
+        })
+        .parse_next(input)
+}
+
 fn expr_if(input: &mut Input) -> Result<Expression> {
     commit_after(
         t(TokenKind::If),
@@ -1356,6 +1367,7 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
         expr_throw,
         expr_catch,
         expr_do,
+        expr_type_in,
         application,
         expr_grouped,
     ))

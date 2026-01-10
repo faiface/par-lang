@@ -140,16 +140,17 @@ impl Process<()> {
                         match expression.optimize().as_ref() {
                             Expression::Chan {
                                 chan_name: channel,
+                                chan_annotation: annotation,
                                 process,
                                 ..
                             } => {
-                                if name == channel {
+                                if name == channel && annotation.is_none() {
                                     return Arc::clone(process);
                                 } else {
                                     return Arc::new(Process::Let {
                                         span: span.clone(),
                                         name: channel.clone(),
-                                        annotation: None,
+                                        annotation: annotation.clone(),
                                         typ: (),
                                         value: Arc::new(Expression::Variable(
                                             span.clone(),

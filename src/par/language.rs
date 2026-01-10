@@ -157,6 +157,11 @@ pub enum Expression {
     Variable(Span, LocalName),
     Condition(Span, Box<Condition>),
     Grouped(Span, Box<Self>),
+    TypeIn {
+        span: Span,
+        typ: Type,
+        expr: Box<Self>,
+    },
     Let {
         span: Span,
         pattern: Pattern,
@@ -1072,6 +1077,39 @@ impl Expression {
 
             Self::Grouped(_, expression) => expression.compile(pass)?,
 
+            Self::TypeIn { span, typ, expr } => {
+                let expression = expr.compile(pass)?;
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process: Arc::new(process::Process::Let {
+                        span: span.clone(),
+                        name: LocalName::object(),
+                        annotation: Some(typ.clone()),
+                        typ: (),
+                        value: expression,
+                        then: Arc::new(process::Process::Do {
+                            span: span.clone(),
+                            name: LocalName::result(),
+                            usage: VariableUsage::Unknown,
+                            typ: (),
+                            command: process::Command::Link(Arc::new(
+                                process::Expression::Variable(
+                                    span.clone(),
+                                    LocalName::object(),
+                                    (),
+                                    VariableUsage::Unknown,
+                                ),
+                            )),
+                        }),
+                    }),
+                })
+            }
+
             Self::Box(span, expression) => {
                 let expression = expression.compile(pass)?;
                 Arc::new(process::Expression::Box(
@@ -1267,6 +1305,7 @@ impl Spanning for Expression {
             | Self::Variable(span, _)
             | Self::Condition(span, _)
             | Self::Grouped(span, _)
+            | Self::TypeIn { span, .. }
             | Self::Let { span, .. }
             | Self::Catch { span, .. }
             | Self::Throw(span, _, _)
