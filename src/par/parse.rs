@@ -1015,8 +1015,47 @@ fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
+fn looks_like_condition(input: &Input) -> bool {
+    let mut depth = 0usize;
+    for token in input.iter() {
+        match token.kind {
+            TokenKind::LParen | TokenKind::LCurly | TokenKind::LBrack => {
+                depth += 1;
+            }
+            TokenKind::RParen | TokenKind::RCurly | TokenKind::RBrack => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            TokenKind::Comma | TokenKind::FatArrow => {
+                if depth == 0 {
+                    return false;
+                }
+            }
+            TokenKind::Is | TokenKind::And | TokenKind::Or | TokenKind::Not => {
+                if depth == 0 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 fn expression(input: &mut Input) -> Result<Expression> {
-    alt((expr_condition, expression_no_condition))
+    if looks_like_condition(input) {
+        let checkpoint = input.checkpoint();
+        match expr_condition.parse_next(input) {
+            Ok(expr) => return Ok(expr),
+            Err(ErrMode::Backtrack(_)) => {
+                input.reset(&checkpoint);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    expression_no_condition
         .context(StrContext::Label("expression"))
         .parse_next(input)
 }
