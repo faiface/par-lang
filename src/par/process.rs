@@ -1,3 +1,4 @@
+pub use super::captures::{Captures, VariableUsage};
 use super::{
     language::{GlobalName, LocalName},
     primitive::Primitive,
@@ -8,20 +9,13 @@ use crate::{
     par::program::CheckedModule,
     runtime::Handle,
 };
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexSet;
 use std::{
     fmt::{self, Write},
     future::Future,
     pin::Pin,
     sync::Arc,
 };
-
-#[derive(Clone, Debug)]
-pub enum VariableUsage {
-    Unknown,
-    Copy,
-    Move,
-}
 
 #[derive(Clone, Debug)]
 pub enum Process<Typ> {
@@ -111,132 +105,7 @@ impl<Typ> Spanning for Process<Typ> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Captures {
-    pub names: IndexMap<LocalName, (Span, VariableUsage)>,
-}
-
-impl Default for Captures {
-    fn default() -> Self {
-        Self {
-            names: IndexMap::new(),
-        }
-    }
-}
-
-impl Captures {
-    pub fn new() -> Self {
-        Self {
-            names: IndexMap::new(),
-        }
-    }
-
-    pub fn single(name: LocalName, span: Span, usage: VariableUsage) -> Self {
-        let mut caps = Self::new();
-        caps.add(name, span, usage);
-        caps
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        for (name, span) in other.names {
-            self.names.insert(name, span);
-        }
-    }
-
-    pub fn add(&mut self, name: LocalName, span: Span, usage: VariableUsage) {
-        self.names.insert(name, (span, usage));
-    }
-
-    pub fn remove(&mut self, name: &LocalName) -> Option<(Span, VariableUsage)> {
-        self.names.shift_remove(name)
-    }
-
-    pub fn contains(&self, name: &LocalName) -> bool {
-        self.names.contains_key(name)
-    }
-}
-
 impl Process<()> {
-    pub fn fix_captures(
-        &self,
-        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
-        blocks: &IndexMap<usize, Captures>,
-    ) -> (Arc<Self>, Captures) {
-        match self {
-            Self::Let {
-                span,
-                name,
-                annotation,
-                typ,
-                value: expression,
-                then: process,
-            } => {
-                let (process, mut caps) = process.fix_captures(loop_points, blocks);
-                caps.remove(name);
-                let (expression, caps1) = expression.fix_captures(loop_points, blocks, &caps);
-                caps.extend(caps1);
-                (
-                    Arc::new(Self::Let {
-                        span: span.clone(),
-                        name: name.clone(),
-                        annotation: annotation.clone(),
-                        typ: typ.clone(),
-                        value: expression,
-                        then: process,
-                    }),
-                    caps,
-                )
-            }
-            Self::Do {
-                span,
-                name,
-                usage: _usage,
-                typ,
-                command,
-            } => {
-                let (command, mut caps) = command.fix_captures(name, loop_points, blocks);
-                let usage = if caps.contains(name) {
-                    VariableUsage::Copy
-                } else {
-                    VariableUsage::Move
-                };
-                caps.add(name.clone(), span.clone(), VariableUsage::Unknown);
-                (
-                    Arc::new(Self::Do {
-                        span: span.clone(),
-                        name: name.clone(),
-                        usage,
-                        typ: typ.clone(),
-                        command,
-                    }),
-                    caps,
-                )
-            }
-            Self::Telltypes(span, process) => {
-                let (process, caps) = process.fix_captures(loop_points, blocks);
-                (Arc::new(Self::Telltypes(span.clone(), process)), caps)
-            }
-            Self::Block(span, index, body, process) => {
-                let (body, body_caps) = body.fix_captures(loop_points, blocks);
-                let mut blocks = blocks.clone();
-                blocks.insert(*index, body_caps);
-                let (process, caps) = process.fix_captures(loop_points, &blocks);
-                (
-                    Arc::new(Self::Block(span.clone(), *index, body, process)),
-                    caps,
-                )
-            }
-            Self::Goto(span, index, _) => {
-                let caps = blocks.get(index).cloned().unwrap();
-                (
-                    Arc::new(Self::Goto(span.clone(), *index, caps.clone())),
-                    caps,
-                )
-            }
-            Self::Unreachable(span) => (Arc::new(Self::Unreachable(span.clone())), Captures::new()),
-        }
-    }
-
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Let {
@@ -411,113 +280,6 @@ impl Process<Type> {
     }
 }
 
-impl Command<()> {
-    pub fn fix_captures(
-        &self,
-        subject: &LocalName,
-        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
-        blocks: &IndexMap<usize, Captures>,
-    ) -> (Self, Captures) {
-        match self {
-            Self::Link(expression) => {
-                let (expression, caps) =
-                    expression.fix_captures(loop_points, blocks, &Captures::new());
-                (Self::Link(expression), caps)
-            }
-            Self::Send(argument, process) => {
-                let (process, mut caps) = process.fix_captures(loop_points, blocks);
-                let (argument, caps1) = argument.fix_captures(loop_points, blocks, &caps);
-                caps.extend(caps1);
-                (Self::Send(argument, process), caps)
-            }
-            Self::Receive(parameter, annotation, typ, process, vars) => {
-                let (process, mut caps) = process.fix_captures(loop_points, blocks);
-                caps.remove(parameter);
-                (
-                    Self::Receive(
-                        parameter.clone(),
-                        annotation.clone(),
-                        typ.clone(),
-                        process,
-                        vars.clone(),
-                    ),
-                    caps,
-                )
-            }
-            Self::Signal(chosen, process) => {
-                let (process, caps) = process.fix_captures(loop_points, blocks);
-                (Self::Signal(chosen.clone(), process), caps)
-            }
-            Self::Case(branches, processes, else_process) => {
-                let mut fixed_processes = Vec::new();
-                let mut caps = Captures::new();
-                for process in processes {
-                    let (process, caps1) = process.fix_captures(loop_points, blocks);
-                    fixed_processes.push(process);
-                    caps.extend(caps1);
-                }
-                let fixed_else = else_process.clone().map(|process| {
-                    let (process, caps1) = process.fix_captures(loop_points, blocks);
-                    caps.extend(caps1);
-                    process
-                });
-                (
-                    Self::Case(
-                        branches.clone(),
-                        fixed_processes.into_boxed_slice(),
-                        fixed_else,
-                    ),
-                    caps,
-                )
-            }
-            Self::Break => (Self::Break, Captures::new()),
-            Self::Continue(process) => {
-                let (process, caps) = process.fix_captures(loop_points, blocks);
-                (Self::Continue(process), caps)
-            }
-            Self::Begin {
-                unfounded,
-                label,
-                captures: _,
-                body: process,
-            } => {
-                let (_, mut loop_caps) = process.fix_captures(loop_points, blocks);
-                loop_caps.remove(subject);
-                let mut loop_points = loop_points.clone();
-                loop_points.insert(label.clone(), (subject.clone(), loop_caps.clone()));
-                let (process, caps) = process.fix_captures(&loop_points, blocks);
-                (
-                    Self::Begin {
-                        unfounded: unfounded.clone(),
-                        label: label.clone(),
-                        captures: loop_caps.clone(),
-                        body: process,
-                    },
-                    caps,
-                )
-            }
-            Self::Loop(label, _, _) => {
-                let (driver, loop_caps) = loop_points
-                    .get(label)
-                    .cloned()
-                    .unwrap_or((LocalName::invalid(), Captures::default()));
-                (
-                    Self::Loop(label.clone(), driver, loop_caps.clone()),
-                    loop_caps,
-                )
-            }
-            Self::SendType(argument, process) => {
-                let (process, caps) = process.fix_captures(loop_points, blocks);
-                (Self::SendType(argument.clone(), process), caps)
-            }
-            Self::ReceiveType(parameter, process) => {
-                let (process, caps) = process.fix_captures(loop_points, blocks);
-                (Self::ReceiveType(parameter.clone(), process), caps)
-            }
-        }
-    }
-}
-
 impl<Typ> Command<Typ> {
     pub fn free_variables(&self) -> IndexSet<LocalName> {
         match self {
@@ -606,95 +368,6 @@ impl Command<Type> {
 }
 
 impl Expression<()> {
-    pub fn fix_captures(
-        &self,
-        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
-        blocks: &IndexMap<usize, Captures>,
-        later_captures: &Captures,
-    ) -> (Arc<Self>, Captures) {
-        match self {
-            Self::Global(span, name, typ) => (
-                Arc::new(Self::Global(span.clone(), name.clone(), typ.clone())),
-                Captures::new(),
-            ),
-            Self::Variable(span, name, typ, _usage) => {
-                let usage = if later_captures.contains(name) {
-                    VariableUsage::Copy
-                } else {
-                    VariableUsage::Move
-                };
-                (
-                    Arc::new(Self::Variable(
-                        span.clone(),
-                        name.clone(),
-                        typ.clone(),
-                        usage,
-                    )),
-                    Captures::single(name.clone(), span.clone(), VariableUsage::Unknown),
-                )
-            }
-            Self::Box(span, _, expression, typ) => {
-                let (expression, mut caps) =
-                    expression.fix_captures(loop_points, blocks, later_captures);
-                for (name, (_span, usage)) in caps.names.iter_mut() {
-                    if later_captures.contains(name) {
-                        *usage = VariableUsage::Copy;
-                    } else {
-                        *usage = VariableUsage::Move;
-                    }
-                }
-                (
-                    Arc::new(Self::Box(
-                        span.clone(),
-                        caps.clone(),
-                        expression,
-                        typ.clone(),
-                    )),
-                    caps,
-                )
-            }
-            Self::Chan {
-                span,
-                chan_name: channel,
-                chan_annotation: annotation,
-                chan_type,
-                expr_type,
-                process,
-                ..
-            } => {
-                let (process, mut caps) = process.fix_captures(loop_points, blocks);
-                caps.remove(channel);
-                for (name, (_span, usage)) in caps.names.iter_mut() {
-                    if later_captures.contains(name) {
-                        *usage = VariableUsage::Copy;
-                    } else {
-                        *usage = VariableUsage::Move;
-                    }
-                }
-                (
-                    Arc::new(Self::Chan {
-                        span: span.clone(),
-                        captures: caps.clone(),
-                        chan_name: channel.clone(),
-                        chan_annotation: annotation.clone(),
-                        chan_type: chan_type.clone(),
-                        expr_type: expr_type.clone(),
-                        process,
-                    }),
-                    caps,
-                )
-            }
-            Self::Primitive(span, value, typ) => (
-                Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone())),
-                Captures::new(),
-            ),
-            Self::External(claimed_type, f, typ) => (
-                Arc::new(Self::External(claimed_type.clone(), *f, typ.clone())),
-                Captures::new(),
-            ),
-        }
-    }
-
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Global(span, name, typ) => {

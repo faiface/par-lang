@@ -119,14 +119,7 @@ impl Module<Arc<process::Expression<()>>> {
                         .map(|compiled| Definition {
                             span,
                             name,
-                            expression: compiled
-                                .optimize()
-                                .fix_captures(
-                                    &IndexMap::new(),
-                                    &IndexMap::new(),
-                                    &process::Captures::new(),
-                                )
-                                .0,
+                            expression: compiled.optimize().fix_captures().0,
                         })
                 },
             )
