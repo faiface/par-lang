@@ -62,7 +62,7 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
   let headers = BoxMap.String(type Bytes)(headers)
   catch@clearResp err => { body.close; throw err }
 
-  if not Nat.Equals(status, 200) => {
+  if not status->Nat.Equals(200) => {
     throw@clearResp "Bad server response"
   }
 

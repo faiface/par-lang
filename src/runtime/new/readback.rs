@@ -28,7 +28,6 @@ pub enum HandleNode {
 impl HandleNode {
     fn linked_pair() -> (Node, Self) {
         let (tx, rx) = oneshot::channel();
-
         (Node::Linear(Linear::Request(tx)), HandleNode::Waiting(rx))
     }
 
@@ -236,11 +235,21 @@ impl Handle {
     }
 
     pub fn erase(self) -> () {
-        todo!()
+        let (other, _) = self.create_share_hole();
+        self.concurrently(|mut this| async move {
+            let node = this.node.take().await;
+            this.link(node, other)
+        })
     }
 
     pub fn duplicate(&mut self) -> Handle {
-        todo!()
+        let (other, shared) = self.create_share_hole();
+        let node = core::mem::replace(&mut self.node, Node::Shared(shared.clone()).into());
+        self.new(node).concurrently(|mut this| async move {
+            let node = this.node.take().await;
+            this.link(node, other)
+        });
+        self.new(Node::Shared(shared).into())
     }
 
     async fn retry(&mut self) {

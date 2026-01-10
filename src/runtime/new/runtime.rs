@@ -177,7 +177,7 @@ pub enum Shared {
 /// Values are either positive types or copyable external functions. They can all be duplicated if their
 /// subnodes are duplicable too.
 ///
-/// P is the type of children. Usually, this will be `GlobalPtr`, `Shared`, or `Box<Node>`
+/// P is the type of children. Usually, this will be `GlobalPtr`, `Shared`, or `Node`
 ///
 /// There are [`Linear`] values, [`Shared`] values, and [`Global`] values.
 #[derive(Clone, Debug)]
