@@ -56,20 +56,20 @@ def TraverseDirectory = [dirPath]
   .ok tree.begin.case {
     .end! => .end!,
     .file(path) rest => .item(path) rest.loop,
-    .dir(_, nested) rest => Concat(type Os.Path)(nested.loop, rest.loop),
+    .dir(_, nested) rest => Concat(nested.loop, rest.loop),
   }
 
 dec GrepFile : [String, Os.Reader] Iterator<Os.Error, (Nat) String>
 def GrepFile = [needle, reader]
   String.ParserFromReader(type Os.Error)(reader)
-  -> {Lines(type Os.Error)}
-  -> {Enumerate1(type Os.Error, String)}
-  -> {Filter(type Os.Error, (Nat) String)}(box [(_) line] Contains(needle, line))
+    ->Lines
+    ->Enumerate1
+    ->Filter(box [(_) line] Contains(needle, line))
 
 // ---
 
-dec Concat : [type a] [List<a>, List<a>] List<a>
-def Concat = [type a] [left, right] left.begin.case {
+dec Concat : <a>[List<a>] [List<a>] List<a>
+def Concat = <a>[left] [right] left.begin.case {
   .end! => right,
   .item(x) xs => .item(x) xs.loop,
 }
@@ -96,8 +96,8 @@ type Iterator<e, a> = recursive choice {
   }
 }
 
-dec Lines : [type e] [String.Parser<e>] Iterator<e, String>
-def Lines = [type e] [parser] do { parser.begin } in case {
+dec Lines : <e>[String.Parser<e>] Iterator<e, String>
+def Lines = <e>[parser] do { parser.begin } in case {
   .close => parser.close,
 
   .next => parser.match(.repeat.one.any!, .str "\n").case {
@@ -113,8 +113,8 @@ def Lines = [type e] [parser] do { parser.begin } in case {
   }
 }
 
-dec Filter : [type e, a] [Iterator<e, box a>, box [a] Bool] Iterator<e, a>
-def Filter = [type e, a] [iter, predicate] do { iter.begin } in case {
+dec Filter : <e, a>[Iterator<e, box a>] [box [a] Bool] Iterator<e, a>
+def Filter = <e, a>[iter] [predicate] do { iter.begin } in case {
   .close => iter.close,
   .next => iter.next.case {
     .end result => .end result,
@@ -131,8 +131,8 @@ def Filter = [type e, a] [iter, predicate] do { iter.begin } in case {
   }
 }
 
-dec Enumerate1 : [type e, a] [Iterator<e, a>] Iterator<e, (Nat) a>
-def Enumerate1 = [type e, a] [iter] do {
+dec Enumerate1 : <e, a>[Iterator<e, a>] Iterator<e, (Nat) a>
+def Enumerate1 = <e, a>[iter] do {
   let index = 1
   iter.begin
 } in case {
