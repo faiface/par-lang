@@ -266,7 +266,10 @@ def List.All = <a>[list] [f]
   }
 
 dec List.Any : <a>[List<box a>] [box [a] Bool] Bool
-def List.Any = <a>[list] [f] List.All(list, box [v] Bool.Not(f(v)))
+def List.Any = <a>[list] [f] List.All(list, box [v] f(v).case {
+  .true! => .false!,
+  .false! => .true!,
+})
 
 dec List.Dedup : <a>[List<box a>] [box [a, a] Bool] List<box a>
 def List.Dedup = <a>[list] [eq]
