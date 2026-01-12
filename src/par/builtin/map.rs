@@ -91,8 +91,8 @@ async fn map_new<K: Clone + Ord, F: Future<Output = K>>(
     read_key: impl Fn(Handle) -> F,
     provide_key: impl Fn(Handle, K),
 ) {
-    let entries = readback_list(handle.receive().await, |mut handle| async {
-        let key = read_key(handle.receive().await).await;
+    let entries = readback_list(handle.receive(), |mut handle| async {
+        let key = read_key(handle.receive()).await;
         let value = handle;
         (key, value)
     })
@@ -140,7 +140,7 @@ async fn provide_map<K: Clone + Ord, F: Future<Output = K>>(
                 return handle.break_();
             }
             "entry" => {
-                let key = read_key(handle.receive().await).await;
+                let key = read_key(handle.receive()).await;
                 let removed = map.remove(&key);
                 handle.send().concurrently(|mut handle| async move {
                     match removed {
@@ -156,7 +156,7 @@ async fn provide_map<K: Clone + Ord, F: Future<Output = K>>(
                 });
                 match handle.case().await.as_str() {
                     "put" => {
-                        let new_value = handle.receive().await;
+                        let new_value = handle.receive();
                         map.insert(key, new_value);
                     }
                     "delete" => {}

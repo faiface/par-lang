@@ -96,8 +96,8 @@ async fn boxmap_new<K, F>(
     K: Ord + Clone + Send + Sync + 'static,
     F: Send + 'static + Future<Output = K>,
 {
-    let entries = readback_list(handle.receive().await, |mut handle| async move {
-        let key = read_key(handle.receive().await).await;
+    let entries = readback_list(handle.receive(), |mut handle| async move {
+        let key = read_key(handle.receive()).await;
         let value = Arc::new(Mutex::new(handle.duplicate()));
         (key, value)
     })
@@ -146,7 +146,7 @@ fn provide_boxmap<K, F>(
                     return handle.break_();
                 }
                 "get" => {
-                    let key = read_key(handle.receive().await).await;
+                    let key = read_key(handle.receive()).await;
                     match map.get(&key) {
                         Some(value) => {
                             handle.signal(literal!("ok"));
@@ -159,13 +159,13 @@ fn provide_boxmap<K, F>(
                     }
                 }
                 "put" => {
-                    let key = read_key(handle.receive().await).await;
-                    let value = handle.receive().await;
+                    let key = read_key(handle.receive()).await;
+                    let value = handle.receive();
                     map.insert(key, Arc::new(Mutex::new(value)));
                     return provide_boxmap(handle, read_key, provide_key, map);
                 }
                 "delete" => {
-                    let key = read_key(handle.receive().await).await;
+                    let key = read_key(handle.receive()).await;
                     map.remove(&key);
                     return provide_boxmap(handle, read_key, provide_key, map);
                 }

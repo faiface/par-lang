@@ -97,16 +97,16 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 // ----------
 
 async fn http_fetch(mut handle: Handle) {
-    let mut request = handle.receive().await;
+    let mut request = handle.receive();
 
-    let method = request.receive().await.string().await;
+    let method = request.receive().string().await;
 
-    let mut url_handle = request.receive().await;
+    let mut url_handle = request.receive();
     url_handle.signal(literal!("full"));
     let url = url_handle.string().await;
 
-    let header_pairs = readback_list(request.receive().await, |mut handle| async move {
-        let name = handle.receive().await.string().await;
+    let header_pairs = readback_list(request.receive(), |mut handle| async move {
+        let name = handle.receive().string().await;
         let value = handle.string().await;
         (name, value)
     })
@@ -236,7 +236,7 @@ async fn consume_http_reader(
         match handle.case().await.as_str() {
             "ok" => match handle.case().await.as_str() {
                 "chunk" => {
-                    let chunk = handle.receive().await.bytes().await;
+                    let chunk = handle.receive().bytes().await;
                     if chunk.is_empty() {
                         continue;
                     }
@@ -287,7 +287,7 @@ async fn close_reader(mut handle: Handle) -> Result<(), ParString> {
 // ----------
 
 async fn http_listen(mut handle: Handle) {
-    let address = handle.receive().await.string().await;
+    let address = handle.receive().string().await;
     match start_listener(address.as_str().to_string()).await {
         Ok(state) => provide_listener_value(handle, state).await,
         Err(err) => {
@@ -633,7 +633,7 @@ async fn provide_responder_function(
     mut handle: Handle,
     responder: oneshot::Sender<Result<Response<ResponseBody>, BodyError>>,
 ) {
-    match build_response(handle.receive().await).await {
+    match build_response(handle.receive()).await {
         Ok(response) => {
             let _ = responder.send(Ok(response));
             handle.signal(literal!("ok"));
@@ -652,7 +652,6 @@ async fn build_response(mut handle: Handle) -> Result<Response<ResponseBody>, Pa
 
     let status = handle
         .receive()
-        .await
         .nat()
         .await
         .to_u16()
@@ -660,8 +659,8 @@ async fn build_response(mut handle: Handle) -> Result<Response<ResponseBody>, Pa
         .and_then(Result::ok)
         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
-    let headers = readback_list(handle.receive().await, |mut handle| async {
-        let key = handle.receive().await.string().await;
+    let headers = readback_list(handle.receive(), |mut handle| async {
+        let key = handle.receive().string().await;
         let val = handle.bytes().await;
         (key, val)
     })
@@ -694,7 +693,7 @@ fn reader_to_body(reader: Handle) -> StreamBody<mpsc::Receiver<Result<Frame<Byte
             match reader.case().await.as_str() {
                 "ok" => match reader.case().await.as_str() {
                     "chunk" => {
-                        let bytes = reader.receive().await.bytes().await;
+                        let bytes = reader.receive().bytes().await;
                         if tx.send(Ok(Frame::data(bytes))).await.is_err() {
                             reader.signal(literal!("close"));
                             match reader.case().await.as_str() {

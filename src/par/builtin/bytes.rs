@@ -112,7 +112,7 @@ async fn bytes_builder(mut handle: Handle) {
     loop {
         match handle.case().await.as_str() {
             "add" => {
-                buf.extend(handle.receive().await.bytes().await.as_ref());
+                buf.extend(handle.receive().bytes().await.as_ref());
             }
             "build" => {
                 handle.provide_bytes(Bytes::from(buf));
@@ -124,17 +124,17 @@ async fn bytes_builder(mut handle: Handle) {
 }
 
 async fn bytes_parser(mut handle: Handle) {
-    let remainder = handle.receive().await.bytes().await;
+    let remainder = handle.receive().bytes().await;
     provide_bytes_parser(handle, remainder).await;
 }
 
 async fn bytes_parser_from_reader(mut handle: Handle) {
-    let reader = handle.receive().await;
+    let reader = handle.receive();
     provide_bytes_parser(handle, ReaderRemainder::new(reader)).await;
 }
 
 async fn bytes_reader(mut handle: Handle) {
-    let bytes = handle.receive().await.bytes().await;
+    let bytes = handle.receive().bytes().await;
     provide_bytes_reader_from_bytes(handle, bytes).await;
 }
 
@@ -156,8 +156,8 @@ async fn bytes_empty_reader(mut handle: Handle) {
 }
 
 async fn bytes_equals(mut handle: Handle) {
-    let left = handle.receive().await.bytes().await;
-    let right = handle.receive().await.bytes().await;
+    let left = handle.receive().bytes().await;
+    let right = handle.receive().bytes().await;
     if left == right {
         handle.signal(literal!("true"));
     } else {
@@ -167,8 +167,8 @@ async fn bytes_equals(mut handle: Handle) {
 }
 
 async fn bytes_compare(mut handle: Handle) {
-    let left = handle.receive().await.bytes().await;
-    let right = handle.receive().await.bytes().await;
+    let left = handle.receive().bytes().await;
+    let right = handle.receive().bytes().await;
     match left.cmp(&right) {
         Ordering::Equal => handle.signal(literal!("equal")),
         Ordering::Greater => handle.signal(literal!("greater")),
@@ -280,7 +280,7 @@ impl PipeReaderState {
 }
 
 async fn bytes_pipe_reader(mut handle: Handle) {
-    let mut closure = handle.receive().await;
+    let mut closure = handle.receive();
 
     let (tx, rx) = mpsc::unbounded::<PipeMessage>();
     let state = PipeReaderState::new(tx);
@@ -327,7 +327,7 @@ async fn provide_pipe_reader_writer(mut handle: Handle, state: Arc<PipeReaderSta
                 handle.signal(literal!("ok"));
             }
             "write" => {
-                let bytes = handle.receive().await.bytes().await;
+                let bytes = handle.receive().bytes().await;
                 if write_chunk(&state, bytes) {
                     handle.signal(literal!("ok"));
                     continue;
@@ -395,7 +395,7 @@ async fn provide_pipe_reader_output(
 }
 
 async fn bytes_length(mut handle: Handle) {
-    let bytes = handle.receive().await.bytes().await;
+    let bytes = handle.receive().bytes().await;
     handle.provide_nat(BigInt::from(bytes.len()));
 }
 

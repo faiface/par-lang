@@ -46,8 +46,8 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn byte_equals(mut handle: Handle) {
-    let x = handle.receive().await.byte().await;
-    let y = handle.receive().await.byte().await;
+    let x = handle.receive().byte().await;
+    let y = handle.receive().byte().await;
     if x == y {
         handle.signal(literal!("true"));
     } else {
@@ -57,13 +57,13 @@ async fn byte_equals(mut handle: Handle) {
 }
 
 async fn byte_code(mut handle: Handle) {
-    let c = handle.receive().await.byte().await;
+    let c = handle.receive().byte().await;
     handle.provide_nat(BigInt::from(c))
 }
 
 async fn byte_is(mut handle: Handle) {
-    let b = handle.receive().await.byte().await;
-    let class = ByteClass::readback(handle.receive().await).await;
+    let b = handle.receive().byte().await;
+    let class = ByteClass::readback(handle.receive()).await;
     if class.contains(b) {
         handle.signal(literal!("true"));
     } else {
@@ -85,8 +85,8 @@ impl ByteClass {
             "any" => Self::Any,
             "byte" => Self::Byte(handle.byte().await),
             "range" => {
-                let min = handle.receive().await.byte().await;
-                let max = handle.receive().await.byte().await;
+                let min = handle.receive().byte().await;
+                let max = handle.receive().byte().await;
                 handle.continue_();
                 Self::Range(min, max)
             }

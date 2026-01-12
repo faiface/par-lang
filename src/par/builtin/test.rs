@@ -68,9 +68,9 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
         async move {
             match handle.case().await.as_str() {
                 "assert" => {
-                    let description = handle.receive().await.string().await.as_str().to_string();
+                    let description = handle.receive().string().await.as_str().to_string();
                     println!("{}", description);
-                    let mut bool_handle = handle.receive().await;
+                    let mut bool_handle = handle.receive();
 
                     let passed = match bool_handle.case().await.as_str() {
                         "true" => {
@@ -106,7 +106,7 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
                 "id" => {
                     fn identity(mut handle: Handle) -> ExternalFnRet {
                         Box::pin(async {
-                            let arg = handle.receive().await;
+                            let arg = handle.receive();
                             handle.link(arg);
                         })
                     }

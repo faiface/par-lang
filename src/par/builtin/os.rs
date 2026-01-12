@@ -171,7 +171,7 @@ pub fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
 }
 
 async fn path_from_bytes(mut handle: Handle) {
-    let b = handle.receive().await.bytes().await;
+    let b = handle.receive().bytes().await;
     // Unsafe: we accept arbitrary OS-encoded bytes without validation
     let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
     let p = PathBuf::from(os);
@@ -209,7 +209,7 @@ pub fn provide_path(handle: Handle, path: PathBuf) {
                     }
                 },
                 "append" => {
-                    let b = handle.receive().await.bytes().await;
+                    let b = handle.receive().bytes().await;
                     let os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(b.as_ref()) };
                     let p2 = path.join(Path::new(os));
                     provide_path(handle, p2);
@@ -327,7 +327,7 @@ async fn provide_bytes_writer_from_async(mut handle: Handle, mut writer: impl As
                 }
             },
             "write" => {
-                let bytes = handle.receive().await.bytes().await;
+                let bytes = handle.receive().bytes().await;
                 match writer.write_all(bytes.as_ref()).await {
                     Ok(()) => {
                         handle.signal(literal!("ok"));
@@ -442,7 +442,7 @@ async fn os_stderr(handle: Handle) {
 }
 
 async fn os_open_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match File::open(&path).await {
         Ok(file) => {
             handle.signal(literal!("ok"));
@@ -456,7 +456,7 @@ async fn os_open_file(mut handle: Handle) {
 }
 
 async fn os_create_or_replace_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match OpenOptions::new()
         .create(true)
         .write(true)
@@ -476,7 +476,7 @@ async fn os_create_or_replace_file(mut handle: Handle) {
 }
 
 async fn os_create_new_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -495,7 +495,7 @@ async fn os_create_new_file(mut handle: Handle) {
 }
 
 async fn os_append_to_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match OpenOptions::new()
         .write(true)
         .append(true)
@@ -514,7 +514,7 @@ async fn os_append_to_file(mut handle: Handle) {
 }
 
 async fn os_create_or_append_to_file(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match OpenOptions::new()
         .create(true)
         .write(true)
@@ -534,7 +534,7 @@ async fn os_create_or_append_to_file(mut handle: Handle) {
 }
 
 async fn os_create_dir(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match fs::create_dir_all(&path).await {
         Ok(()) => {
             handle.signal(literal!("ok"));
@@ -548,7 +548,7 @@ async fn os_create_dir(mut handle: Handle) {
 }
 
 async fn os_list_dir(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match fs::read_dir(&path).await {
         Ok(mut rd) => {
             handle.signal(literal!("ok"));
@@ -562,7 +562,7 @@ async fn os_list_dir(mut handle: Handle) {
 }
 
 async fn os_traverse_dir(mut handle: Handle) {
-    let path = pathbuf_from_os_path(handle.receive().await).await;
+    let path = pathbuf_from_os_path(handle.receive()).await;
     match build_dir_tree(path.clone()).await {
         Ok(nodes) => {
             handle.signal(literal!("ok"));
@@ -602,7 +602,7 @@ async fn envmap_new(handle: Handle) {
                 return handle.break_();
             }
             "get" => {
-                let name = handle.receive().await.bytes().await;
+                let name = handle.receive().bytes().await;
                 let name_os: &OsStr = unsafe { OsStr::from_encoded_bytes_unchecked(name.as_ref()) };
                 match std::env::var_os(name_os) {
                     Some(val) => {

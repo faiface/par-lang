@@ -36,11 +36,11 @@ async fn console_open(mut handle: Handle) {
             }
 
             "print" => {
-                println!("{}", handle.receive().await.string().await.as_str(),);
+                println!("{}", handle.receive().string().await.as_str(),);
             }
 
             "prompt" => {
-                let prompt = handle.receive().await.string().await;
+                let prompt = handle.receive().string().await;
                 print!("{}", prompt.as_str());
                 let _ = stdout().flush();
                 let mut buf = String::new();

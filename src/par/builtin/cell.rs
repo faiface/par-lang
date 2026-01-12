@@ -35,8 +35,8 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn cell_share(mut handle: Handle) {
-    let initial_value = handle.receive().await;
-    let sharing = handle.receive().await;
+    let initial_value = handle.receive();
+    let sharing = handle.receive();
 
     let mutex = Arc::new(Mutex::new(Cell {
         shared: Some(initial_value),
@@ -56,7 +56,6 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'stati
                     let mutex = Arc::clone(&mutex);
                     handle
                         .receive()
-                        .await
                         .concurrently(move |handle| provide_cell(handle, mutex));
                 }
 
@@ -66,7 +65,7 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'stati
                     handle.send().link(current_value);
                     match handle.case().await.as_str() {
                         "put" => {
-                            let new_value = handle.receive().await;
+                            let new_value = handle.receive();
                             locked.shared = Some(new_value);
                             drop(locked)
                         }

@@ -33,7 +33,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 }
 
 async fn url_from_string(mut handle: Handle) {
-    let input = handle.receive().await.string().await;
+    let input = handle.receive().string().await;
     match ParsedUrl::parse(input.as_str()) {
         Ok(url) => {
             handle.signal(literal!("ok"));
@@ -88,13 +88,13 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
                         return;
                     }
                     "appendPath" => {
-                        let segment = handle.receive().await.string().await;
+                        let segment = handle.receive().string().await;
                         append_path(&mut url, segment.as_str());
                         return provide_url_value(handle, url);
                     }
                     "addQuery" => {
-                        let key = handle.receive().await.string().await;
-                        let value = handle.receive().await.string().await;
+                        let key = handle.receive().string().await;
+                        let value = handle.receive().string().await;
                         url.query_pairs_mut()
                             .append_pair(key.as_str(), value.as_str());
                         return provide_url_value(handle, url);

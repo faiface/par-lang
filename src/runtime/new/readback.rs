@@ -168,12 +168,18 @@ impl Handle {
         self.new(right_h)
     }
 
-    pub async fn receive(&mut self) -> Self {
-        let Value::Pair(a, b) = self.try_destruct().await else {
-            unreachable!()
-        };
-        self.node = a.into();
-        self.new(b.into())
+    pub fn receive(&mut self) -> Self {
+        let (left, left_h) = HandleNode::linked_pair();
+        let (right, right_h) = HandleNode::linked_pair();
+        let times = core::mem::replace(&mut self.node, left_h);
+        self.new(times).concurrently(|mut this| async move {
+            let Value::Pair(a, b) = this.try_destruct().await else {
+                unreachable!();
+            };
+            this.link(left, a);
+            this.link(right, b);
+        });
+        self.new(right_h)
     }
 
     pub fn signal(&mut self, chosen: ArcStr) {

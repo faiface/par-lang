@@ -53,10 +53,10 @@ impl Handle {
         }
     }
 
-    pub async fn receive(&mut self) -> Handle {
+    pub fn receive(&mut self) -> Handle {
         match self {
             Handle::Old(handle) => Handle::Old(handle.receive()),
-            Handle::New(handle) => Handle::New(handle.receive().await),
+            Handle::New(handle) => Handle::New(handle.receive()),
         }
     }
 

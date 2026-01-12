@@ -103,7 +103,7 @@ impl<'a> AsyncByteIterator for ReaderRemainderByteIterator<'a> {
             match handle.case().await.as_str() {
                 "ok" => match handle.case().await.as_str() {
                     "chunk" => {
-                        let chunk = handle.receive().await.bytes().await;
+                        let chunk = handle.receive().bytes().await;
                         assert!(
                             !chunk.is_empty(),
                             "Bytes.Reader returned an empty chunk; implementation bug"
@@ -390,8 +390,8 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
             }
 
             "match" => {
-                let prefix = BytesPattern::readback(handle.receive().await).await;
-                let suffix = BytesPattern::readback(handle.receive().await).await;
+                let prefix = BytesPattern::readback(handle.receive()).await;
+                let suffix = BytesPattern::readback(handle.receive()).await;
                 match remainder.bytes().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
@@ -447,8 +447,8 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
             }
 
             "matchEnd" => {
-                let prefix = BytesPattern::readback(handle.receive().await).await;
-                let suffix = BytesPattern::readback(handle.receive().await).await;
+                let prefix = BytesPattern::readback(handle.receive()).await;
+                let suffix = BytesPattern::readback(handle.receive()).await;
                 match remainder.bytes().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
@@ -556,8 +556,8 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
             }
 
             "match" => {
-                let prefix = StringPattern::readback(handle.receive().await).await;
-                let suffix = StringPattern::readback(handle.receive().await).await;
+                let prefix = StringPattern::readback(handle.receive()).await;
+                let suffix = StringPattern::readback(handle.receive()).await;
                 match remainder.chars().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
@@ -613,8 +613,8 @@ pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut re
             }
 
             "matchEnd" => {
-                let prefix = StringPattern::readback(handle.receive().await).await;
-                let suffix = StringPattern::readback(handle.receive().await).await;
+                let prefix = StringPattern::readback(handle.receive()).await;
+                let suffix = StringPattern::readback(handle.receive()).await;
                 match remainder.chars().next().await {
                     Ok(Some(_)) => {}
                     Ok(None) => {

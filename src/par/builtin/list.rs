@@ -17,7 +17,7 @@ where
                 return items;
             }
             "item" => {
-                let item = readback_item(handle.receive().await).await;
+                let item = readback_item(handle.receive()).await;
                 items.push(item);
             }
             _ => unreachable!(),
