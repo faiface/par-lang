@@ -11,6 +11,7 @@ pub struct Rewrites {
     pub ext_send: u64,
     pub share_sync: u64,
     pub share_async: u64,
+    pub net_duration: Duration,
 }
 
 impl Rewrites {
@@ -26,6 +27,12 @@ impl Rewrites {
             + self.share_async
     }
     pub fn show(&self, elapsed: Duration) -> String {
+        let _ = elapsed;
+        let per_second = if self.net_duration.is_zero() {
+            0
+        } else {
+            (self.total() as f64 / self.net_duration.as_secs_f64()) as u64
+        };
         format!(
             "\
             \tContinue: {}\n\
@@ -37,9 +44,10 @@ impl Rewrites {
             \tExternal Send: {}\n\
             \tShare Sync: {}\n\
             \tShare Async: {}\n\
-            \tTotal: {}\n\
-            \tTime (ms): {}\n\
-            \tPer second: {}\n\
+            \tTotal reductions: {}\n\
+            \tTotal time: {}\n\
+            \tNet time (ms): {}\n\
+            \tNet reductions per second: {}\n\
         ",
             self.r#continue,
             self.receive,
@@ -52,7 +60,8 @@ impl Rewrites {
             self.share_async,
             self.total(),
             elapsed.as_millis(),
-            (self.total() as f64 / elapsed.as_secs_f64()) as u64,
+            self.net_duration.as_millis(),
+            per_second,
         )
     }
 }

@@ -6,6 +6,7 @@ use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 pub enum ReducerMessage {
@@ -74,35 +75,39 @@ impl Reducer {
     pub async fn run(&mut self) {
         loop {
             loop {
-                if let Some((a, b)) = self.runtime.reduce() {
-                    match (a, b) {
-                        (UserData::Request(a), b) => {
-                            a.send(b).unwrap();
-                        }
-                        (a, Node::Linear(Linear::Request(b))) => {
-                            b.send(Node::Linear(a.into())).unwrap();
-                        }
-                        (UserData::ExternalFn(f), other) => {
-                            let handle = Handle::from_node(
-                                self.runtime.arena.clone(),
-                                self.net_handle(),
-                                other,
-                            );
-                            self.spawner
-                                .spawn(f(crate::runtime::Handle::New(handle)))
-                                .unwrap();
-                        }
-                        (UserData::ExternalArc(f), other) => {
-                            let handle = Handle::from_node(
-                                self.runtime.arena.clone(),
-                                self.net_handle(),
-                                other,
-                            );
-                            self.spawner
-                                .spawn((f.0).as_ref()(crate::runtime::Handle::New(handle)))
-                                .unwrap();
+                if !self.runtime.redexes.is_empty() {
+                    let start = Instant::now();
+                    if let Some((a, b)) = self.runtime.reduce() {
+                        match (a, b) {
+                            (UserData::Request(a), b) => {
+                                a.send(b).unwrap();
+                            }
+                            (a, Node::Linear(Linear::Request(b))) => {
+                                b.send(Node::Linear(a.into())).unwrap();
+                            }
+                            (UserData::ExternalFn(f), other) => {
+                                let handle = Handle::from_node(
+                                    self.runtime.arena.clone(),
+                                    self.net_handle(),
+                                    other,
+                                );
+                                self.spawner
+                                    .spawn(f(crate::runtime::Handle::New(handle)))
+                                    .unwrap();
+                            }
+                            (UserData::ExternalArc(f), other) => {
+                                let handle = Handle::from_node(
+                                    self.runtime.arena.clone(),
+                                    self.net_handle(),
+                                    other,
+                                );
+                                self.spawner
+                                    .spawn((f.0).as_ref()(crate::runtime::Handle::New(handle)))
+                                    .unwrap();
+                            }
                         }
                     }
+                    self.runtime.rewrites.net_duration += start.elapsed();
                 } else if let Ok(msg) = self.inbox.try_recv() {
                     self.handle_message(msg);
                 } else {

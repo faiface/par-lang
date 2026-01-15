@@ -14,11 +14,15 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use crate::par::build_result::BuildResult;
 use crate::par::{language::GlobalName, types::Type};
 use crate::{
-    location::FileName, par::program::CheckedModule, readback::Element,
-    runtime::old::compiler::IcCompiled, runtime::old::readback::TypedHandle, spawn::TokioSpawn,
+    location::FileName,
+    par::program::CheckedModule,
+    readback::{Element, RunStats},
+    runtime::{compiler::Compiled, readback::TypedHandle},
+    spawn::TokioSpawn,
 };
 use core::time::Duration;
 use std::collections::HashMap;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
@@ -104,7 +108,10 @@ impl Playground {
             code: "".to_owned(),
             build: BuildResult::None,
             built_code: Arc::from(""),
-            build_config: BuildConfig::default(),
+            build_config: BuildConfig {
+                new_runtime: true,
+                ..BuildConfig::default()
+            },
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,
@@ -376,7 +383,7 @@ impl Playground {
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
-        compiled: &IcCompiled,
+        compiled: &Compiled,
         name_to_ty: &HashMap<GlobalName, Type>,
     ) {
         for (name, _) in &program.definitions {
@@ -388,11 +395,8 @@ impl Playground {
                 *cancel_token = Some(token.clone());
 
                 let ty = name_to_ty.get(name).unwrap();
-                let mut net = compiled.create_net();
-                let child_net = compiled.get_with_name(name).unwrap();
-                let tree = net.inject_net(child_net).with_type(ty.clone());
-                let (net, _future) =
-                    net.start_reducer(Arc::new(TokioSpawn::from_handle(tokio.clone())));
+                let (handle, reducer_future) = tokio.block_on(compiled.start_and_instantiate(name));
+                let stats: RunStats = Arc::new(Mutex::new(None));
 
                 let ctx = ui.ctx().clone();
                 *element = Some(Element::new(
@@ -400,16 +404,23 @@ impl Playground {
                         ctx.request_repaint();
                     }),
                     Arc::new(TokioSpawn::from_handle(tokio.clone())),
-                    TypedHandle::from_wrapper(program.type_defs.clone(), net, tree),
+                    TypedHandle::new(program.type_defs.clone(), ty.clone(), handle),
+                    Arc::clone(&stats),
                 ));
                 let tokio_clone = tokio.clone();
+                let stats_clone = Arc::clone(&stats);
+                let ctx = ui.ctx().clone();
                 thread::spawn(move || {
+                    let start = Instant::now();
                     tokio_clone.block_on(async {
                         tokio::select! {
                             _ = token.cancelled() => {
                                 println!("Note: Reducer cancelled.");
                             }
-                            _ = _future => {
+                            result = reducer_future => {
+                                let elapsed = start.elapsed();
+                                *stats_clone.lock().unwrap() = Some((result, elapsed));
+                                ctx.request_repaint();
                                 println!("Note: Reducer completed.");
                             }
                         }
@@ -449,11 +460,7 @@ impl Playground {
                     if let (Some(checked), Some(rt_compiled)) =
                         (self.build.checked(), self.build.rt_compiled())
                     {
-                        use crate::runtime::compiler::Backend;
                         let name_to_ty = &rt_compiled.name_to_ty;
-                        let Backend::Old(ic_compiled) = &rt_compiled.backend else {
-                            panic!("New compiler not yet supported in playground")
-                        };
                         egui::containers::menu::MenuButton::from_button(
                             egui::Button::new(
                                 egui::RichText::new("Run")
@@ -470,7 +477,7 @@ impl Playground {
                                     &mut self.element,
                                     ui,
                                     checked.clone(),
-                                    ic_compiled,
+                                    rt_compiled,
                                     name_to_ty,
                                 );
                             })
