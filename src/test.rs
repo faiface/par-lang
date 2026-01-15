@@ -5,7 +5,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::check;
-use crate::par::build_result::BuildConfig;
 
 // one possible implementation of walking a directory only visiting files
 fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(&DirEntry)) -> io::Result<()> {
@@ -24,23 +23,9 @@ fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(&DirEntry)) -> io::Result<()> {
 }
 
 #[test]
-fn test_all_files_rtv3() -> Result<(), String> {
-    let mut config = BuildConfig::default();
-    config.new_runtime = true;
-    test_all_files(&config)
-}
-
-#[test]
-fn test_all_files_rtv2() -> Result<(), String> {
-    let config = BuildConfig::default();
-    test_all_files(&config)
-}
-
-#[test]
 fn check_all_examples() -> Result<(), String> {
     // check all examples
     // this also pre-reduces them
-    let config = BuildConfig::default();
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.push("examples");
     let mut result = Ok(());
@@ -52,13 +37,14 @@ fn check_all_examples() -> Result<(), String> {
             return ();
         };
         eprintln!("Checking {:?}", entry.path());
-        result = result.clone().and(check(&config, entry.path()));
+        result = result.clone().and(check(entry.path()));
     })
     .unwrap();
     result
 }
 
-fn test_all_files(config: &BuildConfig) -> Result<(), String> {
+#[test]
+fn test_all_files() -> Result<(), String> {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.push("tests");
     let mut all_results = vec![];
@@ -70,7 +56,7 @@ fn test_all_files(config: &BuildConfig) -> Result<(), String> {
             return ();
         }
         eprintln!("Testing {:?}", entry.path());
-        let results = crate::test_runner::run_test_file(config, &entry.path(), &None);
+        let results = crate::test_runner::run_test_file(&entry.path(), &None);
         all_results.extend(
             results
                 .into_iter()

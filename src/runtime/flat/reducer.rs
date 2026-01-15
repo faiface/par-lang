@@ -1,6 +1,6 @@
 use super::readback::Handle;
-use crate::runtime::new::runtime::{Linear, Node, Runtime, UserData};
-use crate::runtime::new::stats::Rewrites;
+use crate::runtime::flat::runtime::{Linear, Node, Runtime, UserData};
+use crate::runtime::flat::stats::Rewrites;
 use crate::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
@@ -91,9 +91,7 @@ impl Reducer {
                                     self.net_handle(),
                                     other,
                                 );
-                                self.spawner
-                                    .spawn(f(crate::runtime::Handle::New(handle)))
-                                    .unwrap();
+                                self.spawner.spawn(f(handle.into())).unwrap();
                             }
                             (UserData::ExternalArc(f), other) => {
                                 let handle = Handle::from_node(
@@ -101,9 +99,7 @@ impl Reducer {
                                     self.net_handle(),
                                     other,
                                 );
-                                self.spawner
-                                    .spawn((f.0).as_ref()(crate::runtime::Handle::New(handle)))
-                                    .unwrap();
+                                self.spawner.spawn((f.0).as_ref()(handle.into())).unwrap();
                             }
                         }
                     }

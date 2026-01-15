@@ -1,8 +1,8 @@
 use super::reducer::{NetHandle, ReducerMessage};
 use super::runtime::{ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Value};
 use crate::par::primitive::Primitive;
-use crate::runtime::new::arena::Arena;
-use crate::runtime::new::runtime::Linker;
+use crate::runtime::flat::arena::Arena;
+use crate::runtime::flat::runtime::Linker;
 use arcstr::ArcStr;
 use futures::task::FutureObj;
 use std::future::Future;
@@ -128,10 +128,7 @@ impl Handle {
             this.link(
                 node,
                 Node::Linear(Linear::Value(Box::new(Value::ExternalArc(
-                    super::runtime::ExternalArc(Arc::new(move |x| match x {
-                        crate::runtime::Handle::New(x) => Box::pin(f(x)),
-                        _ => panic!("Mixed runtime handles"),
-                    })),
+                    super::runtime::ExternalArc(Arc::new(move |handle| Box::pin(f(handle.handle)))),
                 )))),
             );
         });

@@ -4,22 +4,16 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use arcstr::ArcStr;
 use bytes::Bytes;
-use futures::channel::{mpsc, oneshot};
-use futures::future::RemoteHandle;
-use futures::task::{Spawn, SpawnExt};
-use futures::StreamExt;
+use futures::channel::oneshot;
 use indexmap::IndexMap;
 use num_bigint::BigInt;
 
 use crate::par::primitive::{ParString, Primitive};
-
-use super::readback::{private::NetWrapper, Handle};
 
 pub type VarId = usize;
 
@@ -241,36 +235,7 @@ pub struct Net {
     pub packages: Arc<IndexMap<usize, Net>>,
     pub rewrites: Rewrites,
     pub waiting_for_reducer: Vec<(Tree, Tree)>,
-    reducer: Option<Reducer>,
     pub debug_name: String,
-}
-
-pub(crate) enum ReducerMessage {
-    Ping,
-}
-
-#[derive(Clone)]
-struct Reducer {
-    net: Weak<Mutex<Net>>,
-    spawner: Arc<dyn Spawn + Send + Sync>,
-    notify: mpsc::UnboundedSender<ReducerMessage>,
-    handle_count: Arc<AtomicUsize>,
-}
-
-impl Reducer {
-    fn spawn_external(
-        &self,
-        f: impl Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
-        tree: Tree,
-    ) {
-        if let Some(net) = self.net.upgrade() {
-            let notify = self.notify.clone();
-            let handle_count = self.handle_count.clone();
-            let handle = Handle::new(net, notify, handle_count, tree);
-            let future = f(handle);
-            self.spawner.spawn(future).expect("spawn failed");
-        }
-    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -321,69 +286,6 @@ impl Variables {
 }
 
 impl Net {
-    pub fn start_reducer(
-        mut self,
-        spawner: Arc<dyn Spawn + Send + Sync>,
-    ) -> (NetWrapper, RemoteHandle<()>) {
-        if self.reducer.is_some() {
-            panic!("reducer already started");
-        }
-
-        self.redexes.extend(self.waiting_for_reducer.drain(..));
-
-        let (notify, mut resume) = mpsc::unbounded();
-        let net = Arc::new(Mutex::new(self));
-        let weak_net = Arc::downgrade(&net);
-        let handle_count = Arc::new(AtomicUsize::new(0));
-        net.lock().unwrap().reducer = Some(Reducer {
-            net: weak_net,
-            spawner: Arc::clone(&spawner),
-            notify: notify.clone(),
-            handle_count: handle_count.clone(),
-        });
-
-        let net_wrapper = NetWrapper::new(Arc::clone(&net), notify.clone(), handle_count.clone());
-
-        let net = Arc::clone(&net);
-        let future = spawner
-            .spawn_with_handle(async move {
-                loop {
-                    {
-                        let mut lock = net.lock().expect("lock failed");
-                        while lock.reduce_one() {}
-                        if handle_count.load(Ordering::SeqCst) == 0 {
-                            break;
-                        }
-                    }
-
-                    match resume.next().await {
-                        Some(ReducerMessage::Ping) => continue,
-                        None => break,
-                    }
-                }
-            })
-            .expect("spawn failed");
-        (net_wrapper, future)
-    }
-
-    pub fn spawn(&self, fut: Pin<Box<dyn Send + Future<Output = ()>>>) {
-        let Some(reducer) = &self.reducer else {
-            panic!("reducer not started");
-        };
-        reducer.spawner.spawn(fut).expect("spawn failed");
-    }
-
-    pub fn notify_reducer(&self) {
-        let Some(reducer) = &self.reducer else {
-            panic!("reducer not started");
-        };
-        let res = reducer.notify.unbounded_send(ReducerMessage::Ping);
-        if res.is_err() {
-            println!("Warning: Failed to ping reducer");
-        }
-        // .expect("notify ping failed");
-    }
-
     fn interact(&mut self, a: Tree, b: Tree) {
         macro_rules! sym {
             ($a: pat, $b: pat) => {
@@ -497,10 +399,7 @@ impl Net {
                 tx.send((signal, payload)).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
-            (External(f), a) | (a, External(f)) => match &self.reducer {
-                Some(reducer) => reducer.spawn_external(|x| f(crate::runtime::Handle::Old(x)), a),
-                None => self.waiting_for_reducer.push((External(f), a)),
-            },
+            (External(f), a) | (a, External(f)) => self.waiting_for_reducer.push((External(f), a)),
             (ExternalBox(_), Era) | (Era, ExternalBox(_)) => {
                 self.rewrites.era += 1;
             }
@@ -509,12 +408,9 @@ impl Net {
                 self.link(*b, ExternalBox(f));
                 self.rewrites.commute += 1;
             }
-            (ExternalBox(f), a) | (a, ExternalBox(f)) => match &self.reducer {
-                Some(reducer) => {
-                    reducer.spawn_external(|x| f(crate::runtime::Handle::Old(x)), a);
-                }
-                None => self.waiting_for_reducer.push((ExternalBox(f), a)),
-            },
+            (ExternalBox(f), a) | (a, ExternalBox(f)) => {
+                self.waiting_for_reducer.push((ExternalBox(f), a))
+            }
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }
     }
@@ -573,12 +469,8 @@ impl Net {
                 .or_insert_with(|| self.variables.alloc())
         });
         self.redexes.append(&mut net.redexes);
-        if self.reducer.is_some() {
-            self.redexes.extend(net.waiting_for_reducer.drain(..));
-        } else {
-            self.waiting_for_reducer
-                .append(&mut net.waiting_for_reducer);
-        }
+        self.waiting_for_reducer
+            .append(&mut net.waiting_for_reducer);
         for (id, state) in net.variables.vars.drain(..).enumerate() {
             if let Some(new_id) = allocated.get(&id) {
                 self.variables.vars[*new_id] = state

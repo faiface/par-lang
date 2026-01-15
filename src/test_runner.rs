@@ -1,4 +1,4 @@
-use crate::par::build_result::{BuildConfig, BuildResult};
+use crate::par::build_result::BuildResult;
 use crate::par::parse;
 use crate::runtime::Compiled;
 use crate::test_assertion::{create_assertion_channel, AssertionResult};
@@ -52,7 +52,7 @@ pub struct TestResult {
     pub status: TestStatus,
 }
 
-pub fn run_tests(config: &BuildConfig, file: Option<PathBuf>, filter: Option<String>) {
+pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
     parse::set_miette_hook();
 
     let test_files = match file {
@@ -74,7 +74,7 @@ pub fn run_tests(config: &BuildConfig, file: Option<PathBuf>, filter: Option<Str
     let start_time = Instant::now();
 
     for test_file in test_files {
-        let results = run_test_file(config, &test_file, &filter);
+        let results = run_test_file(&test_file, &filter);
         print_test_results(&test_file, &results);
 
         total_tests += results.len();
@@ -104,11 +104,7 @@ fn find_test_files() -> Vec<PathBuf> {
     test_files
 }
 
-pub fn run_test_file(
-    config: &BuildConfig,
-    file: &Path,
-    filter: &Option<String>,
-) -> Vec<TestResult> {
+pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let mut results = Vec::new();
 
     let Ok(code) = fs::read_to_string(file) else {
@@ -123,7 +119,7 @@ pub fn run_test_file(
     let code_with_imports = code.clone();
 
     let build = stacker::grow(32 * 1024 * 1024, || {
-        BuildResult::from_source(config, &code_with_imports, file.into())
+        BuildResult::from_source(&code_with_imports, file.into())
     });
     if let Some(error) = build.error() {
         results.push(TestResult {

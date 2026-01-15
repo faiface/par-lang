@@ -1,4 +1,4 @@
-use crate::runtime::new::runtime::ExternalFnRet;
+use crate::runtime::flat::runtime::ExternalFnRet;
 use std::sync::{mpsc, Arc};
 
 use crate::{

@@ -11,7 +11,7 @@ use crate::par::{
     process::{Captures, Command, Expression, Process},
     types::Type,
 };
-use crate::runtime::old::net::FanBehavior;
+use crate::runtime::tree::net::FanBehavior;
 use crate::{
     location::{Span, Spanning},
     par::{

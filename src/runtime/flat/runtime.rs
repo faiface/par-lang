@@ -30,12 +30,12 @@ use core::panic;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
-use crate::runtime::new::show::Shower;
-use crate::{par::primitive::Primitive, runtime::new::show::Showable};
+use crate::runtime::flat::show::Shower;
+use crate::{par::primitive::Primitive, runtime::flat::show::Showable};
 
 use super::arena::*;
-use crate::runtime::new::stats::Rewrites;
-use crate::runtime::old::net::FanBehavior;
+use crate::runtime::flat::stats::Rewrites;
+use crate::runtime::tree::net::FanBehavior;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::oneshot;

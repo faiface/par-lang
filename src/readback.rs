@@ -4,7 +4,7 @@ use crate::{
         primitive::{ParString, Primitive},
     },
     runtime::{
-        compiler::RunResult,
+        flat::stats::Rewrites,
         readback::{TypedHandle, TypedReadback},
     },
 };
@@ -57,7 +57,7 @@ pub enum Event {
     },
 }
 
-pub type RunStats = Arc<Mutex<Option<(RunResult, Duration)>>>;
+pub type RunStats = Arc<Mutex<Option<(Rewrites, Duration)>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Polarity {
