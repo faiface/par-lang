@@ -65,13 +65,15 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "PipeReader",
-                Type::generic_function(
+                Type::forall(
+                    "e",
                     Type::function(
-                        Type::name(None, "Writer", vec![Type::break_()]),
-                        Type::either(vec![("ok", Type::break_()), ("err", Type::var("e"))]),
+                        Type::function(
+                            Type::name(None, "Writer", vec![Type::break_()]),
+                            Type::either(vec![("ok", Type::break_()), ("err", Type::var("e"))]),
+                        ),
+                        Type::name(None, "Reader", vec![Type::var("e")]),
                     ),
-                    Type::name(None, "Reader", vec![Type::var("e")]),
-                    vec!["e"],
                 ),
                 |handle| Box::pin(bytes_pipe_reader(handle)),
             ),

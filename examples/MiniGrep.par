@@ -61,7 +61,7 @@ def TraverseDirectory = [dirPath]
 
 dec GrepFile : [String, Os.Reader] Iterator<Os.Error, (Nat) String>
 def GrepFile = [needle, reader]
-  String.ParserFromReader(type Os.Error)(reader)
+  String.ParserFromReader(reader)
     ->Lines
     ->Enumerate1
     ->Filter(box [(_) line] Contains(needle, line))

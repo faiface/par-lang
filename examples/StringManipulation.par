@@ -35,7 +35,7 @@ def Find = [s, p] String.Parser(s).match(.repeat.one.any!, p).case {
   .end _ => .none!,
   .fail r => do { r.close } in .none!,
   .match(before, found) r =>
-    .some(before, found, Result.Always(type String)(r.remainder))!
+    .some(before, found, Result.Always(r.remainder))!
 }
 
 dec Split : [String, Char.Class] List<String>
