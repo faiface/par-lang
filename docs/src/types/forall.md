@@ -38,6 +38,8 @@ In Par, **_forall_ types:**
 - **Are first-class!** It's possible to store and pass generic values around, without them losing
   their genericity.
 
+If you want generics inferred at the use site, see [Implicit generics](./implicit_generics.md).
+
 A forall type **consists of two parts:**
 - A lower-case type variable enclosed in square brackets, and prefixed with the keyword `type`.
 - The result type, which uses this type variable.

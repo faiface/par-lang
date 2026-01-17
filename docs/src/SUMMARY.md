@@ -15,6 +15,7 @@
   - [Pair](./types/pair.md)
   - [Function](./types/function.md)
   - [Forall](./types/forall.md)
+  - [Implicit Generics](./types/implicit_generics.md)
   - [Recursive](./types/recursive.md)
   - [Choice](./types/choice.md)
   - [Iterative](./types/iterative.md)
