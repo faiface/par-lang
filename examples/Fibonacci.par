@@ -13,15 +13,7 @@ def Fibonacci =
       in (a) loop
   }
 
-dec NthFib : [Nat] Nat
-def NthFib = [n]
-  let fib = Fibonacci
-  in Nat.Repeat(n).begin.case {
-    .end!   => do { fib.next[x].close? } in x,
-    .step s => do { fib.next[_] } in s.loop,
-  }
-
-def Program: ! = do {
+def Main: ! = do {
   let console = Console.Open
   let fib = Fibonacci
 
@@ -36,16 +28,4 @@ def Program: ! = do {
 
   fib.close
   console.close
-} in !
-
-def TestNthFib: [Test] ! = [test] do {
-  test
-    .assert("NthFib(0) should be 1", NthFib(0)->Nat.Equals(1))
-    .assert("NthFib(1) should be 1", NthFib(1)->Nat.Equals(1))
-    .assert("NthFib(2) should be 2", NthFib(2)->Nat.Equals(2))
-    .assert("NthFib(3) should be 3", NthFib(3)->Nat.Equals(3))
-    .assert("NthFib(4) should be 5", NthFib(4)->Nat.Equals(5))
-    .assert("NthFib(5) should be 8", NthFib(5)->Nat.Equals(8))
-    .assert("NthFib(6) should be 13", NthFib(6)->Nat.Equals(13))
-    .assert("NthFib(10) should be 89", NthFib(10)->Nat.Equals(89))
 } in !

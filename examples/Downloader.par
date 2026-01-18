@@ -14,9 +14,9 @@ def Main =
 
 dec YieldDownloadRequests : [String, Os.Path] List<(Url, Os.Path)!>
 def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
-  Debug.Log(Concat(*("Listening on ", listenUrl, "...")))
+  Debug.Log(String.Concat(*("Listening on ", listenUrl, "...")))
   catch e => {
-    Debug.Log(Concat(*("Listening error: ", e)))
+    Debug.Log(String.Concat(*("Listening error: ", e)))
     yield.end!
   }
 
@@ -109,7 +109,7 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
       ->String.FromBytes
 
   catch e => {
-    Debug.Log(Concat(*("Stdout error: ", e)))
+    Debug.Log(String.Concat(*("Stdout error: ", e)))
     tracker.close
     exit!
   }
@@ -124,13 +124,13 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
       event.case {
         .started expected => {
           tracker.file(name).started(expected)
-          stdout.write(Concat(*("\nStarted downloading ", name, "\n"))).try
+          stdout.write(String.Concat(*("\nStarted downloading ", name, "\n"))).try
         }
 
         .progressed size => {
           tracker.file(name).progressed(size)
           tracker.stats[numFiles, sumDownloaded, sumExpected]
-          stdout.write(Concat(*(
+          stdout.write(String.Concat(*(
             "\r>> ", numFiles->Int.ToString, " file(s) in progress: ",
             sumDownloaded->Int.ToString, " B / ", sumExpected->Int.ToString, " B",
           ))).try
@@ -140,7 +140,7 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
           tracker.file(name).ended[startTime, downloadedSize]
           let duration = Time.Now(!)->Int.Sub(startTime)
           let speed = downloadedSize->Int.Mul(1000)->Int.Div(duration)
-          stdout.write(Concat(*(
+          stdout.write(String.Concat(*(
             "\nFinished downloading ", name, "\n",
             "    Size:  ", downloadedSize->Int.ToString, " B\n",
             "    Time:  ", duration->Int.ToString, " ms\n",
@@ -150,7 +150,7 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
 
         .failed msg => {
           tracker.file(name).ended[_, _]
-          stdout.write(Concat(*("\nFailed to download ", name, ": ", msg, "\n"))).try
+          stdout.write(String.Concat(*("\nFailed to download ", name, ": ", msg, "\n"))).try
         }
       }
       stdout.flush.try
@@ -241,18 +241,6 @@ def FanIn = <a>[lists] chan yield {
   })
   yield.end!
 }
-
-dec Concat : [List<String>] String
-def Concat = [strings] do {
-  let builder = String.Builder
-  strings.begin.case {
-    .item(string) => {
-      builder.add(string)
-      strings.loop
-    }
-    .end! => {}
-  }
-} in builder.build
 
 dec TrimStart : [Bytes, Bytes] Bytes
 def TrimStart = [whole, start]

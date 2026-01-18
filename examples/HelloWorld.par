@@ -1,3 +1,3 @@
-def Program = Console.Open
+def Main = Console.Open
   .print("Hello, world!")
   .close

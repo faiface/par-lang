@@ -8,9 +8,9 @@ type Move = either {
 
 type Player = iterative@game choice {
   .stop => !,
-  .play_round => iterative@round choice {
-    .stop_round => self@game,
-    .play_move => (Move) choice {
+  .playRound => iterative@round choice {
+    .stopRound => self@game,
+    .playMove => (Move) choice {
       .win  => self@game,
       .lose => self@game,
       .draw => self@round,
@@ -19,14 +19,14 @@ type Player = iterative@game choice {
 }
 
 type Outcome = either {
-  .first_won!,
-  .second_won!,
-  .too_long!,
+  .firstWon!,
+  .secondWon!,
+  .tooLong!,
 }
 
 type Game = iterative choice {
   .stop => !,
-  .play_round => (Outcome) self,
+  .playRound => (Outcome) self,
 }
 
 def StartGame = [p1, p2] begin@game case {
@@ -35,29 +35,29 @@ def StartGame = [p1, p2] begin@game case {
     p2.stop?
   } in !,
 
-  .play_round => do {
+  .playRound => do {
     let limit = 3
-    p1.play_round
-    p2.play_round
+    p1.playRound
+    p2.playRound
   } in Nat.Repeat(limit).begin.case {
     .end! => do {
-      p1.stop_round
-      p2.stop_round
-    } in (.too_long!) loop@game,
+      p1.stopRound
+      p2.stopRound
+    } in (.tooLong!) loop@game,
 
     .step remaining => do {
-      p1.play_move[move1]
-      p2.play_move[move2]
+      p1.playMove[move1]
+      p2.playMove[move2]
     } in CalculateRound(move1, move2).case {
       .first! => do {
         p1.win
         p2.lose
-      } in (.first_won!) loop@game,
+      } in (.firstWon!) loop@game,
 
       .second! => do {
         p1.lose
         p2.win
-      } in (.second_won!) loop@game,
+      } in (.secondWon!) loop@game,
 
       .draw! => do {
         p1.draw

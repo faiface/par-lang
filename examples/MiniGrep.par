@@ -1,4 +1,4 @@
-def Program: ! = chan exit {
+def Main: ! = chan exit {
   let console = Console.Open
 
   catch ! => {
@@ -17,7 +17,7 @@ def Program: ! = chan exit {
     exit!
   }
 
-  let try paths: List<Os.Path> = path->Os.Path->TraverseDirectory
+  let try paths = path->Os.Path->TraverseDirectory
   paths.begin.case {
     .end! => {}
     .item(path) => {
@@ -56,7 +56,7 @@ def TraverseDirectory = [dirPath]
   .ok tree.begin.case {
     .end! => .end!,
     .file(path) rest => .item(path) rest.loop,
-    .dir(_, nested) rest => Concat(nested.loop, rest.loop),
+    .dir(_, nested) rest => List.Concat(*(nested.loop, rest.loop)),
   }
 
 dec GrepFile : [String, Os.Reader] Iterator<Os.Error, (Nat) String>
@@ -67,12 +67,6 @@ def GrepFile = [needle, reader]
     ->Filter(box [(_) line] Contains(needle, line))
 
 // ---
-
-dec Concat : <a>[List<a>] [List<a>] List<a>
-def Concat = <a>[left] [right] left.begin.case {
-  .end! => right,
-  .item(x) xs => .item(x) xs.loop,
-}
 
 dec Contains : [String, String] Bool
 def Contains = [needle, haystack]

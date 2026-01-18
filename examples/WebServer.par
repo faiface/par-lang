@@ -12,9 +12,10 @@ def Main: ! = chan exit {
   }
   console.prompt("Directory to serve: ")[try@prompt root]
 
-  console.print("Starting server...")
+  let url = "127.0.0.1:8080"
+  console.print(String.Concat(*("Listening on ", url, "...")))
 
-  Http.Listen("127.0.0.1:8080").begin.case {
+  Http.Listen(url).begin.case {
     .shutdown try! => {
       console.print("Shutting down...")
       console.close
@@ -24,7 +25,7 @@ def Main: ! = chan exit {
     .incoming(request, respond) next => {
       let (method, url, headers) body = request
       body.close
-      ServePath(Os.Path(root), Concat(root, url.path), respond)
+      ServePath(Os.Path(root), String.Concat(*(root, url.path)), respond)
       next.loop
     }
   }
@@ -76,9 +77,6 @@ def ServeDir = [root, paths, respond] chan finish {
   respond((200, *(("Content-Type") "text/html")) content)
   finish!
 }
-
-dec Concat : [String, String] String
-def Concat = [left, right] String.Builder.add(left).add(right).build
 
 dec TrimPrefix : [Bytes, Bytes] Bytes
 def TrimPrefix = [prefix, bytes]
