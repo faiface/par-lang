@@ -199,7 +199,7 @@ impl Type {
         Self::Pair(Span::None, Box::new(t), Box::new(u), vec![])
     }
 
-    pub fn generic_pair(t: Self, u: Self, vars: Vec<&'static str>) -> Self {
+    pub fn generic_pair(vars: Vec<&'static str>, t: Self, u: Self) -> Self {
         Self::Pair(
             Span::None,
             Box::new(t),
@@ -217,7 +217,7 @@ impl Type {
         Self::Function(Span::None, Box::new(t), Box::new(u), vec![])
     }
 
-    pub fn generic_function(t: Self, u: Self, vars: Vec<&'static str>) -> Self {
+    pub fn generic_function(vars: Vec<&'static str>, t: Self, u: Self) -> Self {
         Self::Function(
             Span::None,
             Box::new(t),

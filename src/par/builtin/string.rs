@@ -37,9 +37,9 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             Definition::external(
                 "ParserFromReader",
                 Type::generic_function(
+                    vec!["e"],
                     Type::name(Some("Bytes"), "Reader", vec![Type::var("e")]),
                     Type::name(None, "Parser", vec![Type::var("e")]),
-                    vec!["e"],
                 ),
                 |handle| Box::pin(string_parser_from_reader(handle)),
             ),

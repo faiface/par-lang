@@ -4,7 +4,7 @@ def TryFanIn = FanIn(type String)
 
 dec FanIn : [type a] [List<List<a>>] List<a>
 def FanIn = [type a] [lists] chan yield {
-  let yield = Cell.Share(type dual List<a>)(yield, chan cell {
+  let yield = Cell.Share(yield, chan cell {
     lists.begin.case {
       .end! => {
         cell.end!

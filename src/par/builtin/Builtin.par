@@ -693,7 +693,7 @@ type Cell<a> = iterative choice {
   }
 }
 
-dec Cell.Share : [type a] [a, dual Cell<a>] a
+dec Cell.Share : <a>[a] [dual Cell<a>] a
 
 
 /// Debug

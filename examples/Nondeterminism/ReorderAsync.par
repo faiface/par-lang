@@ -5,7 +5,7 @@ dec ReorderAsync :
   List<String>
 
 def ReorderAsync = [strings] chan yield {
-  let yield = Cell.Share(type dual List<String>)(yield, chan cell {
+  let yield = Cell.Share(yield, chan cell {
     strings.begin.case {
       .end! => { cell.end! }
 
