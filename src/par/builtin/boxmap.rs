@@ -1,16 +1,15 @@
-use std::{
-    future::Future,
-    sync::{Arc, Mutex},
-};
+use std::{future::Future, sync::Arc};
+
+use tokio::sync::Mutex;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         builtin::list::readback_list,
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 use arcstr::literal;
 use im::OrdMap;
@@ -97,9 +96,9 @@ async fn boxmap_new<K, F>(
     K: Ord + Clone + Send + Sync + 'static,
     F: Send + 'static + Future<Output = K>,
 {
-    let entries = readback_list(handle.receive(), |mut handle| async {
+    let entries = readback_list(handle.receive(), |mut handle| async move {
         let key = read_key(handle.receive()).await;
-        let value = Arc::new(Mutex::new(handle));
+        let value = Arc::new(Mutex::new(handle.duplicate()));
         (key, value)
     })
     .await;
@@ -141,7 +140,7 @@ fn provide_boxmap<K, F>(
                         handle.signal(literal!("item"));
                         let mut pair = handle.send();
                         provide_key(pair.send(), key.clone());
-                        pair.link(value.lock().unwrap().duplicate());
+                        pair.link(value.lock().await.duplicate());
                     }
                     handle.signal(literal!("end"));
                     return handle.break_();
@@ -151,7 +150,7 @@ fn provide_boxmap<K, F>(
                     match map.get(&key) {
                         Some(value) => {
                             handle.signal(literal!("ok"));
-                            return handle.link(value.lock().unwrap().duplicate());
+                            return handle.link(value.lock().await.duplicate());
                         }
                         None => {
                             handle.signal(literal!("err"));
@@ -173,5 +172,5 @@ fn provide_boxmap<K, F>(
                 _ => unreachable!(),
             }
         }
-    });
+    })
 }

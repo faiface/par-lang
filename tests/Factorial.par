@@ -1,0 +1,15 @@
+// Simple factorial with mutable state
+def SimpleFactorial: [Nat] Nat = [n]
+  let result = 1 in
+  let counter = 1 in
+  Nat.Repeat(n).begin.case {
+    .end! => result,
+    .step s => do {
+      result->Nat.Mul(counter)
+      counter->Nat.Add(1)
+    } in s.loop,
+  }
+
+def TestFactorial: [Test] ! = [test] do {
+  test.assert("Factorial of 5 is 120", Nat.Equals(SimpleFactorial(5), 120))
+} in !

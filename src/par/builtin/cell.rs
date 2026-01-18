@@ -1,15 +1,16 @@
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
+use futures::{future::BoxFuture, FutureExt};
 use tokio::sync::Mutex;
 
 use crate::{
-    icombs::readback::Handle,
     location::Span,
     par::{
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -35,7 +36,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
 
 async fn cell_share(mut handle: Handle) {
     let initial_value = handle.receive();
-    let sharing = handle.send();
+    let sharing = handle.receive();
 
     let mutex = Arc::new(Mutex::new(Cell {
         shared: Some(initial_value),
@@ -45,7 +46,7 @@ async fn cell_share(mut handle: Handle) {
     provide_cell(sharing, mutex).await
 }
 
-fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> impl Send + Future<Output = ()> {
+fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> BoxFuture<'static, ()> {
     async move {
         loop {
             match handle.case().await.as_str() {
@@ -76,6 +77,7 @@ fn provide_cell(mut handle: Handle, mutex: Arc<Mutex<Cell>>) -> impl Send + Futu
             }
         }
     }
+    .boxed()
 }
 
 struct Cell {
@@ -87,6 +89,6 @@ impl Drop for Cell {
     fn drop(&mut self) {
         let value = self.shared.take().unwrap();
         let handle = self.finally.take().unwrap();
-        handle.link(value)
+        handle.link(value);
     }
 }

@@ -6,13 +6,13 @@ use std::{
 use arcstr::literal;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

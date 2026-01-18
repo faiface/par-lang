@@ -3,7 +3,6 @@ use bytes::Bytes;
 use std::collections::VecDeque;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         builtin::{
             bytes::{BytesMachine, BytesPattern},
@@ -11,6 +10,7 @@ use crate::{
         },
         primitive::ParString,
     },
+    runtime::Handle,
 };
 
 pub trait BytesRemainder {

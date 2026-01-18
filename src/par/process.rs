@@ -1,27 +1,21 @@
+pub use super::captures::{Captures, VariableUsage};
 use super::{
     language::{GlobalName, LocalName},
     primitive::Primitive,
     types::Type,
 };
 use crate::{
-    icombs::readback::Handle,
     location::{Span, Spanning},
     par::program::CheckedModule,
+    runtime::Handle,
 };
-use indexmap::IndexMap;
+use indexmap::IndexSet;
 use std::{
     fmt::{self, Write},
     future::Future,
     pin::Pin,
     sync::Arc,
 };
-
-#[derive(Clone, Debug)]
-pub enum VariableUsage {
-    Unknown,
-    Copy,
-    Move,
-}
 
 #[derive(Clone, Debug)]
 pub enum Process<Typ> {
@@ -41,13 +35,22 @@ pub enum Process<Typ> {
         command: Command<Typ>,
     },
     Telltypes(Span, Arc<Self>),
+    Block(Span, usize, Arc<Self>, Arc<Self>),
+    Goto(Span, usize, Captures),
+    Unreachable(Span),
 }
 
 #[derive(Clone, Debug)]
 pub enum Command<Typ> {
     Link(Arc<Expression<Typ>>),
     Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
-    Receive(LocalName, Option<Type>, Typ, Arc<Process<Typ>>),
+    Receive(
+        LocalName,
+        Option<Type>,
+        Typ,
+        Arc<Process<Typ>>,
+        Vec<LocalName>,
+    ),
     Signal(LocalName, Arc<Process<Typ>>),
     Case(
         Arc<[LocalName]>,
@@ -95,117 +98,14 @@ impl<Typ> Spanning for Process<Typ> {
             Self::Let { span, .. } => span.clone(),
             Self::Do { span, .. } => span.clone(),
             Self::Telltypes(span, ..) => span.clone(),
+            Self::Block(span, _, _, _) => span.clone(),
+            Self::Goto(span, _, _) => span.clone(),
+            Self::Unreachable(span) => span.clone(),
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Captures {
-    pub names: IndexMap<LocalName, (Span, VariableUsage)>,
-}
-
-impl Default for Captures {
-    fn default() -> Self {
-        Self {
-            names: IndexMap::new(),
-        }
-    }
-}
-
-impl Captures {
-    pub fn new() -> Self {
-        Self {
-            names: IndexMap::new(),
-        }
-    }
-
-    pub fn single(name: LocalName, span: Span, usage: VariableUsage) -> Self {
-        let mut caps = Self::new();
-        caps.add(name, span, usage);
-        caps
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        for (name, span) in other.names {
-            self.names.insert(name, span);
-        }
-    }
-
-    pub fn add(&mut self, name: LocalName, span: Span, usage: VariableUsage) {
-        self.names.insert(name, (span, usage));
-    }
-
-    pub fn remove(&mut self, name: &LocalName) -> Option<(Span, VariableUsage)> {
-        self.names.shift_remove(name)
-    }
-
-    pub fn contains(&self, name: &LocalName) -> bool {
-        self.names.contains_key(name)
     }
 }
 
 impl Process<()> {
-    pub fn fix_captures(
-        &self,
-        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
-    ) -> (Arc<Self>, Captures) {
-        match self {
-            Self::Let {
-                span,
-                name,
-                annotation,
-                typ,
-                value: expression,
-                then: process,
-            } => {
-                let (process, mut caps) = process.fix_captures(loop_points);
-                caps.remove(name);
-                let (expression, caps1) = expression.fix_captures(loop_points, &caps);
-                caps.extend(caps1);
-                (
-                    Arc::new(Self::Let {
-                        span: span.clone(),
-                        name: name.clone(),
-                        annotation: annotation.clone(),
-                        typ: typ.clone(),
-                        value: expression,
-                        then: process,
-                    }),
-                    caps,
-                )
-            }
-            Self::Do {
-                span,
-                name,
-                usage: _usage,
-                typ,
-                command,
-            } => {
-                let (command, mut caps) = command.fix_captures(name, loop_points);
-                let usage = if caps.contains(name) {
-                    VariableUsage::Copy
-                } else {
-                    VariableUsage::Move
-                };
-                caps.add(name.clone(), span.clone(), VariableUsage::Unknown);
-                (
-                    Arc::new(Self::Do {
-                        span: span.clone(),
-                        name: name.clone(),
-                        usage,
-                        typ: typ.clone(),
-                        command,
-                    }),
-                    caps,
-                )
-            }
-            Self::Telltypes(span, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
-                (Arc::new(Self::Telltypes(span.clone(), process)), caps)
-            }
-        }
-    }
-
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Let {
@@ -240,16 +140,17 @@ impl Process<()> {
                         match expression.optimize().as_ref() {
                             Expression::Chan {
                                 chan_name: channel,
+                                chan_annotation: annotation,
                                 process,
                                 ..
                             } => {
-                                if name == channel {
+                                if name == channel && annotation.is_none() {
                                     return Arc::clone(process);
                                 } else {
                                     return Arc::new(Process::Let {
                                         span: span.clone(),
                                         name: channel.clone(),
-                                        annotation: None,
+                                        annotation: annotation.clone(),
                                         typ: (),
                                         value: Arc::new(Expression::Variable(
                                             span.clone(),
@@ -267,12 +168,15 @@ impl Process<()> {
                     Command::Send(argument, process) => {
                         Command::Send(argument.optimize(), process.optimize())
                     }
-                    Command::Receive(parameter, annotation, typ, process) => Command::Receive(
-                        parameter.clone(),
-                        annotation.clone(),
-                        typ.clone(),
-                        process.optimize(),
-                    ),
+                    Command::Receive(parameter, annotation, typ, process, vars) => {
+                        Command::Receive(
+                            parameter.clone(),
+                            annotation.clone(),
+                            typ.clone(),
+                            process.optimize(),
+                            vars.clone(),
+                        )
+                    }
                     Command::Signal(chosen, process) => {
                         Command::Signal(chosen.clone(), process.optimize())
                     }
@@ -308,6 +212,16 @@ impl Process<()> {
             Self::Telltypes(span, process) => {
                 Arc::new(Self::Telltypes(span.clone(), process.optimize()))
             }
+            Self::Block(span, index, body, process) => Arc::new(Self::Block(
+                span.clone(),
+                *index,
+                body.optimize(),
+                process.optimize(),
+            )),
+            Self::Goto(span, index, caps) => {
+                Arc::new(Self::Goto(span.clone(), *index, caps.clone()))
+            }
+            Self::Unreachable(span) => Arc::new(Self::Unreachable(span.clone())),
         }
     }
 }
@@ -357,105 +271,49 @@ impl Process<Type> {
             Process::Telltypes(_, process) => {
                 process.types_at_spans(program, consume);
             }
+            Process::Block(_, _, body, process) => {
+                body.types_at_spans(program, consume);
+                process.types_at_spans(program, consume);
+            }
+            Process::Goto(_, _, _) => {}
+            Process::Unreachable(_) => {}
         }
     }
 }
 
-impl Command<()> {
-    pub fn fix_captures(
-        &self,
-        subject: &LocalName,
-        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
-    ) -> (Self, Captures) {
+impl<Typ> Command<Typ> {
+    pub fn free_variables(&self) -> IndexSet<LocalName> {
         match self {
-            Self::Link(expression) => {
-                let (expression, caps) = expression.fix_captures(loop_points, &Captures::new());
-                (Self::Link(expression), caps)
+            Command::Link(expression) => expression.free_variables(),
+            Command::Send(argument, process) => {
+                let mut vars = argument.free_variables();
+                vars.extend(process.free_variables());
+                vars
             }
-            Self::Send(argument, process) => {
-                let (process, mut caps) = process.fix_captures(loop_points);
-                let (argument, caps1) = argument.fix_captures(loop_points, &caps);
-                caps.extend(caps1);
-                (Self::Send(argument, process), caps)
+            Command::Receive(parameter, _annot, _typ, process, _vars) => {
+                let mut vars = process.free_variables();
+                vars.shift_remove(parameter);
+                vars
             }
-            Self::Receive(parameter, annotation, typ, process) => {
-                let (process, mut caps) = process.fix_captures(loop_points);
-                caps.remove(parameter);
-                (
-                    Self::Receive(parameter.clone(), annotation.clone(), typ.clone(), process),
-                    caps,
-                )
-            }
-            Self::Signal(chosen, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
-                (Self::Signal(chosen.clone(), process), caps)
-            }
-            Self::Case(branches, processes, else_process) => {
-                let mut fixed_processes = Vec::new();
-                let mut caps = Captures::new();
-                for process in processes {
-                    let (process, caps1) = process.fix_captures(loop_points);
-                    fixed_processes.push(process);
-                    caps.extend(caps1);
+            Command::Signal(_, process) => process.free_variables(),
+            Command::Case(_, processes, else_process) => {
+                let mut vars: IndexSet<LocalName> =
+                    processes.iter().flat_map(|p| p.free_variables()).collect();
+                if let Some(p) = else_process {
+                    vars.extend(p.free_variables());
                 }
-                let fixed_else = else_process.clone().map(|process| {
-                    let (process, caps1) = process.fix_captures(loop_points);
-                    caps.extend(caps1);
-                    process
-                });
-                (
-                    Self::Case(
-                        branches.clone(),
-                        fixed_processes.into_boxed_slice(),
-                        fixed_else,
-                    ),
-                    caps,
-                )
+                vars
             }
-            Self::Break => (Self::Break, Captures::new()),
-            Self::Continue(process) => {
-                let (process, caps) = process.fix_captures(loop_points);
-                (Self::Continue(process), caps)
+            Command::Break => IndexSet::new(),
+            Command::Continue(process) => process.free_variables(),
+            Command::Begin { captures, body, .. } => {
+                let mut vars: IndexSet<LocalName> = captures.names.keys().cloned().collect();
+                vars.extend(body.free_variables());
+                vars
             }
-            Self::Begin {
-                unfounded,
-                label,
-                captures: _,
-                body: process,
-            } => {
-                let (_, mut loop_caps) = process.fix_captures(loop_points);
-                loop_caps.remove(subject);
-                let mut loop_points = loop_points.clone();
-                loop_points.insert(label.clone(), (subject.clone(), loop_caps.clone()));
-                let (process, caps) = process.fix_captures(&loop_points);
-                (
-                    Self::Begin {
-                        unfounded: unfounded.clone(),
-                        label: label.clone(),
-                        captures: loop_caps.clone(),
-                        body: process,
-                    },
-                    caps,
-                )
-            }
-            Self::Loop(label, _, _) => {
-                let (driver, loop_caps) = loop_points
-                    .get(label)
-                    .cloned()
-                    .unwrap_or((LocalName::invalid(), Captures::default()));
-                (
-                    Self::Loop(label.clone(), driver, loop_caps.clone()),
-                    loop_caps,
-                )
-            }
-            Self::SendType(argument, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
-                (Self::SendType(argument.clone(), process), caps)
-            }
-            Self::ReceiveType(parameter, process) => {
-                let (process, caps) = process.fix_captures(loop_points);
-                (Self::ReceiveType(parameter.clone(), process), caps)
-            }
+            Command::Loop(_, _, captures) => captures.names.keys().cloned().collect(),
+            Command::SendType(_, process) => process.free_variables(),
+            Command::ReceiveType(_, process) => process.free_variables(),
         }
     }
 }
@@ -474,7 +332,7 @@ impl Command<Type> {
                 argument.types_at_spans(program, consume);
                 process.types_at_spans(program, consume);
             }
-            Self::Receive(param, annotation, param_type, process) => {
+            Self::Receive(param, annotation, param_type, process, _) => {
                 consume(param.span(), NameWithType::named(param, param_type.clone()));
                 if let Some(annotation) = annotation {
                     annotation.types_at_spans(&program.type_defs, consume);
@@ -511,93 +369,6 @@ impl Command<Type> {
 }
 
 impl Expression<()> {
-    pub fn fix_captures(
-        &self,
-        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
-        later_captures: &Captures,
-    ) -> (Arc<Self>, Captures) {
-        match self {
-            Self::Global(span, name, typ) => (
-                Arc::new(Self::Global(span.clone(), name.clone(), typ.clone())),
-                Captures::new(),
-            ),
-            Self::Variable(span, name, typ, _usage) => {
-                let usage = if later_captures.contains(name) {
-                    VariableUsage::Copy
-                } else {
-                    VariableUsage::Move
-                };
-                (
-                    Arc::new(Self::Variable(
-                        span.clone(),
-                        name.clone(),
-                        typ.clone(),
-                        usage,
-                    )),
-                    Captures::single(name.clone(), span.clone(), VariableUsage::Unknown),
-                )
-            }
-            Self::Box(span, _, expression, typ) => {
-                let (expression, mut caps) = expression.fix_captures(loop_points, later_captures);
-                for (name, (_span, usage)) in caps.names.iter_mut() {
-                    if later_captures.contains(name) {
-                        *usage = VariableUsage::Copy;
-                    } else {
-                        *usage = VariableUsage::Move;
-                    }
-                }
-                (
-                    Arc::new(Self::Box(
-                        span.clone(),
-                        caps.clone(),
-                        expression,
-                        typ.clone(),
-                    )),
-                    caps,
-                )
-            }
-            Self::Chan {
-                span,
-                chan_name: channel,
-                chan_annotation: annotation,
-                chan_type,
-                expr_type,
-                process,
-                ..
-            } => {
-                let (process, mut caps) = process.fix_captures(loop_points);
-                caps.remove(channel);
-                for (name, (_span, usage)) in caps.names.iter_mut() {
-                    if later_captures.contains(name) {
-                        *usage = VariableUsage::Copy;
-                    } else {
-                        *usage = VariableUsage::Move;
-                    }
-                }
-                (
-                    Arc::new(Self::Chan {
-                        span: span.clone(),
-                        captures: caps.clone(),
-                        chan_name: channel.clone(),
-                        chan_annotation: annotation.clone(),
-                        chan_type: chan_type.clone(),
-                        expr_type: expr_type.clone(),
-                        process,
-                    }),
-                    caps,
-                )
-            }
-            Self::Primitive(span, value, typ) => (
-                Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone())),
-                Captures::new(),
-            ),
-            Self::External(claimed_type, f, typ) => (
-                Arc::new(Self::External(claimed_type.clone(), *f, typ.clone())),
-                Captures::new(),
-            ),
-        }
-    }
-
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Global(span, name, typ) => {
@@ -676,7 +447,7 @@ impl Expression<Type> {
         match self {
             Self::Global(_, name, typ) => {
                 let def_span = (program.definitions.get(name))
-                    .map(|def| def.name.span())
+                    .map(|(def, _typ)| def.name.span())
                     .unwrap_or_default();
                 let decl_span = (program.declarations.get(name))
                     .map(|decl| decl.name.span())
@@ -758,6 +529,12 @@ impl Process<()> {
                 command,
             } => command.qualify(module),
             Self::Telltypes(_span, process) => process.qualify(module),
+            Self::Block(_, _, body, process) => {
+                body.qualify(module);
+                process.qualify(module);
+            }
+            Self::Goto(_, _, _) => {}
+            Self::Unreachable(_) => {}
         }
     }
 }
@@ -770,7 +547,7 @@ impl Command<()> {
                 expression.qualify(module);
                 process.qualify(module);
             }
-            Self::Receive(_, annotation, (), process) => {
+            Self::Receive(_, annotation, (), process, _) => {
                 if let Some(annotation) = annotation {
                     annotation.qualify(module);
                 }
@@ -833,6 +610,28 @@ impl Expression<()> {
 }
 
 impl<Typ> Process<Typ> {
+    pub fn free_variables(&self) -> IndexSet<LocalName> {
+        match self {
+            Process::Let {
+                name, value, then, ..
+            } => {
+                let mut vars = then.free_variables();
+                vars.shift_remove(name);
+                vars.extend(value.free_variables());
+                vars
+            }
+            Process::Do { name, command, .. } => {
+                let mut vars = command.free_variables();
+                vars.insert(name.clone());
+                vars
+            }
+            Process::Telltypes(_, process) => process.free_variables(),
+            Process::Block(_, _, _body, process) => process.free_variables(),
+            Process::Goto(_, _, caps) => caps.names.keys().cloned().collect(),
+            Process::Unreachable(_) => IndexSet::new(),
+        }
+    }
+
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Let {
@@ -847,6 +646,11 @@ impl<Typ> Process<Typ> {
                 write!(f, "let {} = ", name)?;
                 expression.pretty(f, indent)?;
                 process.pretty(f, indent)
+            }
+
+            Self::Unreachable(_) => {
+                indentation(f, indent)?;
+                write!(f, "unreachable")
             }
 
             Self::Do {
@@ -872,7 +676,15 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Receive(parameter, _, _, process) => {
+                    Command::Receive(parameter, _, _, process, vars) => {
+                        if !vars.is_empty() {
+                            write!(f, "<")?;
+                            write!(f, "{}", vars[0])?;
+                            for var in &vars[1..] {
+                                write!(f, ", {}", var)?;
+                            }
+                            write!(f, ">")?;
+                        }
                         write!(f, "[{}]", parameter)?;
                         process.pretty(f, indent)
                     }
@@ -960,11 +772,40 @@ impl<Typ> Process<Typ> {
                 write!(f, "telltypes")?;
                 process.pretty(f, indent)
             }
+
+            Self::Block(_, index, body, process) => {
+                indentation(f, indent)?;
+                write!(f, "block@{} {{", index)?;
+                body.pretty(f, indent + 1)?;
+                indentation(f, indent)?;
+                write!(f, "}}")?;
+                process.pretty(f, indent)
+            }
+
+            Self::Goto(_, index, _) => {
+                indentation(f, indent)?;
+                write!(f, "goto@{}", index)
+            }
         }
     }
 }
 
 impl<Typ> Expression<Typ> {
+    pub fn free_variables(&self) -> IndexSet<LocalName> {
+        match self {
+            Expression::Global(_, _, _) => IndexSet::new(),
+            Expression::Variable(_, name, _, _) => {
+                let mut set = IndexSet::new();
+                set.insert(name.clone());
+                set
+            }
+            Expression::Box(_, _, expression, _) => expression.free_variables(),
+            Expression::Chan { captures, .. } => captures.names.keys().cloned().collect(),
+            Expression::Primitive(_, _, _) => IndexSet::new(),
+            Expression::External(_, _, _) => IndexSet::new(),
+        }
+    }
+
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Global(_, name, _) => {

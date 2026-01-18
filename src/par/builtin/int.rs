@@ -1,11 +1,11 @@
 use crate::{
-    icombs::readback::Handle,
     par::{
         primitive::ParString,
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 use arcstr::literal;
 use num_bigint::BigInt;

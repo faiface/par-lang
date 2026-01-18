@@ -1,7 +1,7 @@
+use crate::runtime::flat::runtime::ExternalFnRet;
 use std::sync::{mpsc, Arc};
 
 use crate::{
-    icombs::readback::Handle,
     location::Span,
     par::{
         language::GlobalName,
@@ -9,6 +9,7 @@ use crate::{
         program::{Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
     test_assertion::AssertionResult,
 };
 
@@ -26,9 +27,26 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
                         Type::function(
                             Type::string(),
                             Type::function(
-                                Type::name(Some("Bool"), "Bool", vec![]),
+                                Type::either(vec![
+                                    ("true", Type::break_()),
+                                    ("false", Type::break_()),
+                                ]),
                                 Type::self_(None),
                             ),
+                        ),
+                    ),
+                    (
+                        "id",
+                        Type::pair(
+                            Type::forall("a", Type::function(Type::var("a"), Type::var("a"))),
+                            Type::self_(None),
+                        ),
+                    ),
+                    (
+                        "leak",
+                        Type::pair(
+                            Type::forall("a", Type::function(Type::var("a"), Type::break_())),
+                            Type::self_(None),
                         ),
                     ),
                     ("done", Type::break_()),
@@ -40,7 +58,7 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     }
 }
 
-pub fn provide_test(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
+pub async fn provide_test(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
     provide_test_inner(handle, sender);
 }
 
@@ -51,15 +69,16 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
             match handle.case().await.as_str() {
                 "assert" => {
                     let description = handle.receive().string().await.as_str().to_string();
+                    println!("{}", description);
                     let mut bool_handle = handle.receive();
 
                     let passed = match bool_handle.case().await.as_str() {
                         "true" => {
-                            bool_handle.break_();
+                            bool_handle.continue_();
                             true
                         }
                         "false" => {
-                            bool_handle.break_();
+                            bool_handle.continue_();
                             false
                         }
                         variant => {
@@ -84,10 +103,33 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
                 "done" => {
                     handle.break_();
                 }
+                "id" => {
+                    fn identity(mut handle: Handle) -> ExternalFnRet {
+                        Box::pin(async {
+                            let arg = handle.receive();
+                            handle.link(arg);
+                        })
+                    }
+                    let argument = handle.send();
+                    argument.provide_box(|x| identity(x));
+
+                    provide_test_inner(handle, sender);
+                }
+                "leak" => {
+                    fn leak(handle: Handle) -> ExternalFnRet {
+                        Box::pin(async {
+                            drop(handle);
+                        })
+                    }
+                    let argument = handle.send();
+                    argument.provide_box(|x| leak(x));
+
+                    provide_test_inner(handle, sender);
+                }
                 other => {
                     panic!("Unexpected method call on Test: {}", other);
                 }
             }
         }
-    });
+    })
 }

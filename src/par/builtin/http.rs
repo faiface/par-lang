@@ -29,7 +29,6 @@ use tokio::{net::TcpListener, signal, sync::Notify};
 use url::Url as ParsedUrl;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         builtin::{list::readback_list, url::provide_url_value},
         primitive::ParString,
@@ -37,6 +36,7 @@ use crate::{
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -174,7 +174,7 @@ async fn http_fetch(mut handle: Handle) {
     handle
         .send()
         .provide_nat(BigInt::from(response.status().as_u16()));
-    provide_headers_list(handle.send(), response.headers()).await;
+    provide_headers_list(handle.send(), response.headers());
     provide_body_reader(handle, response).await;
 }
 
@@ -208,7 +208,7 @@ async fn provide_body_reader(mut handle: Handle, response: reqwest::Response) {
     }
 }
 
-async fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::HeaderMap) {
+fn provide_headers_list(mut handle: Handle, headers: &reqwest::header::HeaderMap) {
     for (name, value) in headers {
         handle.signal(literal!("item"));
         let (name, value) = (
@@ -581,10 +581,9 @@ async fn provide_http_request_value(
 fn provide_header_list_value(mut handle: Handle, headers: Vec<(String, String)>) {
     for (name, value) in headers {
         handle.signal(literal!("item"));
-        handle.send().concurrently(|mut pair| async move {
-            pair.send().provide_string(ParString::from(name));
-            pair.provide_bytes(Bytes::from(value));
-        });
+        let mut pair = handle.send();
+        pair.send().provide_string(ParString::from(name));
+        pair.provide_bytes(Bytes::from(value));
     }
     handle.signal(literal!("end"));
     handle.break_();
@@ -700,7 +699,7 @@ fn reader_to_body(reader: Handle) -> StreamBody<mpsc::Receiver<Result<Frame<Byte
                             match reader.case().await.as_str() {
                                 "ok" => reader.continue_(),
                                 "err" => {
-                                    let _ = reader.string().await;
+                                    let _ = reader.string();
                                 }
                                 _ => unreachable!(),
                             }

@@ -1,5 +1,6 @@
 pub mod build_result;
 pub mod builtin;
+pub mod captures;
 pub mod language;
 pub mod lexer;
 pub mod parse;

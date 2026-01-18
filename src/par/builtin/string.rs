@@ -4,7 +4,6 @@ use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         builtin::{
             char_::CharClass,
@@ -16,6 +15,7 @@ use crate::{
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -36,12 +36,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "ParserFromReader",
-                Type::forall(
-                    "e",
-                    Type::function(
-                        Type::name(Some("Bytes"), "Reader", vec![Type::var("e")]),
-                        Type::name(None, "Parser", vec![Type::var("e")]),
-                    ),
+                Type::generic_function(
+                    Type::name(Some("Bytes"), "Reader", vec![Type::var("e")]),
+                    Type::name(None, "Parser", vec![Type::var("e")]),
+                    vec!["e"],
                 ),
                 |handle| Box::pin(string_parser_from_reader(handle)),
             ),
@@ -113,7 +111,7 @@ async fn string_from_bytes(mut handle: Handle) {
     let bytes = handle.receive().bytes().await;
     handle.provide_string(ParString::copy_from_slice(
         String::from_utf8_lossy(&bytes).as_bytes(),
-    ))
+    ));
 }
 
 async fn string_equals(mut handle: Handle) {

@@ -4,9 +4,9 @@ use arcstr::ArcStr;
 use indexmap::IndexMap;
 
 use crate::{
-    icombs::readback::Handle,
     location::{FileName, Point, Span, Spanning},
     par::{language::Passes, parse::parse_module},
+    runtime::Handle,
 };
 
 use super::{
@@ -27,7 +27,7 @@ pub struct Module<Expr> {
 pub struct CheckedModule {
     pub type_defs: TypeDefs,
     pub declarations: IndexMap<GlobalName, Declaration>,
-    pub definitions: IndexMap<GlobalName, Definition<Arc<process::Expression<Type>>>>,
+    pub definitions: IndexMap<GlobalName, (Definition<Arc<process::Expression<Type>>>, Type)>,
 }
 
 #[derive(Clone, Debug)]
@@ -119,10 +119,7 @@ impl Module<Arc<process::Expression<()>>> {
                         .map(|compiled| Definition {
                             span,
                             name,
-                            expression: compiled
-                                .optimize()
-                                .fix_captures(&IndexMap::new(), &process::Captures::new())
-                                .0,
+                            expression: compiled.optimize().fix_captures().0,
                         })
                 },
             )
@@ -229,14 +226,17 @@ impl Module<Arc<process::Expression<()>>> {
             definitions: context
                 .get_checked_definitions()
                 .into_iter()
-                .map(|(name, (span, expression))| {
+                .map(|(name, (span, expression, typ))| {
                     (
                         name.clone(),
-                        Definition {
-                            span,
-                            name,
-                            expression,
-                        },
+                        (
+                            Definition {
+                                span,
+                                name,
+                                expression,
+                            },
+                            typ,
+                        ),
                     )
                 })
                 .collect(),
@@ -286,7 +286,7 @@ impl TypeOnHover {
             };
             let file_hovers = files.entry(file).or_default();
             let def_span = (program.definitions.get(name))
-                .map(|def| def.name.span())
+                .map(|(def, _typ)| def.name.span())
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
@@ -304,7 +304,7 @@ impl TypeOnHover {
                 });
         }
 
-        for (name, definition) in &program.definitions {
+        for (name, (definition, _typ)) in &program.definitions {
             let Some(file) = definition.span.file() else {
                 continue;
             };

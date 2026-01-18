@@ -4,12 +4,12 @@ use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

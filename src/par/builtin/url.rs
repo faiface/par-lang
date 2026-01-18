@@ -5,13 +5,13 @@ use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         primitive::ParString,
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -103,7 +103,7 @@ pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
                 }
             }
         }
-    });
+    })
 }
 
 fn append_path(url: &mut ParsedUrl, segment: &str) {

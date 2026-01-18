@@ -2,10 +2,12 @@ use super::super::language::LocalName;
 use super::super::process::{Command, Expression, Process};
 use super::core::{LoopId, Operation, Type};
 use super::error::TypeError;
-use super::Context;
+use super::lattice::union_types;
+use super::{Context, TypeDefs};
 use crate::location::Span;
+use crate::par::types::implicit::infer_holes;
 use crate::par::types::lattice::intersect_types;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -75,6 +77,64 @@ impl Context {
 
             Process::Telltypes(span, _) => {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
+            }
+
+            Process::Unreachable(span) => {
+                let impossible = Type::either(vec![]);
+                let mut exhaustive = false;
+                for typ in self.variables.values() {
+                    match typ.is_assignable_to(&impossible, &self.type_defs) {
+                        Ok(true) => {
+                            exhaustive = true;
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                if !exhaustive {
+                    return Err(TypeError::NonExhaustiveIf(span.clone()));
+                }
+                self.variables.clear();
+                Ok(Arc::new(Process::Unreachable(span.clone())))
+            }
+
+            Process::Block(span, index, body, then) => {
+                if self.blocks.insert(*index, Vec::new()).is_some() {
+                    panic!("block {} already defined", index);
+                }
+                let typed_then = self.check_process(then)?;
+                let contexts = self
+                    .blocks
+                    .shift_remove(index)
+                    .expect("block should have been registered");
+                if contexts.is_empty() {
+                    panic!(
+                        "block has no incoming paths at index {} span {:?}",
+                        index, span
+                    );
+                }
+                let free = body.free_variables();
+                let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
+
+                let saved = self.variables.clone();
+                self.variables = merged;
+                let typed_body = self.check_process(body)?;
+                self.variables = saved;
+
+                Ok(Arc::new(Process::Block(
+                    span.clone(),
+                    *index,
+                    typed_body,
+                    typed_then,
+                )))
+            }
+
+            Process::Goto(span, index, caps) => {
+                let entry = self.blocks.get_mut(index).unwrap();
+                entry.push(self.variables.clone());
+                self.variables.clear();
+                Ok(Arc::new(Process::Goto(span.clone(), *index, caps.clone())))
             }
         }
     }
@@ -180,41 +240,90 @@ impl Context {
             }
 
             Command::Send(argument, process) => {
-                let Type::Function(_, argument_type, then_type) = typ else {
+                let Type::Function(_, argument_type, then_type, vars) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::Send,
                         typ.clone(),
                     ));
                 };
-                let argument = self.check_expression(None, argument, &argument_type)?;
-                self.put(span, object.clone(), *then_type.clone())?;
-                let (process, inferred_types) = analyze_process(self, process)?;
-                (Command::Send(argument, process), inferred_types)
+                if !vars.is_empty() {
+                    let (argument, inferred_arg_type) = self.infer_expression(None, argument)?;
+                    let inferred_holes = infer_holes(
+                        span,
+                        &inferred_arg_type,
+                        argument_type,
+                        vars,
+                        &self.type_defs,
+                    )?;
+                    let then_type = then_type
+                        .clone()
+                        .substitute(inferred_holes.iter().map(|(k, v)| (k, v)).collect())?;
+                    self.put(span, object.clone(), then_type.clone())?;
+                    let (process, inferred_types) = analyze_process(self, process)?;
+                    (Command::Send(argument, process), inferred_types)
+                } else {
+                    let argument = self.check_expression(None, argument, &argument_type)?;
+                    self.put(span, object.clone(), *then_type.clone())?;
+                    let (process, inferred_types) = analyze_process(self, process)?;
+                    (Command::Send(argument, process), inferred_types)
+                }
             }
 
-            Command::Receive(parameter, annotation, (), process) => {
-                let Type::Pair(_, parameter_type, then_type) = typ else {
+            Command::Receive(parameter, annotation, (), process, type_parameters) => {
+                let Type::Pair(_, param_type, then_type, type_names) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Receive,
+                        Operation::Receive {
+                            generics: type_parameters.len(),
+                        },
                         typ.clone(),
                     ));
                 };
+
+                if type_parameters.len() != type_names.len() {
+                    return Err(TypeError::InvalidOperation(
+                        span.clone(),
+                        Operation::Receive {
+                            generics: type_parameters.len(),
+                        },
+                        typ.clone(),
+                    ));
+                }
+
+                let (param_type, then_type) = if !type_names.is_empty() {
+                    let type_vars: Vec<Type> = type_parameters
+                        .iter()
+                        .map(|v| Type::Var(Span::None, v.clone()))
+                        .collect();
+                    let then_type = then_type
+                        .clone()
+                        .substitute(type_names.iter().zip(type_vars.iter()).collect())?;
+                    let param_type = param_type
+                        .clone()
+                        .substitute(type_names.iter().zip(type_vars.iter()).collect())?;
+                    (param_type, then_type)
+                } else {
+                    (*param_type.clone(), *then_type.clone())
+                };
+
+                self.type_defs.vars.extend(type_parameters.iter().cloned());
+
                 if let Some(annotated_type) = annotation {
                     // Validate annotation before using it
                     self.type_defs.validate_type(annotated_type)?;
-                    parameter_type.check_assignable(span, annotated_type, &self.type_defs)?;
+                    param_type.check_assignable(span, annotated_type, &self.type_defs)?;
                 }
-                self.put(span, parameter.clone(), *parameter_type.clone())?;
-                self.put(span, object.clone(), *then_type.clone())?;
+                self.put(span, parameter.clone(), param_type.clone())?;
+                self.put(span, object.clone(), then_type)?;
                 let (process, inferred_types) = analyze_process(self, process)?;
                 (
                     Command::Receive(
                         parameter.clone(),
                         annotation.clone(),
-                        *parameter_type.clone(),
+                        param_type.clone(),
                         process,
+                        type_names.clone(),
                     ),
                     inferred_types,
                 )
@@ -251,7 +360,7 @@ impl Context {
 
                 let mut remaining_branches = branch_types.clone();
 
-                let original_context = self.clone();
+                let mut original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut inferred_type: Option<Type> = None;
 
@@ -276,6 +385,8 @@ impl Context {
                         }
                         (t1, _) => inferred_type = t1,
                     }
+
+                    original_context.blocks = self.blocks.clone();
                 }
 
                 let typed_else_process = match else_process {
@@ -598,6 +709,74 @@ impl Context {
             Process::Telltypes(span, _) => {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
+
+            Process::Unreachable(span) => {
+                let impossible = Type::either(vec![]);
+                let mut exhaustive = false;
+                for typ in self.variables.values() {
+                    match typ.is_assignable_to(&impossible, &self.type_defs) {
+                        Ok(true) => {
+                            exhaustive = true;
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                if !exhaustive {
+                    return Err(TypeError::NonExhaustiveIf(span.clone()));
+                }
+                self.variables.clear();
+                Ok((
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::choice(vec![]),
+                ))
+            }
+
+            Process::Block(span, index, body, then) => {
+                if self.blocks.insert(*index, Vec::new()).is_some() {
+                    panic!("block {} already defined", index);
+                }
+                let (typed_then, then_type) = self.infer_process(then, inference_subject)?;
+                let contexts = self
+                    .blocks
+                    .shift_remove(index)
+                    .expect("block should have been registered");
+                if contexts.is_empty() {
+                    panic!("block has no incoming paths");
+                }
+                let free = body.free_variables();
+                let contexts: Vec<_> = contexts
+                    .into_iter()
+                    .map(|mut ctx| {
+                        ctx.shift_remove(inference_subject);
+                        ctx
+                    })
+                    .collect();
+                let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
+
+                let saved = self.variables.clone();
+                self.variables = merged;
+                let (typed_body, body_type) = self.infer_process(body, inference_subject)?;
+                self.variables = saved;
+
+                let final_type = intersect_types(&self.type_defs, span, &then_type, &body_type)?;
+
+                Ok((
+                    Arc::new(Process::Block(span.clone(), *index, typed_body, typed_then)),
+                    final_type,
+                ))
+            }
+
+            Process::Goto(span, index, caps) => {
+                let entry = self.blocks.get_mut(index).unwrap();
+                entry.push(self.variables.clone());
+                self.variables.clear();
+                Ok((
+                    Arc::new(Process::Goto(span.clone(), *index, caps.clone())),
+                    Type::choice(vec![]),
+                ))
+            }
         }
     }
 
@@ -619,11 +798,19 @@ impl Context {
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Send(argument, process),
-                    Type::Function(span.clone(), Box::new(arg_type), Box::new(then_type)),
+                    Type::Function(
+                        span.clone(),
+                        Box::new(arg_type),
+                        Box::new(then_type),
+                        vec![],
+                    ),
                 )
             }
 
-            Command::Receive(parameter, annotation, (), process) => {
+            Command::Receive(parameter, annotation, (), process, vars) => {
+                for var in vars.iter() {
+                    self.type_defs.vars.insert(var.clone());
+                }
                 let Some(param_type) = annotation else {
                     return Err(TypeError::ParameterTypeMustBeKnown(
                         span.clone(),
@@ -631,6 +818,7 @@ impl Context {
                     ));
                 };
                 self.put(span, parameter.clone(), param_type.clone())?;
+                self.type_defs.vars.extend(vars.clone());
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Receive(
@@ -638,11 +826,13 @@ impl Context {
                         annotation.clone(),
                         param_type.clone(),
                         process,
+                        vars.clone(),
                     ),
                     Type::Pair(
                         span.clone(),
                         Box::new(param_type.clone()),
                         Box::new(then_type),
+                        vars.clone(),
                     ),
                 )
             }
@@ -663,7 +853,7 @@ impl Context {
                     ));
                 }
 
-                let original_context = self.clone();
+                let mut original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut branch_types = BTreeMap::new();
 
@@ -672,6 +862,7 @@ impl Context {
                     let (process, typ) = self.infer_process(process, subject)?;
                     typed_processes.push(process);
                     branch_types.insert(branch.clone(), typ);
+                    original_context.blocks = self.blocks.clone();
                 }
 
                 (
@@ -1000,4 +1191,69 @@ impl Context {
             }
         }
     }
+}
+
+fn merge_path_contexts(
+    typedefs: &TypeDefs,
+    span: &Span,
+    paths: &Vec<IndexMap<LocalName, Type>>,
+    free_vars: &IndexSet<LocalName>,
+) -> Result<IndexMap<LocalName, Type>, TypeError> {
+    // Collect all variable names present in any path.
+    let mut all_names: IndexSet<LocalName> = IndexSet::new();
+    for map in paths {
+        all_names.extend(map.keys().cloned());
+    }
+
+    let mut merged_variables = IndexMap::new();
+    for name in all_names {
+        let used = free_vars.contains(&name);
+        let mut present_types: Vec<Type> = Vec::new();
+        let mut missing = false;
+        for map in paths {
+            if let Some(t) = map.get(&name) {
+                present_types.push(t.clone());
+            } else {
+                missing = true;
+            }
+        }
+
+        let is_linear = present_types
+            .iter()
+            .any(|t| t.is_linear(typedefs).unwrap_or(true));
+
+        let is_absurd = present_types
+            .iter()
+            .any(|t| t.is_assignable_to(&Type::either(vec![]), typedefs).unwrap());
+
+        if !used && !is_linear && !is_absurd {
+            // Drop it.
+            continue;
+        }
+
+        // Variable used or linear: must be present everywhere.
+        if missing {
+            return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+        }
+
+        let mut acc = present_types
+            .get(0)
+            .cloned()
+            .expect("at least one type when not missing");
+        for next in present_types.iter().skip(1) {
+            acc = match union_types(typedefs, span, &acc, next) {
+                Ok(t) => t,
+                Err(_) => {
+                    return Err(TypeError::MergeVariableTypesCannotBeUnified(
+                        span.clone(),
+                        name.clone(),
+                        acc.clone(),
+                        next.clone(),
+                    ))
+                }
+            };
+        }
+        merged_variables.insert(name.clone(), acc);
+    }
+    Ok(merged_variables)
 }

@@ -1,0 +1,20 @@
+def SwapPair: [type a] [type b] [(a) b] (b) a = [type a] [type b] [(a) b] (b) a
+def Test0: [Test] ! = [test] chan user {
+    test.id[id]
+    let pair = id(type (!) !)((!) !)
+    let swapped = SwapPair(type !)(type !)(pair)
+    let (!) ! = swapped
+    test.done <> user
+}
+
+def Compose: [type a] [type b] [type c] [[b] c] [[a] b] [a] c = [type a] [type b] [type c] [f] [g] [x] f(g(x))
+
+def Test1: [Test] ! = [test] chan user {
+    test.id[id]
+    let pair = id(type (!) !)((!) !)
+    let f = SwapPair(type !)(type !)
+    let g = SwapPair(type !)(type !)
+    let h = Compose(type (!) !)(type (!) !)(type (!) !)(f)(g)
+    let (!) ! = h(pair)
+    test.done <> user
+}

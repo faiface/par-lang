@@ -1,10 +1,10 @@
 use crate::{
-    icombs::readback::Handle,
     par::{
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 use num_bigint::BigInt;
 use std::sync::Arc;

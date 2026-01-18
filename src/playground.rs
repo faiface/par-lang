@@ -10,12 +10,18 @@ use std::{
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
+use crate::par::build_result::BuildResult;
+use crate::par::{language::GlobalName, types::Type};
 use crate::{
-    icombs::readback::TypedHandle, location::FileName, par::program::CheckedModule,
-    readback::Element, spawn::TokioSpawn,
+    location::FileName,
+    par::program::CheckedModule,
+    readback::{Element, RunStats},
+    runtime::{compiler::Compiled, readback::TypedHandle},
+    spawn::TokioSpawn,
 };
-use crate::{icombs::IcCompiled, par::build_result::BuildResult};
 use core::time::Duration;
+use std::collections::HashMap;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 pub struct Playground {
@@ -371,7 +377,8 @@ impl Playground {
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
-        compiled: &IcCompiled,
+        compiled: &Compiled,
+        name_to_ty: &HashMap<GlobalName, Type>,
     ) {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
@@ -381,12 +388,9 @@ impl Playground {
                 let token = CancellationToken::new();
                 *cancel_token = Some(token.clone());
 
-                let ty = compiled.get_type_of(name).unwrap();
-                let mut net = compiled.create_net();
-                let child_net = compiled.get_with_name(name).unwrap();
-                let tree = net.inject_net(child_net).with_type(ty.clone());
-                let (net, _future) =
-                    net.start_reducer(Arc::new(TokioSpawn::from_handle(tokio.clone())));
+                let ty = name_to_ty.get(name).unwrap();
+                let (handle, reducer_future) = tokio.block_on(compiled.start_and_instantiate(name));
+                let stats: RunStats = Arc::new(Mutex::new(None));
 
                 let ctx = ui.ctx().clone();
                 *element = Some(Element::new(
@@ -394,16 +398,23 @@ impl Playground {
                         ctx.request_repaint();
                     }),
                     Arc::new(TokioSpawn::from_handle(tokio.clone())),
-                    TypedHandle::from_wrapper(program.type_defs.clone(), net, tree),
+                    TypedHandle::new(program.type_defs.clone(), ty.clone(), handle),
+                    Arc::clone(&stats),
                 ));
                 let tokio_clone = tokio.clone();
+                let stats_clone = Arc::clone(&stats);
+                let ctx = ui.ctx().clone();
                 thread::spawn(move || {
+                    let start = Instant::now();
                     tokio_clone.block_on(async {
                         tokio::select! {
                             _ = token.cancelled() => {
                                 println!("Note: Reducer cancelled.");
                             }
-                            _ = _future => {
+                            result = reducer_future => {
+                                let elapsed = start.elapsed();
+                                *stats_clone.lock().unwrap() = Some((result, elapsed));
+                                ctx.request_repaint();
                                 println!("Note: Reducer completed.");
                             }
                         }
@@ -439,9 +450,10 @@ impl Playground {
                     );
                     ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
 
-                    if let (Some(checked), Some(ic_compiled)) =
-                        (self.build.checked(), self.build.ic_compiled())
+                    if let (Some(checked), Some(rt_compiled)) =
+                        (self.build.checked(), self.build.rt_compiled())
                     {
+                        let name_to_ty = &rt_compiled.name_to_ty;
                         egui::containers::menu::MenuButton::from_button(
                             egui::Button::new(
                                 egui::RichText::new("Run")
@@ -458,7 +470,8 @@ impl Playground {
                                     &mut self.element,
                                     ui,
                                     checked.clone(),
-                                    ic_compiled,
+                                    rt_compiled,
+                                    name_to_ty,
                                 );
                             })
                         });
@@ -506,14 +519,14 @@ impl Playground {
                     }
 
                     if self.show_ic {
-                        if let Some(ic_compiled) = self.build.ic_compiled() {
+                        if let Some(rt_compiled) = self.build.rt_compiled() {
                             CodeEditor::default()
-                                .id_source("ic_compiled")
+                                .id_source("rt_compiled")
                                 .with_rows(32)
                                 .with_fontsize(self.editor_font_size)
                                 .with_theme(theme)
                                 .with_numlines(true)
-                                .show(ui, &mut format!("{}", ic_compiled));
+                                .show(ui, &mut format!("{}", rt_compiled));
                         }
                     }
 
@@ -536,6 +549,8 @@ fn par_syntax() -> Syntax {
         comment_multiline: [r#"/*"#, r#"*/"#],
         hyperlinks: BTreeSet::from([]),
         keywords: BTreeSet::from([
+            "block",
+            "goto",
             "dec",
             "def",
             "type",
@@ -560,6 +575,11 @@ fn par_syntax() -> Syntax {
             "throw",
             "default",
             "else",
+            "if",
+            "is",
+            "and",
+            "or",
+            "not",
         ]),
         types: BTreeSet::from([]),
         special: BTreeSet::from(["<>"]),

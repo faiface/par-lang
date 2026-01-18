@@ -147,7 +147,7 @@ impl Instance {
             }
         }
 
-        for (name, definition) in &checked.definitions {
+        for (name, (definition, _typ)) in &checked.definitions {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), definition.span.points())
             {

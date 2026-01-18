@@ -12,7 +12,6 @@ use std::{
 use tokio::sync::Notify;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         builtin::{
             byte::ByteClass,
@@ -23,6 +22,7 @@ use crate::{
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -43,12 +43,10 @@ pub fn external_module() -> Module<Arc<process::Expression<()>>> {
             ),
             Definition::external(
                 "ParserFromReader",
-                Type::forall(
-                    "e",
-                    Type::function(
-                        Type::name(None, "Reader", vec![Type::var("e")]),
-                        Type::name(None, "Parser", vec![Type::var("e")]),
-                    ),
+                Type::generic_function(
+                    Type::name(None, "Reader", vec![Type::var("e")]),
+                    Type::name(None, "Parser", vec![Type::var("e")]),
+                    vec!["e"],
                 ),
                 |handle| Box::pin(bytes_parser_from_reader(handle)),
             ),
@@ -250,14 +248,18 @@ impl PipeReaderState {
         self.notify.notify_waiters();
     }
 
-    fn set_result_err(&self, err: Handle) {
-        {
+    async fn set_result_err(&self, err: Handle) {
+        // This tricky is necessary to avoid holding `guard` while awaiting.
+        if let Some(err) = {
             let mut guard = self.error.lock().expect("lock failed");
             if guard.is_none() {
                 *guard = Some(err);
+                None
             } else {
-                err.erase();
+                Some(err)
             }
+        } {
+            err.erase();
         }
         self.result_ready.store(true, AtomicOrdering::SeqCst);
         self.notify.notify_waiters();
@@ -291,10 +293,10 @@ async fn bytes_pipe_reader(mut handle: Handle) {
         match handle.case().await.as_str() {
             "ok" => {
                 result_state.set_result_ok();
-                handle.break_();
+                handle.continue_();
             }
             "err" => {
-                result_state.set_result_err(handle);
+                result_state.set_result_err(handle).await;
             }
             _ => unreachable!(),
         }
@@ -392,7 +394,7 @@ async fn provide_pipe_reader_output(
 
 async fn bytes_length(mut handle: Handle) {
     let bytes = handle.receive().bytes().await;
-    handle.provide_nat(BigInt::from(bytes.len()))
+    handle.provide_nat(BigInt::from(bytes.len()));
 }
 
 #[derive(Debug, Clone)]

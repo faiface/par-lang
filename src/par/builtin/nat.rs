@@ -3,13 +3,13 @@ use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         primitive::ParString,
         process,
         program::{Definition, Module, TypeDef},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
@@ -210,7 +210,7 @@ async fn nat_compare(mut handle: Handle) {
         Ordering::Less => handle.signal(literal!("less")),
         Ordering::Equal => handle.signal(literal!("equal")),
         Ordering::Greater => handle.signal(literal!("greater")),
-    }
+    };
     handle.break_();
 }
 
@@ -265,7 +265,7 @@ async fn nat_range(mut handle: Handle) {
 
 async fn nat_to_string(mut handle: Handle) {
     let x = handle.receive().nat().await;
-    handle.provide_string(ParString::from(x.to_str_radix(10)))
+    handle.provide_string(ParString::from(x.to_str_radix(10)));
 }
 
 async fn nat_from_string(mut handle: Handle) {

@@ -1,4 +1,3 @@
-use crate::icombs::readback::{TypedHandle, TypedReadback};
 use crate::par::build_result::BuildResult;
 use crate::par::types::Type;
 #[cfg(feature = "playground")]
@@ -8,14 +7,14 @@ use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
-use futures::task::SpawnExt;
+use tokio::time::Instant;
+
 use std::fs::File;
 #[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-mod icombs;
 mod language_server;
 mod location;
 mod par;
@@ -23,7 +22,9 @@ mod par;
 mod playground;
 #[cfg(feature = "playground")]
 mod readback;
+pub mod runtime;
 mod spawn;
+mod test;
 mod test_assertion;
 mod test_runner;
 
@@ -46,7 +47,8 @@ fn main() {
             Command::new("run")
                 .about("Run a Par file in the CLI")
                 .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
-                .arg(arg!([definition] "The definition to run").default_value("Main")),
+                .arg(arg!([definition] "The definition to run").default_value("Main"))
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
         )
         .subcommand(
             Command::new("check")
@@ -55,7 +57,8 @@ fn main() {
                     arg!(<file> "The Par file(s) to check")
                         .num_args(1..)
                         .value_parser(value_parser!(PathBuf)),
-                ),
+                )
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
         )
         .subcommand(
             Command::new("lsp")
@@ -69,7 +72,8 @@ fn main() {
                     arg!([file] "Run tests in a specific file")
                         .value_parser(value_parser!(PathBuf)),
                 )
-                .arg(arg!(--filter <FILTER> "Only run tests matching this filter").required(false)),
+                .arg(arg!(--filter <FILTER> "Only run tests matching this filter").required(false))
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
         )
         .get_matches_from(wild::args());
 
@@ -87,7 +91,7 @@ fn main() {
             let files = args.get_many::<PathBuf>("file").unwrap().clone();
             for file in files {
                 println!("Checking file: {}", file.display());
-                check(file.clone());
+                let _ = check(file.clone());
             }
         }
         Some(("lsp", _)) => run_language_server(),
@@ -179,14 +183,16 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let Some(ic_compiled) = build.ic_compiled() else {
-            println!("{}: {}", "IC compilation failed".bright_red(), definition);
+        let Some(rt_compiled) = build.rt_compiled() else {
+            println!(
+                "{}: {}",
+                "Runtime compilation failed".bright_red(),
+                definition
+            );
             return;
         };
 
-        let ty = ic_compiled.get_type_of(name).unwrap();
-
-        let Type::Break(_) = ty else {
+        let Some(Type::Break(_)) = rt_compiled.get_type_of(name) else {
             println!(
                 "{}: {}",
                 "Definition does not have the unit (!) type".bright_red(),
@@ -195,36 +201,19 @@ fn run_definition(file: PathBuf, definition: String) {
             return;
         };
 
-        let mut net = ic_compiled.create_net();
-        let child_net = ic_compiled.get_with_name(name).unwrap();
-        let tree = net.inject_net(child_net).with_type(ty.clone());
+        let start = Instant::now();
 
-        let (net_wrapper, reducer_future) = net.start_reducer(Arc::new(TokioSpawn::new()));
+        let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
-        let spawner = Arc::new(TokioSpawn::new());
-        let readback_future = spawner
-            .spawn_with_handle(async move {
-                let handle =
-                    TypedHandle::from_wrapper(checked.type_defs.clone(), net_wrapper, tree);
-                loop {
-                    match handle.readback().await {
-                        TypedReadback::Break => {
-                            break;
-                        }
-                        _ => {
-                            panic!("Unexpected readback from a unit definition.");
-                        }
-                    }
-                }
-            })
-            .unwrap();
+        root.continue_();
+        let stats = reducer_future.await;
 
-        readback_future.await;
-        reducer_future.await;
+        println!("{}", stats.show(start.elapsed()));
+        eprintln!("\tArena size: {}", rt_compiled.code.arena.memory_size());
     });
 }
 
-fn check(file: PathBuf) {
+fn check(file: PathBuf) -> Result<(), String> {
     let Ok(code) = File::open(&file).and_then(|mut file| {
         use std::io::Read;
         let mut buf = String::new();
@@ -232,15 +221,18 @@ fn check(file: PathBuf) {
         Ok(buf)
     }) else {
         println!("{} {}", "Could not read file:".bright_red(), file.display());
-        return;
+        return Err(format!("Could not read file: {}", file.display()));
     };
 
     let build = stacker::grow(32 * 1024 * 1024, || {
         BuildResult::from_source(&code, file.into())
     });
     if let Some(error) = build.error() {
-        println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+        let error_string = error.display(Arc::from(code.as_str()));
+        eprintln!("{}", error_string.bright_red());
+        return Err(error_string);
     }
+    Ok(())
 }
 
 fn run_language_server() {

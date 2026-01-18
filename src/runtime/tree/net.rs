@@ -4,22 +4,16 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use arcstr::ArcStr;
 use bytes::Bytes;
-use futures::channel::{mpsc, oneshot};
-use futures::future::RemoteHandle;
-use futures::task::{Spawn, SpawnExt};
-use futures::StreamExt;
+use futures::channel::oneshot;
 use indexmap::IndexMap;
 use num_bigint::BigInt;
 
 use crate::par::primitive::{ParString, Primitive};
-
-use super::readback::{private::NetWrapper, Handle};
 
 pub type VarId = usize;
 
@@ -35,18 +29,32 @@ pub fn number_to_string(mut number: usize) -> String {
     result
 }
 
+#[derive(Clone, Debug)]
+/// The behavior of a `Package` node when it interacts
+/// with a fan node (duplicate or erase)
+pub enum FanBehavior {
+    /// Expand the package and then duplicate/erase it
+    /// Used for side-effectful and top level packages
+    Expand,
+    /// Propagate the fan operator through the captures
+    /// Used in boxes.
+    Propagate,
+}
+
 /// A `Tree` corresponds to a port that is the root of a tree of interaction combinators.
 /// The `Tree` enum itself contains the whole tree, although it some parts of it might be inside
 /// half-linked `Tree::Var`s
 pub enum Tree {
+    Break,
+    Continue,
     Era,
-    Con(Box<Tree>, Box<Tree>),
+    Par(Box<Tree>, Box<Tree>),
+    Times(Box<Tree>, Box<Tree>),
     Dup(Box<Tree>, Box<Tree>),
-    Box_(Box<Tree>, usize),
     Signal(ArcStr, Box<Tree>),
     Choice(Box<Tree>, Arc<HashMap<ArcStr, usize>>, Option<usize>),
     Var(usize),
-    Package(usize),
+    Package(usize, Box<Tree>, FanBehavior),
 
     SignalRequest(oneshot::Sender<(ArcStr, Box<Tree>)>),
 
@@ -55,19 +63,25 @@ pub enum Tree {
     StringRequest(oneshot::Sender<ParString>),
     BytesRequest(oneshot::Sender<Bytes>),
 
-    External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
-    ExternalBox(Arc<dyn Send + Sync + Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>>),
+    External(fn(crate::runtime::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
+    ExternalBox(
+        Arc<
+            dyn Send
+                + Sync
+                + Fn(crate::runtime::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+        >,
+    ),
 }
 
 impl Tree {
     pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
         match self {
             Self::Var(x) => *x = m(*x),
-            Self::Con(a, b) => {
+            Self::Par(a, b) | Self::Times(a, b) => {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            Self::Box_(context, _) => {
+            Self::Package(_, context, _) => {
                 context.map_vars(m);
             }
             Self::Signal(_, payload) => {
@@ -81,7 +95,8 @@ impl Tree {
                 b.map_vars(m);
             }
             Self::Era
-            | Self::Package(_)
+            | Self::Break
+            | Self::Continue
             | Self::Primitive(_)
             | Self::SignalRequest(_)
             | Self::IntRequest(_)
@@ -97,11 +112,17 @@ impl core::fmt::Debug for Tree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Era => f.debug_tuple("Era").finish(),
-            Self::Con(a, b) => f.debug_tuple("Con").field(a).field(b).finish(),
+            Self::Break => f.debug_tuple("Break").finish(),
+            Self::Continue => f.debug_tuple("Continue").finish(),
+            Self::Times(a, b) => f.debug_tuple("Times").field(a).field(b).finish(),
+            Self::Par(a, b) => f.debug_tuple("Par").field(a).field(b).finish(),
             Self::Dup(a, b) => f.debug_tuple("Dup").field(a).field(b).finish(),
-            Self::Box_(context, package) => {
-                f.debug_tuple("Box").field(context).field(package).finish()
-            }
+            Self::Package(id, context, b) => f
+                .debug_tuple("Package")
+                .field(id)
+                .field(context)
+                .field(b)
+                .finish(),
             Self::Signal(signal, payload) => f
                 .debug_tuple("Signal")
                 .field(signal)
@@ -114,7 +135,6 @@ impl core::fmt::Debug for Tree {
                 .field(else_branch)
                 .finish(),
             Self::Var(id) => f.debug_tuple("Var").field(id).finish(),
-            Self::Package(id) => f.debug_tuple("Package").field(id).finish(),
             Self::Primitive(p) => f.debug_tuple("Primitive").field(p).finish(),
             Self::SignalRequest(_) => f.debug_tuple("SignalRequest").field(&"<channel>").finish(),
             Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
@@ -130,15 +150,19 @@ impl Clone for Tree {
     fn clone(&self) -> Self {
         match self {
             Self::Era => Self::Era,
-            Self::Con(a, b) => Self::Con(a.clone(), b.clone()),
+            Self::Break => Self::Break,
+            Self::Continue => Self::Continue,
+            Self::Times(a, b) => Self::Times(a.clone(), b.clone()),
+            Self::Par(a, b) => Self::Par(a.clone(), b.clone()),
             Self::Dup(a, b) => Self::Dup(a.clone(), b.clone()),
-            Self::Box_(context, package) => Self::Box_(context.clone(), package.clone()),
+            Self::Package(package, context, b) => {
+                Self::Package(package.clone(), context.clone(), b.clone())
+            }
             Self::Signal(signal, payload) => Self::Signal(signal.clone(), payload.clone()),
             Self::Choice(context, branches, else_branch) => {
                 Self::Choice(context.clone(), Arc::clone(branches), else_branch.clone())
             }
             Self::Var(id) => Self::Var(id.clone()),
-            Self::Package(id) => Self::Package(id.clone()),
             Self::Primitive(p) => Self::Primitive(p.clone()),
             Self::SignalRequest(_) => panic!("cannot clone Tree::SignalRequest"),
             Self::IntRequest(_) => panic!("cannot clone Tree::IntRequest"),
@@ -210,36 +234,8 @@ pub struct Net {
     pub variables: Variables,
     pub packages: Arc<IndexMap<usize, Net>>,
     pub rewrites: Rewrites,
-    waiting_for_reducer: Vec<(Tree, Tree)>,
-    reducer: Option<Reducer>,
-}
-
-pub(crate) enum ReducerMessage {
-    Ping,
-}
-
-#[derive(Clone)]
-struct Reducer {
-    net: Weak<Mutex<Net>>,
-    spawner: Arc<dyn Spawn + Send + Sync>,
-    notify: mpsc::UnboundedSender<ReducerMessage>,
-    handle_count: Arc<AtomicUsize>,
-}
-
-impl Reducer {
-    fn spawn_external(
-        &self,
-        f: impl Fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
-        tree: Tree,
-    ) {
-        if let Some(net) = self.net.upgrade() {
-            let notify = self.notify.clone();
-            let handle_count = self.handle_count.clone();
-            let handle = Handle::new(net, notify, handle_count, tree);
-            let future = f(handle);
-            self.spawner.spawn(future).expect("spawn failed");
-        }
-    }
+    pub waiting_for_reducer: Vec<(Tree, Tree)>,
+    pub debug_name: String,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -290,125 +286,76 @@ impl Variables {
 }
 
 impl Net {
-    pub fn start_reducer(
-        mut self,
-        spawner: Arc<dyn Spawn + Send + Sync>,
-    ) -> (NetWrapper, RemoteHandle<()>) {
-        if self.reducer.is_some() {
-            panic!("reducer already started");
-        }
-
-        self.redexes.extend(self.waiting_for_reducer.drain(..));
-
-        let (notify, mut resume) = mpsc::unbounded();
-        let net = Arc::new(Mutex::new(self));
-        let weak_net = Arc::downgrade(&net);
-        let handle_count = Arc::new(AtomicUsize::new(0));
-        net.lock().unwrap().reducer = Some(Reducer {
-            net: weak_net,
-            spawner: Arc::clone(&spawner),
-            notify: notify.clone(),
-            handle_count: handle_count.clone(),
-        });
-
-        let net_wrapper = NetWrapper::new(Arc::clone(&net), notify.clone(), handle_count.clone());
-
-        let net = Arc::clone(&net);
-        let future = spawner
-            .spawn_with_handle(async move {
-                loop {
-                    {
-                        let mut lock = net.lock().expect("lock failed");
-                        while lock.reduce_one() {}
-                        if handle_count.load(Ordering::SeqCst) == 0 {
-                            break;
-                        }
-                    }
-
-                    match resume.next().await {
-                        Some(ReducerMessage::Ping) => continue,
-                        None => break,
-                    }
-                }
-            })
-            .expect("spawn failed");
-        (net_wrapper, future)
-    }
-
-    pub fn spawn(&self, fut: Pin<Box<dyn Send + Future<Output = ()>>>) {
-        let Some(reducer) = &self.reducer else {
-            panic!("reducer not started");
-        };
-        reducer.spawner.spawn(fut).expect("spawn failed");
-    }
-
-    pub fn notify_reducer(&self) {
-        let Some(reducer) = &self.reducer else {
-            panic!("reducer not started");
-        };
-        let res = reducer.notify.unbounded_send(ReducerMessage::Ping);
-        if res.is_err() {
-            println!("Warning: Failed to ping reducer");
-        }
-        // .expect("notify ping failed");
-    }
-
     fn interact(&mut self, a: Tree, b: Tree) {
+        macro_rules! sym {
+            ($a: pat, $b: pat) => {
+                ($a, $b) | ($b, $a)
+            };
+        }
+
         use Tree::*;
         match (a, b) {
             (a @ Var(..), b @ _) | (a @ _, b @ Var(..)) => {
                 // link anyway
                 self.link(a, b);
             }
-            (Era, Era) => {
+            sym!(Era | Continue, Break) | sym!(Continue, Era) => {
                 self.rewrites.era += 1;
             }
-            (Con(a0, a1), Era) | (Dup(a0, a1), Era) | (Era, Con(a0, a1)) | (Era, Dup(a0, a1)) => {
+            sym!(Times(a0, a1), Era) | sym!(Par(a0, a1), Era) | sym!(Dup(a0, a1), Era) => {
                 self.link(*a0, Era);
                 self.link(*a1, Era);
                 self.rewrites.era += 1;
             }
-            (Con(a0, a1), Con(b0, b1)) | (Dup(a0, a1), Dup(b0, b1)) => {
+            sym!(Times(a0, a1), Par(b0, b1)) | (Dup(a0, a1), Dup(b0, b1)) => {
                 self.link(*a0, *b0);
                 self.link(*a1, *b1);
                 self.rewrites.annihilate += 1;
             }
-            (Con(a0, a1), Dup(b0, b1)) | (Dup(b0, b1), Con(a0, a1)) => {
+            sym!(Dup(a0, a1), Break) => {
+                self.link(*a0, Break);
+                self.link(*a1, Break);
+                self.rewrites.era += 1;
+            }
+            sym!(Dup(a0, a1), Continue) => {
+                self.link(*a0, Continue);
+                self.link(*a1, Continue);
+                self.rewrites.era += 1;
+            }
+            sym!(Times(a0, a1), Dup(b0, b1)) => {
                 let (a00, b00) = self.create_wire();
                 let (a01, b01) = self.create_wire();
                 let (a10, b10) = self.create_wire();
                 let (a11, b11) = self.create_wire();
                 self.link(*a0, Tree::Dup(Box::new(a00), Box::new(a01)));
                 self.link(*a1, Tree::Dup(Box::new(a10), Box::new(a11)));
-                self.link(*b0, Tree::Con(Box::new(b00), Box::new(b10)));
-                self.link(*b1, Tree::Con(Box::new(b01), Box::new(b11)));
+                self.link(*b0, Tree::Times(Box::new(b00), Box::new(b10)));
+                self.link(*b1, Tree::Times(Box::new(b01), Box::new(b11)));
                 self.rewrites.commute += 1;
             }
-            (Box_(context, _), Era) | (Era, Box_(context, _)) => {
-                self.link(*context, Tree::Era);
-                self.rewrites.era += 1;
-            }
-            (Box_(context, package), Dup(b0, b1)) | (Dup(b0, b1), Box_(context, package)) => {
+            sym!(Par(a0, a1), Dup(b0, b1)) => {
                 let (a00, b00) = self.create_wire();
+                let (a01, b01) = self.create_wire();
                 let (a10, b10) = self.create_wire();
-                self.link(*context, Tree::Dup(Box::new(b00), Box::new(b10)));
-                self.link(*b0, Tree::Box_(Box::new(a00), package));
-                self.link(*b1, Tree::Box_(Box::new(a10), package));
+                let (a11, b11) = self.create_wire();
+                self.link(*a0, Tree::Dup(Box::new(a00), Box::new(a01)));
+                self.link(*a1, Tree::Dup(Box::new(a10), Box::new(a11)));
+                self.link(*b0, Tree::Par(Box::new(b00), Box::new(b10)));
+                self.link(*b1, Tree::Par(Box::new(b01), Box::new(b11)));
                 self.rewrites.commute += 1;
-            }
-            (Box_(context, package), a) | (a, Box_(context, package)) => {
-                self.link(Tree::Con(context, Box::new(a)), Tree::Package(package));
-                self.rewrites.derelict += 1;
             }
             (Signal(signal, payload), Choice(context, branches, else_branch))
             | (Choice(context, branches, else_branch), Signal(signal, payload)) => {
                 match branches.get(&signal).copied() {
                     Some(package_id) => {
-                        self.link(Tree::Con(context, payload), Tree::Package(package_id));
+                        self.link(
+                            *payload,
+                            Tree::Package(package_id, context, FanBehavior::Expand),
+                        );
                     }
                     None => self.link(
-                        Tree::Con(context, Box::new(Signal(signal, payload))),
-                        Tree::Package(else_branch.unwrap()),
+                        Signal(signal, payload),
+                        Tree::Package(else_branch.unwrap(), context, FanBehavior::Expand),
                     ),
                 }
                 self.rewrites.signal += 1;
@@ -425,19 +372,22 @@ impl Net {
                 self.link(*b1, Tree::Signal(signal, Box::new(a10)));
                 self.rewrites.commute += 1;
             }
-            (Package(_), Era) | (Era, Package(_)) => {
+            (Package(_, c, FanBehavior::Propagate), Era)
+            | (Era, Package(_, c, FanBehavior::Propagate)) => {
                 self.rewrites.era += 1;
+                self.link(*c, Tree::Era);
             }
-            (Package(id), Dup(a, b)) | (Dup(a, b), Package(id)) => {
-                self.link(*a, Package(id));
-                self.link(*b, Package(id));
+            (Package(id, cx, FanBehavior::Propagate), Dup(d0, d1))
+            | (Dup(d0, d1), Package(id, cx, FanBehavior::Propagate)) => {
+                let (a0, b0) = self.create_wire();
+                let (a1, b1) = self.create_wire();
+                self.link(*cx, Tree::Dup(Box::new(a0), Box::new(a1)));
+                self.link(*d0, Package(id, Box::new(b1), FanBehavior::Propagate));
+                self.link(*d1, Package(id, Box::new(b0), FanBehavior::Propagate));
                 self.rewrites.commute += 1;
             }
-            (Package(_), Package(_)) => {
-                unreachable!("Packages should not interact with packages");
-            }
-            (Package(id), a) | (a, Package(id)) => {
-                let b = self.dereference_package(id);
+            (Package(id, cx, _), a) | (a, Package(id, cx, _)) => {
+                let b = self.dereference_package(id, *cx);
                 self.interact(a, b);
                 self.rewrites.expand += 1;
             }
@@ -449,10 +399,7 @@ impl Net {
                 tx.send((signal, payload)).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
-            (External(f), a) | (a, External(f)) => match &self.reducer {
-                Some(reducer) => reducer.spawn_external(f, a),
-                None => self.waiting_for_reducer.push((External(f), a)),
-            },
+            (External(f), a) | (a, External(f)) => self.waiting_for_reducer.push((External(f), a)),
             (ExternalBox(_), Era) | (Era, ExternalBox(_)) => {
                 self.rewrites.era += 1;
             }
@@ -461,10 +408,9 @@ impl Net {
                 self.link(*b, ExternalBox(f));
                 self.rewrites.commute += 1;
             }
-            (ExternalBox(f), a) | (a, ExternalBox(f)) => match &self.reducer {
-                Some(reducer) => reducer.spawn_external(f.as_ref(), a),
-                None => self.waiting_for_reducer.push((ExternalBox(f), a)),
-            },
+            (ExternalBox(f), a) | (a, ExternalBox(f)) => {
+                self.waiting_for_reducer.push((ExternalBox(f), a))
+            }
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }
     }
@@ -501,16 +447,20 @@ impl Net {
         }
     }
 
-    fn dereference_package(&mut self, package: usize) -> Tree {
-        let net = self
+    fn dereference_package(&mut self, package: usize, cx: Tree) -> Tree {
+        let mut net = self
             .packages
             .get(&package)
             .unwrap_or_else(|| panic!("Unknown package with ID {}", package))
             .clone();
-        self.inject_net(net)
+        self.alter_net(&mut net);
+        let cx_ = net.ports.pop_back().unwrap();
+        let root = net.ports.pop_back().unwrap();
+        self.link(cx, cx_);
+        root
     }
 
-    pub fn inject_net(&mut self, mut net: Net) -> Tree {
+    pub fn alter_net(&mut self, net: &mut Net) {
         // Now, we have to freshen all variables in the tree
         let mut allocated = HashMap::new();
         net.map_vars(&mut |id| {
@@ -519,19 +469,23 @@ impl Net {
                 .or_insert_with(|| self.variables.alloc())
         });
         self.redexes.append(&mut net.redexes);
-        if self.reducer.is_some() {
-            self.redexes.extend(net.waiting_for_reducer.drain(..));
-        } else {
-            self.waiting_for_reducer
-                .append(&mut net.waiting_for_reducer);
-        }
+        self.waiting_for_reducer
+            .append(&mut net.waiting_for_reducer);
         for (id, state) in net.variables.vars.drain(..).enumerate() {
             if let Some(new_id) = allocated.get(&id) {
                 self.variables.vars[*new_id] = state
             }
         }
-        self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites;
-        net.ports.pop_back().unwrap()
+        self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites.clone();
+    }
+
+    pub fn inject_net(&mut self, mut net: Net) -> Tree {
+        assert!(net.ports.len() == 2);
+        self.alter_net(&mut net);
+        let cx = net.ports.pop_back().unwrap();
+        let root = net.ports.pop_back().unwrap();
+        self.link(cx, Tree::Break);
+        root
     }
 
     /// Returns whether a reduction was carried out
@@ -559,11 +513,11 @@ impl Net {
     /// Where vars occur in the given tree which already have been linked from the other side, finish linking them.
     pub fn substitute_tree(&mut self, tree: &mut Tree) {
         match tree {
-            Tree::Con(a, b) | Tree::Dup(a, b) => {
+            Tree::Times(a, b) | Tree::Par(a, b) | Tree::Dup(a, b) => {
                 self.substitute_tree(a);
                 self.substitute_tree(b);
             }
-            Tree::Box_(context, _) => self.substitute_tree(context),
+            Tree::Package(_, context, _) => self.substitute_tree(context),
             Tree::Signal(_, payload) => self.substitute_tree(payload),
             Tree::Choice(context, _, _) => self.substitute_tree(context),
             Tree::Var(id) => {
@@ -573,7 +527,8 @@ impl Net {
                 }
             }
             Tree::Era
-            | Tree::Package(_)
+            | Tree::Continue
+            | Tree::Break
             | Tree::Primitive(_)
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
@@ -594,31 +549,24 @@ impl Net {
 
     pub fn link(&mut self, a: Tree, b: Tree) {
         match (a, b) {
-            (Tree::Var(id), y) | (y, Tree::Var(id)) => match self.variables.remove_linked(id) {
-                Ok(x) => {
-                    self.link(x, y);
-                }
-                Err(state) => {
-                    *state = VarState::Linked(y);
+            (Tree::Var(mut id), y) | (y, Tree::Var(mut id)) => loop {
+                match self.variables.remove_linked(id) {
+                    Ok(Tree::Var(id2)) => {
+                        id = id2;
+                    }
+                    Ok(x) => {
+                        self.link(x, y);
+                        break;
+                    }
+                    Err(state) => {
+                        *state = VarState::Linked(y);
+                        break;
+                    }
                 }
             },
             (Tree::Era, y) | (y, Tree::Era) => self.redexes.push_front((Tree::Era, y)),
             (x, y) => self.redexes.push_back((x, y)),
         }
-        /*if let Tree::Var(id) = a {
-            match self.variables.remove_linked(id) {
-                Ok(a) => {
-                    self.link(a, b);
-                }
-                Err(state) => {
-                    *state = VarState::Linked(b);
-                }
-            }
-        } else if let Tree::Var(id) = b {
-            self.link(Tree::Var(id), a)
-        } else {
-            self.redexes.push_back((a, b))
-        }*/
     }
 
     pub fn create_wire(&mut self) -> (Tree, Tree) {
@@ -659,7 +607,7 @@ impl Net {
         for i in &self.ports {
             write!(&mut s, "{}{}\n", indent_string, self.show_tree(i)).unwrap();
         }
-        for (a, b) in &self.redexes {
+        for (a, b) in self.redexes.iter().chain(self.waiting_for_reducer.iter()) {
             write!(
                 &mut s,
                 "{}{} ~ {}\n",
@@ -682,9 +630,13 @@ impl Net {
                 }
             }
             Tree::Era => format!("*"),
-            Tree::Con(a, b) => format!("({} {})", self.show_tree(a), self.show_tree(b)),
-            Tree::Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
-            Tree::Box_(context, package) => format!("box({} {})", self.show_tree(context), package),
+            Tree::Break => format!("!"),
+            Tree::Continue => format!("?"),
+            Tree::Par(a, b) => format!("[{}] {}", self.show_tree(b), self.show_tree(a)),
+            Tree::Times(a, b) => format!("({}) {}", self.show_tree(b), self.show_tree(a)),
+            Tree::Dup(a, b) => format!("{{{} {}}}", self.show_tree(a), self.show_tree(b)),
+            Tree::Package(id, cx, _) if matches!(cx.as_ref(), &Tree::Break) => format!("@{}", id),
+            Tree::Package(id, cx, _) => format!("@{}${}", id, self.show_tree(cx)),
             Tree::Signal(signal, payload) => {
                 format!("signal({} {})", signal, self.show_tree(payload))
             }
@@ -696,11 +648,10 @@ impl Net {
                     else_branch
                 )
             }
-            Tree::Package(id) => format!("@{}", id),
 
-            Tree::Primitive(Primitive::Int(i)) => format!("{{{}}}", i),
-            Tree::Primitive(Primitive::String(s)) => format!("{{{:?}}}", s),
-            Tree::Primitive(Primitive::Bytes(b)) => format!("{{{:?}}}", b),
+            Tree::Primitive(Primitive::Int(i)) => format!("primitive({})", i),
+            Tree::Primitive(Primitive::String(s)) => format!("primitive({:?})", s),
+            Tree::Primitive(Primitive::Bytes(b)) => format!("primitive({:?})", b),
 
             Tree::SignalRequest(_) => format!("<signal request>"),
             Tree::IntRequest(_) => format!("<int request>"),
@@ -722,11 +673,11 @@ impl Net {
 
     fn assert_tree_not_contains(&self, tree: &Tree, idx: &usize) {
         match tree {
-            Tree::Con(a, b) | Tree::Dup(a, b) => {
+            Tree::Par(a, b) | Tree::Times(a, b) | Tree::Dup(a, b) => {
                 self.assert_tree_not_contains(a, idx);
                 self.assert_tree_not_contains(b, idx);
             }
-            Tree::Box_(context, _) => {
+            Tree::Package(_, context, _) => {
                 self.assert_tree_not_contains(context, idx);
             }
             Tree::Signal(_, payload) => {
@@ -744,7 +695,8 @@ impl Net {
                 }
             }
             Tree::Era
-            | Tree::Package(_)
+            | Tree::Continue
+            | Tree::Break
             | Tree::Primitive(_)
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
@@ -798,16 +750,22 @@ impl Net {
 
     fn assert_tree_valid(&self, tree: &Tree) -> Vec<usize> {
         match tree {
-            Tree::Con(a, b) | Tree::Dup(a, b) => {
+            Tree::Times(a, b) | Tree::Par(a, b) | Tree::Dup(a, b) => {
                 let mut a = self.assert_tree_valid(a.as_ref());
                 let mut b = self.assert_tree_valid(b.as_ref());
                 a.append(&mut b);
                 a
             }
-            Tree::Box_(context, _) => self.assert_tree_valid(context),
+            Tree::Package(idx, context, _) => {
+                if self.packages.get(idx).is_some() {
+                    self.assert_tree_valid(context)
+                } else {
+                    panic!("Package with id {idx} is not found")
+                }
+            }
             Tree::Signal(_, payload) => self.assert_tree_valid(payload),
             Tree::Choice(context, _, _) => self.assert_tree_valid(context),
-            Tree::Era => {
+            Tree::Era | Tree::Continue | Tree::Break => {
                 vec![]
             }
             Tree::Var(idx) => {
@@ -815,13 +773,6 @@ impl Net {
                     self.assert_tree_valid(tree)
                 } else {
                     vec![idx.clone()]
-                }
-            }
-            Tree::Package(idx) => {
-                if self.packages.get(idx).is_some() {
-                    vec![]
-                } else {
-                    panic!("Package with id {idx} is not found")
                 }
             }
             Tree::Primitive(_) => vec![],

@@ -74,8 +74,8 @@ type Result<e, a> = either {
   .err e,
 }
 
-dec Result.Always : [type a] [Result<either {}, a>] a
-def Result.Always = [type a] [result] result.case {
+dec Result.Always : <a>[Result<either {}, a>] a
+def Result.Always = <a>[result] result.case {
   .ok value => value,
   .err impossible => impossible.case {},
 }
@@ -95,6 +95,11 @@ type List.Builder<a> = iterative choice {
   .build => List<a>,
 }
 
+type List.Result<e, a> = recursive either {
+  .end Result<e, !>,
+  .item(a) self,
+}
+
 dec List.Builder : [type a] List.Builder<a>
 def List.Builder = [type a]
   let append: [List<a>] List<a> = [xs] xs
@@ -102,6 +107,245 @@ def List.Builder = [type a]
     .add(x) => let append = [xs: List<a>] append(.item(x) xs) in loop,
     .build => append(.end!),
   }
+
+dec List.Find : <a>[List<box a>] [box [box a] Bool] Option<a>
+def List.Find = <a>[list] [f] list.begin.case {
+  .end! => .err!,
+  .item(v) list => f(v).case {
+    .true! => .ok v,
+    .false! => list.loop,
+  },
+}
+
+dec List.FindLast : <a>[List<box a>] [box [box a] Bool] Option<a>
+def List.FindLast = <a>[list] [f]
+  let result: Option<box a> = .err! in
+  list.begin.case {
+    .end! => result,
+    .item(v) list => f(v).case {
+      .true! => let result = .ok v in list.loop,
+      .false! => list.loop,
+    },
+  }
+
+dec List.Map : <a>[List<a>] [type b] [box [a] b] List<b>
+def List.Map = <a>[list] [type b] [f] list.begin.case {
+  .end! => .end!
+  .item(v) list => .item(f(v)) list.loop,
+}
+
+dec List.FlatMap : <a>[List<a>] [type b] [box [a] List<b>] List<b>
+def List.FlatMap = <a>[list] [type b] [f] list.begin.case {
+  .end! => .end!,
+  .item(v) list => f(v).begin@flat.case {
+    .end! => list.loop,
+    .item(v) flat => .item(v) flat.loop@flat,
+  },
+}
+
+dec List.Filter : <a>[List<box a>] [box [box a] Bool] List<a>
+def List.Filter = <a>[list] [f] list.begin.case {
+  .end! => .end!,
+  .item(v) list => f(v).case {
+    .true! => .item(v) list.loop,
+    .false! => list.loop,
+  },
+}
+
+dec List.Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
+def List.Fold = <a>[list] <r>[result] [f] list.begin.case {
+  .end! => result,
+  .item(v) list => let result = f(result, v) in list.loop,
+}
+
+dec List.Reduce : <a>[List<a>] [box [a, a] a] Option<a>
+def List.Reduce = <a>[list] [f] list.case {
+  .end! => .err!,
+  .item(result) list => .ok List.Fold(list, result, f),
+}
+
+dec List.Length : <a>[List<box a>] Nat
+def List.Length = <a>[list]
+  let len = 0 in
+  list.begin.case {
+    .end! => len,
+    .item(_) list => do { len->Nat.Add(1) } in list.loop,
+  }
+
+dec List.Concat : <a>[List<a>] [List<a>] List<a>
+def List.Concat = <a>[list1] [list2] chan yield {
+  yield->List.Copy(list1)
+  yield->List.Copy(list2)
+  yield.end!
+}
+
+dec List.Copy : <a>[dual List<a>] [List<a>] dual List<a>
+def List.Copy = <a>[dst] [src] do {
+  src.begin.case {
+    .end! => {},
+    .item(v) src => {
+      dst.item(v)
+      src.loop
+    },
+  }
+} in dst
+
+dec List.MinMax : <a>[List<box a>] [box [box a, box a] Ordering] Option<(a) a>
+def List.MinMax = <a>[list] [cmp]
+  let result: Option<(box a) box a> = .err! in
+  list.begin.case {
+    .end! => result,
+    .item(v) list => result.case {
+      .err! =>
+        let result = .ok(v) v in
+        list.loop,
+      .ok(min) max =>
+        let result = cmp(v, min).case {
+          .less! => .ok (v) max,
+          else _ => cmp(v, max).case {
+            .greater! => .ok (min) v,
+            else _ => result,
+          },
+        } in list.loop,
+    },
+  }
+
+dec List.Min : <a>[List<box a>] [box [box a, box a] Ordering] Option<a>
+def List.Min = <a>[list] [cmp]
+  List.MinMax(list, cmp).case {
+    .err! => .err!,
+    .ok(min) _ => .ok min,
+  }
+
+dec List.Max : <a>[List<box a>] [box [box a, box a] Ordering] Option<a>
+def List.Max = <a>[list] [cmp]
+  List.MinMax(list, cmp).case {
+    .err! => .err!,
+    .ok(_) max => .ok max,
+  }
+
+dec List.Zip : <a>[List<box a>] <b>[List<box b>] List<(a) b>
+def List.Zip = <a>[list1] <b>[list2] chan yield {
+  list1.begin.case {
+    .end! => { yield.end! },
+    .item(v1) list1 => {
+      list2.case {
+        .end! => { yield.end! },
+        .item(v2) list2 => {
+          yield.item((v1) v2)
+          list1.loop
+        },
+      }
+    },
+  }
+}
+
+dec List.Unzip : <a, b>[List<(a) b>] (List<a>) List<b>
+def List.Unzip = <a, b>[list] do {
+  let list1 = List.Builder(type a)
+  let list2 = List.Builder(type b)
+
+  list.begin.case {
+    .end! => {},
+    .item((v1) v2) list => {
+      list1.add(v1)
+      list2.add(v2)
+      list.loop
+    },
+  }
+} in (list1.build) list2.build
+
+dec List.All : <a>[List<box a>] [box [box a] Bool] Bool
+def List.All = <a>[list] [f]
+  list.begin.case {
+    .end! => .true!,
+    .item(v) list => f(v).case {
+      .true! => list.loop,
+      .false! => .false!,
+    },
+  }
+
+dec List.Any : <a>[List<box a>] [box [box a] Bool] Bool
+def List.Any = <a>[list] [f] List.All(list, box [v] f(v).case {
+  .true! => .false!,
+  .false! => .true!,
+})
+
+dec List.Dedup : <a>[List<box a>] [box [box a, box a] Bool] List<a>
+def List.Dedup = <a>[list] [eq]
+  list.case {
+    .end! => .end!,
+    .item(prev) list => .item(prev)
+      list.begin.case {
+        .end! => .end!,
+        .item(v) list => eq(prev, v).case {
+          .true! => list.loop,
+          .false! =>
+            let prev = v in
+            .item(v) list.loop,
+        }
+      }
+  }
+
+dec List.Take : <a>[List<box a>] [Nat] List<a>
+def List.Take = <a>[list] [n]
+  Nat.Repeat(n).begin.case {
+    .end! => .end!,
+    .step next => list.case {
+      .end! => .end!
+      .item(v) list => .item(v) next.loop,
+    }
+  }
+
+dec List.Drop : <a>[List<box a>] [Nat] List<a>
+def List.Drop = <a>[list] [n]
+  Nat.Repeat(n).begin.case {
+    .end! => list,
+    .step next => list.case {
+      .end! => .end!,
+      .item(_) list => next.loop,
+    },
+  }
+
+dec List.Chunk : <a>[List<a>] [Nat] List<List<a>>
+def List.Chunk = <a>[list] [n] chan outer {
+  let inner: Option<List.Builder<a>> = .err!
+  let i = 0
+
+  list.begin.case {
+    .end! => {
+      inner.case {
+        .err! => {},
+        .ok builder => { outer.item(builder.build) },
+      }
+      outer.end!
+    },
+    .item(v) list => {
+      inner.case {
+        .err! => {
+          let inner = .ok List.Builder(type a).add(v)
+        },
+        .ok builder => {
+          let inner = .ok builder.add(v)
+        },
+      }
+      i->Nat.Add(1)
+      Nat.Equals(i, n).case {
+        .true! => {
+          inner.case {
+            .ok builder => { outer.item(builder.build) },
+          }
+          let inner = .err!
+          let i = 0
+          list.loop
+        },
+        .false! => {
+          list.loop
+        },
+      }
+    },
+  }
+}
 
 
 /// Ordering
@@ -181,7 +425,31 @@ dec String.Compare   : [String, String] Ordering
 dec String.Builder : String.Builder
 dec String.Parser  : [String] String.Parser<either {}>
 
-dec String.ParserFromReader : [type e] [Bytes.Reader<e>] String.Parser<e>
+dec String.ParserFromReader : <e>[Bytes.Reader<e>] String.Parser<e>
+
+dec String.Lines : <e>[String.Parser<e>] List.Result<e, String>
+def String.Lines = <e>[parser]
+  catch e => .end .err e in
+  parser.begin.match(.repeat.one.any!, .str "\n").case {
+    .end try ! => .end .ok!,
+    .fail parser => let try r = parser.remainder in .item(r) .end .ok!,
+    .match(line, _) parser => .item(line) parser.loop,
+  }
+
+dec String.Join : [List<String>, String] String
+def String.Join = [list, sep]
+  let builder = String.Builder in
+  list.case {
+    .end! => builder.build,
+    .item(v) list => do {
+      builder.add(v)
+    } in list.begin.case {
+      .end! => builder.build,
+      .item(v) list => do {
+        builder.add(sep).add(v)
+      } in list.loop,
+    },
+  }
 
 
 /// Byte
@@ -259,7 +527,7 @@ dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
 dec Bytes.Parser  : [Bytes] Bytes.Parser<either {}>
 
 dec Bytes.EmptyReader      : Bytes.Reader<either {}>
-dec Bytes.ParserFromReader : [type e] [Bytes.Reader<e>] Bytes.Parser<e>
+dec Bytes.ParserFromReader : <e>[Bytes.Reader<e>] Bytes.Parser<e>
 
 dec Bytes.PipeReader : [type e] [[Bytes.Writer<!>] Result<e, !>] Bytes.Reader<e>
 

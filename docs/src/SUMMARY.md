@@ -15,6 +15,7 @@
   - [Pair](./types/pair.md)
   - [Function](./types/function.md)
   - [Forall](./types/forall.md)
+  - [Implicit Generics](./types/implicit_generics.md)
   - [Recursive](./types/recursive.md)
   - [Choice](./types/choice.md)
   - [Iterative](./types/iterative.md)
@@ -31,4 +32,5 @@
   - [Construction by Destruction](./processes/duality.md)
 - [Quality of Life Syntax Sugar](./quality_of_life/README.md)
   - [Error Handling](./quality_of_life/error_handling.md)
+  - [Conditions & `if`](./quality_of_life/if.md)
   - [Pipes](./quality_of_life/pipes.md)

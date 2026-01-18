@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::{
-    icombs::readback::Handle,
     par::{
         process,
         program::{Definition, Module},
         types::Type,
     },
+    runtime::Handle,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

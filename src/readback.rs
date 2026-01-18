@@ -1,23 +1,24 @@
 use crate::{
-    icombs::{
-        readback::{TypedHandle, TypedReadback},
-        Net,
-    },
     par::{
         parse::parse_bytes,
         primitive::{ParString, Primitive},
+    },
+    runtime::{
+        flat::stats::Rewrites,
+        readback::{TypedHandle, TypedReadback},
     },
 };
 use arcstr::ArcStr;
 use bytes::Bytes;
 use core::fmt::Debug;
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{self, RichText};
 use futures::{
     channel::oneshot,
     task::{Spawn, SpawnExt},
 };
 use num_bigint::BigInt;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 enum Request {
     Nat(String, Box<dyn Send + FnOnce(BigInt)>),
@@ -56,6 +57,8 @@ pub enum Event {
     },
 }
 
+pub type RunStats = Arc<Mutex<Option<(Rewrites, Duration)>>>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Polarity {
     Positive,
@@ -91,7 +94,7 @@ impl Event {
 pub struct Element {
     history: Vec<Event>,
     request: Option<Request>,
-    net: Arc<Mutex<Net>>,
+    stats: RunStats,
 }
 
 impl Element {
@@ -99,11 +102,13 @@ impl Element {
         refresh: Arc<dyn Fn() + Send + Sync>,
         spawner: Arc<dyn Spawn + Send + Sync>,
         handle: TypedHandle,
+        stats: RunStats,
     ) -> Arc<Mutex<Self>> {
+        let stats = Arc::clone(&stats);
         let element = Arc::new(Mutex::new(Self {
             history: vec![],
             request: None,
-            net: handle.net(),
+            stats: Arc::clone(&stats),
         }));
 
         spawner
@@ -112,6 +117,7 @@ impl Element {
                 Arc::clone(&spawner),
                 handle,
                 Arc::clone(&element),
+                stats,
             ))
             .expect("spawn failed");
         element
@@ -128,24 +134,15 @@ impl Element {
     }
 
     pub fn show_stats(&self, ui: &mut egui::Ui) {
-        let rewrites = self.net.lock().unwrap().rewrites.clone();
-        ui.vertical(|ui| {
-            let row = |ui: &mut Ui, s: &str, n: u128| {
-                ui.horizontal(|ui| {
-                    ui.label(s);
-                    ui.label(RichText::from(n.to_string()).strong());
-                });
-            };
-            row(ui, "Annihilate:", rewrites.annihilate);
-            row(ui, "Commute:", rewrites.commute);
-            row(ui, "Signal", rewrites.signal);
-            row(ui, "Erase:", rewrites.era);
-            row(ui, "Expand:", rewrites.expand);
-            row(ui, "Responds:", rewrites.resp);
-            row(ui, "Total:", rewrites.total());
-            row(ui, "Busy time (ms):", rewrites.busy_duration.as_millis());
-            row(ui, "Total / s:", rewrites.total_per_second());
-        });
+        let stats = self.stats.lock().unwrap();
+        match stats.as_ref() {
+            Some((result, elapsed)) => {
+                ui.label(RichText::new(result.show(*elapsed)).code());
+            }
+            None => {
+                ui.label(RichText::new("Stats pending...").code());
+            }
+        }
     }
 
     pub fn show_content(&mut self, ui: &mut egui::Ui) {
@@ -427,6 +424,7 @@ async fn handle_coroutine(
     spawner: Arc<dyn Spawn + Send + Sync>,
     handle: TypedHandle,
     element: Arc<Mutex<Element>>,
+    stats: RunStats,
 ) {
     let mut handle = handle;
 
@@ -522,6 +520,7 @@ async fn handle_coroutine(
                     Arc::clone(&refresh),
                     Arc::clone(&spawner),
                     handle1,
+                    Arc::clone(&stats),
                 )));
                 handle = handle2;
                 refresh();
@@ -533,6 +532,7 @@ async fn handle_coroutine(
                     Arc::clone(&refresh),
                     Arc::clone(&spawner),
                     handle1,
+                    Arc::clone(&stats),
                 )));
                 handle = handle2;
                 refresh();
@@ -546,8 +546,8 @@ async fn handle_coroutine(
             }
 
             TypedReadback::Choice(signals, callback) => {
-                let rx = {
-                    let (tx, rx) = oneshot::channel();
+                let rx: oneshot::Receiver<TypedHandle> = {
+                    let (tx, rx) = oneshot::channel::<TypedHandle>();
                     let mut lock = element.lock().expect("lock failed");
                     lock.request = Some(Request::Choice(
                         signals,

@@ -1,13 +1,13 @@
 use crate::{
-    icombs::{self, IcCompiled},
-    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
-};
-use crate::{
     location::FileName,
     par::{
         builtin::import_builtins,
         program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
     },
+};
+use crate::{
+    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
+    runtime::{Compiled, RuntimeCompilerError},
 };
 
 use std::fmt::Write;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub(crate) enum Error {
     Syntax(SyntaxError),
     Compile(CompileError),
-    InetCompile(crate::icombs::compiler::Error),
+    InetCompile(RuntimeCompilerError),
     Type(TypeError),
 }
 
@@ -62,14 +62,14 @@ pub enum BuildResult {
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
-        error: icombs::compiler::Error,
+        error: RuntimeCompilerError,
     },
     Ok {
         #[allow(dead_code)]
         pretty: String,
         checked: Arc<CheckedModule>,
         type_on_hover: TypeOnHover,
-        ic_compiled: IcCompiled,
+        rt_compiled: Compiled,
     },
 }
 
@@ -119,14 +119,14 @@ impl BuildResult {
         }
     }
 
-    pub fn ic_compiled(&self) -> Option<&IcCompiled> {
+    pub fn rt_compiled(&self) -> Option<&Compiled> {
         match self {
             Self::None => None,
             Self::SyntaxError { .. } => None,
             Self::CompileError { .. } => None,
             Self::TypeError { .. } => None,
             Self::InetError { .. } => None,
-            Self::Ok { ic_compiled, .. } => Some(&ic_compiled),
+            Self::Ok { rt_compiled, .. } => Some(&rt_compiled),
         }
     }
 
@@ -168,8 +168,8 @@ impl BuildResult {
 
     pub fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
         let type_on_hover = TypeOnHover::new(&checked);
-        let ic_compiled = match icombs::compiler::compile_file(&checked) {
-            Ok(ic_compiled) => ic_compiled,
+        let rt_compiled = match Compiled::compile_file(&checked) {
+            Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
                     pretty,
@@ -183,7 +183,7 @@ impl BuildResult {
             pretty,
             checked,
             type_on_hover,
-            ic_compiled,
+            rt_compiled,
         }
     }
 }

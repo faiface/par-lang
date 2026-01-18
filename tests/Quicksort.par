@@ -1,0 +1,50 @@
+
+dec QuicksortGo: [List<Nat>] [List<Nat>] List<Nat>
+def QuicksortGo = [input] [suffix] chan out: dual List<Nat> {
+	input.unfounded@outer
+	input.case {
+		.item(pivot) => {
+		}
+		.end => { out <> suffix }
+	}
+
+	// now, split the rest of the list
+	let a = List.Builder(type Nat)
+	let b = List.Builder(type Nat)
+
+	input.begin@inner.case {
+		.item(i) => {
+			let cmp = Nat.Compare(i, pivot)
+			cmp.case {
+				.less => { b.add(i) }
+				.equal => { a.add(i) }
+				.greater => { a.add(i) }
+			}
+			input.loop@inner
+		}
+		.end => {
+			let suffix: List<Nat> = chan out {
+				let input = a.build
+				input.loop@outer
+			}
+			let suffix = .item (pivot) suffix
+			let input = b.build
+			input.loop@outer
+		}
+	}
+}
+
+dec Quicksort: [List<Nat>] List<Nat>
+def Quicksort = [x] QuicksortGo(x, .end!)
+
+def Main: ! = do {
+  let console = Console.Open
+  let numbers = Nat.Range(1, 10)
+  let numbers = Quicksort(numbers)
+  numbers.begin.case {
+    .item(h) => { numbers.loop }
+    .end => {}
+  }
+  console.print("Finished!")
+  console.close
+} in !
