@@ -60,7 +60,7 @@ hljs.registerLanguage("par", function(hljs) {
       name: "Par",
       aliases: ["par"],
       keywords: {
-          keyword: "dec def type chan dual let do in case begin unfounded loop telltypes either choice recursive iterative self box catch try throw default",
+          keyword: "dec def type chan dual let do in case begin unfounded loop telltypes either choice recursive iterative self box catch try throw default else if is and or not",
           literal: ""
       },
       illegal: "",
