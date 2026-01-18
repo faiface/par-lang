@@ -237,8 +237,8 @@ type Result&lt;e, a&gt; = either {
   .err e,
 }
 
-dec Result.Always : [type a] [Result&lt;either {}, a&gt;] a
-def Result.Always = [type a] [result] result.case {
+dec Result.Always : &lt;a&gt;[Result&lt;either {}, a&gt;] a
+def Result.Always = &lt;a&gt;[result] result.case {
   .ok value =&gt; value,
   .err impossible =&gt; impossible.case {},
 }
@@ -258,6 +258,11 @@ type List.Builder&lt;a&gt; = iterative choice {
   .build =&gt; List&lt;a&gt;,
 }
 
+type List.Result&lt;e, a&gt; = recursive either {
+  .end Result&lt;e, !&gt;,
+  .item(a) self,
+}
+
 dec List.Builder : [type a] List.Builder&lt;a&gt;
 def List.Builder = [type a]
   let append: [List&lt;a&gt;] List&lt;a&gt; = [xs] xs
@@ -265,6 +270,245 @@ def List.Builder = [type a]
     .add(x) =&gt; let append = [xs: List&lt;a&gt;] append(.item(x) xs) in loop,
     .build =&gt; append(.end!),
   }
+
+dec List.Find : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Option&lt;a&gt;
+def List.Find = &lt;a&gt;[list] [f] list.begin.case {
+  .end! =&gt; .err!,
+  .item(v) list =&gt; f(v).case {
+    .true! =&gt; .ok v,
+    .false! =&gt; list.loop,
+  },
+}
+
+dec List.FindLast : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Option&lt;a&gt;
+def List.FindLast = &lt;a&gt;[list] [f]
+  let result: Option&lt;box a&gt; = .err! in
+  list.begin.case {
+    .end! =&gt; result,
+    .item(v) list =&gt; f(v).case {
+      .true! =&gt; let result = .ok v in list.loop,
+      .false! =&gt; list.loop,
+    },
+  }
+
+dec List.Map : &lt;a&gt;[List&lt;a&gt;] [type b] [box [a] b] List&lt;b&gt;
+def List.Map = &lt;a&gt;[list] [type b] [f] list.begin.case {
+  .end! =&gt; .end!
+  .item(v) list =&gt; .item(f(v)) list.loop,
+}
+
+dec List.FlatMap : &lt;a&gt;[List&lt;a&gt;] [type b] [box [a] List&lt;b&gt;] List&lt;b&gt;
+def List.FlatMap = &lt;a&gt;[list] [type b] [f] list.begin.case {
+  .end! =&gt; .end!,
+  .item(v) list =&gt; f(v).begin@flat.case {
+    .end! =&gt; list.loop,
+    .item(v) flat =&gt; .item(v) flat.loop@flat,
+  },
+}
+
+dec List.Filter : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] List&lt;a&gt;
+def List.Filter = &lt;a&gt;[list] [f] list.begin.case {
+  .end! =&gt; .end!,
+  .item(v) list =&gt; f(v).case {
+    .true! =&gt; .item(v) list.loop,
+    .false! =&gt; list.loop,
+  },
+}
+
+dec List.Fold : &lt;a&gt;[List&lt;a&gt;] &lt;r&gt;[r] [box [r, a] r] r
+def List.Fold = &lt;a&gt;[list] &lt;r&gt;[result] [f] list.begin.case {
+  .end! =&gt; result,
+  .item(v) list =&gt; let result = f(result, v) in list.loop,
+}
+
+dec List.Reduce : &lt;a&gt;[List&lt;a&gt;] [box [a, a] a] Option&lt;a&gt;
+def List.Reduce = &lt;a&gt;[list] [f] list.case {
+  .end! =&gt; .err!,
+  .item(result) list =&gt; .ok List.Fold(list, result, f),
+}
+
+dec List.Length : &lt;a&gt;[List&lt;box a&gt;] Nat
+def List.Length = &lt;a&gt;[list]
+  let len = 0 in
+  list.begin.case {
+    .end! =&gt; len,
+    .item(_) list =&gt; do { len-&gt;Nat.Add(1) } in list.loop,
+  }
+
+dec List.Concat : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
+def List.Concat = &lt;a&gt;[list1] [list2] chan yield {
+  yield-&gt;List.Copy(list1)
+  yield-&gt;List.Copy(list2)
+  yield.end!
+}
+
+dec List.Copy : &lt;a&gt;[dual List&lt;a&gt;] [List&lt;a&gt;] dual List&lt;a&gt;
+def List.Copy = &lt;a&gt;[dst] [src] do {
+  src.begin.case {
+    .end! =&gt; {},
+    .item(v) src =&gt; {
+      dst.item(v)
+      src.loop
+    },
+  }
+} in dst
+
+dec List.MinMax : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Ordering] Option&lt;(a) a&gt;
+def List.MinMax = &lt;a&gt;[list] [cmp]
+  let result: Option&lt;(box a) box a&gt; = .err! in
+  list.begin.case {
+    .end! =&gt; result,
+    .item(v) list =&gt; result.case {
+      .err! =&gt;
+        let result = .ok(v) v in
+        list.loop,
+      .ok(min) max =&gt;
+        let result = cmp(v, min).case {
+          .less! =&gt; .ok (v) max,
+          else _ =&gt; cmp(v, max).case {
+            .greater! =&gt; .ok (min) v,
+            else _ =&gt; result,
+          },
+        } in list.loop,
+    },
+  }
+
+dec List.Min : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Ordering] Option&lt;a&gt;
+def List.Min = &lt;a&gt;[list] [cmp]
+  List.MinMax(list, cmp).case {
+    .err! =&gt; .err!,
+    .ok(min) _ =&gt; .ok min,
+  }
+
+dec List.Max : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Ordering] Option&lt;a&gt;
+def List.Max = &lt;a&gt;[list] [cmp]
+  List.MinMax(list, cmp).case {
+    .err! =&gt; .err!,
+    .ok(_) max =&gt; .ok max,
+  }
+
+dec List.Zip : &lt;a&gt;[List&lt;box a&gt;] &lt;b&gt;[List&lt;box b&gt;] List&lt;(a) b&gt;
+def List.Zip = &lt;a&gt;[list1] &lt;b&gt;[list2] chan yield {
+  list1.begin.case {
+    .end! =&gt; { yield.end! },
+    .item(v1) list1 =&gt; {
+      list2.case {
+        .end! =&gt; { yield.end! },
+        .item(v2) list2 =&gt; {
+          yield.item((v1) v2)
+          list1.loop
+        },
+      }
+    },
+  }
+}
+
+dec List.Unzip : &lt;a, b&gt;[List&lt;(a) b&gt;] (List&lt;a&gt;) List&lt;b&gt;
+def List.Unzip = &lt;a, b&gt;[list] do {
+  let list1 = List.Builder(type a)
+  let list2 = List.Builder(type b)
+
+  list.begin.case {
+    .end! =&gt; {},
+    .item((v1) v2) list =&gt; {
+      list1.add(v1)
+      list2.add(v2)
+      list.loop
+    },
+  }
+} in (list1.build) list2.build
+
+dec List.All : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Bool
+def List.All = &lt;a&gt;[list] [f]
+  list.begin.case {
+    .end! =&gt; .true!,
+    .item(v) list =&gt; f(v).case {
+      .true! =&gt; list.loop,
+      .false! =&gt; .false!,
+    },
+  }
+
+dec List.Any : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Bool
+def List.Any = &lt;a&gt;[list] [f] List.All(list, box [v] f(v).case {
+  .true! =&gt; .false!,
+  .false! =&gt; .true!,
+})
+
+dec List.Dedup : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Bool] List&lt;a&gt;
+def List.Dedup = &lt;a&gt;[list] [eq]
+  list.case {
+    .end! =&gt; .end!,
+    .item(prev) list =&gt; .item(prev)
+      list.begin.case {
+        .end! =&gt; .end!,
+        .item(v) list =&gt; eq(prev, v).case {
+          .true! =&gt; list.loop,
+          .false! =&gt;
+            let prev = v in
+            .item(v) list.loop,
+        }
+      }
+  }
+
+dec List.Take : &lt;a&gt;[List&lt;box a&gt;] [Nat] List&lt;a&gt;
+def List.Take = &lt;a&gt;[list] [n]
+  Nat.Repeat(n).begin.case {
+    .end! =&gt; .end!,
+    .step next =&gt; list.case {
+      .end! =&gt; .end!
+      .item(v) list =&gt; .item(v) next.loop,
+    }
+  }
+
+dec List.Drop : &lt;a&gt;[List&lt;box a&gt;] [Nat] List&lt;a&gt;
+def List.Drop = &lt;a&gt;[list] [n]
+  Nat.Repeat(n).begin.case {
+    .end! =&gt; list,
+    .step next =&gt; list.case {
+      .end! =&gt; .end!,
+      .item(_) list =&gt; next.loop,
+    },
+  }
+
+dec List.Chunk : &lt;a&gt;[List&lt;a&gt;] [Nat] List&lt;List&lt;a&gt;&gt;
+def List.Chunk = &lt;a&gt;[list] [n] chan outer {
+  let inner: Option&lt;List.Builder&lt;a&gt;&gt; = .err!
+  let i = 0
+
+  list.begin.case {
+    .end! =&gt; {
+      inner.case {
+        .err! =&gt; {},
+        .ok builder =&gt; { outer.item(builder.build) },
+      }
+      outer.end!
+    },
+    .item(v) list =&gt; {
+      inner.case {
+        .err! =&gt; {
+          let inner = .ok List.Builder(type a).add(v)
+        },
+        .ok builder =&gt; {
+          let inner = .ok builder.add(v)
+        },
+      }
+      i-&gt;Nat.Add(1)
+      Nat.Equals(i, n).case {
+        .true! =&gt; {
+          inner.case {
+            .ok builder =&gt; { outer.item(builder.build) },
+          }
+          let inner = .err!
+          let i = 0
+          list.loop
+        },
+        .false! =&gt; {
+          list.loop
+        },
+      }
+    },
+  }
+}
 
 
 /// Ordering
@@ -344,7 +588,31 @@ dec String.Compare   : [String, String] Ordering
 dec String.Builder : String.Builder
 dec String.Parser  : [String] String.Parser&lt;either {}&gt;
 
-dec String.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] String.Parser&lt;e&gt;
+dec String.ParserFromReader : &lt;e&gt;[Bytes.Reader&lt;e&gt;] String.Parser&lt;e&gt;
+
+dec String.Lines : &lt;e&gt;[String.Parser&lt;e&gt;] List.Result&lt;e, String&gt;
+def String.Lines = &lt;e&gt;[parser]
+  catch e =&gt; .end .err e in
+  parser.begin.match(.repeat.one.any!, .str "\n").case {
+    .end try ! =&gt; .end .ok!,
+    .fail parser =&gt; let try r = parser.remainder in .item(r) .end .ok!,
+    .match(line, _) parser =&gt; .item(line) parser.loop,
+  }
+
+dec String.Join : [List&lt;String&gt;, String] String
+def String.Join = [list, sep]
+  let builder = String.Builder in
+  list.case {
+    .end! =&gt; builder.build,
+    .item(v) list =&gt; do {
+      builder.add(v)
+    } in list.begin.case {
+      .end! =&gt; builder.build,
+      .item(v) list =&gt; do {
+        builder.add(sep).add(v)
+      } in list.loop,
+    },
+  }
 
 
 /// Byte
@@ -422,7 +690,7 @@ dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
 dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
 
 dec Bytes.EmptyReader      : Bytes.Reader&lt;either {}&gt;
-dec Bytes.ParserFromReader : [type e] [Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
+dec Bytes.ParserFromReader : &lt;e&gt;[Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
 
 dec Bytes.PipeReader : [type e] [[Bytes.Writer&lt;!&gt;] Result&lt;e, !&gt;] Bytes.Reader&lt;e&gt;
 
