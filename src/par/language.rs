@@ -2394,19 +2394,20 @@ fn condition_process_core(
                 None => command_process,
             }
         }
-        Condition::And(_, left, right) => {
-            let goto_failure = failure.clone();
+        Condition::And(span, left, right) => pass.with_fallthrough(failure, |pass| {
+            let left_fallthrough = pass.use_fallthrough(span).unwrap();
+            let right_fallthrough = pass.use_fallthrough(span).unwrap();
             let restored_failure =
-                compile_restorations(&collect_restorations(left), failure, pass)?;
-            let right_process =
-                condition_process_core(right, pass, success.clone(), restored_failure)?;
-            condition_process_core(left, pass, right_process, goto_failure)?
-        }
-        Condition::Or(_, left, right) => {
-            let right_process =
-                condition_process_core(right, pass, success.clone(), failure.clone())?;
-            condition_process_core(left, pass, success, right_process)?
-        }
+                compile_restorations(&collect_restorations(left), right_fallthrough, pass)?;
+            let right_process = condition_process_core(right, pass, success, restored_failure)?;
+            condition_process_core(left, pass, right_process, left_fallthrough)
+        })?,
+        Condition::Or(span, left, right) => pass.with_fallthrough(success, |pass| {
+            let left_fallthrough = pass.use_fallthrough(span).unwrap();
+            let right_fallthrough = pass.use_fallthrough(span).unwrap();
+            let right_process = condition_process_core(right, pass, right_fallthrough, failure)?;
+            condition_process_core(left, pass, left_fallthrough, right_process)
+        })?,
         Condition::Not(_, inner) => condition_process_core(inner, pass, failure, success)?,
     })
 }
