@@ -216,30 +216,13 @@ def NewProgressTracker: ProgressTracker = do {
 
 dec FanIn : <a>[List<List<a>>] List<a>
 def FanIn = <a>[lists] chan yield {
-  let yield = Cell.Share(yield, chan cell {
-    lists.begin.case {
-      .end! => {
-        cell.end!
-      }
-      .item(list) => {
-        cell.split(chan cell {
-          list.begin.case {
-            .end! => {
-              cell.end!
-            }
-            .item(value) => {
-              cell.take[yield]
-              yield.item(value)
-              cell.put(yield)
-              list.loop
-            }
-          }
-        })
-        lists.loop
-      }
-    }
-  })
-  yield.end!
+  Cell.Share(yield, lists.begin.case {
+    .end! => .end!,
+    .item(list) lists => .split(list.begin.case {
+      .end! => .end!,
+      .item(value) list => .take[yield] .put(yield.item(value)) list.loop,
+    }) lists.loop
+  }).end!
 }
 
 dec TrimStart : [Bytes, Bytes] Bytes
