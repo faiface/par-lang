@@ -392,6 +392,8 @@ if {
 In process syntax, code after the `if { ... }` is still just a fallthrough, not
 an implicit `else`.
 
+> The exhaustiveness checking in `if` currently isn't perfect, and won't correctly handle more complex combinations.
+
 ## Wrap-up
 
 - Expression `if { ... }` returns a value.
