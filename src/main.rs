@@ -46,6 +46,7 @@ fn main() {
         .subcommand(
             Command::new("run")
                 .about("Run a Par file in the CLI")
+                .arg(arg!(--stats "Print statistics after running the definition"))
                 .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
                 .arg(arg!([definition] "The definition to run").default_value("Main"))
                 .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
@@ -83,9 +84,10 @@ fn main() {
             run_playground(file.cloned());
         }
         Some(("run", args)) => {
+            let stats = *args.get_one::<bool>("stats").unwrap();
             let file = args.get_one::<PathBuf>("file").unwrap().clone();
             let definition = args.get_one::<String>("definition").unwrap().clone();
-            run_definition(file, definition);
+            run_definition(file, definition, stats);
         }
         Some(("check", args)) => {
             let files = args.get_many::<PathBuf>("file").unwrap().clone();
@@ -147,7 +149,7 @@ fn run_playground(file: Option<PathBuf>) {
     .expect("egui crashed");
 }
 
-fn run_definition(file: PathBuf, definition: String) {
+fn run_definition(file: PathBuf, definition: String, print_stats: bool) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
         let Ok(code) = File::open(&file).and_then(|mut file| {
@@ -208,8 +210,10 @@ fn run_definition(file: PathBuf, definition: String) {
         root.continue_();
         let stats = reducer_future.await;
 
-        eprintln!("{}", stats.show(start.elapsed()));
-        eprintln!("\tArena size: {}", rt_compiled.code.arena.memory_size());
+        if print_stats {
+            eprintln!("{}", stats.show(start.elapsed()));
+            eprintln!("\tArena size: {}", rt_compiled.code.arena.memory_size());
+        }
     });
 }
 
