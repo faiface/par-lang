@@ -208,7 +208,7 @@ fn run_definition(file: PathBuf, definition: String) {
         root.continue_();
         let stats = reducer_future.await;
 
-        println!("{}", stats.show(start.elapsed()));
+        eprintln!("{}", stats.show(start.elapsed()));
         eprintln!("\tArena size: {}", rt_compiled.code.arena.memory_size());
     });
 }
