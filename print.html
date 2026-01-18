@@ -962,11 +962,17 @@ def List.Length = &lt;a&gt;[list]
     .item(_) list =&gt; do { len-&gt;Nat.Add(1) } in list.loop,
   }
 
-dec List.Concat : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
-def List.Concat = &lt;a&gt;[list1] [list2] chan yield {
-  yield-&gt;List.Copy(list1)
-  yield-&gt;List.Copy(list2)
-  yield.end!
+dec List.Concat : &lt;a&gt;[List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
+def List.Concat = &lt;a&gt;[lists] chan yield {
+  lists.begin.case {
+    .item(list) =&gt; {
+      yield-&gt;List.Copy(list)
+      lists.loop
+    }
+    .end! =&gt; {
+      yield.end!
+    }
+  }
 }
 
 dec List.Copy : &lt;a&gt;[dual List&lt;a&gt;] [List&lt;a&gt;] dual List&lt;a&gt;
@@ -1239,6 +1245,16 @@ def String.Join = [list, sep]
         builder.add(sep).add(v)
       } in list.loop,
     },
+  }
+
+dec String.Concat : [List&lt;String&gt;] String
+def String.Concat = [list]
+  let builder = String.Builder in
+  list.begin.case {
+    .end! =&gt; builder.build,
+    .item(v) list =&gt; do {
+      builder.add(v)
+    } in list.loop,
   }
 
 
