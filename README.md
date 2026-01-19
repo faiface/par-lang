@@ -11,7 +11,10 @@
 
 ## 🛠️ [VSCode extension](https://marketplace.visualstudio.com/items?itemName=par-lang.par-vscode)
 
-## 📺 [What’s a linear programming language like? — Coding a “Mini Grep” in Par](https://youtu.be/nU7Lt6k3lNQ?si=8KtbTQMgp6VhZ5UP)
+## 📺 Videos
+
+- **[What’s a linear programming language like? — Coding a “Mini Grep” in Par](https://youtu.be/nU7Lt6k3lNQ?si=8KtbTQMgp6VhZ5UP)**
+- **[What if everything was "Async", but nothing needed "Await"? | The Par Programming Language](https://youtu.be/tpICs7uG3n8?si=JiEBJoRnMoB4FrRs)**
 
 ## 💡 Check out the [examples](examples/)
 
