@@ -857,6 +857,16 @@ type Cell&lt;a&gt; = iterative choice {
 }
 
 dec Cell.Share : &lt;a&gt;[a] [dual Cell&lt;a&gt;] a
+def Cell.Share = &lt;a&gt;[value] [client] poll(client) {
+  session =&gt; session.case {
+    .end! =&gt; submit(),
+    .split(client1) client2 =&gt; submit(client1, client2),
+    .take session =&gt; session(value).case {
+      .put(value) client =&gt; submit(client),
+    }
+  }
+  else =&gt; value,
+}
 
 
 /// Debug
