@@ -1,14 +1,15 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
-    sync::Arc,
+    pin::Pin,
+    sync::{Arc, Mutex},
 };
 
 use super::net::{Net, Tree};
 use crate::par::process::VariableUsage;
 use crate::par::{
     language::{GlobalName, LocalName},
-    process::{Captures, Command, Expression, Process},
+    process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
 };
 use crate::runtime::tree::net::FanBehavior;
@@ -123,6 +124,41 @@ pub struct PackData {
 }
 
 impl Context {
+    pub fn pack_template(
+        &self,
+        driver: Option<&LocalName>,
+        captures: Option<&Captures>,
+        labels_in_scope: Option<&BTreeSet<LoopLabel>>,
+    ) -> PackData {
+        let mut m_tys = vec![];
+        let mut m_vars = vec![];
+        for (name, tree) in self.vars.iter() {
+            if let Some(captures) = captures {
+                if let Var::Name(name) = name {
+                    if !captures.names.contains_key(name) && Some(name) != driver {
+                        continue;
+                    }
+                }
+            }
+            if let Some(labels_in_scope) = labels_in_scope {
+                if let Var::Loop(label) = name {
+                    if !labels_in_scope.contains(&LoopLabel(label.clone())) {
+                        continue;
+                    }
+                }
+            }
+            m_vars.push(name.clone());
+            m_tys.push(tree.ty.clone());
+        }
+
+        PackData {
+            names: m_vars,
+            types: m_tys,
+            loop_points: self.loop_points.clone(),
+            unguarded_loop_labels: self.unguarded_loop_labels.clone(),
+        }
+    }
+
     pub fn pack(
         &mut self,
         driver: Option<&LocalName>,
@@ -198,6 +234,137 @@ pub struct Compiler {
     compile_global_stack: IndexSet<GlobalName>,
     package_is_case_branch: IndexMap<usize, ArcStr>,
     blocks: IndexMap<usize, Arc<Process<Type>>>,
+    poll_packages: IndexMap<LocalName, PollInfo>,
+}
+
+struct PollState {
+    count: usize,
+    ready_tx: tokio::sync::mpsc::UnboundedSender<crate::runtime::flat::readback::Handle>,
+    ready_rx: Option<tokio::sync::mpsc::UnboundedReceiver<crate::runtime::flat::readback::Handle>>,
+}
+
+impl Default for PollState {
+    fn default() -> Self {
+        let (ready_tx, ready_rx) = tokio::sync::mpsc::unbounded_channel();
+        Self {
+            count: 0,
+            ready_tx,
+            ready_rx: Some(ready_rx),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PollInfo {
+    package_id: usize,
+    labels_in_scope: BTreeSet<LoopLabel>,
+    driver: LocalName,
+}
+
+fn poll_token_tree(state: Arc<Mutex<PollState>>) -> Tree {
+    Tree::ExternalBox(Arc::new(move |handle| {
+        let state = state.clone();
+        poll_token_impl(handle, state)
+    }))
+}
+
+fn poll_token_impl(
+    mut request: crate::runtime::Handle,
+    state: Arc<Mutex<PollState>>,
+) -> Pin<Box<dyn Send + core::future::Future<Output = ()>>> {
+    Box::pin(async move {
+        let op = request.case().await;
+        match op.as_str() {
+            "#poll" => {
+                // payload: (result_slot) next_slot
+                // implemented as a Pair(left = next_slot, right = result_slot)
+                let mut result_slot = request.receive();
+                let next_slot = request;
+
+                let next_state = state.clone();
+                next_slot.provide_box(move |handle| poll_token_impl(handle, next_state.clone()));
+
+                let mut ready_rx = {
+                    let mut state = state.lock().unwrap();
+                    if state.count == 0 {
+                        None
+                    } else {
+                        Some(
+                            state
+                                .ready_rx
+                                .take()
+                                .expect("ready_rx missing while poll is active"),
+                        )
+                    }
+                };
+
+                let client = match ready_rx.as_mut() {
+                    None => None,
+                    Some(rx) => Some(rx.recv().await.expect("poll ready channel closed")),
+                };
+
+                if let Some(rx) = ready_rx {
+                    let mut state = state.lock().unwrap();
+                    state.ready_rx = Some(rx);
+                    if client.is_some() {
+                        state.count -= 1;
+                    }
+                }
+
+                match client {
+                    None => {
+                        result_slot.signal(ArcStr::from("#empty"));
+                        result_slot.break_();
+                    }
+                    Some(client) => {
+                        result_slot.signal(ArcStr::from("#client"));
+                        result_slot.link(crate::runtime::Handle::from(client));
+                    }
+                }
+            }
+
+            "#submit" => {
+                // payload: (stream) next_slot
+                // implemented as a Pair(left = next_slot, right = stream)
+                let mut stream = request.receive();
+                let next_slot = request;
+
+                loop {
+                    let tag = stream.case().await;
+                    match tag.as_str() {
+                        "#end" => {
+                            stream.erase();
+                            break;
+                        }
+                        "#item" => {
+                            // payload: (client) tail
+                            // implemented as a Pair(left = tail, right = client)
+                            let client = stream.receive();
+                            let client = client.handle;
+                            let tx = {
+                                let mut state = state.lock().unwrap();
+                                state.count += 1;
+                                state.ready_tx.clone()
+                            };
+                            tokio::spawn(async move {
+                                let client = client.await_ready().await;
+                                let _ = tx.send(client);
+                            });
+                        }
+                        other => panic!("Invalid submit stream item: {other}"),
+                    }
+                }
+
+                // Important: only expose the continuation token after we've fully consumed the
+                // submitted stream and registered all clients. Otherwise the poll body may race
+                // ahead and observe an empty pool.
+                let next_state = state.clone();
+                next_slot.provide_box(move |handle| poll_token_impl(handle, next_state.clone()));
+            }
+
+            other => panic!("Invalid poll token operation: {other}"),
+        }
+    })
 }
 
 impl Tree {
@@ -234,6 +401,17 @@ pub(crate) fn demultiplex_trees(mut trees: Vec<Tree>) -> Tree {
 }
 
 impl Compiler {
+    fn build_submit_stream(&mut self, items: Vec<TypedTree>) -> Tree {
+        let mut stream = Tree::Signal(ArcStr::from("#end"), Box::new(Tree::Break));
+        for item in items.into_iter().rev() {
+            stream = Tree::Signal(
+                ArcStr::from("#item"),
+                Box::new(Tree::Times(Box::new(stream), Box::new(item.tree))),
+            );
+        }
+        stream
+    }
+
     fn compile_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
         if let Some(id) = self.global_name_to_id.get(name) {
             return Ok(TypedTree {
@@ -559,6 +737,206 @@ impl Compiler {
 
             Process::Telltypes(_, _) => unreachable!(),
 
+            Process::Poll {
+                span: _span,
+                kind,
+                driver,
+                point,
+                clients,
+                name,
+                name_typ: _,
+                captures,
+                then,
+                else_,
+            } => {
+                let labels_in_scope: BTreeSet<_> =
+                    self.context.loop_points.keys().cloned().collect();
+
+                // Initialize the poll token (only for `poll`, not `repoll`).
+                if matches!(kind, PollKind::Poll) {
+                    let state = Arc::new(Mutex::new(PollState::default()));
+                    self.bind_variable(
+                        driver.clone(),
+                        poll_token_tree(state).with_type(Type::Break(Span::None)),
+                    )?;
+                }
+
+                // Pre-submit the initial clients (also used by `repoll` to enqueue extra clients).
+                if !clients.is_empty() {
+                    let mut initial_client_trees = Vec::with_capacity(clients.len());
+                    for client in clients {
+                        initial_client_trees.push(self.compile_expression(client)?);
+                    }
+
+                    let driver_tree = self.use_variable(driver, &VariableUsage::Move, false)?;
+                    let (next0, next1) = self.create_typed_wire();
+                    let stream = self.build_submit_stream(initial_client_trees);
+                    let payload = Tree::Times(Box::new(next1.tree), Box::new(stream));
+                    let request = Tree::Signal(ArcStr::from("#submit"), Box::new(payload));
+                    self.net.link(driver_tree.tree, request);
+                    self.bind_variable(driver.clone(), next0)?;
+                }
+
+                // Create the poll body package, so submits can "jump" back to it.
+                let captures = captures.clone();
+                let driver = driver.clone();
+                let point = point.clone();
+                let name = name.clone();
+                let then = then.clone();
+                let else_ = else_.clone();
+
+                let pack_template = self.context.pack_template(
+                    Some(&driver),
+                    Some(&captures),
+                    Some(&labels_in_scope),
+                );
+
+                let (poll_package_id, _) = self.in_package(
+                    format!("poll body at {:?}", proc.span()),
+                    |this, package_id| {
+                        this.poll_packages.insert(
+                            point.clone(),
+                            PollInfo {
+                                package_id,
+                                labels_in_scope: labels_in_scope.clone(),
+                                driver: driver.clone(),
+                            },
+                        );
+
+                        // Unpack the incoming context.
+                        let context_out = this.context.unpack(&pack_template, &mut this.net);
+
+                        // poll request: driver <> .poll((result_slot) next_slot)
+                        let driver_tree =
+                            this.use_variable(&driver, &VariableUsage::Move, false)?;
+                        let (next0, next1) = this.create_typed_wire();
+                        let (result0, result1) = this.create_typed_wire();
+
+                        let payload = Tree::Times(Box::new(next1.tree), Box::new(result1.tree));
+                        let request = Tree::Signal(ArcStr::from("#poll"), Box::new(payload));
+                        this.net.link(driver_tree.tree, request);
+                        this.bind_variable(driver.clone(), next0)?;
+
+                        // Case on the poll result.
+                        this.context.unguarded_loop_labels.clear();
+                        let (case_context_in, case_pack_data) =
+                            this.context.pack(None, None, None, &mut this.net);
+
+                        let mut branches = HashMap::new();
+
+                        // #client branch
+                        {
+                            let (package_id, _) =
+                                this.in_package("poll #client branch".to_string(), |this, _| {
+                                    let (w0, w1) = this.create_typed_wire();
+                                    this.bind_variable(name.clone(), w0)?;
+                                    let context_out =
+                                        this.context.unpack(&case_pack_data, &mut this.net);
+                                    this.compile_process(&then)?;
+                                    Ok((w1, context_out.with_type(Type::Continue(Span::None))))
+                                })?;
+                            branches.insert(ArcStr::from("#client"), package_id);
+                        }
+
+                        // #empty branch
+                        {
+                            let (package_id, _) =
+                                this.in_package("poll #empty branch".to_string(), |this, _| {
+                                    let context_out =
+                                        this.context.unpack(&case_pack_data, &mut this.net);
+                                    if let Ok(driver_tree) =
+                                        this.use_variable(&driver, &VariableUsage::Move, false)
+                                    {
+                                        this.net.link(driver_tree.tree, Tree::Era);
+                                    }
+                                    this.compile_process(&else_)?;
+                                    Ok((
+                                        Tree::Era.with_type(Type::Break(Span::None)),
+                                        context_out.with_type(Type::Continue(Span::None)),
+                                    ))
+                                })?;
+                            branches.insert(ArcStr::from("#empty"), package_id);
+                        }
+
+                        let (else_branch, _) =
+                            this.in_package("poll (invalid branch)".to_string(), |this, _| {
+                                let context_out =
+                                    this.context.unpack(&case_pack_data, &mut this.net);
+                                this.end_context()?;
+                                Ok((
+                                    Tree::Era.with_type(Type::Break(Span::None)),
+                                    context_out.with_type(Type::Continue(Span::None)),
+                                ))
+                            })?;
+
+                        let choice =
+                            this.choice_instance(case_context_in, branches, Some(else_branch));
+                        this.net.link(result0.tree, choice);
+
+                        Ok((
+                            Tree::Era.with_type(Type::Break(Span::None)),
+                            context_out.with_type(Type::Continue(Span::None)),
+                        ))
+                    },
+                )?;
+
+                // Enter the poll body (process-ending).
+                let (context_in, _pack_data) = self.context.pack(
+                    Some(&driver),
+                    Some(&captures),
+                    Some(&labels_in_scope),
+                    &mut self.net,
+                );
+                self.lazy_redexes.push((
+                    Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
+                    Tree::Break,
+                ));
+                Ok(())
+            }
+
+            Process::Submit {
+                span: _span,
+                driver,
+                point,
+                values,
+                captures,
+            } => {
+                let Some(poll_info) = self.poll_packages.get(point).cloned() else {
+                    panic!("Submit to unknown poll-point during compilation: {point}");
+                };
+                if poll_info.driver != *driver {
+                    panic!("Submit poll-point driver mismatch: submit to {driver}, point {point}");
+                }
+                let poll_package_id = poll_info.package_id;
+
+                let mut value_trees = Vec::with_capacity(values.len());
+                for value in values {
+                    value_trees.push(self.compile_expression(value)?);
+                }
+
+                // driver <> .submit((stream) next_slot)
+                let driver_tree = self.use_variable(driver, &VariableUsage::Move, false)?;
+                let (next0, next1) = self.create_typed_wire();
+                let stream = self.build_submit_stream(value_trees);
+                let payload = Tree::Times(Box::new(next1.tree), Box::new(stream));
+                let request = Tree::Signal(ArcStr::from("#submit"), Box::new(payload));
+                self.net.link(driver_tree.tree, request);
+                self.bind_variable(driver.clone(), next0)?;
+
+                // Jump back to the poll body (process-ending).
+                let (context_in, _pack_data) = self.context.pack(
+                    Some(driver),
+                    Some(captures),
+                    Some(&poll_info.labels_in_scope),
+                    &mut self.net,
+                );
+                self.lazy_redexes.push((
+                    Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
+                    Tree::Break,
+                ));
+                Ok(())
+            }
+
             Process::Block(_, index, body, process) => {
                 let prev = self.blocks.insert(*index, body.clone());
                 self.compile_process(process)?;
@@ -866,6 +1244,7 @@ impl IcCompiled {
             lazy_redexes: vec![],
             package_is_case_branch: Default::default(),
             blocks: IndexMap::new(),
+            poll_packages: Default::default(),
         };
 
         for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {
