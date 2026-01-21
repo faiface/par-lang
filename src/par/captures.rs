@@ -107,28 +107,33 @@ struct CaptureAnalysis {
     block_envs: IndexMap<usize, LoopEnv>,
     begin_caps: IndexMap<BeginId, Captures>,
     block_caps: IndexMap<usize, Captures>,
+    poll_caps: IndexMap<LocalName, Captures>,
 }
 
 impl CaptureAnalysis {
     fn from_process(process: &Process<()>) -> Self {
         let (block_envs, begin_drivers) = BlockEnvAnalyzer::analyze_process(process);
-        let (begin_caps, block_caps) = compute_captures_from_process(process, &block_envs);
+        let (begin_caps, block_caps, poll_caps) =
+            compute_captures_from_process(process, &block_envs);
         CaptureAnalysis {
             begin_drivers,
             block_envs,
             begin_caps,
             block_caps,
+            poll_caps,
         }
     }
 
     fn from_expression(expression: &Expression<()>) -> Self {
         let (block_envs, begin_drivers) = BlockEnvAnalyzer::analyze_expression(expression);
-        let (begin_caps, block_caps) = compute_captures_from_expression(expression, &block_envs);
+        let (begin_caps, block_caps, poll_caps) =
+            compute_captures_from_expression(expression, &block_envs);
         CaptureAnalysis {
             begin_drivers,
             block_envs,
             begin_caps,
             block_caps,
+            poll_caps,
         }
     }
 
@@ -179,6 +184,83 @@ impl CaptureAnalysis {
                         usage,
                         typ: typ.clone(),
                         command,
+                    }),
+                    caps,
+                )
+            }
+            Process::Poll {
+                span,
+                kind,
+                driver,
+                point,
+                clients,
+                name,
+                name_typ,
+                captures: _,
+                then,
+                else_,
+            } => {
+                let (then, mut then_caps) = self.fix_process(then, env);
+                then_caps.remove(name);
+                then_caps.remove(driver);
+
+                let (else_, mut else_caps) = self.fix_process(else_, env);
+                else_caps.remove(driver);
+
+                let mut later_caps = then_caps.clone();
+                later_caps.extend(else_caps.clone());
+
+                let mut fixed_clients = Vec::with_capacity(clients.len());
+                let mut caps = then_caps;
+                caps.extend(else_caps);
+                for client in clients {
+                    let (client, caps1) = self.fix_expression(client, env, &later_caps);
+                    fixed_clients.push(client);
+                    caps.extend(caps1);
+                }
+
+                let poll_caps = self.poll_caps.get(point).cloned().unwrap_or_default();
+                (
+                    Arc::new(Process::Poll {
+                        span: span.clone(),
+                        kind: kind.clone(),
+                        driver: driver.clone(),
+                        point: point.clone(),
+                        clients: fixed_clients,
+                        name: name.clone(),
+                        name_typ: name_typ.clone(),
+                        captures: poll_caps,
+                        then,
+                        else_,
+                    }),
+                    caps,
+                )
+            }
+            Process::Submit {
+                span,
+                driver,
+                point,
+                values,
+                captures: _,
+            } => {
+                let poll_caps = self.poll_caps.get(point).cloned().unwrap_or_default();
+                let mut caps = poll_caps.clone();
+                caps.add(driver.clone(), span.clone(), VariableUsage::Unknown);
+
+                let mut fixed_values = Vec::with_capacity(values.len());
+                for value in values {
+                    let (value, caps1) = self.fix_expression(value, env, &poll_caps);
+                    fixed_values.push(value);
+                    caps.extend(caps1);
+                }
+
+                (
+                    Arc::new(Process::Submit {
+                        span: span.clone(),
+                        driver: driver.clone(),
+                        point: point.clone(),
+                        values: fixed_values,
+                        captures: poll_caps,
                     }),
                     caps,
                 )
@@ -481,6 +563,23 @@ impl BlockEnvAnalyzer {
             } => {
                 self.visit_command(command, span, name, env);
             }
+            Process::Poll {
+                clients,
+                then,
+                else_,
+                ..
+            } => {
+                for client in clients {
+                    self.visit_expression(client, env);
+                }
+                self.visit_process(then, env);
+                self.visit_process(else_, env);
+            }
+            Process::Submit { values, .. } => {
+                for value in values {
+                    self.visit_expression(value, env);
+                }
+            }
             Process::Telltypes(_, process) => {
                 self.visit_process(process, env);
             }
@@ -566,7 +665,11 @@ impl BlockEnvAnalyzer {
 fn compute_captures_from_process(
     process: &Process<()>,
     block_envs: &IndexMap<usize, LoopEnv>,
-) -> (IndexMap<BeginId, Captures>, IndexMap<usize, Captures>) {
+) -> (
+    IndexMap<BeginId, Captures>,
+    IndexMap<usize, Captures>,
+    IndexMap<LocalName, Captures>,
+) {
     compute_captures(
         |collector| {
             collector.process_captures(process, &LoopEnv::default());
@@ -578,7 +681,11 @@ fn compute_captures_from_process(
 fn compute_captures_from_expression(
     expression: &Expression<()>,
     block_envs: &IndexMap<usize, LoopEnv>,
-) -> (IndexMap<BeginId, Captures>, IndexMap<usize, Captures>) {
+) -> (
+    IndexMap<BeginId, Captures>,
+    IndexMap<usize, Captures>,
+    IndexMap<LocalName, Captures>,
+) {
     compute_captures(
         |collector| {
             collector.expression_captures(expression, &LoopEnv::default());
@@ -590,29 +697,38 @@ fn compute_captures_from_expression(
 fn compute_captures(
     f: impl Fn(&mut CaptureCollector<'_>),
     block_envs: &IndexMap<usize, LoopEnv>,
-) -> (IndexMap<BeginId, Captures>, IndexMap<usize, Captures>) {
+) -> (
+    IndexMap<BeginId, Captures>,
+    IndexMap<usize, Captures>,
+    IndexMap<LocalName, Captures>,
+) {
     let mut begin_caps = IndexMap::new();
     let mut block_caps = IndexMap::new();
+    let mut poll_caps = IndexMap::new();
     loop {
         let mut next_begin_caps = begin_caps.clone();
         let mut next_block_caps = block_caps.clone();
+        let mut next_poll_caps = poll_caps.clone();
         let mut changed = false;
         {
             let mut collector = CaptureCollector {
                 block_envs,
                 old_begin_caps: &begin_caps,
                 old_block_caps: &block_caps,
+                old_poll_caps: &poll_caps,
                 next_begin_caps: &mut next_begin_caps,
                 next_block_caps: &mut next_block_caps,
+                next_poll_caps: &mut next_poll_caps,
                 changed: &mut changed,
             };
             f(&mut collector);
         }
         if !changed {
-            return (next_begin_caps, next_block_caps);
+            return (next_begin_caps, next_block_caps, next_poll_caps);
         }
         begin_caps = next_begin_caps;
         block_caps = next_block_caps;
+        poll_caps = next_poll_caps;
     }
 }
 
@@ -620,8 +736,10 @@ struct CaptureCollector<'a> {
     block_envs: &'a IndexMap<usize, LoopEnv>,
     old_begin_caps: &'a IndexMap<BeginId, Captures>,
     old_block_caps: &'a IndexMap<usize, Captures>,
+    old_poll_caps: &'a IndexMap<LocalName, Captures>,
     next_begin_caps: &'a mut IndexMap<BeginId, Captures>,
     next_block_caps: &'a mut IndexMap<usize, Captures>,
+    next_poll_caps: &'a mut IndexMap<LocalName, Captures>,
     changed: &'a mut bool,
 }
 
@@ -664,6 +782,45 @@ impl<'a> CaptureCollector<'a> {
             } => {
                 let mut caps = self.command_captures(command, span, name, env);
                 caps.add(name.clone(), span.clone(), VariableUsage::Unknown);
+                caps
+            }
+            Process::Poll {
+                driver,
+                point,
+                clients,
+                name,
+                then,
+                else_,
+                ..
+            } => {
+                let mut poll_caps = self.process_captures(then, env);
+                poll_caps.remove(name);
+                poll_caps.remove(driver);
+                let mut else_caps = self.process_captures(else_, env);
+                else_caps.remove(driver);
+                poll_caps.merge_missing(&else_caps);
+                self.update_poll_caps(point, &poll_caps);
+
+                for client in clients {
+                    let client_caps = self.expression_captures(client, env);
+                    poll_caps.merge_missing(&client_caps);
+                }
+
+                poll_caps
+            }
+            Process::Submit {
+                span,
+                driver,
+                point,
+                values,
+                ..
+            } => {
+                let mut caps = self.old_poll_caps.get(point).cloned().unwrap_or_default();
+                caps.add(driver.clone(), span.clone(), VariableUsage::Unknown);
+                for value in values {
+                    let value_caps = self.expression_captures(value, env);
+                    caps.merge_missing(&value_caps);
+                }
                 caps
             }
             Process::Telltypes(_, process) => self.process_captures(process, env),
@@ -744,6 +901,16 @@ impl<'a> CaptureCollector<'a> {
         let entry = self
             .next_block_caps
             .entry(index)
+            .or_insert_with(Captures::new);
+        if entry.merge_missing(caps) {
+            *self.changed = true;
+        }
+    }
+
+    fn update_poll_caps(&mut self, point: &LocalName, caps: &Captures) {
+        let entry = self
+            .next_poll_caps
+            .entry(point.clone())
             .or_insert_with(Captures::new);
         if entry.merge_missing(caps) {
             *self.changed = true;

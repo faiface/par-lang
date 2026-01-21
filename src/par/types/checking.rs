@@ -1,5 +1,6 @@
 use super::super::language::LocalName;
-use super::super::process::{Command, Expression, Process};
+use super::super::process::{Command, Expression, PollKind, Process};
+use super::context::{PollPointScope, PollScope};
 use super::core::{LoopId, Operation, Type};
 use super::error::TypeError;
 use super::lattice::union_types;
@@ -72,6 +73,343 @@ impl Context {
                     usage: usage.clone(),
                     typ: typ,
                     command: command,
+                }))
+            }
+
+            Process::Poll {
+                span,
+                kind,
+                driver,
+                point,
+                clients,
+                name,
+                name_typ: (),
+                captures,
+                then,
+                else_,
+            } => {
+                let is_repoll = matches!(kind, PollKind::Repoll);
+
+                let preserved_vars: IndexMap<_, _> = self
+                    .variables
+                    .iter()
+                    .filter(|&(n, _)| captures.names.contains_key(n))
+                    .map(|(n, t)| (n.clone(), t.clone()))
+                    .collect();
+
+                let mut typed_clients = Vec::with_capacity(clients.len());
+
+                let mut base;
+                let mut then_ctx;
+                let name_typ;
+
+                if is_repoll {
+                    let (poll_driver, poll_pool_type, poll_points, poll_current_point) =
+                        match self.poll.as_ref() {
+                            Some(poll) => (
+                                poll.driver.clone(),
+                                poll.pool_type.clone(),
+                                poll.points.clone(),
+                                poll.current_point.clone(),
+                            ),
+                            None => return Err(TypeError::RepollOutsidePoll(span.clone())),
+                        };
+                    if poll_driver != *driver {
+                        return Err(TypeError::RepollOutsidePoll(span.clone()));
+                    }
+                    if self.get_variable(driver).is_none() {
+                        return Err(TypeError::RepollOutsidePoll(span.clone()));
+                    }
+
+                    let mut point_client_type = poll_points
+                        .get(&poll_current_point)
+                        .expect("current poll-point missing from poll scope")
+                        .client_type
+                        .clone();
+
+                    for client in clients {
+                        let (typed, typ) = self.infer_expression(None, client)?;
+                        typed_clients.push(typed);
+                        let mut typ = typ;
+                        loop {
+                            let next = typ.expand_definition(&self.type_defs)?;
+                            if next == typ {
+                                break;
+                            }
+                            typ = next;
+                        }
+                        let Type::Recursive { .. } = typ else {
+                            return Err(TypeError::PollClientMustBeRecursive(span.clone(), typ));
+                        };
+                        if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
+                            return Err(TypeError::SubmittedClientNotAssignableToPoll(
+                                span.clone(),
+                                typ.clone(),
+                                poll_pool_type.clone(),
+                            ));
+                        }
+                        point_client_type =
+                            union_types(&self.type_defs, span, &point_client_type, &typ)?;
+                    }
+
+                    base = self.clone();
+
+                    let Type::Recursive {
+                        asc: point_asc,
+                        label: point_label,
+                        body: point_body,
+                        ..
+                    } = point_client_type.clone()
+                    else {
+                        panic!("poll point client type must be recursive");
+                    };
+                    name_typ = Type::expand_recursive(&point_asc, &point_label, &point_body)?;
+
+                    let Some(base_poll) = base.poll.as_mut() else {
+                        panic!("repoll without a poll scope after validation");
+                    };
+                    if base_poll.driver != *driver {
+                        panic!("repoll driver does not match poll scope");
+                    }
+                    if base_poll
+                        .points
+                        .insert(
+                            point.clone(),
+                            PollPointScope {
+                                client_type: point_client_type,
+                                preserved: Arc::new(preserved_vars),
+                            },
+                        )
+                        .is_some()
+                    {
+                        panic!("poll-point {} already registered", point);
+                    }
+                    base_poll.current_point = point.clone();
+
+                    then_ctx = base.clone();
+                } else {
+                    if clients.is_empty() {
+                        return Err(TypeError::PollMustHaveAtLeastOneClient(span.clone()));
+                    }
+
+                    let mut client_type = None;
+                    for client in clients {
+                        let (typed, typ) = self.infer_expression(None, client)?;
+                        typed_clients.push(typed);
+                        client_type = Some(match client_type {
+                            None => typ,
+                            Some(prev) => union_types(&self.type_defs, span, &prev, &typ)?,
+                        });
+                    }
+
+                    let mut client_type = client_type.expect("clients is not empty");
+                    loop {
+                        let next = client_type.expand_definition(&self.type_defs)?;
+                        if next == client_type {
+                            break;
+                        }
+                        client_type = next;
+                    }
+
+                    base = self.clone();
+
+                    let Type::Recursive {
+                        span: typ_span,
+                        asc,
+                        label,
+                        body,
+                    } = client_type.clone()
+                    else {
+                        return Err(TypeError::PollClientMustBeRecursive(
+                            span.clone(),
+                            client_type,
+                        ));
+                    };
+
+                    let pool_type = client_type.clone();
+
+                    let mut asc = asc.clone();
+                    let loop_id = LoopId::new();
+                    asc.insert(loop_id);
+                    let point_client_type = Type::Recursive {
+                        span: typ_span.clone(),
+                        asc: asc.clone(),
+                        label: label.clone(),
+                        body: body.clone(),
+                    };
+
+                    name_typ = Type::expand_recursive(&asc, &label, &body)?;
+
+                    then_ctx = base.clone();
+                    let prev_poll = then_ctx.poll.take();
+                    if let Some(prev_poll) = &prev_poll {
+                        then_ctx.variables.shift_remove(&prev_poll.driver);
+                    }
+                    then_ctx.poll_stash.push(prev_poll);
+                    then_ctx.poll = Some(PollScope {
+                        driver: driver.clone(),
+                        pool_type,
+                        points: IndexMap::from([(
+                            point.clone(),
+                            PollPointScope {
+                                client_type: point_client_type,
+                                preserved: Arc::new(preserved_vars),
+                            },
+                        )]),
+                        current_point: point.clone(),
+                        token_span: span.clone(),
+                    });
+                }
+
+                then_ctx.put(span, driver.clone(), Type::Continue(span.clone()))?;
+                then_ctx.put(span, name.clone(), name_typ.clone())?;
+                let typed_then = then_ctx.check_process(then)?;
+
+                base.blocks = then_ctx.blocks.clone();
+
+                let mut else_ctx = base;
+                if is_repoll {
+                    let current = else_ctx
+                        .poll
+                        .take()
+                        .expect("repoll else branch must have a poll scope");
+                    if current.driver != *driver {
+                        panic!("repoll else branch driver mismatch");
+                    }
+                    else_ctx.variables.shift_remove(&current.driver);
+                    let prev = else_ctx.poll_stash.pop().unwrap_or(None);
+                    if let Some(prev_poll) = &prev {
+                        else_ctx.put(
+                            &prev_poll.token_span,
+                            prev_poll.driver.clone(),
+                            Type::Continue(prev_poll.token_span.clone()),
+                        )?;
+                    }
+                    else_ctx.poll = prev;
+                }
+
+                let typed_else = else_ctx.check_process(else_)?;
+
+                self.variables.clear();
+
+                Ok(Arc::new(Process::Poll {
+                    span: span.clone(),
+                    kind: kind.clone(),
+                    driver: driver.clone(),
+                    point: point.clone(),
+                    clients: typed_clients,
+                    name: name.clone(),
+                    name_typ,
+                    captures: captures.clone(),
+                    then: typed_then,
+                    else_: typed_else,
+                }))
+            }
+
+            Process::Submit {
+                span,
+                driver,
+                point,
+                values,
+                captures,
+            } => {
+                let (
+                    poll_pool_type,
+                    current_point_client_type,
+                    poll_point_client_type,
+                    preserved_vars,
+                ) = match self.poll.as_ref() {
+                    Some(poll) => {
+                        if &poll.driver != driver {
+                            panic!("submit driver does not match poll scope");
+                        }
+                        let preserved = poll
+                            .points
+                            .get(point)
+                            .cloned()
+                            .unwrap_or_else(|| panic!("submit to unknown poll-point: {point}"));
+                        let current_point_client_type = poll
+                            .points
+                            .get(&poll.current_point)
+                            .expect("current poll-point missing from poll scope")
+                            .client_type
+                            .clone();
+                        (
+                            poll.pool_type.clone(),
+                            current_point_client_type,
+                            preserved.client_type.clone(),
+                            preserved.preserved.clone(),
+                        )
+                    }
+                    None => return Err(TypeError::SubmitOutsidePoll(span.clone())),
+                };
+
+                if !current_point_client_type
+                    .is_assignable_to(&poll_point_client_type, &self.type_defs)?
+                {
+                    return Err(TypeError::SubmitCannotTargetPollPoint(
+                        span.clone(),
+                        current_point_client_type,
+                        poll_point_client_type.clone(),
+                    ));
+                }
+
+                let mut typed_values = Vec::with_capacity(values.len());
+                for value in values {
+                    let (typed, typ) = self.infer_expression(None, value)?;
+                    let mut typ = typ;
+                    loop {
+                        let next = typ.expand_definition(&self.type_defs)?;
+                        if next == typ {
+                            break;
+                        }
+                        typ = next;
+                    }
+                    if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
+                        return Err(TypeError::SubmittedClientNotAssignableToPoll(
+                            span.clone(),
+                            typ.clone(),
+                            poll_pool_type.clone(),
+                        ));
+                    }
+                    if !typ.is_assignable_to(&poll_point_client_type, &self.type_defs)? {
+                        return Err(TypeError::SubmittedClientDoesNotDescend(span.clone()));
+                    }
+                    typed_values.push(typed);
+                }
+
+                // Preserve variables required by the poll.
+                for (var, type_at_poll) in preserved_vars.iter() {
+                    let Some(current_type) = self.get_variable(var) else {
+                        return Err(TypeError::PollVariableNotPreserved(
+                            span.clone(),
+                            var.clone(),
+                        ));
+                    };
+                    if !current_type.is_assignable_to(type_at_poll, &self.type_defs)? {
+                        return Err(TypeError::PollVariableChangedType(
+                            span.clone(),
+                            var.clone(),
+                            current_type,
+                            type_at_poll.clone(),
+                        ));
+                    }
+                }
+
+                // Consume the pool token itself.
+                if self.get_variable(driver).is_none() {
+                    return Err(TypeError::SubmitOutsidePoll(span.clone()));
+                }
+
+                self.cannot_have_obligations(span)?;
+                self.variables.clear();
+
+                Ok(Arc::new(Process::Submit {
+                    span: span.clone(),
+                    driver: driver.clone(),
+                    point: point.clone(),
+                    values: typed_values,
+                    captures: captures.clone(),
                 }))
             }
 
@@ -703,6 +1041,350 @@ impl Context {
                         command,
                     }),
                     inferred_type,
+                ))
+            }
+
+            Process::Poll {
+                span,
+                kind,
+                driver,
+                point,
+                clients,
+                name,
+                name_typ: (),
+                captures,
+                then,
+                else_,
+            } => {
+                let is_repoll = matches!(kind, PollKind::Repoll);
+
+                let preserved_vars: IndexMap<_, _> = self
+                    .variables
+                    .iter()
+                    .filter(|&(n, _)| captures.names.contains_key(n))
+                    .map(|(n, t)| (n.clone(), t.clone()))
+                    .collect();
+
+                let mut typed_clients = Vec::with_capacity(clients.len());
+
+                let mut base;
+                let mut then_ctx;
+                let name_typ;
+
+                if is_repoll {
+                    let (poll_driver, poll_pool_type, poll_points, poll_current_point) =
+                        match self.poll.as_ref() {
+                            Some(poll) => (
+                                poll.driver.clone(),
+                                poll.pool_type.clone(),
+                                poll.points.clone(),
+                                poll.current_point.clone(),
+                            ),
+                            None => return Err(TypeError::RepollOutsidePoll(span.clone())),
+                        };
+                    if poll_driver != *driver {
+                        return Err(TypeError::RepollOutsidePoll(span.clone()));
+                    }
+
+                    if self.get_variable(driver).is_none() {
+                        return Err(TypeError::RepollOutsidePoll(span.clone()));
+                    }
+
+                    let mut point_client_type = poll_points
+                        .get(&poll_current_point)
+                        .expect("current poll-point missing from poll scope")
+                        .client_type
+                        .clone();
+
+                    for client in clients {
+                        let (typed, typ) =
+                            self.infer_expression(Some(inference_subject), client)?;
+                        typed_clients.push(typed);
+                        let mut typ = typ;
+                        loop {
+                            let next = typ.expand_definition(&self.type_defs)?;
+                            if next == typ {
+                                break;
+                            }
+                            typ = next;
+                        }
+                        let Type::Recursive { .. } = typ else {
+                            return Err(TypeError::PollClientMustBeRecursive(span.clone(), typ));
+                        };
+                        if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
+                            return Err(TypeError::SubmittedClientNotAssignableToPoll(
+                                span.clone(),
+                                typ.clone(),
+                                poll_pool_type.clone(),
+                            ));
+                        }
+                        point_client_type =
+                            union_types(&self.type_defs, span, &point_client_type, &typ)?;
+                    }
+
+                    base = self.clone();
+
+                    let Type::Recursive {
+                        asc: point_asc,
+                        label: point_label,
+                        body: point_body,
+                        ..
+                    } = point_client_type.clone()
+                    else {
+                        panic!("poll point client type must be recursive");
+                    };
+                    name_typ = Type::expand_recursive(&point_asc, &point_label, &point_body)?;
+
+                    let Some(base_poll) = base.poll.as_mut() else {
+                        panic!("repoll without a poll scope after validation");
+                    };
+                    if base_poll.driver != *driver {
+                        panic!("repoll driver does not match poll scope");
+                    }
+                    if base_poll
+                        .points
+                        .insert(
+                            point.clone(),
+                            PollPointScope {
+                                client_type: point_client_type,
+                                preserved: Arc::new(preserved_vars),
+                            },
+                        )
+                        .is_some()
+                    {
+                        panic!("poll-point {} already registered", point);
+                    }
+                    base_poll.current_point = point.clone();
+
+                    then_ctx = base.clone();
+                } else {
+                    if clients.is_empty() {
+                        return Err(TypeError::PollMustHaveAtLeastOneClient(span.clone()));
+                    }
+
+                    let mut client_type = None;
+                    for client in clients {
+                        let (client_expr, typ) =
+                            self.infer_expression(Some(inference_subject), client)?;
+                        typed_clients.push(client_expr);
+                        client_type = Some(match client_type {
+                            None => typ,
+                            Some(prev) => union_types(&self.type_defs, span, &prev, &typ)?,
+                        });
+                    }
+
+                    let mut client_type = client_type.expect("clients is not empty");
+                    loop {
+                        let next = client_type.expand_definition(&self.type_defs)?;
+                        if next == client_type {
+                            break;
+                        }
+                        client_type = next;
+                    }
+
+                    base = self.clone();
+
+                    let Type::Recursive {
+                        span: typ_span,
+                        asc,
+                        label,
+                        body,
+                    } = client_type.clone()
+                    else {
+                        return Err(TypeError::PollClientMustBeRecursive(
+                            span.clone(),
+                            client_type,
+                        ));
+                    };
+
+                    let pool_type = client_type.clone();
+
+                    let mut asc = asc.clone();
+                    let loop_id = LoopId::new();
+                    asc.insert(loop_id);
+                    let point_client_type = Type::Recursive {
+                        span: typ_span.clone(),
+                        asc: asc.clone(),
+                        label: label.clone(),
+                        body: body.clone(),
+                    };
+
+                    name_typ = Type::expand_recursive(&asc, &label, &body)?;
+
+                    then_ctx = base.clone();
+                    let prev_poll = then_ctx.poll.take();
+                    if let Some(prev_poll) = &prev_poll {
+                        then_ctx.variables.shift_remove(&prev_poll.driver);
+                    }
+                    then_ctx.poll_stash.push(prev_poll);
+                    then_ctx.poll = Some(PollScope {
+                        driver: driver.clone(),
+                        pool_type,
+                        points: IndexMap::from([(
+                            point.clone(),
+                            PollPointScope {
+                                client_type: point_client_type,
+                                preserved: Arc::new(preserved_vars),
+                            },
+                        )]),
+                        current_point: point.clone(),
+                        token_span: span.clone(),
+                    });
+                }
+
+                then_ctx.put(span, driver.clone(), Type::Continue(span.clone()))?;
+                then_ctx.put(span, name.clone(), name_typ.clone())?;
+                let (typed_then, then_type) = then_ctx.infer_process(then, inference_subject)?;
+
+                base.blocks = then_ctx.blocks.clone();
+
+                let mut else_ctx = base;
+                if is_repoll {
+                    let current = else_ctx
+                        .poll
+                        .take()
+                        .expect("repoll else branch must have a poll scope");
+                    if current.driver != *driver {
+                        panic!("repoll else branch driver mismatch");
+                    }
+                    else_ctx.variables.shift_remove(&current.driver);
+                    let prev = else_ctx.poll_stash.pop().unwrap_or(None);
+                    if let Some(prev_poll) = &prev {
+                        else_ctx.put(
+                            &prev_poll.token_span,
+                            prev_poll.driver.clone(),
+                            Type::Continue(prev_poll.token_span.clone()),
+                        )?;
+                    }
+                    else_ctx.poll = prev;
+                }
+
+                let (typed_else, else_type) = else_ctx.infer_process(else_, inference_subject)?;
+
+                self.variables.clear();
+
+                Ok((
+                    Arc::new(Process::Poll {
+                        span: span.clone(),
+                        kind: kind.clone(),
+                        driver: driver.clone(),
+                        point: point.clone(),
+                        clients: typed_clients,
+                        name: name.clone(),
+                        name_typ,
+                        captures: captures.clone(),
+                        then: typed_then,
+                        else_: typed_else,
+                    }),
+                    intersect_types(&self.type_defs, span, &then_type, &else_type)?,
+                ))
+            }
+
+            Process::Submit {
+                span,
+                driver,
+                point,
+                values,
+                captures,
+            } => {
+                let (
+                    poll_pool_type,
+                    current_point_client_type,
+                    poll_point_client_type,
+                    preserved_vars,
+                ) = match self.poll.as_ref() {
+                    Some(poll) => {
+                        if &poll.driver != driver {
+                            panic!("submit driver does not match poll scope");
+                        }
+                        let preserved = poll
+                            .points
+                            .get(point)
+                            .cloned()
+                            .unwrap_or_else(|| panic!("submit to unknown poll-point: {point}"));
+                        let current_point_client_type = poll
+                            .points
+                            .get(&poll.current_point)
+                            .expect("current poll-point missing from poll scope")
+                            .client_type
+                            .clone();
+                        (
+                            poll.pool_type.clone(),
+                            current_point_client_type,
+                            preserved.client_type.clone(),
+                            preserved.preserved.clone(),
+                        )
+                    }
+                    None => return Err(TypeError::SubmitOutsidePoll(span.clone())),
+                };
+
+                if !current_point_client_type
+                    .is_assignable_to(&poll_point_client_type, &self.type_defs)?
+                {
+                    return Err(TypeError::SubmitCannotTargetPollPoint(
+                        span.clone(),
+                        current_point_client_type,
+                        poll_point_client_type.clone(),
+                    ));
+                }
+
+                let mut typed_values = Vec::with_capacity(values.len());
+                for value in values {
+                    let (typed, typ) = self.infer_expression(Some(inference_subject), value)?;
+                    let mut typ = typ;
+                    loop {
+                        let next = typ.expand_definition(&self.type_defs)?;
+                        if next == typ {
+                            break;
+                        }
+                        typ = next;
+                    }
+                    if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
+                        return Err(TypeError::SubmittedClientNotAssignableToPoll(
+                            span.clone(),
+                            typ.clone(),
+                            poll_pool_type.clone(),
+                        ));
+                    }
+                    if !typ.is_assignable_to(&poll_point_client_type, &self.type_defs)? {
+                        return Err(TypeError::SubmittedClientDoesNotDescend(span.clone()));
+                    }
+                    typed_values.push(typed);
+                }
+
+                for (var, type_at_poll) in preserved_vars.iter() {
+                    let Some(current_type) = self.get_variable(var) else {
+                        return Err(TypeError::PollVariableNotPreserved(
+                            span.clone(),
+                            var.clone(),
+                        ));
+                    };
+                    if !current_type.is_assignable_to(type_at_poll, &self.type_defs)? {
+                        return Err(TypeError::PollVariableChangedType(
+                            span.clone(),
+                            var.clone(),
+                            current_type,
+                            type_at_poll.clone(),
+                        ));
+                    }
+                }
+
+                if self.get_variable(driver).is_none() {
+                    return Err(TypeError::SubmitOutsidePoll(span.clone()));
+                }
+
+                self.cannot_have_obligations(span)?;
+                self.variables.clear();
+
+                Ok((
+                    Arc::new(Process::Submit {
+                        span: span.clone(),
+                        driver: driver.clone(),
+                        point: point.clone(),
+                        values: typed_values,
+                        captures: captures.clone(),
+                    }),
+                    Type::choice(vec![]),
                 ))
             }
 

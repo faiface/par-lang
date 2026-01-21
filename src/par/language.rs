@@ -155,6 +155,27 @@ pub enum Expression {
     List(Span, Vec<Self>),
     Global(Span, GlobalName),
     Variable(Span, LocalName),
+    Poll {
+        span: Span,
+        label: Option<LocalName>,
+        clients: Vec<Expression>,
+        name: LocalName,
+        then: Box<Expression>,
+        else_: Box<Expression>,
+    },
+    Repoll {
+        span: Span,
+        label: Option<LocalName>,
+        clients: Vec<Expression>,
+        name: LocalName,
+        then: Box<Expression>,
+        else_: Box<Expression>,
+    },
+    Submit {
+        span: Span,
+        label: Option<LocalName>,
+        values: Vec<Expression>,
+    },
     Condition(Span, Box<Condition>),
     Grouped(Span, Box<Self>),
     TypeIn {
@@ -269,6 +290,27 @@ pub enum Process {
         pattern: Pattern,
         value: Box<Expression>,
         then: Box<Self>,
+    },
+    Poll {
+        span: Span,
+        label: Option<LocalName>,
+        clients: Vec<Expression>,
+        name: LocalName,
+        then: Box<Process>,
+        else_: Box<Process>,
+    },
+    Repoll {
+        span: Span,
+        label: Option<LocalName>,
+        clients: Vec<Expression>,
+        name: LocalName,
+        then: Box<Process>,
+        else_: Box<Process>,
+    },
+    Submit {
+        span: Span,
+        label: Option<LocalName>,
+        values: Vec<Expression>,
     },
     Catch {
         span: Span,
@@ -430,6 +472,7 @@ pub enum CompileError {
     UnreachableCode(Span),
     NoMatchingCatch(Span),
     MatchingCatchDisabled(Span, CatchDisabledReason),
+    NoSuchPollPoint(Span, Option<LocalName>),
 }
 
 #[derive(Clone, Debug)]
@@ -445,6 +488,7 @@ impl Spanning for CompileError {
             Self::UnreachableCode(span) => span.clone(),
             Self::NoMatchingCatch(span) => span.clone(),
             Self::MatchingCatchDisabled(span, _) => span.clone(),
+            Self::NoSuchPollPoint(span, _) => span.clone(),
         }
     }
 }
@@ -452,6 +496,15 @@ impl Spanning for CompileError {
 impl CompileError {
     pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
         let mk_report = |span: &Span, msg: &'static str| {
+            let labels = labels_from_span(&source_code, span);
+            let code: Arc<str> = if labels.is_empty() {
+                "<UI>".into()
+            } else {
+                Arc::clone(&source_code)
+            };
+            miette::miette! { labels = labels, "{}", msg }.with_source_code(code)
+        };
+        let mk_report_owned = |span: &Span, msg: String| {
             let labels = labels_from_span(&source_code, span);
             let code: Arc<str> = if labels.is_empty() {
                 "<UI>".into()
@@ -475,6 +528,13 @@ impl CompileError {
                 span,
                 "The expression the matching `catch` would return from has its result already partially constructed.",
             ),
+            Self::NoSuchPollPoint(span, None) => {
+                mk_report(span, "No unlabeled `poll`/`repoll` point is in scope here.")
+            }
+            Self::NoSuchPollPoint(span, Some(label)) => mk_report_owned(
+                span,
+                format!("No such `poll@...`/`repoll@...` label `@{label}` is in scope here."),
+            ),
         }
     }
 }
@@ -482,10 +542,25 @@ impl CompileError {
 #[derive(Clone, Debug)]
 pub struct Passes {
     next_block_index: usize,
+    next_poll_index: usize,
     fallthrough: Option<Pass>,
     fallthrough_stash: Vec<Option<Pass>>,
     catch: HashMap<Option<LocalName>, Pass>,
     catch_stash: HashMap<Option<LocalName>, Vec<Option<Pass>>>,
+    poll: Option<PollScope>,
+    poll_stash: Vec<Option<PollScope>>,
+}
+
+#[derive(Clone, Debug)]
+struct PollPoint {
+    label: Option<ArcStr>,
+    point: LocalName,
+}
+
+#[derive(Clone, Debug)]
+struct PollScope {
+    driver: LocalName,
+    points: Vec<PollPoint>,
 }
 
 #[derive(Clone, Debug)]
@@ -500,16 +575,25 @@ impl Passes {
     pub fn new() -> Self {
         Passes {
             next_block_index: 1,
+            next_poll_index: 1,
             fallthrough: None,
             fallthrough_stash: Vec::new(),
             catch: HashMap::new(),
             catch_stash: HashMap::new(),
+            poll: None,
+            poll_stash: Vec::new(),
         }
     }
 
     fn get_block_index(&mut self) -> usize {
         let index = self.next_block_index;
         self.next_block_index += 1;
+        index
+    }
+
+    fn get_poll_index(&mut self) -> usize {
+        let index = self.next_poll_index;
+        self.next_poll_index += 1;
         index
     }
 
@@ -585,6 +669,171 @@ impl Passes {
 
     fn use_fallthrough(&mut self, span: &Span) -> Option<Arc<process::Process<()>>> {
         self.fallthrough.as_mut().map(|pass| pass.use_at(span))
+    }
+
+    fn with_poll<T>(
+        &mut self,
+        driver: LocalName,
+        point: LocalName,
+        label: &Option<LocalName>,
+        f: impl FnOnce(&mut Self) -> Result<T, CompileError>,
+    ) -> Result<T, CompileError> {
+        self.poll_stash.push(self.poll.take());
+        self.poll = Some(PollScope {
+            driver,
+            points: vec![PollPoint {
+                label: label.as_ref().map(|l| l.string.clone()),
+                point,
+            }],
+        });
+        let result = f(self);
+        self.poll = self.poll_stash.pop().unwrap();
+        result
+    }
+
+    fn with_repoll<T>(
+        &mut self,
+        point: LocalName,
+        label: &Option<LocalName>,
+        f: impl FnOnce(&mut Self) -> Result<T, CompileError>,
+    ) -> Result<T, CompileError> {
+        let Some(mut scope) = self.poll.clone() else {
+            return f(self);
+        };
+        scope.points.push(PollPoint {
+            label: label.as_ref().map(|l| l.string.clone()),
+            point,
+        });
+        self.poll_stash.push(self.poll.take());
+        self.poll = Some(scope);
+        let result = f(self);
+        self.poll = self.poll_stash.pop().unwrap();
+        result
+    }
+
+    fn without_poll<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, CompileError>,
+    ) -> Result<T, CompileError> {
+        // Temporarily hide the *current* pool, but keep any outer pool visible.
+        // This is needed so that `submit(...)` in the `else` branch of an inner `poll`
+        // (or `repoll`) can still target an outer pool.
+        let outer = self.poll_stash.last().cloned().unwrap_or(None);
+        self.poll_stash.push(self.poll.take());
+        self.poll = outer;
+        let result = f(self);
+        self.poll = self.poll_stash.pop().unwrap();
+        result
+    }
+
+    fn current_poll_driver(&self) -> Option<&LocalName> {
+        self.poll.as_ref().map(|p| &p.driver)
+    }
+
+    fn resolve_poll_point_by_label(&self, label: &LocalName) -> Option<&LocalName> {
+        let label_str = &label.string;
+        self.poll.as_ref().and_then(|p| {
+            p.points
+                .iter()
+                .rev()
+                .find(|pp| pp.label.as_ref() == Some(label_str))
+                .map(|pp| &pp.point)
+        })
+    }
+
+    fn resolve_poll_point(&self, label: &Option<LocalName>) -> Option<&LocalName> {
+        match label.as_ref() {
+            Some(label) => self.resolve_poll_point_by_label(label),
+            None => self.poll.as_ref().and_then(|p| {
+                p.points
+                    .iter()
+                    .rev()
+                    .find(|pp| pp.label.is_none())
+                    .map(|pp| &pp.point)
+            }),
+        }
+    }
+
+    fn make_poll_process(
+        &mut self,
+        span: &Span,
+        kind: process::PollKind,
+        label: &Option<LocalName>,
+        clients: Vec<Arc<process::Expression<()>>>,
+        name: LocalName,
+        then: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
+        else_: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        let id = self.get_poll_index();
+        let point = LocalName {
+            span: span.clone(),
+            string: ArcStr::from(format!("@{id}")),
+        };
+
+        let driver = match kind {
+            process::PollKind::Poll => LocalName {
+                span: span.clone(),
+                string: ArcStr::from(format!("#pool{id}")),
+            },
+            process::PollKind::Repoll => self
+                .current_poll_driver()
+                .cloned()
+                .unwrap_or_else(LocalName::invalid),
+        };
+
+        let build = |pass: &mut Self| {
+            let then = then(pass)?;
+            let else_ = pass.without_poll(|pass| else_(pass))?;
+            Ok(Arc::new(process::Process::Poll {
+                span: span.clone(),
+                kind: kind.clone(),
+                driver: driver.clone(),
+                point: point.clone(),
+                clients: clients,
+                name: name,
+                name_typ: (),
+                captures: Captures::new(),
+                then,
+                else_,
+            }))
+        };
+
+        match kind {
+            process::PollKind::Poll => {
+                self.with_poll(driver.clone(), point.clone(), label, |pass| build(pass))
+            }
+            process::PollKind::Repoll => self.with_repoll(point.clone(), label, |pass| build(pass)),
+        }
+    }
+
+    fn make_submit_process(
+        &mut self,
+        span: &Span,
+        label: &Option<LocalName>,
+        values: Vec<Arc<process::Expression<()>>>,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        let driver = self
+            .current_poll_driver()
+            .cloned()
+            .unwrap_or_else(LocalName::invalid);
+        let point = match self.poll.as_ref() {
+            None => LocalName::invalid(),
+            Some(_) => self.resolve_poll_point(label).cloned().ok_or_else(|| {
+                let err_span = label
+                    .as_ref()
+                    .map(|l| l.span())
+                    .unwrap_or_else(|| span.clone());
+                CompileError::NoSuchPollPoint(err_span, label.clone())
+            })?,
+        };
+
+        Ok(Arc::new(process::Process::Submit {
+            span: span.clone(),
+            driver,
+            point,
+            values,
+            captures: Captures::new(),
+        }))
     }
 
     fn with_catch(
@@ -1019,6 +1268,89 @@ impl Expression {
                 VariableUsage::Unknown,
             )),
 
+            Self::Poll {
+                span,
+                label,
+                clients,
+                name,
+                then,
+                else_,
+            } => {
+                let clients: Vec<_> = clients
+                    .iter()
+                    .map(|e| e.compile(pass))
+                    .collect::<Result<_, _>>()?;
+                let process = pass.make_poll_process(
+                    span,
+                    process::PollKind::Poll,
+                    label,
+                    clients,
+                    name.clone(),
+                    |pass| link_process_from_expr(then).compile(pass),
+                    |pass| link_process_from_expr(else_).compile(pass),
+                )?;
+
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process,
+                })
+            }
+
+            Self::Repoll {
+                span,
+                label,
+                clients,
+                name,
+                then,
+                else_,
+            } => {
+                let clients: Result<Vec<_>, _> = clients.iter().map(|e| e.compile(pass)).collect();
+                let clients = clients?;
+                let process = pass.make_poll_process(
+                    span,
+                    process::PollKind::Repoll,
+                    label,
+                    clients,
+                    name.clone(),
+                    |pass| link_process_from_expr(then).compile(pass),
+                    |pass| link_process_from_expr(else_).compile(pass),
+                )?;
+
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process,
+                })
+            }
+
+            Self::Submit {
+                span,
+                label,
+                values,
+            } => {
+                let values: Result<Vec<_>, _> = values.iter().map(|e| e.compile(pass)).collect();
+                let values = values?;
+                let process = pass.make_submit_process(span, label, values)?;
+                Arc::new(process::Expression::Chan {
+                    span: span.clone(),
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process,
+                })
+            }
+
             Self::Condition(span, condition) => {
                 let true_process = Arc::new(process::Process::Do {
                     span: span.clone(),
@@ -1303,6 +1635,9 @@ impl Spanning for Expression {
             | Self::List(span, _)
             | Self::Global(span, _)
             | Self::Variable(span, _)
+            | Self::Poll { span, .. }
+            | Self::Repoll { span, .. }
+            | Self::Submit { span, .. }
             | Self::Condition(span, _)
             | Self::Grouped(span, _)
             | Self::TypeIn { span, .. }
@@ -1790,6 +2125,58 @@ impl Process {
                 }
             }
 
+            Self::Poll {
+                span,
+                label,
+                clients,
+                name,
+                then,
+                else_,
+            } => {
+                let clients: Result<Vec<_>, _> = clients.iter().map(|e| e.compile(pass)).collect();
+                let clients = clients?;
+                pass.make_poll_process(
+                    span,
+                    process::PollKind::Poll,
+                    label,
+                    clients,
+                    name.clone(),
+                    |pass| then.compile(pass),
+                    |pass| else_.compile(pass),
+                )?
+            }
+
+            Self::Repoll {
+                span,
+                label,
+                clients,
+                name,
+                then,
+                else_,
+            } => {
+                let clients: Result<Vec<_>, _> = clients.iter().map(|e| e.compile(pass)).collect();
+                let clients = clients?;
+                pass.make_poll_process(
+                    span,
+                    process::PollKind::Repoll,
+                    label,
+                    clients,
+                    name.clone(),
+                    |pass| then.compile(pass),
+                    |pass| else_.compile(pass),
+                )?
+            }
+
+            Self::Submit {
+                span,
+                label,
+                values,
+            } => {
+                let values: Result<Vec<_>, _> = values.iter().map(|e| e.compile(pass)).collect();
+                let values = values?;
+                pass.make_submit_process(span, label, values)?
+            }
+
             Self::Let {
                 span,
                 pattern,
@@ -1872,6 +2259,9 @@ impl Spanning for Process {
     fn span(&self) -> Span {
         match self {
             Self::Let { span, .. } => span.clone(),
+            Self::Poll { span, .. } => span.clone(),
+            Self::Repoll { span, .. } => span.clone(),
+            Self::Submit { span, .. } => span.clone(),
             Self::Catch { span, .. } => span.clone(),
             Self::Throw(span, _, _) => span.clone(),
             Self::If { span, .. } => span.clone(),

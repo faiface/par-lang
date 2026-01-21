@@ -118,6 +118,12 @@ impl Handle {
             .unwrap();
     }
 
+    pub async fn await_ready(mut self) -> Self {
+        let node = self.node.take().await;
+        self.node = HandleNode::Present(node);
+        self
+    }
+
     pub fn provide_external_closure<Fun, Fut>(self, f: Fun)
     where
         Fun: 'static + Send + Sync + Fn(Handle) -> Fut,

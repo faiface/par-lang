@@ -39,6 +39,16 @@ pub enum TypeError {
     CannotUnrollAscendantIterative(Span, #[allow(unused)] Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),
+    PollMustHaveAtLeastOneClient(Span),
+    PollClientMustBeRecursive(Span, Type),
+    SubmitOutsidePoll(Span),
+    RepollOutsidePoll(Span),
+    SubmittedClientNotAssignableToPoll(Span, Type, Type),
+    SubmittedClientDoesNotDescend(Span),
+    SubmitCannotTargetPollPoint(Span, Type, Type),
+    PollVariableNotPreserved(Span, LocalName),
+    PollVariableChangedType(Span, LocalName, Type, Type),
+    PollBranchMustSubmit(Span),
     CannotUseLinearVariableInBox(Span, LocalName),
     Telltypes(Span, IndexMap<LocalName, Type>),
     NonExhaustiveIf(Span),
@@ -349,6 +359,86 @@ impl TypeError {
                     loop_type_str,
                 )
             }
+            Self::PollMustHaveAtLeastOneClient(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "`poll(...)` must have at least one initial client.",
+                )
+            }
+            Self::PollClientMustBeRecursive(span, typ) => {
+                let labels = labels_from_span(code, span);
+                let mut typ_str = String::new();
+                typ.pretty(&mut typ_str, 1).unwrap();
+                miette::miette!(
+                    labels = labels,
+                    "Clients of `poll(...)` must have a `recursive` type, but this has type:\n\n  {}\n",
+                    typ_str,
+                )
+            }
+            Self::SubmitOutsidePoll(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(labels = labels, "`submit(...)` can only be used inside a `poll` branch.")
+            }
+            Self::RepollOutsidePoll(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(labels = labels, "`repoll(...)` can only be used inside a `poll` branch.")
+            }
+            Self::SubmittedClientNotAssignableToPoll(span, client_type, poll_type) => {
+                let labels = labels_from_span(code, span);
+                let (mut client_str, mut poll_str) = (String::new(), String::new());
+                client_type.pretty(&mut client_str, 1).unwrap();
+                poll_type.pretty(&mut poll_str, 1).unwrap();
+                miette::miette!(
+                    labels = labels,
+                    "This `submit(...)` cannot submit this client.\n\nIt has type:\n\n  {}\n\nBut this `poll(...)` expects clients of type:\n\n  {}\n",
+                    client_str,
+                    poll_str,
+                )
+            }
+            Self::SubmittedClientDoesNotDescend(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This `submit(...)` cannot submit this client: it does not descend from the corresponding `poll(...)` client.",
+                )
+            }
+            Self::SubmitCannotTargetPollPoint(span, current_point_type, target_point_type) => {
+                let labels = labels_from_span(code, span);
+                let _ = (current_point_type, target_point_type);
+                miette::miette!(
+                    labels = labels,
+                    "This `submit(...)` cannot target this poll point.\n\nFrom here, the pool may still contain clients that do not descend from the targeted poll point.\n\nThis can happen when targeting an outer poll point from inside a `repoll(...)` handler: even if this `submit(...)` does not submit any incompatible clients, other clients may still remain in the pool.\n",
+                )
+            }
+            Self::PollVariableNotPreserved(span, name) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "`{}` is used by a subsequent poll iteration, but is no longer defined.",
+                    name,
+                )
+            }
+            Self::PollVariableChangedType(span, name, current_type, poll_type) => {
+                let labels = labels_from_span(code, span);
+                let (mut current_type_str, mut poll_type_str) = (String::new(), String::new());
+                current_type.pretty(&mut current_type_str, 1).unwrap();
+                poll_type.pretty(&mut poll_type_str, 1).unwrap();
+                miette::miette!(
+                    labels = labels,
+                    "For the next poll iteration, `{}` is required to be:\n\n  {}\n\nBut it has an incompatible type:\n\n  {}\n",
+                    name,
+                    poll_type_str,
+                    current_type_str,
+                )
+            }
+            Self::PollBranchMustSubmit(span) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "This branch must end by calling `submit(...)` or `repoll(...)` exactly once.",
+                )
+            }
             Self::CannotUseLinearVariableInBox(span, name) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "Cannot use linear variable `{}` in a `box` expression.", name)
@@ -416,6 +506,16 @@ impl TypeError {
             | Self::DoesNotDescendSubjectOfBegin(span, _)
             | Self::LoopVariableNotPreserved(span, _)
             | Self::LoopVariableChangedType(span, _, _, _)
+            | Self::PollMustHaveAtLeastOneClient(span)
+            | Self::PollClientMustBeRecursive(span, _)
+            | Self::SubmitOutsidePoll(span)
+            | Self::RepollOutsidePoll(span)
+            | Self::SubmittedClientNotAssignableToPoll(span, _, _)
+            | Self::SubmittedClientDoesNotDescend(span)
+            | Self::SubmitCannotTargetPollPoint(span, _, _)
+            | Self::PollVariableNotPreserved(span, _)
+            | Self::PollVariableChangedType(span, _, _, _)
+            | Self::PollBranchMustSubmit(span)
             | Self::CannotUseLinearVariableInBox(span, _)
             | Self::Telltypes(span, _)
             | Self::NonExhaustiveIf(span)

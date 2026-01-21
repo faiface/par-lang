@@ -6,6 +6,21 @@ use indexmap::{IndexMap, IndexSet};
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug)]
+pub struct PollPointScope {
+    pub client_type: Type,
+    pub preserved: Arc<IndexMap<LocalName, Type>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PollScope {
+    pub driver: LocalName,
+    pub pool_type: Type,
+    pub points: IndexMap<LocalName, PollPointScope>,
+    pub current_point: LocalName,
+    pub token_span: Span,
+}
+
+#[derive(Clone, Debug)]
 pub struct Context {
     pub type_defs: TypeDefs,
     declarations: Arc<IndexMap<GlobalName, (Span, Type)>>,
@@ -14,6 +29,8 @@ pub struct Context {
     current_deps: IndexSet<GlobalName>,
     pub variables: IndexMap<LocalName, Type>,
     pub loop_points: IndexMap<Option<LocalName>, (Type, Arc<IndexMap<LocalName, Type>>)>,
+    pub poll: Option<PollScope>,
+    pub poll_stash: Vec<Option<PollScope>>,
     pub blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type>>>,
 }
 
@@ -38,6 +55,8 @@ impl Context {
             current_deps: IndexSet::new(),
             variables: IndexMap::new(),
             loop_points: IndexMap::new(),
+            poll: None,
+            poll_stash: Vec::new(),
             blocks: IndexMap::new(),
         }
     }
@@ -66,6 +85,8 @@ impl Context {
 
         let original_variables = self.variables.drain(..).collect();
         let original_loop_points = self.loop_points.drain(..).collect();
+        let original_poll = self.poll.take();
+        let original_poll_stash = std::mem::take(&mut self.poll_stash);
         let original_blocks = self.blocks.drain(..).collect();
 
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
@@ -84,6 +105,8 @@ impl Context {
 
         self.variables = original_variables;
         self.loop_points = original_loop_points;
+        self.poll = original_poll;
+        self.poll_stash = original_poll_stash;
         self.blocks = original_blocks;
 
         self.checked_definitions.write().unwrap().insert(
@@ -135,6 +158,8 @@ impl Context {
             current_deps: self.current_deps.clone(),
             variables: IndexMap::new(),
             loop_points: self.loop_points.clone(),
+            poll: self.poll.clone(),
+            poll_stash: self.poll_stash.clone(),
             blocks: self.blocks.clone(),
         }
     }
@@ -207,6 +232,11 @@ impl Context {
     }
 
     pub fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError> {
+        if let Some(poll) = &self.poll {
+            if self.variables.contains_key(&poll.driver) {
+                return Err(TypeError::PollBranchMustSubmit(span.clone()));
+            }
+        }
         if self.obligations().any(|_| true) {
             return Err(TypeError::UnfulfilledObligations(
                 span.clone(),

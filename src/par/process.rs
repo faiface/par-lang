@@ -18,6 +18,12 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
+pub enum PollKind {
+    Poll,
+    Repoll,
+}
+
+#[derive(Clone, Debug)]
 pub enum Process<Typ> {
     Let {
         span: Span,
@@ -33,6 +39,25 @@ pub enum Process<Typ> {
         usage: VariableUsage,
         typ: Typ,
         command: Command<Typ>,
+    },
+    Poll {
+        span: Span,
+        kind: PollKind,
+        driver: LocalName,
+        point: LocalName,
+        clients: Vec<Arc<Expression<Typ>>>,
+        name: LocalName,
+        name_typ: Typ,
+        captures: Captures,
+        then: Arc<Self>,
+        else_: Arc<Self>,
+    },
+    Submit {
+        span: Span,
+        driver: LocalName,
+        point: LocalName,
+        values: Vec<Arc<Expression<Typ>>>,
+        captures: Captures,
     },
     Telltypes(Span, Arc<Self>),
     Block(Span, usize, Arc<Self>, Arc<Self>),
@@ -97,6 +122,8 @@ impl<Typ> Spanning for Process<Typ> {
         match self {
             Self::Let { span, .. } => span.clone(),
             Self::Do { span, .. } => span.clone(),
+            Self::Poll { span, .. } => span.clone(),
+            Self::Submit { span, .. } => span.clone(),
             Self::Telltypes(span, ..) => span.clone(),
             Self::Block(span, _, _, _) => span.clone(),
             Self::Goto(span, _, _) => span.clone(),
@@ -209,6 +236,42 @@ impl Process<()> {
                     }
                 },
             }),
+            Self::Poll {
+                span,
+                kind,
+                driver,
+                point,
+                clients,
+                name,
+                name_typ,
+                captures,
+                then,
+                else_,
+            } => Arc::new(Self::Poll {
+                span: span.clone(),
+                kind: kind.clone(),
+                driver: driver.clone(),
+                point: point.clone(),
+                clients: clients.iter().map(|e| e.optimize()).collect(),
+                name: name.clone(),
+                name_typ: name_typ.clone(),
+                captures: captures.clone(),
+                then: then.optimize(),
+                else_: else_.optimize(),
+            }),
+            Self::Submit {
+                span,
+                driver,
+                point,
+                values,
+                captures,
+            } => Arc::new(Self::Submit {
+                span: span.clone(),
+                driver: driver.clone(),
+                point: point.clone(),
+                values: values.iter().map(|e| e.optimize()).collect(),
+                captures: captures.clone(),
+            }),
             Self::Telltypes(span, process) => {
                 Arc::new(Self::Telltypes(span.clone(), process.optimize()))
             }
@@ -267,6 +330,26 @@ impl Process<Type> {
                     consume(span.clone(), NameWithType::named(name, typ.clone()));
                 }
                 command.types_at_spans(program, consume);
+            }
+            Process::Poll {
+                clients,
+                name,
+                name_typ,
+                then,
+                else_,
+                ..
+            } => {
+                for client in clients {
+                    client.types_at_spans(program, consume);
+                }
+                consume(name.span(), NameWithType::named(name, name_typ.clone()));
+                then.types_at_spans(program, consume);
+                else_.types_at_spans(program, consume);
+            }
+            Process::Submit { values, .. } => {
+                for value in values {
+                    value.types_at_spans(program, consume);
+                }
             }
             Process::Telltypes(_, process) => {
                 process.types_at_spans(program, consume);
@@ -528,6 +611,23 @@ impl Process<()> {
                 typ: (),
                 command,
             } => command.qualify(module),
+            Self::Poll {
+                clients,
+                then,
+                else_,
+                ..
+            } => {
+                for client in clients {
+                    client.qualify(module);
+                }
+                then.qualify(module);
+                else_.qualify(module);
+            }
+            Self::Submit { values, .. } => {
+                for value in values {
+                    value.qualify(module);
+                }
+            }
             Self::Telltypes(_span, process) => process.qualify(module),
             Self::Block(_, _, body, process) => {
                 body.qualify(module);
@@ -625,6 +725,40 @@ impl<Typ> Process<Typ> {
                 vars.insert(name.clone());
                 vars
             }
+            Process::Poll {
+                driver,
+                clients,
+                name,
+                then,
+                else_,
+                ..
+            } => {
+                let mut vars = IndexSet::new();
+                for client in clients {
+                    vars.extend(client.free_variables());
+                }
+                let mut then_vars = then.free_variables();
+                then_vars.shift_remove(name);
+                then_vars.shift_remove(driver);
+                vars.extend(then_vars);
+                let mut else_vars = else_.free_variables();
+                else_vars.shift_remove(driver);
+                vars.extend(else_vars);
+                vars
+            }
+            Process::Submit {
+                driver,
+                values,
+                captures,
+                ..
+            } => {
+                let mut vars: IndexSet<LocalName> = captures.names.keys().cloned().collect();
+                vars.insert(driver.clone());
+                for value in values {
+                    vars.extend(value.free_variables());
+                }
+                vars
+            }
             Process::Telltypes(_, process) => process.free_variables(),
             Process::Block(_, _, _body, process) => process.free_variables(),
             Process::Goto(_, _, caps) => caps.names.keys().cloned().collect(),
@@ -651,6 +785,64 @@ impl<Typ> Process<Typ> {
             Self::Unreachable(_) => {
                 indentation(f, indent)?;
                 write!(f, "unreachable")
+            }
+
+            Self::Poll {
+                kind,
+                driver,
+                point,
+                clients,
+                name,
+                then,
+                else_,
+                ..
+            } => {
+                indentation(f, indent)?;
+                match kind {
+                    PollKind::Poll => write!(f, "poll")?,
+                    PollKind::Repoll => write!(f, "repoll")?,
+                }
+                write!(f, "[{} -> {}](", driver, point)?;
+                if let Some(first) = clients.first() {
+                    first.pretty(f, indent)?;
+                    for client in &clients[1..] {
+                        write!(f, ", ")?;
+                        client.pretty(f, indent)?;
+                    }
+                }
+                write!(f, ") {{")?;
+                indentation(f, indent + 1)?;
+                write!(f, "{} => {{", name)?;
+                then.pretty(f, indent + 2)?;
+                indentation(f, indent + 1)?;
+                write!(f, "}}")?;
+                indentation(f, indent + 1)?;
+                write!(f, "else => {{")?;
+                else_.pretty(f, indent + 2)?;
+                indentation(f, indent + 1)?;
+                write!(f, "}}")?;
+                indentation(f, indent)?;
+                write!(f, "}}")?;
+                Ok(())
+            }
+
+            Self::Submit {
+                driver,
+                point,
+                values,
+                ..
+            } => {
+                indentation(f, indent)?;
+                write!(f, "submit[{} -> {}](", driver, point)?;
+                if let Some(first) = values.first() {
+                    first.pretty(f, indent)?;
+                    for value in &values[1..] {
+                        write!(f, ", ")?;
+                        value.pretty(f, indent)?;
+                    }
+                }
+                write!(f, ")")?;
+                Ok(())
             }
 
             Self::Do {
