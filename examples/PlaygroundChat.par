@@ -1,0 +1,190 @@
+// A session type from the POV of the server, describing
+// a single chat client's behavior.
+type Client = either {
+  // First, the client logs in with a `String` username.
+  .login(String) choice {
+    // This is the response if the username is already taken.
+    .usernameTaken => !,
+    // Otherwise, we proceed to a recursive protocol, that will
+    // eventually end with a log out.
+    .success => recursive either {
+      // At each iteration, the client can log out.
+      .logout!,
+      // Or request an interaction. If so, the client first receives
+      // all the messages that were sent to them, in the shape `(from) content`.
+      .request[List<(String) String>] either {
+        // Then the client can choose to just resume.
+        .resume self,
+        // Or send a message to another user with `(to, content)`.
+        .message(String, String) choice {
+          // This is the response if the target user is logged in.
+          .sentSuccessfully => self,
+          // And this if the target user is not logged in.
+          .userNotLoggedIn => self,
+        },
+      }
+    }
+  }
+}
+
+// At the top level, the server's API offers creating new clients via `newLogin`,
+// or signalizing that no more logins will be happening via `end`.
+type API = recursive either {
+  .end!,
+  .newLogin(Client) self,
+}
+
+// To be effectively able to implement the API using `poll`/`submit`, it first needs
+// to be transformed into this "fan pattern". A pool operates on clients of the same
+// type. But in the `Client` protocol, there are multiple points of different types,
+// where the client needs to be in the pool and not lock the server with an exclusive
+// interaction.
+//
+// These are:
+// 1. Before login
+// 2. During an active session
+//
+// Aside from having different types, another distinguishing feature about these two
+// states is the existence of a username. The username is only entered once, but then
+// needs to be remembered for the entire active session. We solve this in the "fan pattern"
+// by attaching a username to every interaction from the active session state. The `Client`
+// protocol itself does not need to implement this, it's implemented in the transformation
+// from `API` to `APIFan`.
+type APIFan = recursive either {
+  .end!,
+  .split(self) self,
+  .login(String) choice {
+    .usernameTaken => !,
+    .success => self,
+  }
+  .session(String) either {
+    .logout!,
+    .request[List<(String) String>] either {
+      .resume self,
+      .message(String, String) choice {
+        .sentSuccessfully => self,
+        .userNotLoggedIn => self,
+      },
+    }
+  }
+}
+
+// Here we recursively transform the nice, tight `API` into a slightly looser `APIFan`.
+// We need that to be able to implement the server using `poll`/`submit`.
+dec APIFan : [API] APIFan
+def APIFan = [api] api.begin.case {
+  .end! => .end!,
+  .newLogin(client) api => .split(
+    client.case {
+      .login(username) client => .login(username) case {
+        .usernameTaken => client.usernameTaken,
+        .success => client.success.begin.case {
+          .logout! => .session(username) .logout!,
+          .request client => .session(username) .request[messages] client(messages).case {
+            .resume client => .resume client.loop,
+            .message(to, content) client => .message(to, content) case {
+              .sentSuccessfully => client.sentSuccessfully.loop,
+              .userNotLoggedIn => client.userNotLoggedIn.loop,
+            },
+          }
+        }
+      }
+    }
+  ) api.loop,
+}
+
+// 🎉 Run this in the ⅋layground and have fun!
+dec ServeChat : [API] !
+def ServeChat = [api] do {
+  // We initialize a map of pending message: sent but not received yet.
+  // The key is the username, the value is a list builder of `(from) content` pairs.
+  // If an entry is missing, it means the user is not logged in.
+  let messages = Map.String(type List.Builder<(String) String>)(*())
+} in poll(APIFan(api)) {  // We start polling on the fanned version of the API.
+  // A client has started an interaction.
+  client => client.case {
+    // Handle the generic `end` and `split` fanning.
+    .end! => submit(),
+    .split(client1) client2 => submit(client1, client2),
+
+    // A client started a login protocol.
+    .login(username) client => do {
+      // Open a potential entry in the pending messages map.
+      messages.entry(username)[pending]
+    } in if {
+      // If it's present, it means another user with the same username is logged in.
+      pending is .ok pending => do {
+        // Restore the map.
+        messages.put(pending)
+        // Deny the login.
+        client.usernameTaken?
+      } in submit(),  // Continue polling.
+
+      // Not present, all good.
+      else => do {
+        // Instantiate the entry with an empty list builder.
+        messages.put(List.Builder(type (String) String))
+      } in submit(client.success),
+    }
+
+    // A client that has already logged in has started an interaction.
+    .session(username) client => do {
+      // Pull out their pending messages entry.
+      messages.entry(username)[pending]
+      // If we have no bugs in the fanning, the entry will always be present.
+      // The type system can't guarantee that, so let's just handle the opposite
+      // case by defaulting to an empty list builder. But, this should not happen.
+      if not pending is .ok pending => {
+        let pending = List.Builder(type (String) String)
+      }
+    } in client.case {
+      // The client wants to log out.
+      .logout! => do {
+        // Discard their pending messages.
+        let _ = pending.build
+        // Delete their entry from the map.
+        messages.delete
+      } in submit(),  // Continue polling.
+
+      // The client wants to receive their messages!
+      .request client => do {
+        // Replace their entry with a new empty list builder.
+        messages.put(List.Builder(type (String) String))
+      } in client(pending.build).case {  // Send the pending messages to the client.
+        // The client does not with to send a message. Put them back in the pool.
+        .resume client => submit(client),
+
+        // The client wants to send a message to another user!
+        .message(to, content) client => do {
+          // Find the pending messages entry for the target user.
+          messages.entry(to)[pending]
+          if {
+            // If it exists, the user it logged in.
+            pending is .ok pending => {
+              // Add the message to their pending messages.
+              messages.put(pending.add((username) content))
+              // Notify the client that the message was sent successfully.
+              client.sentSuccessfully
+            }
+            // If it does not exist, the target user is not logged in.
+            else => {
+              // Keep the entry deleted.
+              messages.delete
+              // Notify the client that the message could not be sent.
+              client.userNotLoggedIn
+            }
+          }
+        } in submit(client)  // Put the client back in the pool.
+      }
+    }
+  }
+
+  // If all clients have logged out, and no more are coming,
+  // we discard all pending messages.
+  else => messages.list.begin.case {
+    .end! => !,
+    .item((_) pending) rest => do {
+      let _ = pending.build
+    } in rest.loop
+  }
+}
