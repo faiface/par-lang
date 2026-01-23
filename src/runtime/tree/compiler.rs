@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use super::net::{Net, Tree};
@@ -237,19 +237,74 @@ pub struct Compiler {
     poll_packages: IndexMap<LocalName, PollInfo>,
 }
 
-struct PollState {
-    count: usize,
-    ready_tx: tokio::sync::mpsc::UnboundedSender<crate::runtime::flat::readback::Handle>,
-    ready_rx: Option<tokio::sync::mpsc::UnboundedReceiver<crate::runtime::flat::readback::Handle>>,
+fn poll_token(
+    handle: crate::runtime::Handle,
+) -> Pin<Box<dyn Send + core::future::Future<Output = ()>>> {
+    Box::pin(poll_token_server(handle))
 }
 
-impl Default for PollState {
-    fn default() -> Self {
-        let (ready_tx, ready_rx) = tokio::sync::mpsc::unbounded_channel();
-        Self {
-            count: 0,
-            ready_tx,
-            ready_rx: Some(ready_rx),
+async fn poll_token_server(mut handle: crate::runtime::Handle) {
+    use futures::future::BoxFuture;
+    use futures::stream::FuturesUnordered;
+    use futures::stream::StreamExt as _;
+
+    let mut clients: FuturesUnordered<BoxFuture<'static, crate::runtime::flat::readback::Handle>> =
+        FuturesUnordered::new();
+
+    loop {
+        let op = handle.case().await;
+        match op.as_str() {
+            "#poll" => {
+                // payload: (result_slot) next_slot
+                // implemented as a Pair(left = next_slot, right = result_slot)
+                let mut result_slot = handle.receive();
+
+                if clients.is_empty() {
+                    result_slot.signal(ArcStr::from("#empty"));
+                    result_slot.break_();
+                    continue;
+                }
+
+                let client = clients
+                    .next()
+                    .await
+                    .expect("poll clients stream unexpectedly empty");
+
+                result_slot.signal(ArcStr::from("#client"));
+                result_slot.link(crate::runtime::Handle::from(client));
+            }
+
+            "#submit" => {
+                // payload: (stream) next_slot
+                // implemented as a Pair(left = next_slot, right = stream)
+                let mut stream = handle.receive();
+
+                loop {
+                    let tag = stream.case().await;
+                    match tag.as_str() {
+                        "#end" => {
+                            stream.continue_();
+                            break;
+                        }
+                        "#item" => {
+                            // payload: (client) tail
+                            // implemented as a Pair(left = tail, right = client)
+                            let client = stream.receive();
+                            let client = client.handle;
+                            clients.push(Box::pin(async move { client.await_ready().await }));
+                        }
+                        other => panic!("Invalid submit stream item: {other}"),
+                    }
+                }
+            }
+
+            "#close" => {
+                // payload: !
+                handle.erase();
+                break;
+            }
+
+            other => panic!("Invalid poll token operation: {other}"),
         }
     }
 }
@@ -261,110 +316,8 @@ struct PollInfo {
     driver: LocalName,
 }
 
-fn poll_token_tree(state: Arc<Mutex<PollState>>) -> Tree {
-    Tree::ExternalBox(Arc::new(move |handle| {
-        let state = state.clone();
-        poll_token_impl(handle, state)
-    }))
-}
-
-fn poll_token_impl(
-    mut request: crate::runtime::Handle,
-    state: Arc<Mutex<PollState>>,
-) -> Pin<Box<dyn Send + core::future::Future<Output = ()>>> {
-    Box::pin(async move {
-        let op = request.case().await;
-        match op.as_str() {
-            "#poll" => {
-                // payload: (result_slot) next_slot
-                // implemented as a Pair(left = next_slot, right = result_slot)
-                let mut result_slot = request.receive();
-                let next_slot = request;
-
-                let next_state = state.clone();
-                next_slot.provide_box(move |handle| poll_token_impl(handle, next_state.clone()));
-
-                let mut ready_rx = {
-                    let mut state = state.lock().unwrap();
-                    if state.count == 0 {
-                        None
-                    } else {
-                        Some(
-                            state
-                                .ready_rx
-                                .take()
-                                .expect("ready_rx missing while poll is active"),
-                        )
-                    }
-                };
-
-                let client = match ready_rx.as_mut() {
-                    None => None,
-                    Some(rx) => Some(rx.recv().await.expect("poll ready channel closed")),
-                };
-
-                if let Some(rx) = ready_rx {
-                    let mut state = state.lock().unwrap();
-                    state.ready_rx = Some(rx);
-                    if client.is_some() {
-                        state.count -= 1;
-                    }
-                }
-
-                match client {
-                    None => {
-                        result_slot.signal(ArcStr::from("#empty"));
-                        result_slot.break_();
-                    }
-                    Some(client) => {
-                        result_slot.signal(ArcStr::from("#client"));
-                        result_slot.link(crate::runtime::Handle::from(client));
-                    }
-                }
-            }
-
-            "#submit" => {
-                // payload: (stream) next_slot
-                // implemented as a Pair(left = next_slot, right = stream)
-                let mut stream = request.receive();
-                let next_slot = request;
-
-                loop {
-                    let tag = stream.case().await;
-                    match tag.as_str() {
-                        "#end" => {
-                            stream.erase();
-                            break;
-                        }
-                        "#item" => {
-                            // payload: (client) tail
-                            // implemented as a Pair(left = tail, right = client)
-                            let client = stream.receive();
-                            let client = client.handle;
-                            let tx = {
-                                let mut state = state.lock().unwrap();
-                                state.count += 1;
-                                state.ready_tx.clone()
-                            };
-                            tokio::spawn(async move {
-                                let client = client.await_ready().await;
-                                let _ = tx.send(client);
-                            });
-                        }
-                        other => panic!("Invalid submit stream item: {other}"),
-                    }
-                }
-
-                // Important: only expose the continuation token after we've fully consumed the
-                // submitted stream and registered all clients. Otherwise the poll body may race
-                // ahead and observe an empty pool.
-                let next_state = state.clone();
-                next_slot.provide_box(move |handle| poll_token_impl(handle, next_state.clone()));
-            }
-
-            other => panic!("Invalid poll token operation: {other}"),
-        }
-    })
+fn poll_token_tree() -> Tree {
+    Tree::External(poll_token)
 }
 
 impl Tree {
@@ -754,10 +707,9 @@ impl Compiler {
 
                 // Initialize the poll token (only for `poll`, not `repoll`).
                 if matches!(kind, PollKind::Poll) {
-                    let state = Arc::new(Mutex::new(PollState::default()));
                     self.bind_variable(
                         driver.clone(),
-                        poll_token_tree(state).with_type(Type::Break(Span::None)),
+                        poll_token_tree().with_type(Type::Break(Span::None)),
                     )?;
                 }
 
@@ -789,6 +741,19 @@ impl Compiler {
                     Some(&driver),
                     Some(&captures),
                     Some(&labels_in_scope),
+                );
+
+                // Pack the current context for entering the poll body.
+                //
+                // This must happen before creating the package: `in_package` temporarily captures
+                // loop variables that are in scope, and `unpack` will reintroduce them from the
+                // packed context. If we don't pack here (which also clears `loop_points`), we may
+                // end up binding the same loop variable twice.
+                let (context_in, _pack_data) = self.context.pack(
+                    Some(&driver),
+                    Some(&captures),
+                    Some(&labels_in_scope),
+                    &mut self.net,
                 );
 
                 let (poll_package_id, _) = self.in_package(
@@ -847,7 +812,13 @@ impl Compiler {
                                     if let Ok(driver_tree) =
                                         this.use_variable(&driver, &VariableUsage::Move, false)
                                     {
-                                        this.net.link(driver_tree.tree, Tree::Era);
+                                        this.net.link(
+                                            driver_tree.tree,
+                                            Tree::Signal(
+                                                ArcStr::from("#close"),
+                                                Box::new(Tree::Break),
+                                            ),
+                                        );
                                     }
                                     this.compile_process(&else_)?;
                                     Ok((
@@ -881,12 +852,6 @@ impl Compiler {
                 )?;
 
                 // Enter the poll body (process-ending).
-                let (context_in, _pack_data) = self.context.pack(
-                    Some(&driver),
-                    Some(&captures),
-                    Some(&labels_in_scope),
-                    &mut self.net,
-                );
                 self.lazy_redexes.push((
                     Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
                     Tree::Break,
