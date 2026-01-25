@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Pipes - Par Documentation</title>
+        <title>Nondeterminism, Servers &amp; Clients - Par Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/quality_of_life/pipes.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/nondeterminism/README.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,98 +160,59 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="pipes"><a class="header" href="#pipes">Pipes</a></h1>
-<p>Pipes are a piece of syntax sugar that keep a chain of operations readable.
-They do not add new behaviour to Par. They just let you write the
-“do this, then that” story from left to right without inventing throwaway
-names.</p>
-<h2 id="a-first-taste"><a class="header" href="#a-first-taste">A first taste</a></h2>
-<p>Here are some helper functions that operate on numbers:</p>
-<pre><code class="language-par">def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
-def Double = [n: Nat] Nat.Add(n, n)
-def Square = [n: Nat] Nat.Mul(n, n)
-</code></pre>
-<p>Without pipes you call them inside one another:</p>
-<pre><code class="language-par">let result = Square(Add(3, Double(4)))  // = 196
-</code></pre>
-<p>With pipes you can say the same thing in the order you want to read it:</p>
-<pre><code class="language-par">let result = 3
-  -&gt; Add(Double(4))
-  -&gt; Square
-</code></pre>
-<p>The pipe feeds the value on the left into the <strong>first argument</strong> of the
-function on the right. Nothing else changes — the two version above do
-the exact same thing.</p>
-<h2 id="expression-semantics"><a class="header" href="#expression-semantics">Expression semantics</a></h2>
-<p>Whenever you see</p>
-<pre><code class="language-par">value -&gt; Func(args)
-</code></pre>
-<p>read it as</p>
-<pre><code class="language-par">Func(value, args)
-</code></pre>
-<p>It helps to think of <code>-&gt;Func</code> as one of the operations in the sequence, just
-like <code>(args)</code> or <code>.case { ... }</code>. You can even rewrite the earlier example as
-<code>value -&gt;Func (args)</code> to make this explicit.</p>
-<pre><code class="language-par">Account.Lookup(name)
-  -&gt;Auth.Check
-  .case {
-    .ok user   =&gt; user.balance
-    .err _     =&gt; 0
-  }
-</code></pre>
-<p>If you need to push the value into a later argument, wrap the call in braces so
-the whole expression becomes the operation:</p>
-<pre><code class="language-par">value -&gt; {Func(arg1)}(arg3)  // == Func(arg1, value, arg3)
-</code></pre>
-<h2 id="pipes-as-commands"><a class="header" href="#pipes-as-commands">Pipes as commands</a></h2>
-<p>In process syntax every command “uses” the variable on its left and stores the
-result back into that same variable. Pipes follow the same rule, which means
-you can treat any function as if it were a built-in command.</p>
-<pre><code class="language-par">dec Push : [List&lt;Nat&gt;, Nat] List&lt;Nat&gt;
-def Push = [stack, value] .item(value) stack
-
-let stack = *(1, 2, 3)
-stack-&gt;Push(4)
-// exactly the same as: let stack = Push(stack, 4)
-</code></pre>
-<p>Pipes make destructuring commands pleasant too. Take a <code>Pop</code> function that
-returns a head and a tail:</p>
-<pre><code class="language-par">dec Pop : [List&lt;Nat&gt;] (Option&lt;Nat&gt;) List&lt;Nat&gt;
-def Pop = [list] list.case {
-  .end! =&gt; (.err!) .end!,
-  .item(x) xs =&gt; (.ok x) xs,
-}
-
-let numbers = *(10, 20, 30)
-numbers-&gt;Pop[top]
-// top     : Option&lt;Nat&gt;
-// numbers : List&lt;Nat&gt;  -- now *(20, 30)
-</code></pre>
-<p>Again, the command is just a prettier spelling of
-<code>let (top) numbers = Pop(numbers)</code>.</p>
-<p>This is the reason the pipe feeds the <strong>first</strong> argument: it lets you extend
-the familiar <code>value.operation</code> sequences that already exist in the language
-without introducing special cases.</p>
-<h2 id="wrapping-up"><a class="header" href="#wrapping-up">Wrapping up</a></h2>
+                        <h1 id="nondeterminism-servers--clients"><a class="header" href="#nondeterminism-servers--clients">Nondeterminism, Servers &amp; Clients</a></h1>
+<p>In an <a href="https://www.typetheoryforall.com/episodes/goal-of-science">episode of the “Type Theory Forall” podcast</a>, Phil Wadler said:</p>
+<blockquote>
+<p><strong>❝Linear logic is good for the bits of concurrency where you don’t need concurrency.❞</strong></p>
+<p>— Phil Wadler, 2025</p>
+</blockquote>
+<p>Thanks Phil, that’s very encouraging.</p>
+<p>What Phil — the wonderful researcher and author of the <a href="https://homepages.inf.ed.ac.uk/wadler/papers/propositions-as-sessions/propositions-as-sessions.pdf">process language Par is based on</a> — is talking about here is nondeterminism and races. Indeed, linear logic and races are like water and oil. The research has been largely unsatisfying, yielding steps in certain directions, but never quite far enough to solve real-world problems in an elegant and obviously correct manner.</p>
+<p><strong>Par offers an innovative solution!</strong></p>
+<h2 id="what-is-nondeterminism"><a class="header" href="#what-is-nondeterminism">What is nondeterminism?</a></h2>
+<p>All features of Par that we’ve covered so far are deterministic. Yes, Par is an automatically concurrent language. Independent bits of your program proceed concurrently, without you needing to lift a finger to make it happen. But when it comes to each single piece, the next instruction clearly says who to talk to, and what to say. Decisions are being made, but they only depend on the inputs. If the inputs have the same values, the outcomes will be the same.</p>
+<p>But sometimes, quite often in fact, decisions need to be made based on <em>who speaks first.</em> That’s the race, to speak first. A program gathering information from multiple slow sources can’t say <em>“I’ll first listen to A, then to B.”</em> If <em>A</em> takes 30 minutes to produce its first message, while <em>B</em> has already produced 50 of them, the program just won’t work well.</p>
+<p><strong>That’s nondeterminism.</strong> It’s not determined if I’ll speak to <em>A</em> or <em>B</em> first, it depends! In this case, it depends on <strong>timing.</strong></p>
+<blockquote>
+<p>We’re not talking about randomness, or “nondeterministic choice” here. While those fall under the general umbrella of nondeterminism, the randomness can be understood as a part of the program input. The nondeterminism we are interested in here is concerned with timing.</p>
+</blockquote>
+<p><strong>The problem-space of nondeterminism</strong> is quite large, but it mainly comes in <strong>two kinds:</strong></p>
 <ul>
-<li>Pipes keep left-to-right reading order while preserving Par’s evaluation
-rules. Drop them and you get the original nested calls back.</li>
-<li>They play nicely with the rest of the syntax: mix them with <code>case</code>, <code>.</code>
-selections, further commands — anything that already appends to the sequence.</li>
-<li>If the first argument is not the one you need, braces give you full control.</li>
+<li><strong>Bidirectional communication</strong> — That’s when <em>A</em> and <em>B</em> have a channel <em>between</em> them, but either of them can speak first. If <em>A</em> speaks first, <em>B</em> must react, and vice versa. This is useful for preemptive cancellation, implementing chat servers or real-time dashboards without periodic pings, and so on.</li>
+<li><strong>Server and clients</strong> — I don’t mean web servers. What I mean is structuring your program as multiple independent agents — clients — that communicate with a central, stateful agent: the server. The server pays attention to one client at a time, but always the one who speaks first.</li>
 </ul>
-<p>Whenever you notice yourself inventing a <code>tmp</code> variable simply to pass it to
-another function, try a pipe — it’s often all the ceremony you actually need.</p>
+<blockquote>
+<p>Par does not solve the first, yet. You can have cancellation, but it has to be cooperative, you can write a chat server, but there’s got to be periodic checks.</p>
+</blockquote>
+<p><strong>Par solves the second: server and clients,</strong> while:</p>
+<ul>
+<li>Keeping all the guarantees: <strong>no deadlocks, no runtime crashes, no infinite loops.</strong></li>
+<li>Leveraging Par’s types as <strong>session types to allow arbitrary communication protocols</strong> between the server and the clients.</li>
+<li><strong>Being very simple to understand and reason about!</strong></li>
+</ul>
+<blockquote>
+<p>👉 Just to make sure it’s clear… we’re <strong>not</strong> talking about web servers here. We’re talking about a concurrent structure, where any number of <em>client</em> agents are communicating with a central <em>server</em> agent, all inside a single program.</p>
+</blockquote>
+<h2 id="the-state-of-the-research"><a class="header" href="#the-state-of-the-research">The state of the research</a></h2>
+<p>When it comes to linear logic — the theory underlying Par — the problem of races is, to my best knowledge, unsolved in research. Here are some papers that shaped my understanding of the problem, and also why they fall short:</p>
+<ul>
+<li><a href="https://dl.acm.org/doi/abs/10.1145/3473567"><strong><em>Client-server sessions in linear logic</em></strong></a> — This paper is spectacularly elegant. It invents coexponentials, which partially solve the client-server communication topology. Unfortunately, the clients are not resumable.</li>
+<li><a href="https://cs.au.dk/~birke/phd-students/QianZ-thesis.pdf"><strong><em>Concurrency and races in classical linear logic</em></strong></a> — This is a follow-up paper, which tries to solve the non-resumability of the clients by introducing single input, single output interfaces for clients to communicate with a central server. Unfortunately, it’s not as elegant, and still not expressive enough.</li>
+<li><a href="https://library.oapen.org/bitstream/handle/20.500.12657/63011/1/978-3-031-30044-8.pdf#page=434"><strong><em>Safe session-based concurrency with shared linear state</em></strong></a> — This one is fairly simple, yet surprisingly potent. It introduces a deadlock-safe mutex type, that can be used to safely share a linear resource among independent processes. Unfortunately, it does not extend well to more involved communication protocols.</li>
+<li><a href="https://lmcs.episciences.org/6979/pdf"><strong><em>Towards races in linear logic</em></strong></a> — An extremely elegant approach presented with colorful formulas and icons. It fits very well into linear logic, but unfortunately is restricted to servers with a constant number of clients, which finds few use-cases.</li>
+</ul>
+<p><strong>Par’s solution here,</strong> its <code>poll</code>/<code>submit</code> control structure, can be used to implement everything from the first 3 papers above, and a lot more, with very few ingredients.</p>
+<p>The last paper is able to express some invariants that <code>poll</code>/<code>submit</code> cannot (the constant number of clients), but it’s questionable how useful those could be in real-world programs.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../quality_of_life/if.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../quality_of_life/pipes.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../nondeterminism/index.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../nondeterminism/poll_submit.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -261,11 +222,11 @@ another function, try a pipe — it’s often all the ceremony you actually need
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../quality_of_life/if.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../quality_of_life/pipes.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../nondeterminism/index.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../nondeterminism/poll_submit.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

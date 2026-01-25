@@ -1,0 +1,464 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Communicating Both Ways - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/nondeterminism/both_ways.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="communicating-both-ways"><a class="header" href="#communicating-both-ways">Communicating Both Ways</a></h1>
+<p>So far, information only flowed one way: from the clients to the server. <strong>What about the other way?</strong></p>
+<p>For example, you might want a server that:</p>
+<ul>
+<li>Generates a unique ID upon request from a client.</li>
+<li>Manages a linear resource with clients taking alternating ownership of it.</li>
+<li>Mediates messages between clients that they address to one another.</li>
+</ul>
+<p>All of the above require information flowing not just from clients to the server, but <strong>from the server to the clients,</strong> too. And <strong>all of it is doable!</strong></p>
+<p>Two things this is <strong>not</strong> about:</p>
+<ul>
+<li><strong>A server initiating an interaction.</strong> With <code>poll</code>/<code>submit</code>, the client is always the one who initiates an interaction by becoming ready.</li>
+<li><strong>Nondeterministic direction of communication.</strong> As we learned in the <a href="./README.html">introduction to this section</a>, Par does <strong>not</strong> support this, at least yet. The types always say which direction is the next one.</li>
+</ul>
+<h2 id="reminder-construction-by-destruction"><a class="header" href="#reminder-construction-by-destruction">Reminder: <a href="../processes/duality.html">Construction by destruction</a></a></h2>
+<p>In the previous chapters, we’ve used expression syntax exclusively. But, it’s often useful to switch to <a href="../process_syntax.html">process syntax</a>, especially when combining I/O operations with the asynchronous construction of data structures, like lists and trees.</p>
+<p>Let’s take the <code>ListFan&lt;a&gt;</code> from the previous chapter.</p>
+<pre><code class="language-par">type ListFan&lt;a&gt; = recursive either {
+  .end!,
+  .spawn(self) self,
+  .item(a) self,
+}
+</code></pre>
+<p>We used it for merging <code>List&lt;List&lt;a&gt;&gt;</code>, but nothing prevents us from using it standalone as well:</p>
+<pre><code class="language-par">dec ServeListFan : &lt;a&gt;[ListFan&lt;a&gt;] List&lt;a&gt;
+def ServeListFan = ...
+</code></pre>
+<p>The code will be the same as for <code>MergeLists</code> in the <a href="./fan_pattern.html#the-fan-transformation">previous chapter</a>.</p>
+<p>How would we use it now? The expression syntax is obvious:</p>
+<pre><code class="language-par">ServeListFan(
+  .spawn(.item(1).item(2).end!)
+  .spawn(.item(3).item(4).end!)
+  .end!
+)
+</code></pre>
+<p>That certainly works, but if we wanted to combine that with some I/O operations, the <a href="../process_syntax.html">process syntax</a> would be better. We’ll use the <a href="../processes/chan_expression.html"><code>chan</code></a> to construct a <code>ListFan&lt;a&gt;</code> by destructing its consumer:</p>
+<pre><code class="language-par">ServeListFan(chan server {
+  server.spawn(chan server {
+    // I/O anywhere here
+    server.item(1)
+    server.item(2)
+    server.end!
+  })
+  server.spawn(chan server {
+    // I/O anywhere here
+    server.item(3)
+    server.item(4)
+    server.end!
+  })
+  server.end!
+})
+</code></pre>
+<p>Now it’s more imperative! I’m sure you can imagine doing all kinds of I/O operations between those <code>.item</code> and <code>.end</code> calls.</p>
+<p>What’s the type of the <code>server</code> there? It’s the dual of <code>ListFan&lt;a&gt;</code>:</p>
+<pre><code class="language-par">iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+  .item(a) =&gt; self,
+}
+</code></pre>
+<p><strong>The above is the type of the <em>server</em> from the point of view of the <em>client.</em></strong></p>
+<p>For a small recap from the <a href="../processes/duality.html"><em>duality</em> chapter</a>:</p>
+<ul>
+<li>
+<p>The <code>?</code> — the continuation type — is an obligation to dispose of all your resources and finish.</p>
+<blockquote>
+<p><strong>A client in the server-client setup must finish before the server does.</strong> That follows from the basic principle of Par’s concurrency model: processes connected by their channels form a single tree. It ensures no deadlocks, and no leaking of processes.</p>
+</blockquote>
+</li>
+<li>
+<p>The signature of <code>.spawn</code> with the <code>(dual self) =&gt; self</code>, is just the dual version of what we saw previously:</p>
+<pre><code class="language-par">.spawn(self) self
+</code></pre>
+<p>There we saw the server’s point of view, but now we’re looking at the client’s side.</p>
+</li>
+</ul>
+<p>Now back to communicating both ways!</p>
+<h2 id="example-giving-out-unique-ids"><a class="header" href="#example-giving-out-unique-ids">Example: Giving out unique IDs</a></h2>
+<p>Suppose we want to spawn a couple of clients and have each of them get a unique ID. Here’s a possible interface from the client’s point of view:</p>
+<pre><code class="language-par">type IdServer = iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+  .getId =&gt; (Nat) self,
+}
+</code></pre>
+<blockquote>
+<p>Since the clients have to be <a href="../types/recursive.html"><code>recursive</code></a>, the servers will be <a href="../types/iterative.html"><code>iterative</code></a> from the clients’ point of view.</p>
+</blockquote>
+<p>Here’s the dual type from the server’s point of view:</p>
+<pre><code class="language-par">//            = dual IdServer
+type IdClient = recursive either {
+  .end!,
+  .spawn(self) self,
+  .getId [Nat] self,
+}
+</code></pre>
+<p>It’s very similar to what we saw previously, except the <code>.getId</code> variant isn’t giving out a value, it’s taking one.</p>
+<p>Here’s how we can implement such a server, with comments:</p>
+<pre><code class="language-par">dec ServeIds : [IdClient] !
+def ServeIds = [clients] do {
+  // Initialize the internal state of the server.
+  // Here it's just an `id` variable that will keep
+  // getting incremented.
+  let id = 0
+} in poll(clients) {
+  client =&gt; client.case {
+    // Standard handling of the fan structure.
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+
+    // A client is requesting an ID.
+    .getId client =&gt; do {
+      // Increment the `id` variable using the pipe
+      // syntax sugar in the process syntax. It's
+      // the same as: `let id = Nat.Add(id, 1)`.
+      id-&gt;Nat.Add(1)
+      // The `client`'s type is `[Nat] IdClient` here.
+      // We send it a fresh ID using the send command.
+      client(id)
+    } in submit(client),
+  }
+  else =&gt; !
+}
+</code></pre>
+<blockquote>
+<p>Notice how the <code>id</code> variable gets implicitly passed to each new iteration at <code>submit</code>. The treatment of local variables in <code>poll</code>/<code>submit</code> is the same as it is with <code>.begin</code>/<code>.loop</code>. They’re kept around, always keeping their latest values.</p>
+</blockquote>
+<p>And here’s how we can use it:</p>
+<pre><code class="language-par">def SimpleClient: [String] IdClient = [name]
+  // `IdServer` and `IdClient` are dual, so we can construct
+  // an `IdClient` by operating on an `IdServer`.
+  chan server: IdServer {
+    server.getId[id]
+    Debug.Log(String.Concat(*(name, " got number ", id-&gt;Nat.ToString)))
+    server.end!
+  }
+
+def Main: ! = ServeIds(chan server {
+  server.spawn(SimpleClient("A"))
+  server.spawn(SimpleClient("B"))
+  server.spawn(SimpleClient("C"))
+  server.spawn(SimpleClient("D"))
+  server.end!
+})
+</code></pre>
+<p>Running this particular program will almost invariably assign the number 1 to A, 2 to B, 3 to C, and 4 to D. That’s just because the clients immediately ask for their ID. If they did any work before asking for it, or were asking multiple times, the results would’ve been different.</p>
+<p>The point is, they can run independently, ask for an ID at any point, and get a fresh one every time.</p>
+<h2 id="example-sharing-a-resource"><a class="header" href="#example-sharing-a-resource">Example: Sharing a resource</a></h2>
+<p>We can use the synchronous nature of the server to give out unique access to a shared resource.</p>
+<ol>
+<li>Initially, the server holds the resource.</li>
+<li>A client can request it, and the server gives it out.</li>
+<li>The exclusive session of the server with the client lasts until the client gives the resource back.</li>
+<li>The client gives it back, and then another client can take it.</li>
+<li>Once all clients finish, the resource is returned to the creator of the server.</li>
+</ol>
+<p>Here’s a possible interface from the client’s point of view:</p>
+<pre><code class="language-par">type MutexServer&lt;a&gt; = iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+  .take =&gt; (a) choice {
+    .put(a) =&gt; self,
+  }
+}
+</code></pre>
+<p>Let’s break down the <code>.take</code> method:</p>
+<ul>
+<li>
+<p><code>.take =&gt; (a) choice {</code></p>
+<p>First, we directly obtain an <code>a</code> value, but the server itself turns into a new <code>choice</code>, with just one method.</p>
+</li>
+<li>
+<p><code>.put(a) =&gt; self,</code></p>
+<p>The method is <code>.put</code>, which requires an <code>a</code> value back. After that, the server returns to the original protocol.</p>
+</li>
+</ul>
+<p>The exclusive session between a client and the server will last until the client puts the value back.</p>
+<p>To implement such a server, we need to decide what to do with the value once all clients finish. Here, we just return it to the creator of the server.</p>
+<pre><code class="language-par">type MutexClient&lt;a&gt; = dual MutexServer&lt;a&gt;
+
+dec ShareMutex : &lt;a&gt;[a] [MutexClient&lt;a&gt;] a
+def ShareMutex = &lt;a&gt;[value] [clients] poll(clients) {
+  client =&gt; client.case {
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+
+    .take session =&gt; session(value).case {
+      .put(value) client =&gt; submit(client),
+    }
+  }
+
+  else =&gt; value,
+}
+</code></pre>
+<p>A closer look on this part:</p>
+<pre><code class="language-par">    .take session =&gt; session(value).case {
+      .put(value) client =&gt; submit(client),
+    }
+</code></pre>
+<p>After choosing <code>.take</code>, the client (bound as <code>session</code>) becomes this function:</p>
+<pre><code class="language-par">[a] either {
+  .put(a) MutexClient&lt;a&gt;,
+}
+</code></pre>
+<p>We send it the current <code>value</code>, and then use <code>.case</code> to wait until the client gives us the value back. After that, we just submit the client back to the pool.</p>
+<p>Using such a server could look like this:</p>
+<pre><code class="language-par">dec IncrementingClient : [Nat] MutexClient&lt;Nat&gt;
+def IncrementingClient = [count] chan server {
+  Nat.Repeat(count).begin.case {
+    .step rest =&gt; {
+      server.take[n]
+      n-&gt;Nat.Add(1)
+      server.put(n)
+      rest.loop
+    }
+    .end! =&gt; {
+      server.end!
+    }
+  }
+}
+
+def Main: ! = do {
+  let final = ShareMutex(0, chan server {
+    server.spawn(IncrementingClient(1000))
+    server.spawn(IncrementingClient(1000))
+    server.spawn(IncrementingClient(1000))
+    server.end!
+  })
+  Debug.Log(final-&gt;Nat.ToString)
+} in !
+</code></pre>
+<p>We spawn 3 clients, each of which will take, increment, and put the value back a 1000 times. In the end, the value 3000 will be printed.</p>
+<blockquote>
+<p>💡 <strong>For the theory lovers:</strong> The <code>MutexServer</code> above covers the <a href="https://library.oapen.org/bitstream/handle/20.500.12657/63011/1/978-3-031-30044-8.pdf#page=434"><strong><em>Safe session-based concurrency with shared linear state</em></strong></a> paper.</p>
+<p>The remaining one of the three papers that <code>poll</code>/<code>submit</code> subsumes — <a href="https://cs.au.dk/~birke/phd-students/QianZ-thesis.pdf"><strong><em>Concurrency and races in classical linear logic</em></strong></a> — is all about servers like this:</p>
+<pre><code class="language-par">type Server = iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+
+  .method1(A1) =&gt; (B1) self,
+  .method2(A2) =&gt; (B2) self,
+  ...
+}
+</code></pre>
+<p>Those are clearly covered by <code>poll</code>/<code>submit</code> as well!</p>
+</blockquote>
+<h2 id="example-a-chat-server-in-the-playground"><a class="header" href="#example-a-chat-server-in-the-playground">Example: A chat server in the <a href="../getting_started.html">Playground</a></a></h2>
+<p>Here’s a more involved example of both-ways communication between a server and its clients. It’s a little toy chat server that you can play with in the <a href="../getting_started.html">Par’s interactive playground</a>.</p>
+<p>It’s an example of client-to-client mediation via a server.</p>
+<p>You can find a thoroughly commented code for this toy chat server in the <a href="https://github.com/faiface/par-lang/blob/main/examples/PlaygroundChat.par"><code>examples</code></a> directory.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../nondeterminism/fan_pattern.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../nondeterminism/repoll.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../nondeterminism/fan_pattern.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../nondeterminism/repoll.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

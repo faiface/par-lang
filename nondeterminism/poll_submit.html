@@ -1,0 +1,382 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Polling &amp; Submitting - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/nondeterminism/poll_submit.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="polling--submitting"><a class="header" href="#polling--submitting">Polling &amp; Submitting</a></h1>
+<p>How does Par solve this server-client nondeterminism, i.e. a concurrency structure with independent client agents all communicating with a central server agent?</p>
+<p>Par does it by introducing a single feature: <strong>the <code>poll</code>/<code>submit</code> control structure.</strong></p>
+<p>There are no new types; the existing ones are wholly sufficient for specifying communication between the server and client counterparts.</p>
+<h2 id="the-idea-pools"><a class="header" href="#the-idea-pools">The idea: Pools</a></h2>
+<p>Before we dive into the syntax, it’s good to understand the overall idea. Under the surface, the <code>poll</code>/<code>submit</code> control structure works around <em>pools of clients.</em> You can imagine a pool as just a space for objects to hang out. We call them <em>agents</em> or <em>clients</em>, but they’re really just any values.</p>
+<p>A single pool has all its clients of the same type.</p>
+<p>They hang out there until they’re <strong>ready to take an action,</strong> that is:</p>
+<ul>
+<li>Sending a value, for a <a href="../types/pair.html">pair type</a>.</li>
+<li>Receiving a value, for a <a href="../types/function.html">function type</a>.</li>
+<li>Making a choice, for an <a href="../types/either.html">either type</a>.</li>
+<li>Responding to a choice, for a <a href="../types/choice.html">choice type</a>.</li>
+</ul>
+<p>A client ready to take an action is then <strong>polled out of the pool</strong> and made available to the poller: the server process. Then once the client is served, zero or more clients can be <strong>submitted back to the pool,</strong> and the polling continues.</p>
+<h2 id="poll--submit"><a class="header" href="#poll--submit"><code>poll</code> / <code>submit</code></a></h2>
+<p>Let’s first take a look at the expression version because it’s more natural to work with most of the time.</p>
+<p>Here’s the general syntax for a <code>poll</code> expression:</p>
+<pre><code class="language-par">poll(&lt;client-value&gt;, ...) {
+  &lt;client-variable&gt; =&gt; &lt;result-for-non-empty-pool&gt;
+
+  else =&gt; &lt;result-after-empty-pool&gt;
+}
+</code></pre>
+<p>The <code>poll</code> keyword is followed by a <strong>list of initial clients</strong> enclosed in parentheses. It must contain at least one initial client.</p>
+<p>Then, inside curly braces, we have exactly two branches:</p>
+<ul>
+<li><strong>The active branch:</strong> Once a client becomes ready, this branch starts and binds the client to the <code>&lt;client-variable&gt;</code>. This branch <strong>must call <code>submit</code>.</strong></li>
+<li><strong>The <code>else</code> branch:</strong> Once the entire pool is depleted, the <code>else</code> branch is entered to produce the final result.</li>
+</ul>
+<p><strong>Inside the active branch, we must call <code>submit</code> exactly once.</strong></p>
+<pre><code class="language-par">submit(&lt;client-value&gt;, ...)
+</code></pre>
+<p>Unlike <code>poll</code>, it can take zero clients:</p>
+<pre><code class="language-par">submit()
+</code></pre>
+<p>It puts the clients back in the pool, and goes back to polling again.</p>
+<p>The <code>submit</code> expression then returns the overall result of its corresponding <code>poll</code> after this point. It’s all very similar to <a href="../types/recursive.html#destruction"><code>.begin</code>/<code>.loop</code></a>. Even the treatment of local variables is the same: local variables used by the <code>poll</code> get automatically moved to the next <code>poll</code> iteration at <code>submit</code>.</p>
+<p><strong>There are two important restrictions:</strong></p>
+<ul>
+<li>The client type must be <a href="../types/recursive.html"><code>recursive</code></a>.</li>
+<li><code>submit</code> is only allowed on <strong>descendants</strong> of the client in the active branch. This ensures progress: you can’t loop forever by putting the same client back into the pool unchanged.</li>
+</ul>
+<p>Let’s make it all make sense with some examples.</p>
+<h2 id="simple-examples"><a class="header" href="#simple-examples">Simple examples</a></h2>
+<p>The simplest way to start is to recreate some functions you’d normally implement with <code>.begin</code>/<code>.loop</code>, but use <code>poll</code>/<code>submit</code> instead.</p>
+<blockquote>
+<p><code>poll</code>/<code>submit</code> is not a replacement for <code>.begin</code>/<code>.loop</code>. One can’t achieve the job of the other and vice versa, only in some situations.</p>
+</blockquote>
+<p><strong>Let’s compute the sum of a list:</strong></p>
+<pre><code class="language-par">dec PollSum : [List&lt;Int&gt;] Int
+def PollSum = [nums] poll(nums) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+  }
+  else =&gt; 0,
+}
+</code></pre>
+<p>Breaking it down:</p>
+<ul>
+<li>
+<p><code>poll(nums)</code></p>
+<p>Creates a pool containing a single client: <code>nums</code>.</p>
+</li>
+<li>
+<p><code>list =&gt;</code></p>
+<p>The client is activated and assigned to a new variable: <code>list</code>.</p>
+</li>
+<li>
+<p><code>list.case</code></p>
+<p>Just a normal <a href="../types/either.html"><code>.case</code></a> expression.</p>
+</li>
+<li>
+<p><code>.end! =&gt; submit()</code></p>
+<p>If the list is empty, we do an empty <code>submit()</code>. That returns the result of the rest of the next <code>poll</code>, which in this case will go to the <code>else</code> branch.</p>
+</li>
+<li>
+<p><code>.item(x) xs =&gt; Int.Add(x, submit(xs)),</code></p>
+<p>If the list is not empty, we <code>submit(xs)</code> the remainder of the list back into the pool, and return the sum of the first item with the result of the next <code>poll</code>.</p>
+</li>
+</ul>
+<p>That’s very similar to what we’d do with <code>.begin</code>/<code>.loop</code>:</p>
+<pre><code class="language-par">dec Sum : [List&lt;Int&gt;] Int
+def Sum = [nums] nums.begin.case {
+  .end! =&gt; 0,
+  .item(x) xs =&gt; Int.Add(x, xs.loop),
+}
+</code></pre>
+<p>Instead of <code>xs.loop</code>, we have <code>submit(xs)</code>, but there’s another important difference:</p>
+<p>In <code>.begin</code>/<code>.loop</code>, we know that we’re done in the <code>.end!</code> branch. For a pool, the end of a client does not mean the end of the pool. That’s why the <code>.end!</code> branch still needs to <code>submit</code>!</p>
+<p>Indeed, the <code>PollSum</code> function can be trivially extended to add up all the numbers from two lists!</p>
+<pre><code class="language-par">dec PollSumTwo : [List&lt;Int&gt;, List&lt;Int&gt;] Int
+def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+  }
+  else =&gt; 0,
+}
+</code></pre>
+<p>All we did was change this:</p>
+<pre><code class="language-par">def PollSum = [nums] poll(nums) {
+</code></pre>
+<p>To this:</p>
+<pre><code class="language-par">def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
+</code></pre>
+<p>Everything else remains the same.</p>
+<p>The empty <code>submit()</code> in the <code>.end!</code> branch now makes sense! Just because one of the lists has ended doesn’t mean there’s no more clients: there’s the other list!</p>
+<p><strong>Let’s now merge two lists into one:</strong></p>
+<pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
+def MergeTwoLists = [left, right] poll(left, right) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; .item(x) submit(xs),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<p>It’s the same principle, but instead of adding numbers, we’re building a resulting list.</p>
+<blockquote>
+<p>Note that the order of items in the resulting list will not be fully arbitrary! The remainder of each list enters the pool only after the item before it gets produced, so for example:</p>
+<pre><code class="language-par">MergeTwoLists(*(1, 2, 3), *(4, 5, 6))
+</code></pre>
+<p>The result can be any of these:</p>
+<ul>
+<li><code>*(1, 4, 2, 5, 3, 6)</code></li>
+<li><code>*(1, 2, 3, 4, 5, 6)</code></li>
+<li><code>*(4, 5, 6, 1, 2, 3)</code></li>
+</ul>
+<p>But not <code>*(6, 5, 4, 3, 2, 1)</code>!</p>
+</blockquote>
+<p><strong>What about nondeterministically turning a tree into a list?</strong></p>
+<pre><code class="language-par">type Tree&lt;a&gt; = recursive either {
+  .leaf a,
+  .node(self) self,
+}
+</code></pre>
+<p>Works like a charm:</p>
+<pre><code class="language-par">dec TreeToList : &lt;a&gt;[Tree&lt;a&gt;] List&lt;a&gt;
+def TreeToList = &lt;a&gt;[tree] poll(tree) {
+  tree =&gt; tree.case {
+    .leaf x =&gt; .item(x) submit(),
+    .node(l) r =&gt; submit(l, r),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<p>The order of the resulting list only depends on the time when the leaf nodes come into existence.</p>
+<p>This is the first time we see <code>submit</code> with more than one client:</p>
+<pre><code class="language-par">    .node(l) r =&gt; submit(l, r),
+</code></pre>
+<p>A <code>.loop</code> can be used any number of times inside a single <code>.begin</code>, but is always applied to exactly one value. On the other hand, <code>submit</code> must be used exactly once inside a <code>poll</code>, but it can be applied to any number of values.</p>
+<h2 id="process-syntax"><a class="header" href="#process-syntax">Process syntax</a></h2>
+<p>While all of the examples in this chapter use expression syntax, <code>poll</code>/<code>submit</code> is perfectly available in process syntax as well.</p>
+<pre><code class="language-par">// inside a process
+poll(client1, client2) {
+  client =&gt; {
+    // ... handle the client
+    submit(client)
+  }
+
+  else =&gt; {
+    // ... handle the rest of the process
+  }
+}
+</code></pre>
+<p>Here, <code>poll</code> and <code>submit</code> are control-flow statements, so they don’t “return” anything. The <code>submit</code> statement simply jumps back to its <code>poll</code>, in addition to putting clients back into the pool.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../nondeterminism/index.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../nondeterminism/fan_pattern.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../nondeterminism/index.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../nondeterminism/fan_pattern.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

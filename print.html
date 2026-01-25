@@ -4676,6 +4676,777 @@ selections, further commands — anything that already appends to the sequence.<
 </ul>
 <p>Whenever you notice yourself inventing a <code>tmp</code> variable simply to pass it to
 another function, try a pipe — it’s often all the ceremony you actually need.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="nondeterminism-servers--clients"><a class="header" href="#nondeterminism-servers--clients">Nondeterminism, Servers &amp; Clients</a></h1>
+<p>In an <a href="https://www.typetheoryforall.com/episodes/goal-of-science">episode of the “Type Theory Forall” podcast</a>, Phil Wadler said:</p>
+<blockquote>
+<p><strong>❝Linear logic is good for the bits of concurrency where you don’t need concurrency.❞</strong></p>
+<p>— Phil Wadler, 2025</p>
+</blockquote>
+<p>Thanks Phil, that’s very encouraging.</p>
+<p>What Phil — the wonderful researcher and author of the <a href="https://homepages.inf.ed.ac.uk/wadler/papers/propositions-as-sessions/propositions-as-sessions.pdf">process language Par is based on</a> — is talking about here is nondeterminism and races. Indeed, linear logic and races are like water and oil. The research has been largely unsatisfying, yielding steps in certain directions, but never quite far enough to solve real-world problems in an elegant and obviously correct manner.</p>
+<p><strong>Par offers an innovative solution!</strong></p>
+<h2 id="what-is-nondeterminism"><a class="header" href="#what-is-nondeterminism">What is nondeterminism?</a></h2>
+<p>All features of Par that we’ve covered so far are deterministic. Yes, Par is an automatically concurrent language. Independent bits of your program proceed concurrently, without you needing to lift a finger to make it happen. But when it comes to each single piece, the next instruction clearly says who to talk to, and what to say. Decisions are being made, but they only depend on the inputs. If the inputs have the same values, the outcomes will be the same.</p>
+<p>But sometimes, quite often in fact, decisions need to be made based on <em>who speaks first.</em> That’s the race, to speak first. A program gathering information from multiple slow sources can’t say <em>“I’ll first listen to A, then to B.”</em> If <em>A</em> takes 30 minutes to produce its first message, while <em>B</em> has already produced 50 of them, the program just won’t work well.</p>
+<p><strong>That’s nondeterminism.</strong> It’s not determined if I’ll speak to <em>A</em> or <em>B</em> first, it depends! In this case, it depends on <strong>timing.</strong></p>
+<blockquote>
+<p>We’re not talking about randomness, or “nondeterministic choice” here. While those fall under the general umbrella of nondeterminism, the randomness can be understood as a part of the program input. The nondeterminism we are interested in here is concerned with timing.</p>
+</blockquote>
+<p><strong>The problem-space of nondeterminism</strong> is quite large, but it mainly comes in <strong>two kinds:</strong></p>
+<ul>
+<li><strong>Bidirectional communication</strong> — That’s when <em>A</em> and <em>B</em> have a channel <em>between</em> them, but either of them can speak first. If <em>A</em> speaks first, <em>B</em> must react, and vice versa. This is useful for preemptive cancellation, implementing chat servers or real-time dashboards without periodic pings, and so on.</li>
+<li><strong>Server and clients</strong> — I don’t mean web servers. What I mean is structuring your program as multiple independent agents — clients — that communicate with a central, stateful agent: the server. The server pays attention to one client at a time, but always the one who speaks first.</li>
+</ul>
+<blockquote>
+<p>Par does not solve the first, yet. You can have cancellation, but it has to be cooperative, you can write a chat server, but there’s got to be periodic checks.</p>
+</blockquote>
+<p><strong>Par solves the second: server and clients,</strong> while:</p>
+<ul>
+<li>Keeping all the guarantees: <strong>no deadlocks, no runtime crashes, no infinite loops.</strong></li>
+<li>Leveraging Par’s types as <strong>session types to allow arbitrary communication protocols</strong> between the server and the clients.</li>
+<li><strong>Being very simple to understand and reason about!</strong></li>
+</ul>
+<blockquote>
+<p>👉 Just to make sure it’s clear… we’re <strong>not</strong> talking about web servers here. We’re talking about a concurrent structure, where any number of <em>client</em> agents are communicating with a central <em>server</em> agent, all inside a single program.</p>
+</blockquote>
+<h2 id="the-state-of-the-research"><a class="header" href="#the-state-of-the-research">The state of the research</a></h2>
+<p>When it comes to linear logic — the theory underlying Par — the problem of races is, to my best knowledge, unsolved in research. Here are some papers that shaped my understanding of the problem, and also why they fall short:</p>
+<ul>
+<li><a href="https://dl.acm.org/doi/abs/10.1145/3473567"><strong><em>Client-server sessions in linear logic</em></strong></a> — This paper is spectacularly elegant. It invents coexponentials, which partially solve the client-server communication topology. Unfortunately, the clients are not resumable.</li>
+<li><a href="https://cs.au.dk/~birke/phd-students/QianZ-thesis.pdf"><strong><em>Concurrency and races in classical linear logic</em></strong></a> — This is a follow-up paper, which tries to solve the non-resumability of the clients by introducing single input, single output interfaces for clients to communicate with a central server. Unfortunately, it’s not as elegant, and still not expressive enough.</li>
+<li><a href="https://library.oapen.org/bitstream/handle/20.500.12657/63011/1/978-3-031-30044-8.pdf#page=434"><strong><em>Safe session-based concurrency with shared linear state</em></strong></a> — This one is fairly simple, yet surprisingly potent. It introduces a deadlock-safe mutex type, that can be used to safely share a linear resource among independent processes. Unfortunately, it does not extend well to more involved communication protocols.</li>
+<li><a href="https://lmcs.episciences.org/6979/pdf"><strong><em>Towards races in linear logic</em></strong></a> — An extremely elegant approach presented with colorful formulas and icons. It fits very well into linear logic, but unfortunately is restricted to servers with a constant number of clients, which finds few use-cases.</li>
+</ul>
+<p><strong>Par’s solution here,</strong> its <code>poll</code>/<code>submit</code> control structure, can be used to implement everything from the first 3 papers above, and a lot more, with very few ingredients.</p>
+<p>The last paper is able to express some invariants that <code>poll</code>/<code>submit</code> cannot (the constant number of clients), but it’s questionable how useful those could be in real-world programs.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="polling--submitting"><a class="header" href="#polling--submitting">Polling &amp; Submitting</a></h1>
+<p>How does Par solve this server-client nondeterminism, i.e. a concurrency structure with independent client agents all communicating with a central server agent?</p>
+<p>Par does it by introducing a single feature: <strong>the <code>poll</code>/<code>submit</code> control structure.</strong></p>
+<p>There are no new types; the existing ones are wholly sufficient for specifying communication between the server and client counterparts.</p>
+<h2 id="the-idea-pools"><a class="header" href="#the-idea-pools">The idea: Pools</a></h2>
+<p>Before we dive into the syntax, it’s good to understand the overall idea. Under the surface, the <code>poll</code>/<code>submit</code> control structure works around <em>pools of clients.</em> You can imagine a pool as just a space for objects to hang out. We call them <em>agents</em> or <em>clients</em>, but they’re really just any values.</p>
+<p>A single pool has all its clients of the same type.</p>
+<p>They hang out there until they’re <strong>ready to take an action,</strong> that is:</p>
+<ul>
+<li>Sending a value, for a <a href="nondeterminism/../types/pair.html">pair type</a>.</li>
+<li>Receiving a value, for a <a href="nondeterminism/../types/function.html">function type</a>.</li>
+<li>Making a choice, for an <a href="nondeterminism/../types/either.html">either type</a>.</li>
+<li>Responding to a choice, for a <a href="nondeterminism/../types/choice.html">choice type</a>.</li>
+</ul>
+<p>A client ready to take an action is then <strong>polled out of the pool</strong> and made available to the poller: the server process. Then once the client is served, zero or more clients can be <strong>submitted back to the pool,</strong> and the polling continues.</p>
+<h2 id="poll--submit"><a class="header" href="#poll--submit"><code>poll</code> / <code>submit</code></a></h2>
+<p>Let’s first take a look at the expression version because it’s more natural to work with most of the time.</p>
+<p>Here’s the general syntax for a <code>poll</code> expression:</p>
+<pre><code class="language-par">poll(&lt;client-value&gt;, ...) {
+  &lt;client-variable&gt; =&gt; &lt;result-for-non-empty-pool&gt;
+
+  else =&gt; &lt;result-after-empty-pool&gt;
+}
+</code></pre>
+<p>The <code>poll</code> keyword is followed by a <strong>list of initial clients</strong> enclosed in parentheses. It must contain at least one initial client.</p>
+<p>Then, inside curly braces, we have exactly two branches:</p>
+<ul>
+<li><strong>The active branch:</strong> Once a client becomes ready, this branch starts and binds the client to the <code>&lt;client-variable&gt;</code>. This branch <strong>must call <code>submit</code>.</strong></li>
+<li><strong>The <code>else</code> branch:</strong> Once the entire pool is depleted, the <code>else</code> branch is entered to produce the final result.</li>
+</ul>
+<p><strong>Inside the active branch, we must call <code>submit</code> exactly once.</strong></p>
+<pre><code class="language-par">submit(&lt;client-value&gt;, ...)
+</code></pre>
+<p>Unlike <code>poll</code>, it can take zero clients:</p>
+<pre><code class="language-par">submit()
+</code></pre>
+<p>It puts the clients back in the pool, and goes back to polling again.</p>
+<p>The <code>submit</code> expression then returns the overall result of its corresponding <code>poll</code> after this point. It’s all very similar to <a href="nondeterminism/../types/recursive.html#destruction"><code>.begin</code>/<code>.loop</code></a>. Even the treatment of local variables is the same: local variables used by the <code>poll</code> get automatically moved to the next <code>poll</code> iteration at <code>submit</code>.</p>
+<p><strong>There are two important restrictions:</strong></p>
+<ul>
+<li>The client type must be <a href="nondeterminism/../types/recursive.html"><code>recursive</code></a>.</li>
+<li><code>submit</code> is only allowed on <strong>descendants</strong> of the client in the active branch. This ensures progress: you can’t loop forever by putting the same client back into the pool unchanged.</li>
+</ul>
+<p>Let’s make it all make sense with some examples.</p>
+<h2 id="simple-examples"><a class="header" href="#simple-examples">Simple examples</a></h2>
+<p>The simplest way to start is to recreate some functions you’d normally implement with <code>.begin</code>/<code>.loop</code>, but use <code>poll</code>/<code>submit</code> instead.</p>
+<blockquote>
+<p><code>poll</code>/<code>submit</code> is not a replacement for <code>.begin</code>/<code>.loop</code>. One can’t achieve the job of the other and vice versa, only in some situations.</p>
+</blockquote>
+<p><strong>Let’s compute the sum of a list:</strong></p>
+<pre><code class="language-par">dec PollSum : [List&lt;Int&gt;] Int
+def PollSum = [nums] poll(nums) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+  }
+  else =&gt; 0,
+}
+</code></pre>
+<p>Breaking it down:</p>
+<ul>
+<li>
+<p><code>poll(nums)</code></p>
+<p>Creates a pool containing a single client: <code>nums</code>.</p>
+</li>
+<li>
+<p><code>list =&gt;</code></p>
+<p>The client is activated and assigned to a new variable: <code>list</code>.</p>
+</li>
+<li>
+<p><code>list.case</code></p>
+<p>Just a normal <a href="nondeterminism/../types/either.html"><code>.case</code></a> expression.</p>
+</li>
+<li>
+<p><code>.end! =&gt; submit()</code></p>
+<p>If the list is empty, we do an empty <code>submit()</code>. That returns the result of the rest of the next <code>poll</code>, which in this case will go to the <code>else</code> branch.</p>
+</li>
+<li>
+<p><code>.item(x) xs =&gt; Int.Add(x, submit(xs)),</code></p>
+<p>If the list is not empty, we <code>submit(xs)</code> the remainder of the list back into the pool, and return the sum of the first item with the result of the next <code>poll</code>.</p>
+</li>
+</ul>
+<p>That’s very similar to what we’d do with <code>.begin</code>/<code>.loop</code>:</p>
+<pre><code class="language-par">dec Sum : [List&lt;Int&gt;] Int
+def Sum = [nums] nums.begin.case {
+  .end! =&gt; 0,
+  .item(x) xs =&gt; Int.Add(x, xs.loop),
+}
+</code></pre>
+<p>Instead of <code>xs.loop</code>, we have <code>submit(xs)</code>, but there’s another important difference:</p>
+<p>In <code>.begin</code>/<code>.loop</code>, we know that we’re done in the <code>.end!</code> branch. For a pool, the end of a client does not mean the end of the pool. That’s why the <code>.end!</code> branch still needs to <code>submit</code>!</p>
+<p>Indeed, the <code>PollSum</code> function can be trivially extended to add up all the numbers from two lists!</p>
+<pre><code class="language-par">dec PollSumTwo : [List&lt;Int&gt;, List&lt;Int&gt;] Int
+def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+  }
+  else =&gt; 0,
+}
+</code></pre>
+<p>All we did was change this:</p>
+<pre><code class="language-par">def PollSum = [nums] poll(nums) {
+</code></pre>
+<p>To this:</p>
+<pre><code class="language-par">def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
+</code></pre>
+<p>Everything else remains the same.</p>
+<p>The empty <code>submit()</code> in the <code>.end!</code> branch now makes sense! Just because one of the lists has ended doesn’t mean there’s no more clients: there’s the other list!</p>
+<p><strong>Let’s now merge two lists into one:</strong></p>
+<pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
+def MergeTwoLists = [left, right] poll(left, right) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; .item(x) submit(xs),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<p>It’s the same principle, but instead of adding numbers, we’re building a resulting list.</p>
+<blockquote>
+<p>Note that the order of items in the resulting list will not be fully arbitrary! The remainder of each list enters the pool only after the item before it gets produced, so for example:</p>
+<pre><code class="language-par">MergeTwoLists(*(1, 2, 3), *(4, 5, 6))
+</code></pre>
+<p>The result can be any of these:</p>
+<ul>
+<li><code>*(1, 4, 2, 5, 3, 6)</code></li>
+<li><code>*(1, 2, 3, 4, 5, 6)</code></li>
+<li><code>*(4, 5, 6, 1, 2, 3)</code></li>
+</ul>
+<p>But not <code>*(6, 5, 4, 3, 2, 1)</code>!</p>
+</blockquote>
+<p><strong>What about nondeterministically turning a tree into a list?</strong></p>
+<pre><code class="language-par">type Tree&lt;a&gt; = recursive either {
+  .leaf a,
+  .node(self) self,
+}
+</code></pre>
+<p>Works like a charm:</p>
+<pre><code class="language-par">dec TreeToList : &lt;a&gt;[Tree&lt;a&gt;] List&lt;a&gt;
+def TreeToList = &lt;a&gt;[tree] poll(tree) {
+  tree =&gt; tree.case {
+    .leaf x =&gt; .item(x) submit(),
+    .node(l) r =&gt; submit(l, r),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<p>The order of the resulting list only depends on the time when the leaf nodes come into existence.</p>
+<p>This is the first time we see <code>submit</code> with more than one client:</p>
+<pre><code class="language-par">    .node(l) r =&gt; submit(l, r),
+</code></pre>
+<p>A <code>.loop</code> can be used any number of times inside a single <code>.begin</code>, but is always applied to exactly one value. On the other hand, <code>submit</code> must be used exactly once inside a <code>poll</code>, but it can be applied to any number of values.</p>
+<h2 id="process-syntax-1"><a class="header" href="#process-syntax-1">Process syntax</a></h2>
+<p>While all of the examples in this chapter use expression syntax, <code>poll</code>/<code>submit</code> is perfectly available in process syntax as well.</p>
+<pre><code class="language-par">// inside a process
+poll(client1, client2) {
+  client =&gt; {
+    // ... handle the client
+    submit(client)
+  }
+
+  else =&gt; {
+    // ... handle the rest of the process
+  }
+}
+</code></pre>
+<p>Here, <code>poll</code> and <code>submit</code> are control-flow statements, so they don’t “return” anything. The <code>submit</code> statement simply jumps back to its <code>poll</code>, in addition to putting clients back into the pool.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="the-fan-pattern"><a class="header" href="#the-fan-pattern">The Fan Pattern</a></h1>
+<p>We’ve been able to merge two lists based on the timing of their items:</p>
+<pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
+def MergeTwoLists = [left, right] poll(left, right) {
+  list =&gt; list.case {
+    .end! =&gt; submit(),
+    .item(x) xs =&gt; .item(x) submit(xs),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<p>And also a tree:</p>
+<pre><code class="language-par">dec TreeToList : &lt;a&gt;[Tree&lt;a&gt;] List&lt;a&gt;
+def TreeToList = &lt;a&gt;[tree] poll(tree) {
+  tree =&gt; tree.case {
+    .leaf x =&gt; .item(x) submit(),
+    .node(l) r =&gt; submit(l, r),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<p>Merging multiple sources of information this way is great when you need to aggregate from multiple, slow-producing sources into a single stream, where you can react immediately to every bit produced.</p>
+<p><strong>What about merging a list of lists?</strong></p>
+<pre><code class="language-par">dec MergeLists : &lt;a&gt;[List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
+def MergeLists = ???
+</code></pre>
+<p>If we want to merge them in the order their items are produced, <strong>we run into a problem with <code>poll</code>/<code>submit</code>.</strong></p>
+<p>That’s because a pool requires all its clients to be of the same type. But if we put a <code>List&lt;List&lt;a&gt;&gt;</code> into a pool, we get back a <code>List&lt;List&lt;a&gt;&gt;</code>. We still don’t know which of the inner lists to poll from!</p>
+<blockquote>
+<p>We can actually solve this by combining <code>poll</code>/<code>submit</code> with <code>.begin</code>/<code>.loop</code>.</p>
+<pre><code class="language-par">dec MergeLists : &lt;a&gt;[List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
+def MergeLists = &lt;a&gt;[lists] lists.begin.case {
+  .end! =&gt; .end!,
+  .item(list) lists =&gt; poll(list, lists.loop) {
+    list =&gt; list.case {
+      .end! =&gt; submit(),
+      .item(x) xs =&gt; .item(x) submit(xs),
+    }
+    else =&gt; .end!,
+  }
+}
+</code></pre>
+<p>In this solution, the pool contains lists. However, we end up creating a new pool for every single list, essentially ending up with a linked (by <code>poll</code>) list of pools. It works, but is quite inefficient.</p>
+</blockquote>
+<p><strong>The efficient solution</strong> is to transform the <code>List&lt;List&lt;a&gt;&gt;</code> into a structure that is suitable for polling! We call it <strong>the <em>fan</em> pattern.</strong></p>
+<h2 id="fans-the-homogeneous-trees"><a class="header" href="#fans-the-homogeneous-trees">Fans: the homogeneous trees</a></h2>
+<p>Why does <code>poll</code> work great for <code>List&lt;a&gt;</code> and <code>Tree&lt;a&gt;</code>, but not for <code>List&lt;List&lt;a&gt;&gt;</code>? It’s because both <code>List&lt;a&gt;</code> and <code>Tree&lt;a&gt;</code> are <em>homogeneous.</em> Here’s what I mean:</p>
+<pre><code class="language-par">type List&lt;a&gt; = recursive either {
+  .end!,
+  .item(x) self,
+}
+
+type Tree&lt;a&gt; = recursive either {
+  .leaf a,
+  .node(self) self,
+}
+</code></pre>
+<p><strong>Every <code>self</code> goes back to the same shape.</strong> That’s not true for a list of lists! In a <code>List&lt;List&lt;a&gt;&gt;</code>, the outer nodes are:</p>
+<pre><code class="language-par">recursive either {
+  .end!,
+  .item(List&lt;a&gt;) self,
+}
+</code></pre>
+<p>While the inner nodes (the <code>List&lt;a&gt;</code>) are:</p>
+<pre><code class="language-par">recursive either {
+  .end!,
+  .item(a) self,
+}
+</code></pre>
+<p>That’s the discrepancy that prevents a clean <code>poll</code> usage.</p>
+<h2 id="the-fan-transformation"><a class="header" href="#the-fan-transformation">The <em>fan</em> transformation</a></h2>
+<p>To remedy this, we need to transform a <code>List&lt;List&lt;a&gt;&gt;</code> into a more suitable structure. Here’s one that will work:</p>
+<pre><code class="language-par">type ListFan&lt;a&gt; = recursive either {
+  .end!,
+  .spawn(self) self,
+  .item(a) self,
+}
+</code></pre>
+<p>There’s no general prescription for designing these: it all depends on the use-case. However, these branches will appear quite frequently:</p>
+<pre><code class="language-par">  .end!,
+  .spawn(self) self,
+</code></pre>
+<p>They allow the structure to <strong>dynamically spread into multiple agents,</strong> while the other branches handle the behavior of a single one: an individual list in this case.</p>
+<p>The transformation is quite simple:</p>
+<pre><code class="language-par">dec ListFan : &lt;a&gt;[List&lt;List&lt;a&gt;&gt;] ListFan&lt;a&gt;
+def ListFan = &lt;a&gt;[lists] lists.begin.case {
+  .end! =&gt; .end!,
+  .item(list) lists =&gt; .spawn(
+    list.begin.case {
+      .end! =&gt; .end!,
+      .item(x) xs =&gt; .item(x) xs.loop,
+    }
+  ) lists.loop,
+}
+</code></pre>
+<p>It consists of two nested recursions.</p>
+<ul>
+<li>
+<p>The outer one produces a <code>.spawn</code> node for each list.</p>
+</li>
+<li>
+<p>The inner one produces an <code>.item</code> node for each item of a list.</p>
+</li>
+<li>
+<p>The <code>.end</code> node in the resulting fan structure is used in two ways:</p>
+<ol>
+<li>To say there will be no more lists.</li>
+<li>To mark an end of a single list.</li>
+</ol>
+<p>The consumer of the <code>ListFan&lt;a&gt;</code> does not need to differentiate between these two.</p>
+</li>
+</ul>
+<p><strong>Importantly, the transformation is <em>on-line:</em></strong> Each part of the input immediately produces a part of the output. As a result, no concurrency or timing information is lost, with Par’s concurrent execution model.</p>
+<p><strong>Now, we’re able to implement <code>MergeLists</code> easily:</strong></p>
+<pre><code class="language-par">dec MergeLists : &lt;a&gt;[List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
+def MergeLists = &lt;a&gt;[lists] poll(ListFan(lists)) {
+  fan =&gt; fan.case {
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+    .item(x) fan =&gt; .item(x) submit(fan),
+  }
+  else =&gt; .end!,
+}
+</code></pre>
+<blockquote>
+<p>💡 <strong>For the theory lovers:</strong> The above covers the <a href="https://dl.acm.org/doi/abs/10.1145/3473567"><strong><em>Client-server sessions in linear logic</em></strong></a> paper. The coexponentials introduced there can be defined as:</p>
+<pre><code class="language-par">type Cobang = dual ListFan&lt;dual a&gt;
+type Coquest = List&lt;a&gt;
+</code></pre>
+<p>The axiom rule for them is then implemented the same way as the <code>MergeLists</code> function, except taking a <code>ListFan&lt;a&gt;</code> directly, instead of a <code>List&lt;List&lt;a&gt;&gt;</code>.</p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="communicating-both-ways"><a class="header" href="#communicating-both-ways">Communicating Both Ways</a></h1>
+<p>So far, information only flowed one way: from the clients to the server. <strong>What about the other way?</strong></p>
+<p>For example, you might want a server that:</p>
+<ul>
+<li>Generates a unique ID upon request from a client.</li>
+<li>Manages a linear resource with clients taking alternating ownership of it.</li>
+<li>Mediates messages between clients that they address to one another.</li>
+</ul>
+<p>All of the above require information flowing not just from clients to the server, but <strong>from the server to the clients,</strong> too. And <strong>all of it is doable!</strong></p>
+<p>Two things this is <strong>not</strong> about:</p>
+<ul>
+<li><strong>A server initiating an interaction.</strong> With <code>poll</code>/<code>submit</code>, the client is always the one who initiates an interaction by becoming ready.</li>
+<li><strong>Nondeterministic direction of communication.</strong> As we learned in the <a href="nondeterminism/./README.html">introduction to this section</a>, Par does <strong>not</strong> support this, at least yet. The types always say which direction is the next one.</li>
+</ul>
+<h2 id="reminder-construction-by-destruction"><a class="header" href="#reminder-construction-by-destruction">Reminder: <a href="nondeterminism/../processes/duality.html">Construction by destruction</a></a></h2>
+<p>In the previous chapters, we’ve used expression syntax exclusively. But, it’s often useful to switch to <a href="nondeterminism/../process_syntax.html">process syntax</a>, especially when combining I/O operations with the asynchronous construction of data structures, like lists and trees.</p>
+<p>Let’s take the <code>ListFan&lt;a&gt;</code> from the previous chapter.</p>
+<pre><code class="language-par">type ListFan&lt;a&gt; = recursive either {
+  .end!,
+  .spawn(self) self,
+  .item(a) self,
+}
+</code></pre>
+<p>We used it for merging <code>List&lt;List&lt;a&gt;&gt;</code>, but nothing prevents us from using it standalone as well:</p>
+<pre><code class="language-par">dec ServeListFan : &lt;a&gt;[ListFan&lt;a&gt;] List&lt;a&gt;
+def ServeListFan = ...
+</code></pre>
+<p>The code will be the same as for <code>MergeLists</code> in the <a href="nondeterminism/./fan_pattern.html#the-fan-transformation">previous chapter</a>.</p>
+<p>How would we use it now? The expression syntax is obvious:</p>
+<pre><code class="language-par">ServeListFan(
+  .spawn(.item(1).item(2).end!)
+  .spawn(.item(3).item(4).end!)
+  .end!
+)
+</code></pre>
+<p>That certainly works, but if we wanted to combine that with some I/O operations, the <a href="nondeterminism/../process_syntax.html">process syntax</a> would be better. We’ll use the <a href="nondeterminism/../processes/chan_expression.html"><code>chan</code></a> to construct a <code>ListFan&lt;a&gt;</code> by destructing its consumer:</p>
+<pre><code class="language-par">ServeListFan(chan server {
+  server.spawn(chan server {
+    // I/O anywhere here
+    server.item(1)
+    server.item(2)
+    server.end!
+  })
+  server.spawn(chan server {
+    // I/O anywhere here
+    server.item(3)
+    server.item(4)
+    server.end!
+  })
+  server.end!
+})
+</code></pre>
+<p>Now it’s more imperative! I’m sure you can imagine doing all kinds of I/O operations between those <code>.item</code> and <code>.end</code> calls.</p>
+<p>What’s the type of the <code>server</code> there? It’s the dual of <code>ListFan&lt;a&gt;</code>:</p>
+<pre><code class="language-par">iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+  .item(a) =&gt; self,
+}
+</code></pre>
+<p><strong>The above is the type of the <em>server</em> from the point of view of the <em>client.</em></strong></p>
+<p>For a small recap from the <a href="nondeterminism/../processes/duality.html"><em>duality</em> chapter</a>:</p>
+<ul>
+<li>
+<p>The <code>?</code> — the continuation type — is an obligation to dispose of all your resources and finish.</p>
+<blockquote>
+<p><strong>A client in the server-client setup must finish before the server does.</strong> That follows from the basic principle of Par’s concurrency model: processes connected by their channels form a single tree. It ensures no deadlocks, and no leaking of processes.</p>
+</blockquote>
+</li>
+<li>
+<p>The signature of <code>.spawn</code> with the <code>(dual self) =&gt; self</code>, is just the dual version of what we saw previously:</p>
+<pre><code class="language-par">.spawn(self) self
+</code></pre>
+<p>There we saw the server’s point of view, but now we’re looking at the client’s side.</p>
+</li>
+</ul>
+<p>Now back to communicating both ways!</p>
+<h2 id="example-giving-out-unique-ids"><a class="header" href="#example-giving-out-unique-ids">Example: Giving out unique IDs</a></h2>
+<p>Suppose we want to spawn a couple of clients and have each of them get a unique ID. Here’s a possible interface from the client’s point of view:</p>
+<pre><code class="language-par">type IdServer = iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+  .getId =&gt; (Nat) self,
+}
+</code></pre>
+<blockquote>
+<p>Since the clients have to be <a href="nondeterminism/../types/recursive.html"><code>recursive</code></a>, the servers will be <a href="nondeterminism/../types/iterative.html"><code>iterative</code></a> from the clients’ point of view.</p>
+</blockquote>
+<p>Here’s the dual type from the server’s point of view:</p>
+<pre><code class="language-par">//            = dual IdServer
+type IdClient = recursive either {
+  .end!,
+  .spawn(self) self,
+  .getId [Nat] self,
+}
+</code></pre>
+<p>It’s very similar to what we saw previously, except the <code>.getId</code> variant isn’t giving out a value, it’s taking one.</p>
+<p>Here’s how we can implement such a server, with comments:</p>
+<pre><code class="language-par">dec ServeIds : [IdClient] !
+def ServeIds = [clients] do {
+  // Initialize the internal state of the server.
+  // Here it's just an `id` variable that will keep
+  // getting incremented.
+  let id = 0
+} in poll(clients) {
+  client =&gt; client.case {
+    // Standard handling of the fan structure.
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+
+    // A client is requesting an ID.
+    .getId client =&gt; do {
+      // Increment the `id` variable using the pipe
+      // syntax sugar in the process syntax. It's
+      // the same as: `let id = Nat.Add(id, 1)`.
+      id-&gt;Nat.Add(1)
+      // The `client`'s type is `[Nat] IdClient` here.
+      // We send it a fresh ID using the send command.
+      client(id)
+    } in submit(client),
+  }
+  else =&gt; !
+}
+</code></pre>
+<blockquote>
+<p>Notice how the <code>id</code> variable gets implicitly passed to each new iteration at <code>submit</code>. The treatment of local variables in <code>poll</code>/<code>submit</code> is the same as it is with <code>.begin</code>/<code>.loop</code>. They’re kept around, always keeping their latest values.</p>
+</blockquote>
+<p>And here’s how we can use it:</p>
+<pre><code class="language-par">def SimpleClient: [String] IdClient = [name]
+  // `IdServer` and `IdClient` are dual, so we can construct
+  // an `IdClient` by operating on an `IdServer`.
+  chan server: IdServer {
+    server.getId[id]
+    Debug.Log(String.Concat(*(name, " got number ", id-&gt;Nat.ToString)))
+    server.end!
+  }
+
+def Main: ! = ServeIds(chan server {
+  server.spawn(SimpleClient("A"))
+  server.spawn(SimpleClient("B"))
+  server.spawn(SimpleClient("C"))
+  server.spawn(SimpleClient("D"))
+  server.end!
+})
+</code></pre>
+<p>Running this particular program will almost invariably assign the number 1 to A, 2 to B, 3 to C, and 4 to D. That’s just because the clients immediately ask for their ID. If they did any work before asking for it, or were asking multiple times, the results would’ve been different.</p>
+<p>The point is, they can run independently, ask for an ID at any point, and get a fresh one every time.</p>
+<h2 id="example-sharing-a-resource"><a class="header" href="#example-sharing-a-resource">Example: Sharing a resource</a></h2>
+<p>We can use the synchronous nature of the server to give out unique access to a shared resource.</p>
+<ol>
+<li>Initially, the server holds the resource.</li>
+<li>A client can request it, and the server gives it out.</li>
+<li>The exclusive session of the server with the client lasts until the client gives the resource back.</li>
+<li>The client gives it back, and then another client can take it.</li>
+<li>Once all clients finish, the resource is returned to the creator of the server.</li>
+</ol>
+<p>Here’s a possible interface from the client’s point of view:</p>
+<pre><code class="language-par">type MutexServer&lt;a&gt; = iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+  .take =&gt; (a) choice {
+    .put(a) =&gt; self,
+  }
+}
+</code></pre>
+<p>Let’s break down the <code>.take</code> method:</p>
+<ul>
+<li>
+<p><code>.take =&gt; (a) choice {</code></p>
+<p>First, we directly obtain an <code>a</code> value, but the server itself turns into a new <code>choice</code>, with just one method.</p>
+</li>
+<li>
+<p><code>.put(a) =&gt; self,</code></p>
+<p>The method is <code>.put</code>, which requires an <code>a</code> value back. After that, the server returns to the original protocol.</p>
+</li>
+</ul>
+<p>The exclusive session between a client and the server will last until the client puts the value back.</p>
+<p>To implement such a server, we need to decide what to do with the value once all clients finish. Here, we just return it to the creator of the server.</p>
+<pre><code class="language-par">type MutexClient&lt;a&gt; = dual MutexServer&lt;a&gt;
+
+dec ShareMutex : &lt;a&gt;[a] [MutexClient&lt;a&gt;] a
+def ShareMutex = &lt;a&gt;[value] [clients] poll(clients) {
+  client =&gt; client.case {
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+
+    .take session =&gt; session(value).case {
+      .put(value) client =&gt; submit(client),
+    }
+  }
+
+  else =&gt; value,
+}
+</code></pre>
+<p>A closer look on this part:</p>
+<pre><code class="language-par">    .take session =&gt; session(value).case {
+      .put(value) client =&gt; submit(client),
+    }
+</code></pre>
+<p>After choosing <code>.take</code>, the client (bound as <code>session</code>) becomes this function:</p>
+<pre><code class="language-par">[a] either {
+  .put(a) MutexClient&lt;a&gt;,
+}
+</code></pre>
+<p>We send it the current <code>value</code>, and then use <code>.case</code> to wait until the client gives us the value back. After that, we just submit the client back to the pool.</p>
+<p>Using such a server could look like this:</p>
+<pre><code class="language-par">dec IncrementingClient : [Nat] MutexClient&lt;Nat&gt;
+def IncrementingClient = [count] chan server {
+  Nat.Repeat(count).begin.case {
+    .step rest =&gt; {
+      server.take[n]
+      n-&gt;Nat.Add(1)
+      server.put(n)
+      rest.loop
+    }
+    .end! =&gt; {
+      server.end!
+    }
+  }
+}
+
+def Main: ! = do {
+  let final = ShareMutex(0, chan server {
+    server.spawn(IncrementingClient(1000))
+    server.spawn(IncrementingClient(1000))
+    server.spawn(IncrementingClient(1000))
+    server.end!
+  })
+  Debug.Log(final-&gt;Nat.ToString)
+} in !
+</code></pre>
+<p>We spawn 3 clients, each of which will take, increment, and put the value back a 1000 times. In the end, the value 3000 will be printed.</p>
+<blockquote>
+<p>💡 <strong>For the theory lovers:</strong> The <code>MutexServer</code> above covers the <a href="https://library.oapen.org/bitstream/handle/20.500.12657/63011/1/978-3-031-30044-8.pdf#page=434"><strong><em>Safe session-based concurrency with shared linear state</em></strong></a> paper.</p>
+<p>The remaining one of the three papers that <code>poll</code>/<code>submit</code> subsumes — <a href="https://cs.au.dk/~birke/phd-students/QianZ-thesis.pdf"><strong><em>Concurrency and races in classical linear logic</em></strong></a> — is all about servers like this:</p>
+<pre><code class="language-par">type Server = iterative choice {
+  .end =&gt; ?,
+  .spawn(dual self) =&gt; self,
+
+  .method1(A1) =&gt; (B1) self,
+  .method2(A2) =&gt; (B2) self,
+  ...
+}
+</code></pre>
+<p>Those are clearly covered by <code>poll</code>/<code>submit</code> as well!</p>
+</blockquote>
+<h2 id="example-a-chat-server-in-the-playground"><a class="header" href="#example-a-chat-server-in-the-playground">Example: A chat server in the <a href="nondeterminism/../getting_started.html">Playground</a></a></h2>
+<p>Here’s a more involved example of both-ways communication between a server and its clients. It’s a little toy chat server that you can play with in the <a href="nondeterminism/../getting_started.html">Par’s interactive playground</a>.</p>
+<p>It’s an example of client-to-client mediation via a server.</p>
+<p>You can find a thoroughly commented code for this toy chat server in the <a href="https://github.com/faiface/par-lang/blob/main/examples/PlaygroundChat.par"><code>examples</code></a> directory.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="switching-modes-with-repoll"><a class="header" href="#switching-modes-with-repoll">Switching Modes With <code>repoll</code></a></h1>
+<p>Sometimes a server needs to “switch gears”.</p>
+<p>For example, imagine merging a bunch of cancelable streams into a single cancelable stream:</p>
+<ul>
+<li>While the merged stream is being consumed, the server should keep pulling items from the sources.</li>
+<li>But if the consumer decides to cancel the merged stream, <strong>all underlying sources must be canceled too.</strong></li>
+</ul>
+<p>This is exactly the kind of situation <code>repoll</code> is for: it lets a server keep the same pool, but start polling it with a <em>different handler</em>.</p>
+<h2 id="a-cancelable-stream-sourcea"><a class="header" href="#a-cancelable-stream-sourcea">A cancelable stream: <code>Source&lt;a&gt;</code></a></h2>
+<p>To talk about cancellation, it helps to contrast with <code>List&lt;a&gt;</code>.</p>
+<p>Once a <code>List&lt;a&gt;</code> is created, it will keep producing items until it’s done — even if the consumer would prefer to stop early. To make cancellation possible, we can switch to a protocol where the producer and consumer cooperate: the producer can <em>offer</em> work, but the consumer can choose to stop.</p>
+<p>Let’s call such a stream-like protocol <code>Source&lt;a&gt;</code>. A first idea might be:</p>
+<pre><code class="language-par">type Source&lt;a&gt; = recursive choice {
+  .close =&gt; !,
+  .next =&gt; either {
+    .end!,
+    .item(a) self,
+  }
+}
+</code></pre>
+<p>This is a perfectly valid protocol, but it works poorly with <code>poll</code>: each source is stuck waiting for the server to choose <code>.close</code> or <code>.next</code>, so the sources are not “ready” on their own and we lose most of the concurrency.</p>
+<p>A second idea is to let the source produce items first, and only then ask the consumer how to proceed:</p>
+<pre><code class="language-par">type Source&lt;a&gt; = recursive either {
+  .end!,
+  .item(a) choice {
+    .close =&gt; !,
+    .next =&gt; self,
+  }
+}
+</code></pre>
+<p>This is closer, but it has an awkward corner when merging: when the consumer of the merged stream decides to <code>.close</code>, the underlying sources may have already produced more <code>a</code>s — but we have nowhere to send them.</p>
+<p>The solution is to separate “an item is available” from “the item is transferred”:</p>
+<pre><code class="language-par">type Source&lt;a&gt; = recursive either {
+  .end!,
+  .item choice {
+    .discard =&gt; !,
+    .get =&gt; (a) self,
+  }
+}
+</code></pre>
+<p>Here, the source can make progress on its own (it can produce <code>.item</code> or <code>.end!</code>), which works great with <code>poll</code>. But when it produces <code>.item</code>, it doesn’t immediately hand out the value — it waits for the consumer to decide:</p>
+<ul>
+<li><code>.get</code> to receive the value and continue.</li>
+<li><code>.discard</code> to cancel (and the source ends with <code>!</code>).</li>
+</ul>
+<blockquote>
+<p>💡 This is <strong>cooperative cancellation</strong>: the consumer can only cancel at points where the producer is willing to accept cancellation (here: right after offering <code>.item</code>).</p>
+</blockquote>
+<h2 id="switching-from-produce-to-cancel"><a class="header" href="#switching-from-produce-to-cancel">Switching from “produce” to “cancel”</a></h2>
+<p>Now suppose we have many sources, and we want to merge them into one:</p>
+<pre><code class="language-par">dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
+</code></pre>
+<p>When the merged source is canceled, all underlying sources must be canceled too. That means our server needs two distinct modes:</p>
+<ul>
+<li><strong>Normal mode:</strong> pull items from ready sources and emit them downstream.</li>
+<li><strong>Cancel mode:</strong> stop pulling items and instead discard every remaining source.</li>
+</ul>
+<p>This mode switch is what <code>repoll</code> expresses.</p>
+<h2 id="repoll"><a class="header" href="#repoll"><code>repoll</code></a></h2>
+<p><code>repoll</code> looks like <code>poll</code>, but it does not create a new pool. Instead, it reuses the pool of the nearest enclosing <code>poll</code> (if any), optionally adds some clients into it, and starts polling it with a new handler.</p>
+<pre><code class="language-par">poll(...) {
+  client =&gt; ... repoll(...) {
+    client =&gt; ...
+    else =&gt; ...
+  }
+
+  else =&gt; ...
+}
+</code></pre>
+<p>It can <strong>only</strong> be used <em>inside</em> an active branch of a <code>poll</code>, or another <code>repoll</code>.</p>
+<h2 id="example-merging-cancelable-sources"><a class="header" href="#example-merging-cancelable-sources">Example: Merging cancelable sources</a></h2>
+<p>We’ll reuse the same fan idea from the <a href="nondeterminism/./fan_pattern.html">fan pattern</a>, but now for <code>Source&lt;a&gt;</code>:</p>
+<pre><code class="language-par">type Source&lt;a&gt; = recursive either {
+  .end!,
+  .item choice {
+    .discard =&gt; !,
+    .get =&gt; (a) self,
+  }
+}
+
+type SourceFan&lt;a&gt; = recursive either {
+  .end!,
+  .spawn(self) self,
+  .item choice {
+    .discard =&gt; !,
+    .get =&gt; (a) self,
+  }
+}
+
+dec SourceFan : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] SourceFan&lt;a&gt;
+def SourceFan = &lt;a&gt;[sources] sources.begin.case {
+  .end! =&gt; .end!,
+  .item(source) sources =&gt; .spawn(source) sources.loop,
+}
+</code></pre>
+<p>Now we can implement:</p>
+<pre><code class="language-par">dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
+</code></pre>
+<p>The key idea is that <code>MergeSources</code> has two modes:</p>
+<ul>
+<li><strong>Normal mode:</strong> keep producing items by polling sources.</li>
+<li><strong>Cancel mode:</strong> once the consumer cancels, discard everything left in the pool.</li>
+</ul>
+<p>Here’s the overall structure:</p>
+<pre><code class="language-par">def MergeSources = &lt;a&gt;[sources] poll(SourceFan(sources)) {
+  fan =&gt; fan.case {
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+
+    .item s =&gt; .item case {
+      .discard =&gt; ...   // switch into cancel mode
+      .get =&gt; ...       // produce one item and keep going
+    }
+  }
+
+  else =&gt; .end!,
+}
+</code></pre>
+<h3 id="normal-mode-produce-items"><a class="header" href="#normal-mode-produce-items">Normal mode: produce items</a></h3>
+<p>In the <code>.item</code> branch, the current polled source has offered an item and is now waiting for the consumer’s decision.</p>
+<p>If the consumer chooses <code>.get</code>, we request the value from the source, emit it, and submit the source back into the pool:</p>
+<pre><code class="language-par">.get =&gt; do { s.get[x] } in (x) submit(s),
+</code></pre>
+<p>Read it left to right:</p>
+<ul>
+<li><code>s.get[x]</code> asks the current source for the <code>a</code>.</li>
+<li><code>(x)</code> produces the item from the merged <code>Source&lt;a&gt;</code>.</li>
+<li><code>submit(s)</code> puts the source back, so it can produce again later.</li>
+</ul>
+<h3 id="cancel-mode-discard-everything-left"><a class="header" href="#cancel-mode-discard-everything-left">Cancel mode: discard everything left</a></h3>
+<p>If the consumer chooses <code>.discard</code>, we must cancel:</p>
+<ol>
+<li>The current source <code>s</code> (which is in our hands right now).</li>
+<li>Every other source still sitting in the pool.</li>
+</ol>
+<p>We discard the current source immediately:</p>
+<pre><code class="language-par">let ! = s.discard in ...
+</code></pre>
+<p>Then we <strong>switch gears</strong> using <code>repoll()</code> (with no extra clients), reusing the same pool but changing the handler to “discard everything”:</p>
+<pre><code class="language-par">.discard =&gt; let ! = s.discard in repoll() {
+  fan =&gt; fan.case {
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+    .item s =&gt; let ! = s.discard in submit(),
+  }
+  else =&gt; !,
+}
+</code></pre>
+<p>This <code>repoll()</code> does not produce any <code>a</code> values. It just drains the pool by discarding sources until it’s empty, and then returns <code>!</code>.</p>
+<h2 id="full-code"><a class="header" href="#full-code">Full code</a></h2>
+<p>Putting it all together:</p>
+<pre><code class="language-par">dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
+def MergeSources = &lt;a&gt;[sources] poll(SourceFan(sources)) {
+  fan =&gt; fan.case {
+    .end! =&gt; submit(),
+    .spawn(l) r =&gt; submit(l, r),
+
+    .item s =&gt; .item case {
+      .discard =&gt; let ! = s.discard in repoll() {
+        fan =&gt; fan.case {
+          .end! =&gt; submit(),
+          .spawn(l) r =&gt; submit(l, r),
+          .item s =&gt; let ! = s.discard in submit(),
+        }
+        else =&gt; !,
+      }
+
+      .get =&gt; do { s.get[x] } in (x) submit(s),
+    }
+  }
+
+  else =&gt; .end!,
+}
+</code></pre>
+<blockquote>
+<p><strong>Labels on <code>poll</code> / <code>repoll</code> / <code>submit</code>:</strong> You can optionally write <code>poll@label(...)</code>, <code>repoll@label(...)</code>, and <code>submit@label(...)</code>.</p>
+<p>Labels select <em>which poll-point</em> a <code>submit</code> continues at when there are multiple poll-points in scope (created by <code>repoll</code>).</p>
+<p>A missing label is itself a label: <code>submit(...)</code> targets the nearest unlabeled poll-point, while <code>submit@x(...)</code> targets a poll-point labeled <code>@x</code>.</p>
+</blockquote>
 
                     </main>
 
