@@ -34,3 +34,8 @@
   - [Error Handling](./quality_of_life/error_handling.md)
   - [Conditions & `if`](./quality_of_life/if.md)
   - [Pipes](./quality_of_life/pipes.md)
+- [Nondeterminism, Servers & Clients](./nondeterminism/README.md)
+  - [Polling & Submitting](./nondeterminism/poll_submit.md)
+  - [The Fan Pattern](./nondeterminism/fan_pattern.md)
+  - [Communicating Both Ways](./nondeterminism/both_ways.md)
+  - [Switching Modes With `repoll`](./nondeterminism/repoll.md)
