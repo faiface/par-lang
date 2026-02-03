@@ -9,6 +9,7 @@ pub mod http;
 pub mod int;
 pub mod list;
 pub mod map;
+pub mod mix;
 pub mod nat;
 pub mod os;
 pub mod parser;
@@ -45,4 +46,5 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Http"), http::external_module());
     module.import(Some("Time"), time::external_module());
     module.import(Some("Test"), test::external_module());
+    module.import(Some("MIX"), mix::external_module());
 }
