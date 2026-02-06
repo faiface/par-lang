@@ -1,7 +1,7 @@
 use super::readback::Handle;
-use crate::runtime::flat::runtime::{Linear, Node, Runtime, UserData};
-use crate::runtime::flat::stats::Rewrites;
-use crate::TokioSpawn;
+use crate::runtime_impl::flat::runtime::{Linear, Node, Runtime, UserData};
+use crate::runtime_impl::flat::stats::Rewrites;
+use crate::spawn::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
 use std::sync::atomic::AtomicUsize;

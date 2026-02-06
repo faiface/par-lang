@@ -1,11 +1,11 @@
-pub mod build_result;
+pub(crate) mod build_result;
 pub(crate) mod captures;
-pub mod language;
+pub(crate) mod language;
 pub(crate) mod lexer;
 pub(crate) mod parse;
-pub mod primitive;
+pub(crate) mod primitive;
 pub mod process;
-pub mod program;
-pub mod types;
+pub(crate) mod program;
+pub(crate) mod types;
 
-pub use parse::{SyntaxError, parse_bytes, set_miette_hook};
+pub use parse::{parse_bytes, set_miette_hook};

@@ -11,17 +11,13 @@ use std::{
 };
 use tokio::sync::Notify;
 
-use crate::{
-    par::{
-        builtin::{
-            byte::ByteClass,
-            list::readback_list,
-            parser::{provide_bytes_parser, ReaderRemainder},
-        },
-        process,
-        program::{Definition, Module, TypeDef},
-        types::Type,
-    },
+use crate::builtin::{
+    byte::ByteClass,
+    list::readback_list,
+    parser::{provide_bytes_parser, ReaderRemainder},
+};
+use par_core::{
+    frontend::{process, Definition, Module, Type, TypeDef},
     runtime::Handle,
 };
 

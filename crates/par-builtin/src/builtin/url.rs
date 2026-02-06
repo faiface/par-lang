@@ -4,13 +4,8 @@ use arcstr::literal;
 use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
-use crate::{
-    par::{
-        primitive::ParString,
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type},
     runtime::Handle,
 };
 

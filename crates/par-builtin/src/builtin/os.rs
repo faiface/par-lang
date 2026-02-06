@@ -3,19 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{
-    par::{
-        primitive::ParString,
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
-    runtime::Handle,
-};
 use arcstr::literal;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use num_bigint::BigInt;
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type},
+    runtime::Handle,
+};
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},

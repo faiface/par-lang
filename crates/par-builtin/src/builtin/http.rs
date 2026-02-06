@@ -28,14 +28,9 @@ use num_bigint::BigInt;
 use tokio::{net::TcpListener, signal, sync::Notify};
 use url::Url as ParsedUrl;
 
-use crate::{
-    par::{
-        builtin::{list::readback_list, url::provide_url_value},
-        primitive::ParString,
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
+use crate::builtin::{list::readback_list, url::provide_url_value};
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type},
     runtime::Handle,
 };
 

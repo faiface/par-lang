@@ -2,16 +2,11 @@ use arcstr::literal;
 use bytes::Bytes;
 use std::collections::VecDeque;
 
-use crate::{
-    par::{
-        builtin::{
-            bytes::{BytesMachine, BytesPattern},
-            string::{StringMachine, StringPattern},
-        },
-        primitive::ParString,
-    },
-    runtime::Handle,
+use crate::builtin::{
+    bytes::{BytesMachine, BytesPattern},
+    string::{StringMachine, StringPattern},
 };
+use par_core::{frontend::ParString, runtime::Handle};
 
 pub(super) trait BytesRemainder {
     type Err;
@@ -519,10 +514,7 @@ pub(super) async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, 
     }
 }
 
-pub(super) async fn provide_string_parser<R: CharsRemainder>(
-    mut handle: Handle,
-    mut remainder: R,
-) {
+pub(super) async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
             "close" => match remainder.close().await {

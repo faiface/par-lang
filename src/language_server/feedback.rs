@@ -1,7 +1,7 @@
 use crate::language_server::instance::CompileError;
-use par_core::location::{Span, Spanning};
 use lsp_types::{self as lsp, Uri};
 use miette::Diagnostic;
+use par_core::source::{Span, Spanning};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -55,10 +55,10 @@ impl FeedbackBookKeeper {
 }
 
 pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnostic {
-    use par_core::par::build_result::Error;
+    use par_core::frontend::BuildError;
 
     let (span, message, help, _related_spans) = match err {
-        CompileError::Compile(Error::Syntax(err)) => (
+        CompileError::Compile(BuildError::Syntax(err)) => (
             err.span(),
             // Show syntax error with miette's formatting
             format!(
@@ -69,13 +69,13 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             vec![],
         ),
 
-        CompileError::Compile(Error::Compile(error)) => {
+        CompileError::Compile(BuildError::Compile(error)) => {
             let span = error.span();
             let error = error.to_report(code);
             (span, format!("{error:?}"), None, vec![])
         }
 
-        CompileError::Compile(Error::Type(err)) => {
+        CompileError::Compile(BuildError::Type(err)) => {
             let (span, related_span) = err.spans();
             (
                 span,
@@ -85,7 +85,7 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             )
         }
 
-        CompileError::Compile(Error::InetCompile(err)) => {
+        CompileError::Compile(BuildError::InetCompile(err)) => {
             let (span, related_spans) = err.spans();
             (
                 span,

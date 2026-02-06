@@ -1,7 +1,7 @@
-pub(crate) mod flat;
-pub(crate) mod tree;
 pub(crate) mod compiler;
+pub(crate) mod flat;
 pub(crate) mod readback;
+pub(crate) mod tree;
 
 pub use compiler::Compiled;
 pub use readback::{Handle, TypedHandle, TypedReadback};

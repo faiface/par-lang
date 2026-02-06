@@ -10,17 +10,17 @@ use crate::par::types::{visit, Type, TypeDefs, TypeError};
 use std::sync::OnceLock;
 
 use crate::par::language::GlobalName;
-use crate::runtime::flat::arena::{Arena, Index};
-use crate::runtime::flat::reducer::Reducer;
-use crate::runtime::flat::runtime::{
+use crate::runtime_impl::flat::arena::{Arena, Index};
+use crate::runtime_impl::flat::reducer::Reducer;
+use crate::runtime_impl::flat::runtime::{
     ExternalArc, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
 };
-use crate::runtime::{flat, tree};
+use crate::runtime_impl::{flat, tree};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
 use tree::compiler::IcCompiled;
 
-use crate::runtime::tree::Net;
+use crate::runtime_impl::tree::Net;
 use flat::runtime::Global;
 
 #[derive(Default)]
@@ -86,9 +86,9 @@ impl Transpiled {
 
     pub fn compile_file(
         module: &crate::par::program::CheckedModule,
-    ) -> Result<Self, crate::runtime::RuntimeCompilerError> {
+    ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         let type_defs = module.type_defs.clone();
-        let ic_compiled = crate::runtime::tree::compiler::IcCompiled::compile_file(module)?;
+        let ic_compiled = crate::runtime_impl::tree::compiler::IcCompiled::compile_file(module)?;
         let transpiled = Self::transpile(ic_compiled, type_defs);
         Ok(transpiled)
     }

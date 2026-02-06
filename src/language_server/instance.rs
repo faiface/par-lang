@@ -1,15 +1,15 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use par_core::location::FileName;
-use par_core::par::build_result::BuildResult;
-use par_builtin::import_builtins;
 use lsp_types::{self as lsp, Uri};
+use par_builtin::import_builtins;
+use par_core::frontend::{BuildError, BuildResult};
+use par_core::source::FileName;
 use std::collections::HashMap;
 use std::fmt::Write;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
-    Compile(par_core::par::build_result::Error),
+    Compile(BuildError),
     //Types(TypeError<Internal<Name>>),
 }
 
@@ -308,7 +308,11 @@ impl Instance {
         let code = self.io.read(&self.uri);
 
         self.build = stacker::grow(32 * 1024 * 1024, || {
-            BuildResult::from_source_with_imports(&code.unwrap(), self.file.clone(), import_builtins)
+            BuildResult::from_source_with_imports(
+                &code.unwrap(),
+                self.file.clone(),
+                import_builtins,
+            )
         });
         tracing::info!("Compiled!");
         // reset dirty flag after successful compile attempt

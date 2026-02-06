@@ -5,13 +5,8 @@ use std::{
 
 use arcstr::literal;
 
-use crate::{
-    par::{
-        primitive::ParString,
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type},
     runtime::Handle,
 };
 

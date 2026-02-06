@@ -1,15 +1,10 @@
 use std::sync::{mpsc, Arc};
 
-use crate::{
-    location::Span,
-    par::{
-        language::GlobalName,
-        process,
-        program::{Module, TypeDef},
-        types::Type,
-    },
+use par_core::{
+    frontend::{process, GlobalName, Module, Type, TypeDef},
     runtime::Handle,
-    test_assertion::AssertionResult,
+    source::Span,
+    testing::AssertionResult,
 };
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

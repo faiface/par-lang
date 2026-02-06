@@ -10,19 +10,15 @@ use std::{
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
-use par_core::par::build_result::BuildResult;
-use par_core::par::{language::GlobalName, types::Type};
-use par_builtin::import_builtins;
-use crate::{
-    readback::{Element, RunStats},
-};
-use par_core::{
-    location::FileName,
-    par::program::CheckedModule,
-    runtime::{Compiled, TypedHandle},
-    TokioSpawn,
-};
+use crate::readback::{Element, RunStats};
 use core::time::Duration;
+use par_builtin::import_builtins;
+use par_core::{
+    execution::TokioSpawn,
+    frontend::{BuildResult, CheckedModule, GlobalName, Type},
+    runtime::{Compiled, TypedHandle},
+    source::FileName,
+};
 use std::collections::HashMap;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;

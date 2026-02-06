@@ -1,13 +1,11 @@
-use par_core::par::build_result::BuildResult;
-use par_core::par::types::Type;
-use par_core::par::set_miette_hook;
-use par_builtin::import_builtins;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
 use clap::{arg, command, value_parser, Command};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
+use par_builtin::import_builtins;
+use par_core::frontend::{set_miette_hook, BuildResult, Type};
 use tokio::time::Instant;
 
 use std::fs::File;

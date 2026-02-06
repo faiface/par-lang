@@ -1,13 +1,3 @@
-use par_core::{
-    par::{
-        parse_bytes,
-        primitive::{ParString, Primitive},
-    },
-    runtime::{
-        TypedHandle, TypedReadback,
-        Rewrites,
-    },
-};
 use arcstr::ArcStr;
 use bytes::Bytes;
 use core::fmt::Debug;
@@ -17,6 +7,10 @@ use futures::{
     task::{Spawn, SpawnExt},
 };
 use num_bigint::BigInt;
+use par_core::{
+    frontend::{parse_bytes, ParString, Primitive},
+    runtime::{Rewrites, TypedHandle, TypedReadback},
+};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

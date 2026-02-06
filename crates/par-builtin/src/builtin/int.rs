@@ -1,14 +1,9 @@
-use crate::{
-    par::{
-        primitive::ParString,
-        process,
-        program::{Definition, Module, TypeDef},
-        types::Type,
-    },
-    runtime::Handle,
-};
 use arcstr::literal;
 use num_bigint::BigInt;
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type, TypeDef},
+    runtime::Handle,
+};
 use std::{cmp::Ordering, sync::Arc};
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

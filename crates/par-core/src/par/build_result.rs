@@ -1,8 +1,6 @@
 use crate::{
     location::FileName,
-    par::{
-        program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
-    },
+    par::program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
 };
 use crate::{
     par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},

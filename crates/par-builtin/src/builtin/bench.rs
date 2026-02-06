@@ -2,11 +2,7 @@ use std::sync::Arc;
 
 use futures::FutureExt;
 
-use crate::par::{
-    process,
-    program::{Definition, Module},
-    types::Type,
-};
+use par_core::frontend::{process, Definition, Module, Type};
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

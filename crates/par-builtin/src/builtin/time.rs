@@ -1,12 +1,8 @@
-use crate::{
-    par::{
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
+use num_bigint::BigInt;
+use par_core::{
+    frontend::{process, Definition, Module, Type},
     runtime::Handle,
 };
-use num_bigint::BigInt;
 use std::sync::Arc;
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

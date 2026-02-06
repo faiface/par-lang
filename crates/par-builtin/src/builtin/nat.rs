@@ -2,13 +2,8 @@ use arcstr::literal;
 use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
 
-use crate::{
-    par::{
-        primitive::ParString,
-        process,
-        program::{Definition, Module, TypeDef},
-        types::Type,
-    },
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type, TypeDef},
     runtime::Handle,
 };
 

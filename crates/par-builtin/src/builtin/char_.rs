@@ -3,12 +3,8 @@ use std::sync::Arc;
 use arcstr::literal;
 use num_bigint::BigInt;
 
-use crate::{
-    par::{
-        process,
-        program::{Definition, Module, TypeDef},
-        types::Type,
-    },
+use par_core::{
+    frontend::{process, Definition, Module, Type, TypeDef},
     runtime::Handle,
 };
 

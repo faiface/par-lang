@@ -2,18 +2,14 @@ use std::{future::Future, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{
-    par::{
-        builtin::list::readback_list,
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
-    runtime::Handle,
-};
+use crate::builtin::list::readback_list;
 use arcstr::literal;
 use im::OrdMap;
 use num_bigint::BigInt;
+use par_core::{
+    frontend::{process, Definition, Module, Type},
+    runtime::Handle,
+};
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

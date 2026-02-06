@@ -1,5 +1,5 @@
-use par_core::location::Point;
 use lsp_types::{self as lsp};
+use par_core::source::Point;
 
 pub(crate) trait ToLspPosition {
     fn to_lsp_position(self) -> lsp::Position;

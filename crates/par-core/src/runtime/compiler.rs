@@ -2,7 +2,7 @@ use futures::{future::RemoteHandle, task::SpawnExt};
 
 use crate::{
     par::{language::GlobalName, types::Type},
-    runtime::{
+    runtime_impl::{
         flat::{stats::Rewrites, transpiler::Transpiled},
         readback::Handle,
     },
@@ -26,7 +26,7 @@ impl Display for Compiled {
 impl Compiled {
     pub fn compile_file(
         module: &crate::par::program::CheckedModule,
-    ) -> Result<Self, crate::runtime::RuntimeCompilerError> {
+    ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         Ok(Self {
             code: Transpiled::compile_file(module)?,
             name_to_ty: module

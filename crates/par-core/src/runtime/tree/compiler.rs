@@ -12,7 +12,7 @@ use crate::par::{
     process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
 };
-use crate::runtime::tree::net::FanBehavior;
+use crate::runtime_impl::tree::net::FanBehavior;
 use crate::{
     location::{Span, Spanning},
     par::{
@@ -238,18 +238,19 @@ pub struct Compiler {
 }
 
 fn poll_token(
-    handle: crate::runtime::Handle,
+    handle: crate::runtime_impl::Handle,
 ) -> Pin<Box<dyn Send + core::future::Future<Output = ()>>> {
     Box::pin(poll_token_server(handle))
 }
 
-async fn poll_token_server(mut handle: crate::runtime::Handle) {
+async fn poll_token_server(mut handle: crate::runtime_impl::Handle) {
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
     use futures::stream::StreamExt as _;
 
-    let mut clients: FuturesUnordered<BoxFuture<'static, crate::runtime::flat::readback::Handle>> =
-        FuturesUnordered::new();
+    let mut clients: FuturesUnordered<
+        BoxFuture<'static, crate::runtime_impl::flat::readback::Handle>,
+    > = FuturesUnordered::new();
 
     loop {
         let op = handle.case().await;
@@ -271,7 +272,7 @@ async fn poll_token_server(mut handle: crate::runtime::Handle) {
                     .expect("poll clients stream unexpectedly empty");
 
                 result_slot.signal(ArcStr::from("#client"));
-                result_slot.link(crate::runtime::Handle::from(client));
+                result_slot.link(crate::runtime_impl::Handle::from(client));
             }
 
             "#submit" => {

@@ -1,9 +1,10 @@
-use par_core::par::build_result::BuildResult;
-use par_core::par::set_miette_hook;
-use par_core::runtime::Compiled;
-use par_core::{AssertionResult, create_assertion_channel};
-use par_builtin::import_builtins;
 use colored::Colorize;
+use par_builtin::import_builtins;
+use par_core::{
+    frontend::{set_miette_hook, BuildResult, CheckedModule, GlobalName, Type},
+    runtime::Compiled,
+    testing::{create_assertion_channel, AssertionResult},
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -194,7 +195,7 @@ pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
 }
 
 fn test_single_definition(
-    program: &par_core::par::program::CheckedModule,
+    program: &CheckedModule,
     rt_compiled: &Compiled,
     test_name: String,
 ) -> TestResult {
@@ -240,7 +241,7 @@ fn test_single_definition(
 }
 
 fn run_single_definition(
-    program: &par_core::par::program::CheckedModule,
+    program: &CheckedModule,
     rt_compiled: &Compiled,
     test_name: String,
 ) -> TestResult {
@@ -289,10 +290,10 @@ fn run_single_definition(
 }
 
 async fn run_test_with_test_type(
-    _program: &par_core::par::program::CheckedModule,
+    _program: &CheckedModule,
     rt_compiled: &Compiled,
-    name: &par_core::par::language::GlobalName,
-    _ty: &par_core::par::types::Type,
+    name: &GlobalName,
+    _ty: &Type,
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 

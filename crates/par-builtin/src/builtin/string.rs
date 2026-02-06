@@ -3,18 +3,13 @@ use std::{cmp::Ordering, sync::Arc};
 use arcstr::literal;
 use num_bigint::BigInt;
 
-use crate::{
-    par::{
-        builtin::{
-            char_::CharClass,
-            list::readback_list,
-            parser::{provide_string_parser, ReaderRemainder},
-        },
-        primitive::ParString,
-        process,
-        program::{Definition, Module, TypeDef},
-        types::Type,
-    },
+use crate::builtin::{
+    char_::CharClass,
+    list::readback_list,
+    parser::{provide_string_parser, ReaderRemainder},
+};
+use par_core::{
+    frontend::{process, Definition, Module, ParString, Type, TypeDef},
     runtime::Handle,
 };
 

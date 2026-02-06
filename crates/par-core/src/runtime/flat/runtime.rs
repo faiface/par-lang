@@ -30,12 +30,12 @@ use core::panic;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
-use crate::runtime::flat::show::Shower;
-use crate::{par::primitive::Primitive, runtime::flat::show::Showable};
+use crate::runtime_impl::flat::show::Shower;
+use crate::{par::primitive::Primitive, runtime_impl::flat::show::Showable};
 
 use super::arena::*;
-use crate::runtime::flat::stats::Rewrites;
-use crate::runtime::tree::net::FanBehavior;
+use crate::runtime_impl::flat::stats::Rewrites;
+use crate::runtime_impl::tree::net::FanBehavior;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::oneshot;
@@ -102,10 +102,10 @@ pub enum UserData {
 }
 
 pub type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
-pub type ExternalFn = fn(crate::runtime::Handle) -> ExternalFnRet;
+pub type ExternalFn = fn(crate::runtime_impl::Handle) -> ExternalFnRet;
 
 #[derive(Clone)]
-pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::runtime::Handle) -> ExternalFnRet>);
+pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::runtime_impl::Handle) -> ExternalFnRet>);
 
 impl Debug for ExternalArc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

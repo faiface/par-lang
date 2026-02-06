@@ -1,16 +1,12 @@
 use std::{collections::BTreeMap, future::Future};
 
-use crate::{
-    par::{
-        builtin::list::readback_list,
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
-    runtime::Handle,
-};
+use crate::builtin::list::readback_list;
 use arcstr::literal;
 use num_bigint::BigInt;
+use par_core::{
+    frontend::{process, Definition, Module, Type},
+    runtime::Handle,
+};
 use std::sync::Arc;
 
 pub fn external_module() -> Module<Arc<process::Expression<()>>> {

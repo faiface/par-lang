@@ -1,11 +1,7 @@
 use std::sync::Arc;
 
-use crate::{
-    par::{
-        process,
-        program::{Definition, Module},
-        types::Type,
-    },
+use par_core::{
+    frontend::{process, Definition, Module, Type},
     runtime::Handle,
 };
 
