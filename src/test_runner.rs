@@ -1,7 +1,7 @@
 use par_core::par::build_result::BuildResult;
-use par_core::par::parse;
+use par_core::par::set_miette_hook;
 use par_core::runtime::Compiled;
-use par_core::test_assertion::{create_assertion_channel, AssertionResult};
+use par_core::{AssertionResult, create_assertion_channel};
 use par_builtin::import_builtins;
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -54,7 +54,7 @@ pub struct TestResult {
 }
 
 pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
-    parse::set_miette_hook();
+    set_miette_hook();
 
     let test_files = match file {
         Some(f) => vec![f],

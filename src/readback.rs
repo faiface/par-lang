@@ -1,6 +1,6 @@
 use par_core::{
     par::{
-        parse::parse_bytes,
+        parse_bytes,
         primitive::{ParString, Primitive},
     },
     runtime::{

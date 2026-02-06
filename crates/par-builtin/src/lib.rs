@@ -10,7 +10,7 @@ pub mod location {
 
 pub mod par {
     pub use par_core::par::{
-        language, parse, primitive, process, program, types,
+        language, primitive, process, program, types,
     };
 
     pub mod builtin {
@@ -23,5 +23,5 @@ pub mod runtime {
 }
 
 pub mod test_assertion {
-    pub use par_core::test_assertion::*;
+    pub use par_core::{AssertionResult, create_assertion_channel};
 }

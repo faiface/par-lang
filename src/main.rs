@@ -1,5 +1,6 @@
 use par_core::par::build_result::BuildResult;
 use par_core::par::types::Type;
+use par_core::par::set_miette_hook;
 use par_builtin::import_builtins;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
@@ -118,7 +119,7 @@ fn run_playground(file: Option<PathBuf>) {
     };
 
     // Set hook for pretty-printer on error.
-    par_core::par::parse::set_miette_hook();
+    set_miette_hook();
     // Add hook to try printing current playground contents to stderr on error.
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
