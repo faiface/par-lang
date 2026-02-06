@@ -1,8 +1,13 @@
-pub mod flat;
-pub mod tree;
+pub(crate) mod flat;
+pub(crate) mod tree;
+pub(crate) mod compiler;
+pub(crate) mod readback;
+
 pub use compiler::Compiled;
-pub use readback::Handle;
+pub use readback::{Handle, TypedHandle, TypedReadback};
+pub use stats::Rewrites;
 pub use tree::compiler::Error as RuntimeCompilerError;
 
-pub mod compiler;
-pub mod readback;
+mod stats {
+    pub use super::flat::stats::Rewrites;
+}

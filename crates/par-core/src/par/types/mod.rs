@@ -1,22 +1,22 @@
-pub mod core;
+pub(crate) mod core;
 pub use core::{LoopId, Operation, PrimitiveType, Type};
 
-pub mod error;
+pub(crate) mod error;
 pub use error::TypeError;
 
-pub mod definitions;
+pub(crate) mod definitions;
 pub use definitions::TypeDefs;
-pub mod assignability;
-pub mod checking;
-pub mod context;
-pub mod dependencies;
-pub mod duality;
-pub mod substitution;
-pub mod validation;
-pub use context::Context;
-pub mod display;
-pub mod expansion;
+pub(crate) mod assignability;
+pub(crate) mod checking;
+pub(crate) mod context;
+pub(crate) use context::Context;
+pub(crate) mod dependencies;
+pub(crate) mod duality;
+pub(crate) mod substitution;
+pub(crate) mod validation;
+pub(crate) mod display;
+pub(crate) mod expansion;
 mod implicit;
-pub mod lattice;
-pub mod tests;
-pub mod visit;
+pub(crate) mod lattice;
+pub(crate) mod tests;
+pub(crate) mod visit;

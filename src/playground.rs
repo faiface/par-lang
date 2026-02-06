@@ -10,14 +10,17 @@ use std::{
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 
-use crate::par::build_result::BuildResult;
-use crate::par::{language::GlobalName, types::Type};
+use par_core::par::build_result::BuildResult;
+use par_core::par::{language::GlobalName, types::Type};
+use par_builtin::import_builtins;
 use crate::{
+    readback::{Element, RunStats},
+};
+use par_core::{
     location::FileName,
     par::program::CheckedModule,
-    readback::{Element, RunStats},
-    runtime::{compiler::Compiled, readback::TypedHandle},
-    spawn::TokioSpawn,
+    runtime::{Compiled, TypedHandle},
+    TokioSpawn,
 };
 use core::time::Duration;
 use std::collections::HashMap;
@@ -429,7 +432,11 @@ impl Playground {
 
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
-            self.build = BuildResult::from_source(self.code.as_str(), Self::FILE_NAME);
+            self.build = BuildResult::from_source_with_imports(
+                self.code.as_str(),
+                Self::FILE_NAME,
+                import_builtins,
+            );
         });
         self.built_code = Arc::from(self.code.as_str());
     }

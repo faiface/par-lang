@@ -1,11 +1,11 @@
-use crate::{
+use par_core::{
     par::{
         parse::parse_bytes,
         primitive::{ParString, Primitive},
     },
     runtime::{
-        flat::stats::Rewrites,
-        readback::{TypedHandle, TypedReadback},
+        TypedHandle, TypedReadback,
+        Rewrites,
     },
 };
 use arcstr::ArcStr;

@@ -1,7 +1,8 @@
-use crate::par::build_result::BuildResult;
-use crate::par::parse;
-use crate::runtime::Compiled;
-use crate::test_assertion::{create_assertion_channel, AssertionResult};
+use par_core::par::build_result::BuildResult;
+use par_core::par::parse;
+use par_core::runtime::Compiled;
+use par_core::test_assertion::{create_assertion_channel, AssertionResult};
+use par_builtin::import_builtins;
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -119,7 +120,7 @@ pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
     let code_with_imports = code.clone();
 
     let build = stacker::grow(32 * 1024 * 1024, || {
-        BuildResult::from_source(&code_with_imports, file.into())
+        BuildResult::from_source_with_imports(&code_with_imports, file.into(), import_builtins)
     });
     if let Some(error) = build.error() {
         results.push(TestResult {
@@ -193,7 +194,7 @@ pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
 }
 
 fn test_single_definition(
-    program: &crate::par::program::CheckedModule,
+    program: &par_core::par::program::CheckedModule,
     rt_compiled: &Compiled,
     test_name: String,
 ) -> TestResult {
@@ -239,7 +240,7 @@ fn test_single_definition(
 }
 
 fn run_single_definition(
-    program: &crate::par::program::CheckedModule,
+    program: &par_core::par::program::CheckedModule,
     rt_compiled: &Compiled,
     test_name: String,
 ) -> TestResult {
@@ -288,10 +289,10 @@ fn run_single_definition(
 }
 
 async fn run_test_with_test_type(
-    _program: &crate::par::program::CheckedModule,
+    _program: &par_core::par::program::CheckedModule,
     rt_compiled: &Compiled,
-    name: &crate::par::language::GlobalName,
-    _ty: &crate::par::types::Type,
+    name: &par_core::par::language::GlobalName,
+    _ty: &par_core::par::types::Type,
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = create_assertion_channel();
 
@@ -304,7 +305,7 @@ async fn run_test_with_test_type(
     let test_handle = root.send();
 
     // Provide the Test instance with the sender directly
-    use crate::par::builtin::test::provide_test;
+    use par_builtin::builtin::test::provide_test;
     provide_test(test_handle, sender).await;
 
     // Continue with the test execution

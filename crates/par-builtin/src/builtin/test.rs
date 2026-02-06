@@ -1,4 +1,3 @@
-use crate::runtime::flat::runtime::ExternalFnRet;
 use std::sync::{mpsc, Arc};
 
 use crate::{
@@ -104,25 +103,19 @@ fn provide_test_inner(handle: Handle, sender: mpsc::Sender<AssertionResult>) {
                     handle.break_();
                 }
                 "id" => {
-                    fn identity(mut handle: Handle) -> ExternalFnRet {
-                        Box::pin(async {
-                            let arg = handle.receive();
-                            handle.link(arg);
-                        })
-                    }
                     let argument = handle.send();
-                    argument.provide_box(|x| identity(x));
+                    argument.provide_box(|mut handle| async move {
+                        let arg = handle.receive();
+                        handle.link(arg);
+                    });
 
                     provide_test_inner(handle, sender);
                 }
                 "leak" => {
-                    fn leak(handle: Handle) -> ExternalFnRet {
-                        Box::pin(async {
-                            drop(handle);
-                        })
-                    }
                     let argument = handle.send();
-                    argument.provide_box(|x| leak(x));
+                    argument.provide_box(|handle| async move {
+                        drop(handle);
+                    });
 
                     provide_test_inner(handle, sender);
                 }

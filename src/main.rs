@@ -1,5 +1,6 @@
-use crate::par::build_result::BuildResult;
-use crate::par::types::Type;
+use par_core::par::build_result::BuildResult;
+use par_core::par::types::Type;
+use par_builtin::import_builtins;
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
 use clap::{arg, command, value_parser, Command};
@@ -15,16 +16,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod language_server;
-mod location;
-mod par;
 #[cfg(feature = "playground")]
 mod playground;
 #[cfg(feature = "playground")]
 mod readback;
-pub mod runtime;
-mod spawn;
 mod test;
-mod test_assertion;
 mod test_runner;
 
 fn main() {
@@ -122,7 +118,7 @@ fn run_playground(file: Option<PathBuf>) {
     };
 
     // Set hook for pretty-printer on error.
-    par::parse::set_miette_hook();
+    par_core::par::parse::set_miette_hook();
     // Add hook to try printing current playground contents to stderr on error.
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -162,7 +158,7 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool) {
         };
 
         let build = stacker::grow(32 * 1024 * 1024, || {
-            BuildResult::from_source(&code, file.into())
+            BuildResult::from_source_with_imports(&code, file.into(), import_builtins)
         });
         if let Some(error) = build.error() {
             println!("{}", error.display(Arc::from(code.as_str())).bright_red());
@@ -228,7 +224,7 @@ fn check(file: PathBuf) -> Result<(), String> {
     };
 
     let build = stacker::grow(32 * 1024 * 1024, || {
-        BuildResult::from_source(&code, file.into())
+        BuildResult::from_source_with_imports(&code, file.into(), import_builtins)
     });
     if let Some(error) = build.error() {
         let error_string = error.display(Arc::from(code.as_str()));

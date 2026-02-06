@@ -19,9 +19,8 @@ pub mod url;
 
 use std::sync::Arc;
 
-use crate::location::FileName;
-
-use super::{process, program::Module};
+use par_core::location::FileName;
+use par_core::par::{process, program::Module};
 
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
@@ -46,3 +45,4 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Time"), time::external_module());
     module.import(Some("Test"), test::external_module());
 }
+

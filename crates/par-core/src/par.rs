@@ -1,8 +1,7 @@
 pub mod build_result;
-pub mod builtin;
-pub mod captures;
+pub(crate) mod captures;
 pub mod language;
-pub mod lexer;
+pub(crate) mod lexer;
 pub mod parse;
 pub mod primitive;
 pub mod process;

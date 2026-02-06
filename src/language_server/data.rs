@@ -1,4 +1,4 @@
-use crate::location::Point;
+use par_core::location::Point;
 use lsp_types::{self as lsp};
 
 pub(crate) trait ToLspPosition {

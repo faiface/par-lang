@@ -1,5 +1,5 @@
 use crate::language_server::instance::CompileError;
-use crate::location::{Span, Spanning};
+use par_core::location::{Span, Spanning};
 use lsp_types::{self as lsp, Uri};
 use miette::Diagnostic;
 use std::collections::HashMap;
@@ -55,7 +55,7 @@ impl FeedbackBookKeeper {
 }
 
 pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnostic {
-    use crate::par::build_result::Error;
+    use par_core::par::build_result::Error;
 
     let (span, message, help, _related_spans) = match err {
         CompileError::Compile(Error::Syntax(err)) => (

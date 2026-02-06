@@ -1,7 +1,6 @@
 use crate::{
     location::FileName,
     par::{
-        builtin::import_builtins,
         program::{CheckedModule, Definition, Module, ParseAndCompileError, TypeOnHover},
     },
 };
@@ -131,12 +130,20 @@ impl BuildResult {
     }
 
     pub fn from_source(source: &str, file: FileName) -> Self {
+        Self::from_source_with_imports(source, file, |_| {})
+    }
+
+    pub fn from_source_with_imports(
+        source: &str,
+        file: FileName,
+        imports: impl FnOnce(&mut Module<Arc<Expression<()>>>),
+    ) -> Self {
         let mut module = match Module::parse_and_compile(source, file) {
             Ok(module) => module,
             Err(ParseAndCompileError::Parse(error)) => return Self::SyntaxError { error },
             Err(ParseAndCompileError::Compile(error)) => return Self::CompileError { error },
         };
-        import_builtins(&mut module);
+        imports(&mut module);
         Self::from_compiled(module)
     }
 

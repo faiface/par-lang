@@ -15,23 +15,8 @@ tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io
 stacker = "0.1.19"
 winnow = { version = "0.7.4", features = [] }
 miette = { version = "7.6.0", features = ["fancy"] }
-tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
-serde_json = "1.0.140"
-serde = { version = "1.0.218", features = ["derive"] }
-colored = "3.0.0"
 arcstr = "1.2.0"
 num-bigint = "0.4.6"
 unescaper = "0.1.6"
-tokio-util = "0.7.15"
-scopeguard = "1.2.0"
-reqwest = { version = "0.12.8", features = ["stream", "gzip", "brotli", "deflate"] }
 bytes = "1.6.1"
 im = "15"
-url = "2.5.4"
-hyper = { version = "1.7.0", features = ["http1", "server"] }
-hyper-util = { version = "0.1.6", features = ["tokio"] }
-http-body-util = "0.1.2"
-http-body = "1.0.1"
-num-traits = "0.2.19"
-percent-encoding = "2.3.1"
