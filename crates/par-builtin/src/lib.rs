@@ -2,8 +2,6 @@ pub mod builtin;
 
 pub use builtin::import_builtins;
 
-// Convenience re-exports so the builtin implementations can keep using the same
-// paths they historically had when they lived inside `par-core`.
 pub mod location {
     pub use par_core::location::*;
 }
