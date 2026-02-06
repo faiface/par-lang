@@ -2796,13 +2796,21 @@ mod test {
 
     #[test]
     fn test_parse_examples() {
-        let input = include_str!("../../examples/HelloWorld.par");
+        let input =
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/HelloWorld.par"));
         assert!(parse_module(input, "HelloWorld.par".into()).is_ok());
-        let input = include_str!("../../examples/Fibonacci.par");
+        let input =
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/Fibonacci.par"));
         assert!(parse_module(input, "Fibonacci.par".into()).is_ok());
-        let input = include_str!("../../examples/RockPaperScissors.par");
+        let input = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/RockPaperScissors.par"
+        ));
         assert!(parse_module(input, "RockPaperScissors.par".into()).is_ok());
-        let input = include_str!("../../examples/StringManipulation.par");
+        let input = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/StringManipulation.par"
+        ));
         assert!(parse_module(input, "StringManipulation.par".into()).is_ok());
         let input = "begin the errors";
         assert!(parse_module(input, "error.par".into()).is_err());

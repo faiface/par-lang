@@ -14,7 +14,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub(crate) enum Error {
+pub enum Error {
     Syntax(SyntaxError),
     Compile(CompileError),
     InetCompile(RuntimeCompilerError),

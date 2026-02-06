@@ -1,14 +1,2 @@
-use std::sync::mpsc;
+pub use par_core::test_assertion::*;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AssertionResult {
-    pub description: String,
-    pub passed: bool,
-}
-
-pub fn create_assertion_channel() -> (
-    mpsc::Sender<AssertionResult>,
-    mpsc::Receiver<AssertionResult>,
-) {
-    mpsc::channel()
-}

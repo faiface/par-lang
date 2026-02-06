@@ -1,4 +1,5 @@
 use super::io::IO;
+use crate::language_server::data::ToLspPosition;
 use crate::location::FileName;
 use crate::par::build_result::BuildResult;
 use lsp_types::{self as lsp, Uri};
@@ -105,12 +106,12 @@ impl Instance {
                         tags: None,
                         deprecated: None, // must be specified
                         range: lsp::Range {
-                            start: start.into(),
-                            end: end.into(),
+                            start: start.to_lsp_position(),
+                            end: end.to_lsp_position(),
                         },
                         selection_range: lsp::Range {
-                            start: name_start.into(),
-                            end: name_end.into(),
+                            start: name_start.to_lsp_position(),
+                            end: name_end.to_lsp_position(),
                         },
                         children: None,
                     },
@@ -134,12 +135,12 @@ impl Instance {
                         tags: None,
                         deprecated: None, // must be specified
                         range: lsp::Range {
-                            start: start.into(),
-                            end: end.into(),
+                            start: start.to_lsp_position(),
+                            end: end.to_lsp_position(),
                         },
                         selection_range: lsp::Range {
-                            start: name_start.into(),
-                            end: name_end.into(),
+                            start: name_start.to_lsp_position(),
+                            end: name_end.to_lsp_position(),
                         },
                         children: None,
                     },
@@ -152,12 +153,12 @@ impl Instance {
                 (name.span.points(), definition.span.points())
             {
                 let range = lsp::Range {
-                    start: start.into(),
-                    end: end.into(),
+                    start: start.to_lsp_position(),
+                    end: end.to_lsp_position(),
                 };
                 let selection_range = lsp::Range {
-                    start: name_start.into(),
-                    end: name_end.into(),
+                    start: name_start.to_lsp_position(),
+                    end: name_end.to_lsp_position(),
                 };
                 symbols
                     .entry(name)
@@ -233,8 +234,8 @@ impl Instance {
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
             uri: path.0.parse().ok()?,
             range: lsp::Range {
-                start: start.into(),
-                end: end.into(),
+                start: start.to_lsp_position(),
+                end: end.to_lsp_position(),
             },
         }))
     }
@@ -263,8 +264,8 @@ impl Instance {
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
             uri: path.0.parse().ok()?,
             range: lsp::Range {
-                start: start.into(),
-                end: end.into(),
+                start: start.to_lsp_position(),
+                end: end.to_lsp_position(),
             },
         }))
     }

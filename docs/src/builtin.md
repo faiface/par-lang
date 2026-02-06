@@ -1,5 +1,5 @@
 # Built-In Definitions
 
 ```par
-{{#include ../../src/par/builtin/Builtin.par}}
+{{#include ../../crates/par-core/src/par/builtin/Builtin.par}}
 ```

@@ -13,7 +13,7 @@ use crate::{
     runtime::Handle,
 };
 
-pub trait BytesRemainder {
+pub(super) trait BytesRemainder {
     type Err;
     type Iterator<'a>: AsyncByteIterator<Err = Self::Err>
     where
@@ -27,7 +27,7 @@ pub trait BytesRemainder {
     async fn remaining_bytes(&mut self) -> Result<Bytes, Self::Err>;
 }
 
-pub trait CharsRemainder {
+pub(super) trait CharsRemainder {
     type Err;
     type Iterator<'a>: AsyncCharIterator<Err = Self::Err>
     where
@@ -41,17 +41,17 @@ pub trait CharsRemainder {
     async fn remaining_chars(&mut self) -> Result<ParString, Self::Err>;
 }
 
-pub trait AsyncByteIterator {
+pub(super) trait AsyncByteIterator {
     type Err;
     async fn next(&mut self) -> Result<Option<(usize, u8)>, Self::Err>;
 }
 
-pub trait AsyncCharIterator {
+pub(super) trait AsyncCharIterator {
     type Err;
     async fn next(&mut self) -> Result<Option<(usize, usize, char)>, Self::Err>;
 }
 
-pub enum Never {}
+pub(super) enum Never {}
 
 impl ToString for Never {
     fn to_string(&self) -> String {
@@ -62,7 +62,7 @@ impl ToString for Never {
 // A generic remainder that adapts a runtime `Bytes.Reader<e>` handle
 // into the `BytesRemainder` and `CharsRemainder` traits. Errors are forwarded
 // opaquely by passing handles through without interpretation.
-pub struct ReaderRemainder {
+pub(super) struct ReaderRemainder {
     handle: Option<Handle>,
     buffer: VecDeque<u8>,
 }
@@ -76,7 +76,7 @@ impl ReaderRemainder {
     }
 }
 
-pub struct ReaderRemainderByteIterator<'a> {
+pub(super) struct ReaderRemainderByteIterator<'a> {
     remainder: &'a mut ReaderRemainder,
     index: usize,
 }
@@ -136,7 +136,7 @@ impl<'a> AsyncByteIterator for ReaderRemainderByteIterator<'a> {
     }
 }
 
-pub struct ReaderRemainderCharIterator<'a> {
+pub(super) struct ReaderRemainderCharIterator<'a> {
     bytes: ReaderRemainderByteIterator<'a>,
     tmp: Vec<u8>,
 }
@@ -353,7 +353,7 @@ impl<'a> AsyncCharIterator for (usize, &'a ParString) {
     }
 }
 
-pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut remainder: R) {
+pub(super) async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut remainder: R) {
     loop {
         match handle.case().await.as_str() {
             "close" => match remainder.close().await {
@@ -519,7 +519,10 @@ pub async fn provide_bytes_parser<R: BytesRemainder>(mut handle: Handle, mut rem
     }
 }
 
-pub async fn provide_string_parser<R: CharsRemainder>(mut handle: Handle, mut remainder: R) {
+pub(super) async fn provide_string_parser<R: CharsRemainder>(
+    mut handle: Handle,
+    mut remainder: R,
+) {
     loop {
         match handle.case().await.as_str() {
             "close" => match remainder.close().await {
