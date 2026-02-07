@@ -6,7 +6,7 @@ use par_core::{
         CheckedModule, ParseAndCompileError, Type, TypeError,
     },
     runtime::{Compiled, RuntimeCompilerError},
-    testing::AssertionResult,
+    testing::{provide_test, AssertionResult},
 };
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -328,7 +328,6 @@ async fn run_test_with_test_type(
     let test_handle = root.send();
 
     // Provide the Test instance with the sender directly
-    use par_builtin::provide_test;
     provide_test(test_handle, sender).await;
 
     // Continue with the test execution

@@ -13,7 +13,6 @@ mod nat;
 mod os;
 mod parser;
 mod string;
-pub(crate) mod test;
 mod time;
 mod url;
 
@@ -21,6 +20,7 @@ use std::sync::Arc;
 
 use par_core::frontend::{process, Module};
 use par_core::source::FileName;
+use par_core::testing::import_test_module;
 
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
@@ -43,5 +43,5 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Url"), url::external_module());
     module.import(Some("Http"), http::external_module());
     module.import(Some("Time"), time::external_module());
-    module.import(Some("Test"), test::external_module());
+    import_test_module(module);
 }
