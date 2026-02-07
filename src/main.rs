@@ -5,7 +5,13 @@ use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use par_builtin::import_builtins;
-use par_core::frontend::{set_miette_hook, BuildResult, Type};
+use par_core::{
+    frontend::{
+        compile_runtime, lower, parse, set_miette_hook, type_check, ParseAndCompileError, Type,
+        TypeError,
+    },
+    runtime::RuntimeCompilerError,
+};
 use tokio::time::Instant;
 
 use std::fs::File;
@@ -21,6 +27,58 @@ mod playground;
 mod readback;
 mod test;
 mod test_runner;
+
+#[derive(Debug, Clone)]
+enum BuildError {
+    ParseAndCompile(ParseAndCompileError),
+    Type(TypeError),
+    InetCompile(RuntimeCompilerError),
+}
+
+impl BuildError {
+    fn display(&self, code: Arc<str>) -> String {
+        match self {
+            Self::ParseAndCompile(ParseAndCompileError::Parse(error)) => {
+                format!(
+                    "{:?}",
+                    miette::Report::from(error.to_owned()).with_source_code(code)
+                )
+            }
+            Self::ParseAndCompile(ParseAndCompileError::Compile(error)) => {
+                format!("{:?}", error.to_report(code))
+            }
+            Self::Type(error) => format!("{:?}", error.to_report(code)),
+            Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
+        }
+    }
+}
+
+fn build_checked(
+    code: &str,
+    file: &PathBuf,
+) -> Result<par_core::frontend::CheckedModule, BuildError> {
+    let parsed = parse(code, file.clone().into())
+        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Parse(error)))?;
+    let mut lowered = lower(parsed)
+        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Compile(error)))?;
+    import_builtins(&mut lowered);
+    type_check(&lowered).map_err(BuildError::Type)
+}
+
+fn build_runtime(
+    code: &str,
+    file: &PathBuf,
+) -> Result<
+    (
+        par_core::frontend::CheckedModule,
+        par_core::runtime::Compiled,
+    ),
+    BuildError,
+> {
+    let checked = build_checked(code, file)?;
+    let rt_compiled = compile_runtime(&checked).map_err(BuildError::InetCompile)?;
+    Ok((checked, rt_compiled))
+}
 
 fn main() {
     let matches = command!()
@@ -156,18 +214,14 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool) {
             return;
         };
 
-        let build = stacker::grow(32 * 1024 * 1024, || {
-            BuildResult::from_source_with_imports(&code, file.into(), import_builtins)
-        });
-        if let Some(error) = build.error() {
-            println!("{}", error.display(Arc::from(code.as_str())).bright_red());
-            return;
-        }
-
-        let Some(checked) = build.checked() else {
-            println!("Type check failed");
-            return;
-        };
+        let (checked, rt_compiled) =
+            match stacker::grow(32 * 1024 * 1024, || build_runtime(&code, &file)) {
+                Ok(result) => result,
+                Err(error) => {
+                    println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+                    return;
+                }
+            };
 
         let Some((name, _)) = checked
             .definitions
@@ -176,15 +230,6 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool) {
             .clone()
         else {
             println!("{}: {}", "Definition not found".bright_red(), definition);
-            return;
-        };
-
-        let Some(rt_compiled) = build.rt_compiled() else {
-            println!(
-                "{}: {}",
-                "Runtime compilation failed".bright_red(),
-                definition
-            );
             return;
         };
 
@@ -222,10 +267,8 @@ fn check(file: PathBuf) -> Result<(), String> {
         return Err(format!("Could not read file: {}", file.display()));
     };
 
-    let build = stacker::grow(32 * 1024 * 1024, || {
-        BuildResult::from_source_with_imports(&code, file.into(), import_builtins)
-    });
-    if let Some(error) = build.error() {
+    let checked_result = stacker::grow(32 * 1024 * 1024, || build_checked(&code, &file));
+    if let Err(error) = checked_result {
         let error_string = error.display(Arc::from(code.as_str()));
         eprintln!("{}", error_string.bright_red());
         return Err(error_string);

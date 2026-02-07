@@ -19,10 +19,10 @@ pub mod url;
 
 use std::sync::Arc;
 
-use par_core::frontend::{Expression, Module};
+use par_core::frontend::{process, Module};
 use par_core::source::FileName;
 
-pub fn import_builtins(module: &mut Module<Arc<Expression<()>>>) {
+pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         None,
         Module::parse_and_compile(include_str!("./builtin/Builtin.par"), FileName::BUILTIN)

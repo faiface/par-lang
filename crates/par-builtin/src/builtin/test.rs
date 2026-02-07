@@ -1,7 +1,7 @@
 use std::sync::{mpsc, Arc};
 
 use par_core::{
-    frontend::{process, GlobalName, Module, Type, TypeDef},
+    frontend::{language::GlobalName, process, Module, Type, TypeDef},
     runtime::Handle,
     source::Span,
     testing::AssertionResult,

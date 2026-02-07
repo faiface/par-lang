@@ -15,13 +15,187 @@ use core::time::Duration;
 use par_builtin::import_builtins;
 use par_core::{
     execution::TokioSpawn,
-    frontend::{BuildResult, CheckedModule, GlobalName, Type},
-    runtime::{Compiled, TypedHandle},
+    frontend::{
+        compile_runtime, language::GlobalName, lower, parse, process, type_check, CheckedModule,
+        Module, ParseAndCompileError, Type, TypeError, TypeOnHover,
+    },
+    runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
 };
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Clone)]
+enum BuildError {
+    ParseAndCompile(ParseAndCompileError),
+    Type(TypeError),
+    InetCompile(RuntimeCompilerError),
+}
+
+impl BuildError {
+    fn display(&self, code: Arc<str>) -> String {
+        match self {
+            Self::ParseAndCompile(ParseAndCompileError::Parse(error)) => {
+                format!(
+                    "{:?}",
+                    miette::Report::from(error.to_owned()).with_source_code(code)
+                )
+            }
+            Self::ParseAndCompile(ParseAndCompileError::Compile(error)) => {
+                format!("{:?}", error.to_report(code))
+            }
+            Self::Type(error) => format!("{:?}", error.to_report(code)),
+            Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum BuildResult {
+    None,
+    ParseAndCompileError {
+        error: ParseAndCompileError,
+    },
+    TypeError {
+        pretty: String,
+        error: TypeError,
+    },
+    InetError {
+        pretty: String,
+        checked: Arc<CheckedModule>,
+        type_on_hover: TypeOnHover,
+        error: RuntimeCompilerError,
+    },
+    Ok {
+        pretty: String,
+        checked: Arc<CheckedModule>,
+        type_on_hover: TypeOnHover,
+        rt_compiled: Compiled,
+    },
+}
+
+impl BuildResult {
+    fn error(&self) -> Option<BuildError> {
+        match self {
+            Self::None => None,
+            Self::ParseAndCompileError { error } => {
+                Some(BuildError::ParseAndCompile(error.clone()))
+            }
+            Self::TypeError { error, .. } => Some(BuildError::Type(error.clone())),
+            Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
+            Self::Ok { .. } => None,
+        }
+    }
+
+    fn pretty(&self) -> Option<&str> {
+        match self {
+            Self::TypeError { pretty, .. }
+            | Self::InetError { pretty, .. }
+            | Self::Ok { pretty, .. } => Some(pretty),
+            Self::None | Self::ParseAndCompileError { .. } => None,
+        }
+    }
+
+    fn checked(&self) -> Option<Arc<CheckedModule>> {
+        match self {
+            Self::InetError { checked, .. } | Self::Ok { checked, .. } => Some(Arc::clone(checked)),
+            Self::None | Self::ParseAndCompileError { .. } | Self::TypeError { .. } => None,
+        }
+    }
+
+    fn type_on_hover(&self) -> Option<&TypeOnHover> {
+        match self {
+            Self::InetError { type_on_hover, .. } | Self::Ok { type_on_hover, .. } => {
+                Some(type_on_hover)
+            }
+            Self::None | Self::ParseAndCompileError { .. } | Self::TypeError { .. } => None,
+        }
+    }
+
+    fn rt_compiled(&self) -> Option<&Compiled> {
+        match self {
+            Self::Ok { rt_compiled, .. } => Some(rt_compiled),
+            Self::None
+            | Self::ParseAndCompileError { .. }
+            | Self::TypeError { .. }
+            | Self::InetError { .. } => None,
+        }
+    }
+
+    fn from_source_with_imports(
+        source: &str,
+        file: FileName,
+        imports: impl FnOnce(&mut Module<Arc<process::Expression<()>>>),
+    ) -> Self {
+        let parsed = match parse(source, file) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                return Self::ParseAndCompileError {
+                    error: ParseAndCompileError::Parse(error),
+                }
+            }
+        };
+        let mut lowered = match lower(parsed) {
+            Ok(lowered) => lowered,
+            Err(error) => {
+                return Self::ParseAndCompileError {
+                    error: ParseAndCompileError::Compile(error),
+                }
+            }
+        };
+        imports(&mut lowered);
+        Self::from_compiled(lowered)
+    }
+
+    fn from_compiled(compiled: Module<Arc<process::Expression<()>>>) -> Self {
+        let pretty = compiled
+            .definitions
+            .iter()
+            .map(
+                |par_core::frontend::Definition {
+                     span: _,
+                     name,
+                     expression,
+                 }| {
+                    let mut buf = String::new();
+                    write!(&mut buf, "def {} = ", name).expect("write failed");
+                    expression.pretty(&mut buf, 0).expect("write failed");
+                    write!(&mut buf, "\n\n").expect("write failed");
+                    buf
+                },
+            )
+            .collect();
+
+        let checked = match type_check(&compiled) {
+            Ok(checked) => Arc::new(checked),
+            Err(error) => return Self::TypeError { pretty, error },
+        };
+        Self::from_checked(pretty, checked)
+    }
+
+    fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
+        let type_on_hover = TypeOnHover::new(&checked);
+        let rt_compiled = match compile_runtime(&checked) {
+            Ok(rt_compiled) => rt_compiled,
+            Err(error) => {
+                return Self::InetError {
+                    pretty,
+                    checked,
+                    type_on_hover,
+                    error,
+                }
+            }
+        };
+        Self::Ok {
+            pretty,
+            checked,
+            type_on_hover,
+            rt_compiled,
+        }
+    }
+}
 
 pub struct Playground {
     file_path: Option<PathBuf>,

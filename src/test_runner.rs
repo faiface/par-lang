@@ -1,8 +1,11 @@
 use colored::Colorize;
 use par_builtin::import_builtins;
 use par_core::{
-    frontend::{set_miette_hook, BuildResult, CheckedModule, GlobalName, Type},
-    runtime::Compiled,
+    frontend::{
+        compile_runtime, language::GlobalName, lower, parse, set_miette_hook, type_check,
+        CheckedModule, ParseAndCompileError, Type, TypeError,
+    },
+    runtime::{Compiled, RuntimeCompilerError},
     testing::{create_assertion_channel, AssertionResult},
 };
 use std::path::{Path, PathBuf};
@@ -10,6 +13,42 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fmt::Display, fs};
 use tokio::runtime::Runtime;
+
+#[derive(Debug, Clone)]
+enum BuildError {
+    ParseAndCompile(ParseAndCompileError),
+    Type(TypeError),
+    InetCompile(RuntimeCompilerError),
+}
+
+impl BuildError {
+    fn display(&self, code: Arc<str>) -> String {
+        match self {
+            Self::ParseAndCompile(ParseAndCompileError::Parse(error)) => {
+                format!(
+                    "{:?}",
+                    miette::Report::from(error.to_owned()).with_source_code(code)
+                )
+            }
+            Self::ParseAndCompile(ParseAndCompileError::Compile(error)) => {
+                format!("{:?}", error.to_report(code))
+            }
+            Self::Type(error) => format!("{:?}", error.to_report(code)),
+            Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
+        }
+    }
+}
+
+fn build_for_run(code: &str, file: &Path) -> Result<(CheckedModule, Compiled), BuildError> {
+    let parsed = parse(code, file.to_path_buf().into())
+        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Parse(error)))?;
+    let mut lowered = lower(parsed)
+        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Compile(error)))?;
+    import_builtins(&mut lowered);
+    let checked = type_check(&lowered).map_err(BuildError::Type)?;
+    let rt_compiled = compile_runtime(&checked).map_err(BuildError::InetCompile)?;
+    Ok((checked, rt_compiled))
+}
 
 #[derive(Debug)]
 pub enum TestStatus {
@@ -118,41 +157,23 @@ pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         return results;
     };
 
-    let code_with_imports = code.clone();
-
-    let build = stacker::grow(32 * 1024 * 1024, || {
-        BuildResult::from_source_with_imports(&code_with_imports, file.into(), import_builtins)
-    });
-    if let Some(error) = build.error() {
-        results.push(TestResult {
-            name: file.to_string_lossy().to_string(),
-            duration: Duration::ZERO,
-            status: TestStatus::CompileError(
-                error
-                    .display(Arc::from(code_with_imports.as_str()))
-                    .to_string(),
-            ),
-        });
-        return results;
-    }
-
-    let Some(checked) = build.checked() else {
-        results.push(TestResult {
-            name: file.to_string_lossy().to_string(),
-            duration: Duration::ZERO,
-            status: TestStatus::TypeError("Type checking failed".to_string()),
-        });
-        return results;
-    };
-
-    let Some(rt_compiled) = build.rt_compiled() else {
-        results.push(TestResult {
-            name: file.to_string_lossy().to_string(),
-            duration: Duration::ZERO,
-            status: TestStatus::TypeError("IC compilation failed".to_string()),
-        });
-        return results;
-    };
+    let (checked, rt_compiled) =
+        match stacker::grow(32 * 1024 * 1024, || build_for_run(&code, file)) {
+            Ok(result) => result,
+            Err(error) => {
+                let message = error.display(Arc::from(code.as_str())).to_string();
+                let status = match error {
+                    BuildError::Type(_) => TestStatus::TypeError(message),
+                    _ => TestStatus::CompileError(message),
+                };
+                results.push(TestResult {
+                    name: file.to_string_lossy().to_string(),
+                    duration: Duration::ZERO,
+                    status,
+                });
+                return results;
+            }
+        };
 
     // Look for definitions that start with Test (case-sensitive)
     let test_definitions: Vec<_> = checked

@@ -55,12 +55,9 @@ impl FeedbackBookKeeper {
 }
 
 pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnostic {
-    use par_core::frontend::BuildError;
-
     let (span, message, help, _related_spans) = match err {
-        CompileError::Compile(BuildError::Syntax(err)) => (
+        CompileError::ParseAndCompile(par_core::frontend::ParseAndCompileError::Parse(err)) => (
             err.span(),
-            // Show syntax error with miette's formatting
             format!(
                 "{:?}",
                 miette::Report::from(err.to_owned()).with_source_code(code)
@@ -68,30 +65,18 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             err.help().map(|s| s.to_string()),
             vec![],
         ),
-
-        CompileError::Compile(BuildError::Compile(error)) => {
+        CompileError::ParseAndCompile(par_core::frontend::ParseAndCompileError::Compile(error)) => {
             let span = error.span();
             let error = error.to_report(code);
             (span, format!("{error:?}"), None, vec![])
         }
-
-        CompileError::Compile(BuildError::Type(err)) => {
+        CompileError::Type(err) => {
             let (span, related_span) = err.spans();
             (
                 span,
                 format!("{:?}", err.to_report(code)),
                 None,
                 related_span.into_iter().collect(),
-            )
-        }
-
-        CompileError::Compile(BuildError::InetCompile(err)) => {
-            let (span, related_spans) = err.spans();
-            (
-                span,
-                format!("inet compilation error: {}", err.display(&code)),
-                None,
-                related_spans,
             )
         }
     };
