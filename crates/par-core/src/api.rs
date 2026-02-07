@@ -5,9 +5,12 @@ pub mod source {
 pub mod frontend {
     use std::sync::Arc;
 
-    use crate::location::FileName;
+    use crate::location::{FileName, Span};
     use crate::par::language::{CompileError, Passes};
     use crate::par::parse::parse_module;
+    use crate::par::types::lattice::{
+        intersect_types as intersect_types_inner, union_types as union_types_inner,
+    };
     use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 
     pub mod language {
@@ -69,6 +72,24 @@ pub mod frontend {
     pub fn compile_runtime(module: &CheckedModule) -> Result<Compiled, RuntimeCompilerError> {
         Compiled::compile_file(module)
     }
+
+    pub fn union_types(
+        type_defs: &TypeDefs,
+        span: &Span,
+        type1: &Type,
+        type2: &Type,
+    ) -> Result<Type, TypeError> {
+        union_types_inner(type_defs, span, type1, type2)
+    }
+
+    pub fn intersect_types(
+        type_defs: &TypeDefs,
+        span: &Span,
+        type1: &Type,
+        type2: &Type,
+    ) -> Result<Type, TypeError> {
+        intersect_types_inner(type_defs, span, type1, type2)
+    }
 }
 
 pub mod runtime {
@@ -82,5 +103,5 @@ pub mod execution {
 }
 
 pub mod testing {
-    pub use crate::test_assertion::{create_assertion_channel, AssertionResult};
+    pub use crate::test_assertion::AssertionResult;
 }

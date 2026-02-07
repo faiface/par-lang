@@ -2,7 +2,7 @@ use crate::location::Span;
 use crate::par::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use std::collections::BTreeMap;
 
-pub fn union_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {
+pub(crate) fn union_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {
     if Type::is_primitive_subtype(p1, p2) {
         Some(p2.clone())
     } else if Type::is_primitive_subtype(p2, p1) {
@@ -12,7 +12,10 @@ pub fn union_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<Primit
     }
 }
 
-pub fn intersect_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {
+pub(crate) fn intersect_primitives(
+    p1: &PrimitiveType,
+    p2: &PrimitiveType,
+) -> Option<PrimitiveType> {
     if Type::is_primitive_subtype(p1, p2) {
         Some(p1.clone())
     } else if Type::is_primitive_subtype(p2, p1) {
@@ -22,7 +25,7 @@ pub fn intersect_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<Pr
     }
 }
 
-pub fn union_types(
+pub(crate) fn union_types(
     typedefs: &TypeDefs,
     span: &Span,
     type1: &Type,
@@ -160,7 +163,7 @@ pub fn union_types(
     })
 }
 
-pub fn intersect_types(
+pub(crate) fn intersect_types(
     typedefs: &TypeDefs,
     span: &Span,
     type1: &Type,

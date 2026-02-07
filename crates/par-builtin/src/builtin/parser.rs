@@ -63,7 +63,7 @@ pub(super) struct ReaderRemainder {
 }
 
 impl ReaderRemainder {
-    pub fn new(handle: Handle) -> Self {
+    pub(super) fn new(handle: Handle) -> Self {
         Self {
             handle: Some(handle),
             buffer: VecDeque::new(),

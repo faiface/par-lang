@@ -1,3 +1,5 @@
+#![deny(unreachable_pub)]
+
 #[path = "api.rs"]
 mod facade;
 pub(crate) mod location;

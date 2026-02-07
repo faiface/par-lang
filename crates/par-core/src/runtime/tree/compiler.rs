@@ -80,7 +80,7 @@ impl Error {
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
-pub struct TypedTree {
+pub(crate) struct TypedTree {
     pub tree: Tree,
     pub ty: Type,
 }
@@ -107,16 +107,16 @@ impl From<LocalName> for Var {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LoopLabel(Option<LocalName>);
+pub(crate) struct LoopLabel(Option<LocalName>);
 
 #[derive(Debug)]
-pub struct Context {
+pub(crate) struct Context {
     vars: BTreeMap<Var, TypedTree>,
     loop_points: BTreeMap<LoopLabel, BTreeSet<LoopLabel>>,
     unguarded_loop_labels: Vec<LoopLabel>,
 }
 
-pub struct PackData {
+pub(crate) struct PackData {
     names: Vec<Var>,
     types: Vec<Type>,
     loop_points: BTreeMap<LoopLabel, BTreeSet<LoopLabel>>,
@@ -124,7 +124,7 @@ pub struct PackData {
 }
 
 impl Context {
-    pub fn pack_template(
+    pub(crate) fn pack_template(
         &self,
         driver: Option<&LocalName>,
         captures: Option<&Captures>,
@@ -159,7 +159,7 @@ impl Context {
         }
     }
 
-    pub fn pack(
+    pub(crate) fn pack(
         &mut self,
         driver: Option<&LocalName>,
         captures: Option<&Captures>,
@@ -202,7 +202,7 @@ impl Context {
         )
     }
 
-    pub fn unpack(&mut self, packed: &PackData, net: &mut Net) -> Tree {
+    pub(crate) fn unpack(&mut self, packed: &PackData, net: &mut Net) -> Tree {
         let mut m_trees = vec![];
         for (name, ty) in packed.names.iter().zip(packed.types.iter()) {
             let (v0, v1) = net.create_wire();
@@ -223,7 +223,7 @@ impl Context {
     }
 }
 
-pub struct Compiler {
+pub(crate) struct Compiler {
     net: Net,
     context: Context,
     type_defs: TypeDefs,

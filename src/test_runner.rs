@@ -6,9 +6,10 @@ use par_core::{
         CheckedModule, ParseAndCompileError, Type, TypeError,
     },
     runtime::{Compiled, RuntimeCompilerError},
-    testing::{create_assertion_channel, AssertionResult},
+    testing::AssertionResult,
 };
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fmt::Display, fs};
@@ -316,7 +317,7 @@ async fn run_test_with_test_type(
     name: &GlobalName,
     _ty: &Type,
 ) -> Result<TestStatus, String> {
-    let (sender, receiver) = create_assertion_channel();
+    let (sender, receiver) = mpsc::channel();
 
     let (mut root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
 
@@ -327,7 +328,7 @@ async fn run_test_with_test_type(
     let test_handle = root.send();
 
     // Provide the Test instance with the sender directly
-    use par_builtin::builtin::test::provide_test;
+    use par_builtin::provide_test;
     provide_test(test_handle, sender).await;
 
     // Continue with the test execution

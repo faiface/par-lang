@@ -15,9 +15,9 @@ use num_bigint::BigInt;
 
 use crate::par::primitive::{ParString, Primitive};
 
-pub type VarId = usize;
+pub(crate) type VarId = usize;
 
-pub fn number_to_string(mut number: usize) -> String {
+pub(crate) fn number_to_string(mut number: usize) -> String {
     let mut result = String::new();
     number += 1;
     while number > 0 {

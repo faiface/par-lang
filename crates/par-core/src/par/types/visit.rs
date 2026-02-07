@@ -3,7 +3,7 @@ use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
 use indexmap::IndexSet;
 
-pub fn continue_<E, F>(typ: &Type, mut visit: F) -> Result<(), E>
+pub(crate) fn continue_<E, F>(typ: &Type, mut visit: F) -> Result<(), E>
 where
     F: FnMut(&Type) -> Result<(), E>,
 {
@@ -50,7 +50,7 @@ where
     Ok(())
 }
 
-pub fn continue_mut<E, F>(typ: &mut Type, mut visit: F) -> Result<(), E>
+pub(crate) fn continue_mut<E, F>(typ: &mut Type, mut visit: F) -> Result<(), E>
 where
     F: FnMut(&mut Type) -> Result<(), E>,
 {
@@ -97,7 +97,7 @@ where
     Ok(())
 }
 
-pub fn continue_deref<F>(typ: &Type, defs: &TypeDefs, mut visit: F) -> Result<(), TypeError>
+pub(crate) fn continue_deref<F>(typ: &Type, defs: &TypeDefs, mut visit: F) -> Result<(), TypeError>
 where
     F: FnMut(&Type) -> Result<(), TypeError>,
 {
@@ -117,7 +117,7 @@ where
     Ok(())
 }
 
-pub fn continue_deref_polarized<F>(
+pub(crate) fn continue_deref_polarized<F>(
     typ: &Type,
     is_positive: bool,
     defs: &TypeDefs,
@@ -145,7 +145,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-pub enum Polarity {
+pub(crate) enum Polarity {
     Positive,
     Negative,
     Both,
@@ -153,7 +153,7 @@ pub enum Polarity {
 }
 
 impl Polarity {
-    pub fn dual(self) -> Self {
+    pub(crate) fn dual(self) -> Self {
         match self {
             Polarity::Positive => Polarity::Negative,
             Polarity::Negative => Polarity::Positive,
@@ -162,7 +162,7 @@ impl Polarity {
         }
     }
 
-    pub fn xor(self, other: Self) -> Self {
+    pub(crate) fn xor(self, other: Self) -> Self {
         match self {
             Polarity::Positive => other,
             Polarity::Negative => other.dual(),
@@ -256,7 +256,7 @@ fn get_args_polarity(
         .collect())
 }
 
-pub fn continue_mut_polarized<F>(
+pub(crate) fn continue_mut_polarized<F>(
     typ: &mut Type,
     polarity: Polarity,
     defs: &TypeDefs,

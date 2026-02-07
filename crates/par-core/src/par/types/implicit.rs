@@ -39,7 +39,7 @@ fn solve_constraints(
     Ok(Some(lower))
 }
 
-pub fn infer_holes(
+pub(crate) fn infer_holes(
     span: &Span,
     typ: &Type,
     pattern: &Type,

@@ -24,14 +24,14 @@ use crate::runtime_impl::tree::Net;
 use flat::runtime::Global;
 
 #[derive(Default)]
-pub struct NetTranspiler {
+pub(crate) struct NetTranspiler {
     source: tree::net::Net,
     num_vars: usize,
     variable_map: HashMap<usize, usize>,
 }
 
 #[derive(Default)]
-pub struct ProgramTranspiler {
+pub(crate) struct ProgramTranspiler {
     stack: Vec<NetTranspiler>,
     dest: Arena,
     packages_in_nodes: HashMap<usize, Index<OnceLock<Package>>>,

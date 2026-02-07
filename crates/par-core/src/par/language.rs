@@ -540,7 +540,7 @@ impl CompileError {
 }
 
 #[derive(Clone, Debug)]
-pub struct Passes {
+pub(crate) struct Passes {
     next_block_index: usize,
     next_poll_index: usize,
     fallthrough: Option<Pass>,
@@ -564,7 +564,7 @@ struct PollScope {
 }
 
 #[derive(Clone, Debug)]
-pub struct Pass {
+struct Pass {
     block_index: usize,
     used: bool,
     // Stack of reasons that currently disable this catch (LIFO).
@@ -572,7 +572,7 @@ pub struct Pass {
 }
 
 impl Passes {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Passes {
             next_block_index: 1,
             next_poll_index: 1,
@@ -952,7 +952,7 @@ impl Pass {
 }
 
 impl Pattern {
-    pub fn compile_let(
+    pub(crate) fn compile_let(
         &self,
         span: &Span,
         expression: Arc<process::Expression<()>>,
@@ -979,7 +979,7 @@ impl Pattern {
         }))
     }
 
-    pub fn compile_chan(
+    pub(crate) fn compile_chan(
         &self,
         span: &Span,
         process: Arc<process::Process<()>>,
@@ -1007,7 +1007,7 @@ impl Pattern {
         }))
     }
 
-    pub fn compile_catch_block(
+    pub(crate) fn compile_catch_block(
         &self,
         span: &Span,
         block: Arc<process::Process<()>>,
@@ -1043,7 +1043,7 @@ impl Pattern {
         }))
     }
 
-    pub fn compile_receive(
+    pub(crate) fn compile_receive(
         &self,
         level: usize,
         span: &Span,
@@ -1196,7 +1196,10 @@ impl Spanning for Pattern {
 }
 
 impl Expression {
-    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Expression<()>>, CompileError> {
+    pub(crate) fn compile(
+        &self,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Expression<()>>, CompileError> {
         Ok(match self {
             Self::Primitive(span, value) => Arc::new(process::Expression::Primitive(
                 span.clone(),
@@ -1656,7 +1659,10 @@ impl Spanning for Expression {
 }
 
 impl Construct {
-    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub(crate) fn compile(
+        &self,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(expression) => {
                 let span = expression.span().clone();
@@ -1812,7 +1818,10 @@ impl Spanning for Construct {
 }
 
 impl ConstructBranch {
-    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub(crate) fn compile(
+        &self,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(span, expression) => {
                 let expression = expression.compile(pass)?;
@@ -1862,7 +1871,10 @@ impl Spanning for ConstructBranch {
 }
 
 impl Apply {
-    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub(crate) fn compile(
+        &self,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Noop(span) => Arc::new(process::Process::Do {
                 span: span.clone(),
@@ -2003,7 +2015,10 @@ impl Spanning for Apply {
 }
 
 impl ApplyBranch {
-    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub(crate) fn compile(
+        &self,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(span, name, expression) => {
                 let expression = expression.compile(pass)?;
@@ -2097,7 +2112,10 @@ impl Spanning for ApplyBranch {
 }
 
 impl Process {
-    pub fn compile(&self, pass: &mut Passes) -> Result<Arc<process::Process<()>>, CompileError> {
+    pub(crate) fn compile(
+        &self,
+        pass: &mut Passes,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::If {
                 span,
@@ -2274,7 +2292,7 @@ impl Spanning for Process {
 }
 
 impl Command {
-    pub fn compile(
+    pub(crate) fn compile(
         &self,
         object_name: &LocalName,
         pass: &mut Passes,
@@ -2864,7 +2882,7 @@ impl Spanning for Command {
 }
 
 impl CommandBranch {
-    pub fn compile(
+    pub(crate) fn compile(
         &self,
         object_name: &LocalName,
         pass: &mut Passes,

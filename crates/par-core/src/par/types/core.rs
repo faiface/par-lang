@@ -49,7 +49,7 @@ pub enum Operation {
     ReceiveType,
 }
 
-pub struct HoleConstraints {
+struct HoleConstraints {
     upper_bounds: Vec<Type>,
     lower_bounds: Vec<Type>,
 }

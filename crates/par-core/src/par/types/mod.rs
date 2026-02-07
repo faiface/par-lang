@@ -1,5 +1,6 @@
 pub(crate) mod core;
-pub use core::{LoopId, Operation, PrimitiveType, Type};
+pub(crate) use core::LoopId;
+pub use core::{Operation, PrimitiveType, Type};
 
 pub(crate) mod error;
 pub use error::TypeError;

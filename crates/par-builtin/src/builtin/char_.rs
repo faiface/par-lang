@@ -8,7 +8,7 @@ use par_core::{
     runtime::Handle,
 };
 
-pub fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef::external("Char", &[], Type::char())],
         declarations: vec![],
@@ -69,7 +69,7 @@ async fn char_is(mut handle: Handle) {
 }
 
 #[derive(Debug, Clone)]
-pub enum CharClass {
+pub(crate) enum CharClass {
     Any,
     Char(char),
     Whitespace,
@@ -80,7 +80,7 @@ pub enum CharClass {
 }
 
 impl CharClass {
-    pub async fn readback(mut handle: Handle) -> Self {
+    pub(super) async fn readback(mut handle: Handle) -> Self {
         match handle.case().await.as_str() {
             "any" => Self::Any,
             "ascii" => match handle.case().await.as_str() {
@@ -96,7 +96,7 @@ impl CharClass {
         }
     }
 
-    pub fn contains(&self, ch: char) -> bool {
+    pub(super) fn contains(&self, ch: char) -> bool {
         match self {
             Self::Any => true,
             Self::Char(ch1) => ch == *ch1,

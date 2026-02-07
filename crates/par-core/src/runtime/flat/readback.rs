@@ -17,9 +17,9 @@ pub enum Error {
     Panicked,
 }
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub(crate) type Result<T> = core::result::Result<T, Error>;
 
-pub enum HandleNode {
+pub(crate) enum HandleNode {
     Empty,
     Present(Node),
     Waiting(oneshot::Receiver<Node>),

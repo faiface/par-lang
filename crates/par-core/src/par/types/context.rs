@@ -6,32 +6,32 @@ use indexmap::{IndexMap, IndexSet};
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug)]
-pub struct PollPointScope {
-    pub client_type: Type,
-    pub preserved: Arc<IndexMap<LocalName, Type>>,
+pub(crate) struct PollPointScope {
+    pub(crate) client_type: Type,
+    pub(crate) preserved: Arc<IndexMap<LocalName, Type>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct PollScope {
-    pub driver: LocalName,
-    pub pool_type: Type,
-    pub points: IndexMap<LocalName, PollPointScope>,
-    pub current_point: LocalName,
-    pub token_span: Span,
+pub(crate) struct PollScope {
+    pub(crate) driver: LocalName,
+    pub(crate) pool_type: Type,
+    pub(crate) points: IndexMap<LocalName, PollPointScope>,
+    pub(crate) current_point: LocalName,
+    pub(crate) token_span: Span,
 }
 
 #[derive(Clone, Debug)]
-pub struct Context {
-    pub type_defs: TypeDefs,
+pub(crate) struct Context {
+    pub(crate) type_defs: TypeDefs,
     declarations: Arc<IndexMap<GlobalName, (Span, Type)>>,
     unchecked_definitions: Arc<IndexMap<GlobalName, (Span, Arc<Expression<()>>)>>,
     checked_definitions: Arc<RwLock<IndexMap<GlobalName, CheckedDef>>>,
     current_deps: IndexSet<GlobalName>,
-    pub variables: IndexMap<LocalName, Type>,
-    pub loop_points: IndexMap<Option<LocalName>, (Type, Arc<IndexMap<LocalName, Type>>)>,
-    pub poll: Option<PollScope>,
-    pub poll_stash: Vec<Option<PollScope>>,
-    pub blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type>>>,
+    pub(crate) variables: IndexMap<LocalName, Type>,
+    pub(crate) loop_points: IndexMap<Option<LocalName>, (Type, Arc<IndexMap<LocalName, Type>>)>,
+    pub(crate) poll: Option<PollScope>,
+    pub(crate) poll_stash: Vec<Option<PollScope>>,
+    pub(crate) blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ struct CheckedDef {
 }
 
 impl Context {
-    pub fn new(
+    pub(crate) fn new(
         type_defs: TypeDefs,
         declarations: IndexMap<GlobalName, (Span, Type)>,
         unchecked_definitions: IndexMap<GlobalName, (Span, Arc<Expression<()>>)>,
@@ -61,7 +61,11 @@ impl Context {
         }
     }
 
-    pub fn check_definition(&mut self, span: &Span, name: &GlobalName) -> Result<Type, TypeError> {
+    pub(crate) fn check_definition(
+        &mut self,
+        span: &Span,
+        name: &GlobalName,
+    ) -> Result<Type, TypeError> {
         if let Some(checked) = self.checked_definitions.read().unwrap().get(name) {
             return Ok(checked.typ.clone());
         }
@@ -121,7 +125,7 @@ impl Context {
         Ok(checked_type)
     }
 
-    pub fn get_checked_definitions(
+    pub(crate) fn get_checked_definitions(
         &self,
     ) -> IndexMap<GlobalName, (Span, Arc<Expression<Type>>, Type)> {
         self.checked_definitions
@@ -141,15 +145,15 @@ impl Context {
             .collect()
     }
 
-    pub fn get_declarations(&self) -> IndexMap<GlobalName, (Span, Type)> {
+    pub(crate) fn get_declarations(&self) -> IndexMap<GlobalName, (Span, Type)> {
         (*self.declarations).clone()
     }
 
-    pub fn get_type_defs(&self) -> &TypeDefs {
+    pub(crate) fn get_type_defs(&self) -> &TypeDefs {
         &self.type_defs
     }
 
-    pub fn split(&self) -> Self {
+    pub(crate) fn split(&self) -> Self {
         Self {
             type_defs: self.type_defs.clone(),
             declarations: self.declarations.clone(),
@@ -164,15 +168,15 @@ impl Context {
         }
     }
 
-    pub fn get_global(&mut self, span: &Span, name: &GlobalName) -> Result<Type, TypeError> {
+    pub(crate) fn get_global(&mut self, span: &Span, name: &GlobalName) -> Result<Type, TypeError> {
         self.check_definition(span, name)
     }
 
-    pub fn get_variable(&mut self, name: &LocalName) -> Option<Type> {
+    pub(crate) fn get_variable(&mut self, name: &LocalName) -> Option<Type> {
         self.variables.shift_remove(name)
     }
 
-    pub fn get_variable_or_error(
+    pub(crate) fn get_variable_or_error(
         &mut self,
         span: &Span,
         name: &LocalName,
@@ -183,7 +187,7 @@ impl Context {
         }
     }
 
-    pub fn put(&mut self, span: &Span, name: LocalName, typ: Type) -> Result<(), TypeError> {
+    pub(crate) fn put(&mut self, span: &Span, name: LocalName, typ: Type) -> Result<(), TypeError> {
         if let Some(typ) = self.variables.get(&name) {
             if typ.is_linear(&self.type_defs)? {
                 return Err(TypeError::ShadowedObligation(span.clone(), name));
@@ -193,7 +197,7 @@ impl Context {
         Ok(())
     }
 
-    pub fn capture(
+    pub(crate) fn capture(
         &mut self,
         inference_subject: Option<&LocalName>,
         cap: &Captures,
@@ -224,14 +228,14 @@ impl Context {
         Ok(())
     }
 
-    pub fn obligations(&self) -> impl Iterator<Item = &LocalName> {
+    pub(crate) fn obligations(&self) -> impl Iterator<Item = &LocalName> {
         self.variables
             .iter()
             .filter(|(_, typ)| typ.is_linear(&self.type_defs).ok().unwrap_or(true))
             .map(|(name, _)| name)
     }
 
-    pub fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError> {
+    pub(crate) fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError> {
         if let Some(poll) = &self.poll {
             if self.variables.contains_key(&poll.driver) {
                 return Err(TypeError::PollBranchMustSubmit(span.clone()));

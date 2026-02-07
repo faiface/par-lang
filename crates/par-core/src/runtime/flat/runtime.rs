@@ -40,8 +40,8 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::oneshot;
 
-pub type PackagePtr = Index<OnceLock<Package>>;
-pub type GlobalPtr = Index<Global>;
+pub(crate) type PackagePtr = Index<OnceLock<Package>>;
+pub(crate) type GlobalPtr = Index<Global>;
 type Str = Index<str>;
 
 #[derive(Debug)]
@@ -101,8 +101,8 @@ pub enum UserData {
     Request(oneshot::Sender<Node>),
 }
 
-pub type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
-pub type ExternalFn = fn(crate::runtime_impl::Handle) -> ExternalFnRet;
+pub(crate) type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
+pub(crate) type ExternalFn = fn(crate::runtime_impl::Handle) -> ExternalFnRet;
 
 #[derive(Clone)]
 pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::runtime_impl::Handle) -> ExternalFnRet>);
@@ -227,7 +227,7 @@ pub enum SyncShared {
     Value(Value<Shared>),
 }
 
-pub type GlobalValue = Value<GlobalPtr>;
+pub(crate) type GlobalValue = Value<GlobalPtr>;
 #[derive(Debug)]
 /// Linear nodes are not stored in the global arena; instead, they
 /// are created by the runtime and by the external dynamically, as needed
@@ -285,7 +285,7 @@ pub struct Runtime {
 /// This trait is implemented by everything that knows how to link two nodes together
 /// and that holds a pointer to the arena. This prevents duplication between [`Runtime`] and
 /// [`Handle`], which are the two implementors of this trait.
-pub trait Linker {
+pub(crate) trait Linker {
     fn link(&mut self, a: Node, b: Node);
     fn arena(&self) -> Arc<Arena>;
 

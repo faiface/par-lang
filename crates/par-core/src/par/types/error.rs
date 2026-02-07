@@ -55,7 +55,7 @@ pub enum TypeError {
 }
 
 /// Create a `LabeledSpan` without a label at `span`
-pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
+pub(crate) fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
     span.start()
         .into_iter()
         .map(|start| {

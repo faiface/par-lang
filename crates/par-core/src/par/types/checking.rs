@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 impl Context {
-    pub fn check_process(
+    pub(crate) fn check_process(
         &mut self,
         process: &Process<()>,
     ) -> Result<Arc<Process<Type>>, TypeError> {
@@ -955,7 +955,7 @@ impl Context {
         })
     }
 
-    pub fn infer_process(
+    pub(crate) fn infer_process(
         &mut self,
         process: &Process<()>,
         inference_subject: &LocalName,
@@ -1462,7 +1462,7 @@ impl Context {
         }
     }
 
-    pub fn infer_command(
+    pub(crate) fn infer_command(
         &mut self,
         span: &Span,
         subject: &LocalName,
@@ -1617,7 +1617,7 @@ impl Context {
         })
     }
 
-    pub fn check_expression(
+    pub(crate) fn check_expression(
         &mut self,
         inference_subject: Option<&LocalName>,
         expression: &Expression<()>,
@@ -1756,7 +1756,7 @@ impl Context {
         }
     }
 
-    pub fn infer_expression(
+    pub(crate) fn infer_expression(
         &mut self,
         inference_subject: Option<&LocalName>,
         expression: &Expression<()>,

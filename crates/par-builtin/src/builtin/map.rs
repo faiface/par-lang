@@ -9,7 +9,7 @@ use par_core::{
 };
 use std::sync::Arc;
 
-pub fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![],
         declarations: vec![],

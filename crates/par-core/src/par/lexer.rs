@@ -205,10 +205,10 @@ impl<'a, T: FromStr> ParseSlice<T> for &Token<'a> {
     }
 }
 
-pub type Tokens<'i> = TokenSlice<'i, Token<'i>>;
-pub type Input<'a> = Tokens<'a>;
+pub(crate) type Tokens<'i> = TokenSlice<'i, Token<'i>>;
+pub(crate) type Input<'a> = Tokens<'a>;
 
-pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
+pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
     type Error = EmptyError;
     (|input: &'s str| -> Result<Vec<Token<'s>>, Error> {
         let mut input = input;
@@ -461,7 +461,7 @@ pub fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
     .expect("lexing failed")
 }
 
-pub fn comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
+pub(crate) fn comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
 where
     E: ParserError<&'s str>,
 {

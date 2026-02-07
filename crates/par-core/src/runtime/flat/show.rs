@@ -5,13 +5,13 @@ use crate::runtime_impl::flat::runtime::{
     Global, GlobalPtr, Linear, Node, PackageBody, Shared, SyncShared, Value,
 };
 
-pub struct Shower<'a> {
+pub(crate) struct Shower<'a> {
     pub arena: &'a Arena,
     pub deref_globals: bool,
 }
 
 impl<'a> Shower<'a> {
-    pub fn from_arena(arena: &'a Arena) -> Self {
+    pub(crate) fn from_arena(arena: &'a Arena) -> Self {
         Self {
             arena,
             deref_globals: true,
@@ -19,7 +19,7 @@ impl<'a> Shower<'a> {
     }
 }
 
-pub struct Showable<'a, 'b, P>(pub P, pub &'b Shower<'a>);
+pub(crate) struct Showable<'a, 'b, P>(pub P, pub &'b Shower<'a>);
 //pub struct ShowableGlobal<'a, 'b>(&'a Instance, &'a Global, &'b mut Shower<'a>);
 
 impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Node> {

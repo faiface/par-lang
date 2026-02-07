@@ -32,12 +32,12 @@ use winnow::{
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct MyError<C = StrContext> {
+pub(crate) struct MyError<C = StrContext> {
     context: Vec<(usize, ContextError<C>)>,
 }
 
-pub type Error_ = MyError;
-pub type Error = ErrMode<Error_>;
+pub(crate) type Error_ = MyError;
+pub(crate) type Error = ErrMode<Error_>;
 impl<I: Stream, C: core::fmt::Debug> ParserError<I> for MyError<C> {
     type Inner = Self;
 
@@ -88,7 +88,7 @@ impl<I: Stream, C> AddContext<I, C> for MyError<C> {
     }
 }
 
-pub type Result<O, E = MyError> = core::result::Result<O, ErrMode<E>>;
+pub(crate) type Result<O, E = MyError> = core::result::Result<O, ErrMode<E>>;
 
 /// Token with additional context of expecting the `token` value
 fn t<'i, E>(kind: TokenKind) -> impl Parser<Input<'i>, &'i Token<'i>, E>
@@ -326,7 +326,7 @@ pub fn set_miette_hook() {
     }));
 }
 
-pub fn parse_module(
+pub(crate) fn parse_module(
     input: &str,
     file: FileName,
 ) -> std::result::Result<Module<Expression>, SyntaxError> {
