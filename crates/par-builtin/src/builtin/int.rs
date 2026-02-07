@@ -6,7 +6,7 @@ use par_core::{
 };
 use std::{cmp::Ordering, sync::Arc};
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef::external("Int", &[], Type::int())],
         declarations: vec![],

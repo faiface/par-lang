@@ -9,7 +9,7 @@ use par_core::{
     runtime::Handle,
 };
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![],
         declarations: vec![],
@@ -41,7 +41,7 @@ async fn url_from_string(mut handle: Handle) {
     }
 }
 
-pub(crate) fn provide_url_value(handle: Handle, url: ParsedUrl) {
+pub(super) fn provide_url_value(handle: Handle, url: ParsedUrl) {
     handle.provide_box(move |mut handle| {
         let mut url = url.clone();
         async move {

@@ -2,7 +2,7 @@ use std::future::Future;
 
 use par_core::runtime::Handle;
 
-pub(crate) async fn readback_list<T, F>(
+pub(super) async fn readback_list<T, F>(
     mut handle: Handle,
     mut readback_item: impl FnMut(Handle) -> F,
 ) -> Vec<T>

@@ -8,7 +8,7 @@ use par_core::{
     runtime::Handle,
 };
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef::external("Char", &[], Type::char())],
         declarations: vec![],
@@ -69,7 +69,7 @@ async fn char_is(mut handle: Handle) {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum CharClass {
+pub(super) enum CharClass {
     Any,
     Char(char),
     Whitespace,

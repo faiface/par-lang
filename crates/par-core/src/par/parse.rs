@@ -32,12 +32,12 @@ use winnow::{
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct MyError<C = StrContext> {
+struct MyError<C = StrContext> {
     context: Vec<(usize, ContextError<C>)>,
 }
 
-pub(crate) type Error_ = MyError;
-pub(crate) type Error = ErrMode<Error_>;
+type ParseContextError = MyError;
+type Error = ErrMode<ParseContextError>;
 impl<I: Stream, C: core::fmt::Debug> ParserError<I> for MyError<C> {
     type Inner = Self;
 
@@ -88,7 +88,7 @@ impl<I: Stream, C> AddContext<I, C> for MyError<C> {
     }
 }
 
-pub(crate) type Result<O, E = MyError> = core::result::Result<O, ErrMode<E>>;
+type Result<O, E = MyError> = core::result::Result<O, ErrMode<E>>;
 
 /// Token with additional context of expecting the `token` value
 fn t<'i, E>(kind: TokenKind) -> impl Parser<Input<'i>, &'i Token<'i>, E>
@@ -200,13 +200,13 @@ fn global_name(input: &mut Input) -> Result<GlobalName> {
 
 struct ProgramParseError {
     offset: usize,
-    error: Error_,
+    error: ParseContextError,
 }
 impl ProgramParseError {
     fn offset(&self) -> usize {
         self.offset
     }
-    fn inner(&self) -> &Error_ {
+    fn inner(&self) -> &ParseContextError {
         &self.error
     }
 }
@@ -1093,7 +1093,7 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
 fn expr_condition(input: &mut Input) -> Result<Expression> {
     let cond = condition.parse_next(input)?;
     if matches!(cond, Condition::Bool(_, _)) {
-        Err(ErrMode::Backtrack(Error_::from_input(input)))
+        Err(ErrMode::Backtrack(ParseContextError::from_input(input)))
     } else {
         let span = cond.span();
         Ok(Expression::Condition(span, Box::new(cond)))

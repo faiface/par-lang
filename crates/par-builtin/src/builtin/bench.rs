@@ -4,7 +4,7 @@ use futures::FutureExt;
 
 use par_core::frontend::{process, Definition, Module, Type};
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![],
         declarations: vec![],

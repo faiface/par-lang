@@ -21,7 +21,7 @@ use par_core::{
     runtime::Handle,
 };
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef::external("Bytes", &[], Type::bytes())],
         declarations: vec![],
@@ -394,7 +394,7 @@ async fn bytes_length(mut handle: Handle) {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum BytesPattern {
+pub(super) enum BytesPattern {
     Nil,
     All,
     Empty,
@@ -411,7 +411,7 @@ pub(crate) enum BytesPattern {
 }
 
 impl BytesPattern {
-    pub(crate) async fn readback(mut handle: Handle) -> Box<Self> {
+    pub(super) async fn readback(mut handle: Handle) -> Box<Self> {
         match handle.case().await.as_str() {
             "and" => {
                 // .and List<self>
@@ -489,26 +489,26 @@ impl BytesPattern {
 }
 
 #[derive(Debug)]
-pub(crate) struct BytesMachine {
+pub(super) struct BytesMachine {
     pattern: Box<BytesPattern>,
     inner: MachineInner,
 }
 
 impl BytesMachine {
-    pub(crate) fn start(pattern: Box<BytesPattern>) -> Self {
+    pub(super) fn start(pattern: Box<BytesPattern>) -> Self {
         let inner = MachineInner::start(&pattern, 0);
         Self { pattern, inner }
     }
 
-    pub(crate) fn accepts(&self) -> Option<bool> {
+    pub(super) fn accepts(&self) -> Option<bool> {
         self.inner.accepts(&self.pattern)
     }
 
-    pub(crate) fn advance(&mut self, pos: usize, b: u8) {
+    pub(super) fn advance(&mut self, pos: usize, b: u8) {
         self.inner.advance(&self.pattern, pos, b);
     }
 
-    pub(crate) fn leftmost_accepting_split(&self) -> Option<usize> {
+    pub(super) fn leftmost_accepting_split(&self) -> Option<usize> {
         let BytesPattern::Concat(_, p2) = self.pattern.as_ref() else {
             return None;
         };
@@ -521,7 +521,7 @@ impl BytesMachine {
             .min()
     }
 
-    pub(crate) fn leftmost_feasible_split(&self, pos: usize) -> Option<usize> {
+    pub(super) fn leftmost_feasible_split(&self, pos: usize) -> Option<usize> {
         let State::Concat(_, heap) = &self.inner.state else {
             return None;
         };

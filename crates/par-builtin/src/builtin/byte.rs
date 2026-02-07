@@ -8,7 +8,7 @@ use par_core::{
     runtime::Handle,
 };
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef::external("Byte", &[], Type::byte())],
         declarations: vec![],
@@ -69,7 +69,7 @@ async fn byte_is(mut handle: Handle) {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ByteClass {
+pub(super) enum ByteClass {
     Any,
     Byte(u8),
     Range(u8, u8),

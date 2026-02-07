@@ -16,7 +16,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 
-pub(crate) fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<std::sync::Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![],
         declarations: vec![],
@@ -173,7 +173,7 @@ async fn path_from_bytes(mut handle: Handle) {
     provide_path(handle, p);
 }
 
-pub(crate) fn provide_path(handle: Handle, path: PathBuf) {
+fn provide_path(handle: Handle, path: PathBuf) {
     handle.provide_box(move |mut handle| {
         let path = path.clone();
         async move {

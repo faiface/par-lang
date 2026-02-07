@@ -7,7 +7,7 @@ use par_core::{
     runtime::Handle,
 };
 
-pub(crate) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {
         type_defs: vec![TypeDef::external("Nat", &[], Type::nat())],
         declarations: vec![],
