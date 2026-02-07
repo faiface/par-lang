@@ -32,13 +32,12 @@ use winnow::{
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
-struct MyError<C = StrContext> {
+struct ParseContextError<C = StrContext> {
     context: Vec<(usize, ContextError<C>)>,
 }
 
-type ParseContextError = MyError;
 type Error = ErrMode<ParseContextError>;
-impl<I: Stream, C: core::fmt::Debug> ParserError<I> for MyError<C> {
+impl<I: Stream, C: core::fmt::Debug> ParserError<I> for ParseContextError<C> {
     type Inner = Self;
 
     fn from_input(input: &I) -> Self {
@@ -57,7 +56,7 @@ impl<I: Stream, C: core::fmt::Debug> ParserError<I> for MyError<C> {
         self
     }
 }
-impl<I: Stream, C> AddContext<I, C> for MyError<C> {
+impl<I: Stream, C> AddContext<I, C> for ParseContextError<C> {
     fn add_context(
         mut self,
         input: &I,
@@ -88,7 +87,7 @@ impl<I: Stream, C> AddContext<I, C> for MyError<C> {
     }
 }
 
-type Result<O, E = MyError> = core::result::Result<O, ErrMode<E>>;
+type Result<O, E = ParseContextError> = core::result::Result<O, ErrMode<E>>;
 
 /// Token with additional context of expecting the `token` value
 fn t<'i, E>(kind: TokenKind) -> impl Parser<Input<'i>, &'i Token<'i>, E>
