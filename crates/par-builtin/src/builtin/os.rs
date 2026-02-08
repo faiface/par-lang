@@ -248,14 +248,7 @@ fn os_to_bytes(os: &OsStr) -> Bytes {
 
 #[cfg(windows)]
 fn os_to_bytes(os: &OsStr) -> Bytes {
-    use std::os::windows::ffi::OsStrExt;
-    let wide: Vec<u16> = os.encode_wide().collect();
-    let mut bytes = Vec::with_capacity(wide.len() * 2);
-    for w in wide {
-        bytes.push((w & 0xFF) as u8);
-        bytes.push((w >> 8) as u8);
-    }
-    Bytes::from(bytes)
+    Bytes::copy_from_slice(os.as_encoded_bytes())
 }
 
 #[cfg(not(any(unix, windows)))]
