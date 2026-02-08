@@ -2899,6 +2899,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1036865bb9422d3300cf723f657c2851d0e9ab12567854b1f4eba3d77decf564"
 
 [[package]]
+name = "par-builtin"
+version = "0.1.0"
+dependencies = [
+ "arcstr",
+ "bytes",
+ "futures",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "im",
+ "indexmap",
+ "num-bigint",
+ "num-traits",
+ "par-core",
+ "percent-encoding",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "par-core"
+version = "0.1.0"
+dependencies = [
+ "arcstr",
+ "bytes",
+ "futures",
+ "im",
+ "indexmap",
+ "miette",
+ "num-bigint",
+ "stacker",
+ "tokio",
+ "unescaper",
+ "winnow",
+]
+
+[[package]]
 name = "par-lang"
 version = "0.1.0"
 dependencies = [
@@ -2920,6 +2963,8 @@ dependencies = [
  "miette",
  "num-bigint",
  "num-traits",
+ "par-builtin",
+ "par-core",
  "percent-encoding",
  "reqwest",
  "rfd",

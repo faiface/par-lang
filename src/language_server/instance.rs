@@ -1,21 +1,28 @@
 use super::io::IO;
-use crate::location::FileName;
-use crate::par::build_result::BuildResult;
+use crate::language_server::data::ToLspPosition;
 use lsp_types::{self as lsp, Uri};
+use par_builtin::import_builtins;
+use par_core::frontend::{
+    lower, parse, type_check, CheckedModule, ParseAndCompileError, TypeError, TypeOnHover,
+};
+use par_core::source::FileName;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
-    Compile(crate::par::build_result::Error),
-    //Types(TypeError<Internal<Name>>),
+    ParseAndCompile(ParseAndCompileError),
+    Type(TypeError),
 }
 
 pub struct Instance {
     uri: Uri,
     file: FileName,
     dirty: bool,
-    build: BuildResult,
+    checked: Option<Arc<CheckedModule>>,
+    type_on_hover: Option<TypeOnHover>,
+    error: Option<CompileError>,
     io: IO,
 }
 
@@ -25,7 +32,9 @@ impl Instance {
             file: uri.as_str().into(),
             uri,
             dirty: true,
-            build: BuildResult::None,
+            checked: None,
+            type_on_hover: None,
+            error: None,
             io,
         }
     }
@@ -35,7 +44,7 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let payload = match self.build.type_on_hover() {
+        let payload = match self.type_on_hover.as_ref() {
             Some(type_on_hover) => {
                 if let Some(name_info) = type_on_hover.query(&self.file, pos.line, pos.character) {
                     let mut buf = String::new();
@@ -72,7 +81,7 @@ impl Instance {
     ) -> Option<lsp::DocumentSymbolResponse> {
         tracing::debug!("Handling symbols request with params: {:?}", params);
 
-        let Some(checked) = self.build.checked() else {
+        let Some(checked) = self.checked.as_ref() else {
             return None;
         };
 
@@ -105,12 +114,12 @@ impl Instance {
                         tags: None,
                         deprecated: None, // must be specified
                         range: lsp::Range {
-                            start: start.into(),
-                            end: end.into(),
+                            start: start.to_lsp_position(),
+                            end: end.to_lsp_position(),
                         },
                         selection_range: lsp::Range {
-                            start: name_start.into(),
-                            end: name_end.into(),
+                            start: name_start.to_lsp_position(),
+                            end: name_end.to_lsp_position(),
                         },
                         children: None,
                     },
@@ -134,12 +143,12 @@ impl Instance {
                         tags: None,
                         deprecated: None, // must be specified
                         range: lsp::Range {
-                            start: start.into(),
-                            end: end.into(),
+                            start: start.to_lsp_position(),
+                            end: end.to_lsp_position(),
                         },
                         selection_range: lsp::Range {
-                            start: name_start.into(),
-                            end: name_end.into(),
+                            start: name_start.to_lsp_position(),
+                            end: name_end.to_lsp_position(),
                         },
                         children: None,
                     },
@@ -152,12 +161,12 @@ impl Instance {
                 (name.span.points(), definition.span.points())
             {
                 let range = lsp::Range {
-                    start: start.into(),
-                    end: end.into(),
+                    start: start.to_lsp_position(),
+                    end: end.to_lsp_position(),
                 };
                 let selection_range = lsp::Range {
-                    start: name_start.into(),
-                    end: name_end.into(),
+                    start: name_start.to_lsp_position(),
+                    end: name_end.to_lsp_position(),
                 };
                 symbols
                     .entry(name)
@@ -216,7 +225,7 @@ impl Instance {
             "Handling goto declaration request with params: {:?}",
             params
         );
-        let Some(type_on_hover) = self.build.type_on_hover() else {
+        let Some(type_on_hover) = self.type_on_hover.as_ref() else {
             return None;
         };
 
@@ -233,8 +242,8 @@ impl Instance {
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
             uri: path.0.parse().ok()?,
             range: lsp::Range {
-                start: start.into(),
-                end: end.into(),
+                start: start.to_lsp_position(),
+                end: end.to_lsp_position(),
             },
         }))
     }
@@ -246,7 +255,7 @@ impl Instance {
         // todo: locals
 
         tracing::debug!("Handling goto definition request with params: {:?}", params);
-        let Some(type_on_hover) = self.build.type_on_hover() else {
+        let Some(type_on_hover) = self.type_on_hover.as_ref() else {
             return None;
         };
 
@@ -263,20 +272,20 @@ impl Instance {
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
             uri: path.0.parse().ok()?,
             range: lsp::Range {
-                start: start.into(),
-                end: end.into(),
+                start: start.to_lsp_position(),
+                end: end.to_lsp_position(),
             },
         }))
     }
 
     /// Last compile/type error, if any
     pub fn last_error(&self) -> Option<CompileError> {
-        self.build.error().map(CompileError::Compile)
+        self.error.clone()
     }
 
     pub fn run_in_playground(&self, def_name: &str) -> Option<serde_json::Value> {
         tracing::info!("Handling playground request with def_name: {:?}", def_name);
-        let Some(checked) = self.build.checked() else {
+        let Some(checked) = self.checked.as_ref() else {
             return None;
         };
 
@@ -303,11 +312,39 @@ impl Instance {
             tracing::debug!("No changes to compile");
             return;
         }
-        let code = self.io.read(&self.uri);
+        let Some(code) = self.io.read(&self.uri) else {
+            self.checked = None;
+            self.type_on_hover = None;
+            self.error = None;
+            self.dirty = false;
+            return;
+        };
 
-        self.build = stacker::grow(32 * 1024 * 1024, || {
-            BuildResult::from_source(&code.unwrap(), self.file.clone())
+        let result = stacker::grow(32 * 1024 * 1024, || {
+            let parsed = parse(&code, self.file.clone()).map_err(|error| {
+                CompileError::ParseAndCompile(ParseAndCompileError::Parse(error))
+            })?;
+            let mut lowered = lower(parsed).map_err(|error| {
+                CompileError::ParseAndCompile(ParseAndCompileError::Compile(error))
+            })?;
+            import_builtins(&mut lowered);
+            let checked = Arc::new(type_check(&lowered).map_err(CompileError::Type)?);
+            let type_on_hover = TypeOnHover::new(&checked);
+            Ok::<_, CompileError>((checked, type_on_hover))
         });
+
+        match result {
+            Ok((checked, type_on_hover)) => {
+                self.checked = Some(checked);
+                self.type_on_hover = Some(type_on_hover);
+                self.error = None;
+            }
+            Err(error) => {
+                self.checked = None;
+                self.type_on_hover = None;
+                self.error = Some(error);
+            }
+        }
         tracing::info!("Compiled!");
         // reset dirty flag after successful compile attempt
         self.dirty = false;

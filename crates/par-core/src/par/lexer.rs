@@ -1,0 +1,605 @@
+use crate::location::{FileName, Point, Span};
+use core::str::FromStr;
+use winnow::{
+    combinator::{alt, not, opt, peek, preceded, repeat},
+    error::{EmptyError, ParserError},
+    stream::{ParseSlice, TokenSlice},
+    token::{any, literal, take, take_while},
+    Parser, Result,
+};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TokenKind {
+    LParen,
+    RParen,
+    LCurly,
+    RCurly,
+    LBrack,
+    RBrack,
+    Lt,
+    Gt,
+
+    Slash,
+    At,
+    Colon,
+    Semicolon,
+    Comma,
+    Dot,
+    Eq,
+    FatArrow,
+    ThinArrow,
+    Bang,
+    Quest,
+    Star,
+    Link,
+
+    Integer,
+    String,
+
+    InvalidString,
+    InvalidChar,
+
+    LowercaseIdentifier,
+    UppercaseIdentifier,
+    Begin,
+    Box,
+    Case,
+    Catch,
+    Chan,
+    Choice,
+    Dec,
+    Def,
+    Do,
+    Dual,
+    Either,
+    Else,
+    If,
+    Is,
+    In,
+    Iterative,
+    Let,
+    And,
+    Or,
+    Not,
+    Loop,
+    Poll,
+    Repoll,
+    Submit,
+    Recursive,
+    Self_,
+    Telltypes,
+    Throw,
+    Try,
+    Default,
+    Type,
+    Unfounded,
+
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token<'i> {
+    pub kind: TokenKind,
+    pub raw: &'i str,
+    pub span: Span,
+}
+
+impl Token<'_> {
+    pub fn span(&self) -> Span {
+        self.span.clone()
+    }
+}
+
+// More useful in winnow debug view
+// impl core::fmt::Debug for Token<'_> {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         format!("{}", self.raw).fmt(f)
+//         // f.debug_struct("Token").field("kind", &self.kind).field("raw", &self.raw).field("loc", &self.loc).field("span", &self.span).finish()
+//     }
+// }
+impl PartialEq<TokenKind> for Token<'_> {
+    fn eq(&self, other: &TokenKind) -> bool {
+        self.kind == *other
+    }
+}
+
+impl TokenKind {
+    pub fn expected(&self) -> &'static str {
+        match self {
+            TokenKind::LParen => "(",
+            TokenKind::RParen => ")",
+            TokenKind::LCurly => "{",
+            TokenKind::RCurly => "}",
+            TokenKind::LBrack => "[",
+            TokenKind::RBrack => "]",
+            TokenKind::Lt => "<",
+            TokenKind::Gt => ">",
+
+            TokenKind::Slash => "/",
+            TokenKind::At => "@",
+            TokenKind::Colon => ":",
+            TokenKind::Semicolon => ";",
+            TokenKind::Comma => ",",
+            TokenKind::Dot => ".",
+            TokenKind::Eq => "=",
+            TokenKind::FatArrow => "=>",
+            TokenKind::ThinArrow => "->",
+            TokenKind::Bang => "!",
+            TokenKind::Quest => "?",
+            TokenKind::Star => "*",
+            TokenKind::Link => "<>",
+
+            TokenKind::Integer => "integer",
+            TokenKind::String => "string",
+
+            TokenKind::InvalidString => "invalid string",
+            TokenKind::InvalidChar => "invalid char",
+
+            TokenKind::LowercaseIdentifier => "lower-case identifier",
+            TokenKind::UppercaseIdentifier => "upper-case identifier",
+            TokenKind::Begin => "begin",
+            TokenKind::Box => "box",
+            TokenKind::Case => "case",
+            TokenKind::Catch => "catch",
+            TokenKind::Chan => "chan",
+            TokenKind::Choice => "choice",
+            TokenKind::Dec => "dec",
+            TokenKind::Def => "def",
+            TokenKind::Do => "do",
+            TokenKind::Dual => "dual",
+            TokenKind::Either => "either",
+            TokenKind::Else => "else",
+            TokenKind::If => "if",
+            TokenKind::Is => "is",
+            TokenKind::In => "in",
+            TokenKind::Iterative => "iterative",
+            TokenKind::Let => "let",
+            TokenKind::And => "and",
+            TokenKind::Or => "or",
+            TokenKind::Not => "not",
+            TokenKind::Loop => "loop",
+            TokenKind::Poll => "poll",
+            TokenKind::Repoll => "repoll",
+            TokenKind::Submit => "submit",
+            TokenKind::Recursive => "recursive",
+            TokenKind::Self_ => "self",
+            TokenKind::Telltypes => "telltypes",
+            TokenKind::Throw => "throw",
+            TokenKind::Try => "try",
+            TokenKind::Default => "default",
+            TokenKind::Type => "type",
+            TokenKind::Unfounded => "unfounded",
+
+            TokenKind::Unknown => "???",
+        }
+    }
+}
+
+impl PartialEq<str> for Token<'_> {
+    fn eq(&self, other: &str) -> bool {
+        self.raw == other
+    }
+}
+impl PartialEq<&str> for Token<'_> {
+    fn eq(&self, &other: &&str) -> bool {
+        self.raw == other
+    }
+}
+
+impl<'i, E> Parser<Tokens<'i>, &'i Token<'i>, E> for TokenKind
+where
+    E: ParserError<Tokens<'i>>,
+{
+    fn parse_next(&mut self, input: &mut Tokens<'i>) -> Result<&'i Token<'i>, E> {
+        literal(*self).parse_next(input).map(|t| &t[0])
+    }
+}
+
+impl<'a, T: FromStr> ParseSlice<T> for Token<'a> {
+    fn parse_slice(&self) -> Option<T> {
+        self.raw.parse().ok()
+    }
+}
+impl<'a, T: FromStr> ParseSlice<T> for &Token<'a> {
+    fn parse_slice(&self) -> Option<T> {
+        self.raw.parse().ok()
+    }
+}
+
+pub(crate) type Tokens<'i> = TokenSlice<'i, Token<'i>>;
+pub(crate) type Input<'a> = Tokens<'a>;
+
+pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
+    type Error = EmptyError;
+    (|input: &'s str| -> Result<Vec<Token<'s>>, Error> {
+        let mut input = input;
+        let input = &mut input;
+        let mut row = 0;
+        let mut last_newline = input.len();
+        let mut tokens = Vec::new();
+        let mut idx = 0;
+        while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
+            let column = last_newline - input.len(); // starting column
+            let Some((raw, kind, len)) = (match c {
+                '-' => {
+                    let (raw, mut kind) = alt((
+                        ("->").map(|raw| (raw, TokenKind::ThinArrow)),
+                        (
+                            take(1usize),
+                            take_while(0.., |c| matches!(c, '0'..='9' | '_')),
+                        )
+                            .take()
+                            .map(|raw| (raw, TokenKind::Integer)),
+                    ))
+                    .parse_next(input)?;
+                    if let TokenKind::Integer = kind {
+                        if !raw.contains(|c| matches!(c, '0'..='9')) {
+                            kind = TokenKind::Unknown;
+                        }
+                    }
+                    Some((raw, kind, raw.len()))
+                }
+                '0'..='9' | '+' => {
+                    let raw = (
+                        take(1usize),
+                        take_while(0.., |c| matches!(c, '0'..='9' | '_')),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    if !raw.contains(|c| matches!(c, '0'..='9')) {
+                        Some((raw, TokenKind::Unknown, raw.len()))
+                    } else {
+                        Some((raw, TokenKind::Integer, raw.len()))
+                    }
+                }
+                '"' => {
+                    any.parse_next(input)?;
+                    let raw = (
+                        repeat(0.., alt((preceded('\\', any), any.verify(|c| *c != '"'))))
+                            .map(|()| ()),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    let is_closed = opt('"').parse_next(input)?.is_some();
+                    let is_valid = unescaper::unescape(raw).is_ok();
+                    let len = raw.len() + 1 + usize::from(is_closed);
+                    Some((
+                        raw,
+                        if is_closed && is_valid {
+                            TokenKind::String
+                        } else {
+                            TokenKind::InvalidString
+                        },
+                        len,
+                    ))
+                }
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    /* a /* b */ */
+                    let raw = take_while(
+                        0..,
+                        |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'),
+                    )
+                    .take()
+                    .parse_next(input)?;
+                    let kind = match raw {
+                        "begin" => TokenKind::Begin,
+                        "box" => TokenKind::Box,
+                        "case" => TokenKind::Case,
+                        "catch" => TokenKind::Catch,
+                        "chan" => TokenKind::Chan,
+                        "choice" => TokenKind::Choice,
+                        "dec" => TokenKind::Dec,
+                        "def" => TokenKind::Def,
+                        "do" => TokenKind::Do,
+                        "dual" => TokenKind::Dual,
+                        "either" => TokenKind::Either,
+                        "else" => TokenKind::Else,
+                        "if" => TokenKind::If,
+                        "is" => TokenKind::Is,
+                        "in" => TokenKind::In,
+                        "iterative" => TokenKind::Iterative,
+                        "let" => TokenKind::Let,
+                        "and" => TokenKind::And,
+                        "or" => TokenKind::Or,
+                        "not" => TokenKind::Not,
+                        "loop" => TokenKind::Loop,
+                        "poll" => TokenKind::Poll,
+                        "repoll" => TokenKind::Repoll,
+                        "submit" => TokenKind::Submit,
+                        "recursive" => TokenKind::Recursive,
+                        "self" => TokenKind::Self_,
+                        "telltypes" => TokenKind::Telltypes,
+                        "throw" => TokenKind::Throw,
+                        "try" => TokenKind::Try,
+                        "default" => TokenKind::Default,
+                        "type" => TokenKind::Type,
+                        "unfounded" => TokenKind::Unfounded,
+                        raw => {
+                            if raw.starts_with(char::is_uppercase) {
+                                TokenKind::UppercaseIdentifier
+                            } else {
+                                TokenKind::LowercaseIdentifier
+                            }
+                        }
+                    };
+                    Some((raw, kind, raw.len()))
+                }
+                '\n' => {
+                    let _ = any::<&str, Error>.parse_next(input);
+                    row += 1;
+                    last_newline = input.len();
+                    idx += 1;
+                    None
+                }
+                ' ' | '\t' | '\r' => {
+                    let _ = any::<&str, Error>.parse_next(input);
+                    idx += 1;
+                    None
+                }
+                ':' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Colon, raw.len()))
+                }
+                ';' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Semicolon, raw.len()))
+                }
+                '[' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::LBrack, raw.len()))
+                }
+                ']' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::RBrack, raw.len()))
+                }
+                '(' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::LParen, raw.len()))
+                }
+                ')' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::RParen, raw.len()))
+                }
+                '{' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::LCurly, raw.len()))
+                }
+                '}' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::RCurly, raw.len()))
+                }
+                '<' => {
+                    let (raw, kind) = alt((
+                        "<>".map(|raw| (raw, TokenKind::Link)),
+                        "<".map(|raw| (raw, TokenKind::Lt)),
+                    ))
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
+                }
+                '>' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Gt, raw.len()))
+                }
+                '/' => {
+                    let (is_comment, raw) = alt((
+                        comment().take().map(|x| (true, x)),
+                        any.take().map(|x| (false, x)),
+                    ))
+                    .parse_next(input)?;
+                    if is_comment {
+                        if let Some(extra_len) = raw.chars().rev().position(|x| x == '\n') {
+                            last_newline = input.len() + extra_len;
+                        }
+                        row += raw.chars().filter(|&x| x == '\n').count();
+                        idx += raw.len();
+                        None
+                    } else {
+                        Some((raw, TokenKind::Slash, raw.len()))
+                    }
+                }
+                '@' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::At, raw.len()))
+                }
+                ',' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Comma, raw.len()))
+                }
+                '.' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Dot, raw.len()))
+                }
+                '=' => {
+                    let (raw, kind) = alt((
+                        ("=>").map(|raw| (raw, TokenKind::FatArrow)),
+                        ("=").map(|raw| (raw, TokenKind::Eq)),
+                    ))
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
+                }
+                '!' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Bang, raw.len()))
+                }
+                '?' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Quest, raw.len()))
+                }
+                '*' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Star, raw.len()))
+                }
+                _ => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Unknown, raw.len()))
+                }
+            }) else {
+                continue;
+            };
+            let start = Point {
+                offset: idx as u32,
+                row: row as u32,
+                column: column as u32,
+            };
+            idx += len;
+            let end = Point {
+                offset: idx.try_into().expect("position too large"),
+                row: row as u32,
+                column: (column + len) as u32,
+            };
+            tokens.push(Token {
+                kind,
+                raw,
+                span: Span::At {
+                    start,
+                    end,
+                    file: file.clone(),
+                },
+            });
+        }
+        Ok(tokens)
+    })(input)
+    .expect("lexing failed")
+}
+
+pub(crate) fn comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
+where
+    E: ParserError<&'s str>,
+{
+    // below should be a valid block comment
+    /* /* */ */
+    // So have to consider nested comments
+    let comment_block_rest = move |input: &mut &'s str| -> core::result::Result<(), E> {
+        let mut nesting = 0;
+        loop {
+            let next_2 = match input.len() {
+                0 => break Ok(()),
+                1 => break Err(ParserError::from_input(input)),
+                _ => &input.as_bytes()[..2],
+            };
+            match next_2 {
+                s @ b"/*" => {
+                    nesting += 1;
+                    *input = &input[s.len()..];
+                }
+                s @ b"*/" if nesting > 0 => {
+                    nesting -= 1;
+                    *input = &input[s.len()..];
+                }
+                s @ b"*/" => {
+                    *input = &input[s.len()..];
+                    break Ok(());
+                }
+                _ => {
+                    let mut it = input.chars();
+                    it.next(); // skip a char
+                    *input = it.as_str();
+                }
+            }
+        }
+    };
+    alt((
+        preceded("//", repeat(0.., (not("\n"), any)).map(|()| ())),
+        preceded("/*", comment_block_rest).map(|()| ()),
+    ))
+    //.context(StrContext::Label("comment"))
+    .take()
+}
+
+#[cfg(test)]
+mod lexer_test {
+    use super::*;
+
+    const FILE: FileName = FileName(arcstr::literal!("Test.par"));
+
+    #[test]
+    fn tok() {
+        let tokens = lex(&mut "({[< ><>]}):Abc:abc_123: A\n_Ab", &FILE);
+        assert_eq!(
+            tokens.iter().map(|x| x.kind).collect::<Vec<_>>(),
+            vec![
+                TokenKind::LParen,
+                TokenKind::LCurly,
+                TokenKind::LBrack,
+                TokenKind::Lt,
+                TokenKind::Gt,
+                TokenKind::Link,
+                TokenKind::RBrack,
+                TokenKind::RCurly,
+                TokenKind::RParen,
+                TokenKind::Colon,
+                TokenKind::UppercaseIdentifier,
+                TokenKind::Colon,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Colon,
+                TokenKind::UppercaseIdentifier,
+                TokenKind::LowercaseIdentifier,
+            ]
+        );
+        eprintln!("{:#?}", tokens);
+    }
+
+    #[test]
+    fn block_comment() {
+        let tokens = lex(
+            &mut "abc/*\n\n/* comment \n*///\n*/ not_a_comment /*  */ /",
+            &FILE,
+        );
+        eprintln!("{:#?}", tokens);
+        assert_eq!(
+            tokens,
+            vec![
+                Token {
+                    kind: TokenKind::LowercaseIdentifier,
+                    raw: "abc",
+                    span: Span::At {
+                        start: Point {
+                            offset: 0,
+                            row: 0,
+                            column: 0
+                        },
+                        end: Point {
+                            offset: 3,
+                            row: 0,
+                            column: 3
+                        },
+                        file: FILE
+                    },
+                },
+                Token {
+                    kind: TokenKind::LowercaseIdentifier,
+                    raw: "not_a_comment",
+                    span: Span::At {
+                        start: Point {
+                            offset: 27,
+                            row: 4,
+                            column: 3
+                        },
+                        end: Point {
+                            offset: 40,
+                            row: 4,
+                            column: 16
+                        },
+                        file: FILE
+                    },
+                },
+                Token {
+                    kind: TokenKind::Slash,
+                    raw: "/",
+                    span: Span::At {
+                        start: Point {
+                            offset: 48,
+                            row: 4,
+                            column: 24
+                        },
+                        end: Point {
+                            offset: 49,
+                            row: 4,
+                            column: 25
+                        },
+                        file: FILE
+                    },
+                }
+            ]
+        )
+    }
+}
