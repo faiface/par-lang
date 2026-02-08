@@ -128,6 +128,7 @@ impl BuildResult {
         source: &str,
         file: FileName,
         imports: impl FnOnce(&mut Module<Arc<process::Expression<()>>>),
+        max_interactions: u32,
     ) -> Self {
         let parsed = match parse(source, file) {
             Ok(parsed) => parsed,
@@ -146,10 +147,13 @@ impl BuildResult {
             }
         };
         imports(&mut lowered);
-        Self::from_compiled(lowered)
+        Self::from_compiled(lowered, max_interactions)
     }
 
-    fn from_compiled(compiled: Module<Arc<process::Expression<()>>>) -> Self {
+    fn from_compiled(
+        compiled: Module<Arc<process::Expression<()>>>,
+        max_interactions: u32,
+    ) -> Self {
         let pretty = compiled
             .definitions
             .iter()
@@ -172,12 +176,12 @@ impl BuildResult {
             Ok(checked) => Arc::new(checked),
             Err(error) => return Self::TypeError { pretty, error },
         };
-        Self::from_checked(pretty, checked)
+        Self::from_checked(pretty, checked, max_interactions)
     }
 
-    fn from_checked(pretty: String, checked: Arc<CheckedModule>) -> Self {
+    fn from_checked(pretty: String, checked: Arc<CheckedModule>, max_interactions: u32) -> Self {
         let type_on_hover = TypeOnHover::new(&checked);
-        let rt_compiled = match compile_runtime(&checked) {
+        let rt_compiled = match compile_runtime(&checked, max_interactions) {
             Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
@@ -211,6 +215,7 @@ pub struct Playground {
     rt: tokio::runtime::Runtime,
     cancel_token: Option<CancellationToken>,
     file_old_mtime: Option<SystemTime>,
+    max_interactions: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,7 +254,11 @@ impl Default for ThemeMode {
 }
 
 impl Playground {
-    pub fn new(cc: &eframe::CreationContext<'_>, file_path: Option<PathBuf>) -> Box<Self> {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        file_path: Option<PathBuf>,
+        max_interactions: u32,
+    ) -> Box<Self> {
         let system_dark = cc
             .egui_ctx
             .input(|ri| ri.raw.system_theme.map(|t| t == Theme::Dark))
@@ -291,6 +300,7 @@ impl Playground {
                 .expect("Failed to create Tokio runtime"),
             cancel_token: None,
             file_old_mtime: None,
+            max_interactions: max_interactions,
         });
 
         if let Some(path) = file_path {
@@ -606,6 +616,7 @@ impl Playground {
                 self.code.as_str(),
                 Self::FILE_NAME,
                 import_builtins,
+                self.max_interactions,
             );
         });
         self.built_code = Arc::from(self.code.as_str());

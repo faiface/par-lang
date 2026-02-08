@@ -13,6 +13,7 @@ use par_core::{
     runtime::RuntimeCompilerError,
 };
 use tokio::time::Instant;
+use winnow::Parser;
 
 use std::fs::File;
 #[cfg(feature = "playground")]
@@ -27,6 +28,8 @@ mod playground;
 mod readback;
 mod test;
 mod test_runner;
+
+const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
 #[derive(Debug, Clone)]
 enum BuildError {
@@ -68,6 +71,7 @@ fn build_checked(
 fn build_runtime(
     code: &str,
     file: &PathBuf,
+    max_interactions: u32,
 ) -> Result<
     (
         par_core::frontend::CheckedModule,
@@ -76,7 +80,8 @@ fn build_runtime(
     BuildError,
 > {
     let checked = build_checked(code, file)?;
-    let rt_compiled = compile_runtime(&checked).map_err(BuildError::InetCompile)?;
+    let rt_compiled =
+        compile_runtime(&checked, max_interactions).map_err(BuildError::InetCompile)?;
     Ok((checked, rt_compiled))
 }
 
@@ -93,7 +98,9 @@ fn main() {
                 .arg(
                     arg!([file] "Open a Par file in the playground")
                         .value_parser(value_parser!(PathBuf)),
-                ),
+                )
+                .arg(arg!(--max_interactions <MAX_INTERACTIONS> ... "Maximum number of interactions during compilation")
+            .value_parser(value_parser!(u32))),
         )
         .subcommand(
             Command::new("run")
@@ -101,7 +108,9 @@ fn main() {
                 .arg(arg!(--stats "Print statistics after running the definition"))
                 .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
                 .arg(arg!([definition] "The definition to run").default_value("Main"))
-                .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag"))
+                .arg(arg!(--max_interactions <MAX_INTERACTIONS> ... "Maximum number of interactions during compilation")
+            .value_parser(value_parser!(u32))),
         )
         .subcommand(
             Command::new("check")
@@ -126,20 +135,30 @@ fn main() {
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(arg!(--filter <FILTER> "Only run tests matching this filter").required(false))
-                .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag"))
+                .arg(arg!(--max_interactions <MAX_INTERACTIONS> ... "Maximum number of interactions during compilation")
+            .value_parser(value_parser!(u32))),
         )
         .get_matches_from(wild::args());
 
     match matches.subcommand() {
         Some(("playground", args)) => {
             let file = args.get_one::<PathBuf>("file");
-            run_playground(file.cloned());
+            let max_interactions = args
+                .get_one::<u32>("max_interactions")
+                .cloned()
+                .unwrap_or(MAX_INTERACTIONS_DEFAULT);
+            run_playground(file.cloned(), max_interactions);
         }
         Some(("run", args)) => {
             let stats = *args.get_one::<bool>("stats").unwrap();
             let file = args.get_one::<PathBuf>("file").unwrap().clone();
             let definition = args.get_one::<String>("definition").unwrap().clone();
-            run_definition(file, definition, stats);
+            let max_interactions = args
+                .get_one::<u32>("max_interactions")
+                .cloned()
+                .unwrap_or(MAX_INTERACTIONS_DEFAULT);
+            run_definition(file, definition, stats, max_interactions);
         }
         Some(("check", args)) => {
             let files = args.get_many::<PathBuf>("file").unwrap().clone();
@@ -152,7 +171,11 @@ fn main() {
         Some(("test", args)) => {
             let file = args.get_one::<PathBuf>("file");
             let filter = args.get_one::<String>("filter");
-            run_tests(file.cloned(), filter.cloned());
+            let max_interactions = args
+                .get_one::<u32>("max_interactions")
+                .cloned()
+                .unwrap_or(MAX_INTERACTIONS_DEFAULT);
+            run_tests(file.cloned(), filter.cloned(), max_interactions);
         }
         _ => unreachable!(),
     }
@@ -168,7 +191,7 @@ fn run_playground(_: Option<PathBuf>) {
 }
 
 #[cfg(feature = "playground")]
-fn run_playground(file: Option<PathBuf>) {
+fn run_playground(file: Option<PathBuf>, max_interactions: u32) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
         ..Default::default()
@@ -196,12 +219,12 @@ fn run_playground(file: Option<PathBuf>) {
     eframe::run_native(
         "⅋layground",
         options,
-        Box::new(|cc| Ok(Playground::new(cc, file))),
+        Box::new(|cc| Ok(Playground::new(cc, file, max_interactions))),
     )
     .expect("egui crashed");
 }
 
-fn run_definition(file: PathBuf, definition: String, print_stats: bool) {
+fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_interactions: u32) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
         let Ok(code) = File::open(&file).and_then(|mut file| {
@@ -214,14 +237,15 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool) {
             return;
         };
 
-        let (checked, rt_compiled) =
-            match stacker::grow(32 * 1024 * 1024, || build_runtime(&code, &file)) {
-                Ok(result) => result,
-                Err(error) => {
-                    println!("{}", error.display(Arc::from(code.as_str())).bright_red());
-                    return;
-                }
-            };
+        let (checked, rt_compiled) = match stacker::grow(32 * 1024 * 1024, || {
+            build_runtime(&code, &file, max_interactions)
+        }) {
+            Ok(result) => result,
+            Err(error) => {
+                println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+                return;
+            }
+        };
 
         let Some((name, _)) = checked
             .definitions
@@ -280,6 +304,6 @@ fn run_language_server() {
     language_server::language_server_main::main()
 }
 
-fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
-    test_runner::run_tests(file, filter);
+fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) {
+    test_runner::run_tests(file, filter, max_interactions);
 }

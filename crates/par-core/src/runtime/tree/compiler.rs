@@ -235,6 +235,7 @@ pub(crate) struct Compiler {
     package_is_case_branch: IndexMap<usize, ArcStr>,
     blocks: IndexMap<usize, Arc<Process<Type>>>,
     poll_packages: IndexMap<LocalName, PollInfo>,
+    max_interactions: u32,
 }
 
 fn poll_token(
@@ -497,7 +498,7 @@ impl Compiler {
         net2.assert_valid();
 
         self.net.debug_name = debug_name;
-        self.net.normal();
+        self.net.normal(self.max_interactions);
         self.net
             .redexes
             .append(&mut core::mem::take(&mut self.lazy_redexes).into());
@@ -1194,7 +1195,7 @@ impl IcCompiled {
         net
     }
 
-    pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
+    pub fn compile_file(program: &CheckedModule, max_interactions: u32) -> Result<IcCompiled> {
         let mut compiler = Compiler {
             net: Net::default(),
             context: Context {
@@ -1211,6 +1212,7 @@ impl IcCompiled {
             package_is_case_branch: Default::default(),
             blocks: IndexMap::new(),
             poll_packages: Default::default(),
+            max_interactions: max_interactions,
         };
 
         for name in compiler.definitions.keys().cloned().collect::<Vec<_>>() {

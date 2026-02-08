@@ -67,8 +67,11 @@ pub mod frontend {
         module.type_check()
     }
 
-    pub fn compile_runtime(module: &CheckedModule) -> Result<Compiled, RuntimeCompilerError> {
-        Compiled::compile_file(module)
+    pub fn compile_runtime(
+        module: &CheckedModule,
+        max_interactions: u32,
+    ) -> Result<Compiled, RuntimeCompilerError> {
+        Compiled::compile_file(module, max_interactions)
     }
 }
 
