@@ -25,7 +25,7 @@ pub(crate) fn intersect_primitives(
     }
 }
 
-pub(crate) fn union_types(
+pub fn union_types(
     typedefs: &TypeDefs,
     span: &Span,
     type1: &Type,
@@ -163,7 +163,7 @@ pub(crate) fn union_types(
     })
 }
 
-pub(crate) fn intersect_types(
+pub fn intersect_types(
     typedefs: &TypeDefs,
     span: &Span,
     type1: &Type,
