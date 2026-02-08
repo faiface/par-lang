@@ -26,9 +26,10 @@ impl Display for Compiled {
 impl Compiled {
     pub fn compile_file(
         module: &crate::par::program::CheckedModule,
+        max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         Ok(Self {
-            code: Transpiled::compile_file(module)?,
+            code: Transpiled::compile_file(module, max_interactions)?,
             name_to_ty: module
                 .definitions
                 .iter()

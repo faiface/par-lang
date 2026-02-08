@@ -539,8 +539,14 @@ impl Net {
         }
     }
 
-    pub fn normal(&mut self) {
-        while self.reduce_one() {}
+    pub fn normal(&mut self, max_interactions: u32) {
+        let mut interaction_count: u32 = 0;
+        while self.reduce_one() {
+            interaction_count += 1;
+            if interaction_count > max_interactions {
+                break;
+            }
+        }
         // dereference all variables
         let mut ports = core::mem::take(&mut self.ports);
         ports.iter_mut().for_each(|x| self.substitute_tree(x));

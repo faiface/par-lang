@@ -86,9 +86,13 @@ impl Transpiled {
 
     pub fn compile_file(
         module: &crate::par::program::CheckedModule,
+        max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         let type_defs = module.type_defs.clone();
-        let ic_compiled = crate::runtime_impl::tree::compiler::IcCompiled::compile_file(module)?;
+        let ic_compiled = crate::runtime_impl::tree::compiler::IcCompiled::compile_file(
+            module,
+            max_interactions,
+        )?;
         let transpiled = Self::transpile(ic_compiled, type_defs);
         Ok(transpiled)
     }

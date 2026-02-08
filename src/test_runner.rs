@@ -40,14 +40,19 @@ impl BuildError {
     }
 }
 
-fn build_for_run(code: &str, file: &Path) -> Result<(CheckedModule, Compiled), BuildError> {
+fn build_for_run(
+    code: &str,
+    file: &Path,
+    max_interactions: u32,
+) -> Result<(CheckedModule, Compiled), BuildError> {
     let parsed = parse(code, file.to_path_buf().into())
         .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Parse(error)))?;
     let mut lowered = lower(parsed)
         .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Compile(error)))?;
     import_builtins(&mut lowered);
     let checked = type_check(&lowered).map_err(BuildError::Type)?;
-    let rt_compiled = compile_runtime(&checked).map_err(BuildError::InetCompile)?;
+    let rt_compiled =
+        compile_runtime(&checked, max_interactions).map_err(BuildError::InetCompile)?;
     Ok((checked, rt_compiled))
 }
 
@@ -94,7 +99,7 @@ pub struct TestResult {
     pub status: TestStatus,
 }
 
-pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
+pub fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) {
     set_miette_hook();
 
     let test_files = match file {
@@ -116,7 +121,7 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>) {
     let start_time = Instant::now();
 
     for test_file in test_files {
-        let results = run_test_file(&test_file, &filter);
+        let results = run_test_file(&test_file, &filter, max_interactions);
         print_test_results(&test_file, &results);
 
         total_tests += results.len();
@@ -146,7 +151,11 @@ fn find_test_files() -> Vec<PathBuf> {
     test_files
 }
 
-pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
+pub fn run_test_file(
+    file: &Path,
+    filter: &Option<String>,
+    max_interactions: u32,
+) -> Vec<TestResult> {
     let mut results = Vec::new();
 
     let Ok(code) = fs::read_to_string(file) else {
@@ -158,23 +167,24 @@ pub fn run_test_file(file: &Path, filter: &Option<String>) -> Vec<TestResult> {
         return results;
     };
 
-    let (checked, rt_compiled) =
-        match stacker::grow(32 * 1024 * 1024, || build_for_run(&code, file)) {
-            Ok(result) => result,
-            Err(error) => {
-                let message = error.display(Arc::from(code.as_str())).to_string();
-                let status = match error {
-                    BuildError::Type(_) => TestStatus::TypeError(message),
-                    _ => TestStatus::CompileError(message),
-                };
-                results.push(TestResult {
-                    name: file.to_string_lossy().to_string(),
-                    duration: Duration::ZERO,
-                    status,
-                });
-                return results;
-            }
-        };
+    let (checked, rt_compiled) = match stacker::grow(32 * 1024 * 1024, || {
+        build_for_run(&code, file, max_interactions)
+    }) {
+        Ok(result) => result,
+        Err(error) => {
+            let message = error.display(Arc::from(code.as_str())).to_string();
+            let status = match error {
+                BuildError::Type(_) => TestStatus::TypeError(message),
+                _ => TestStatus::CompileError(message),
+            };
+            results.push(TestResult {
+                name: file.to_string_lossy().to_string(),
+                duration: Duration::ZERO,
+                status,
+            });
+            return results;
+        }
+    };
 
     // Look for definitions that start with Test (case-sensitive)
     let test_definitions: Vec<_> = checked
