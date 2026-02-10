@@ -56,7 +56,7 @@ fn test_all_files() -> Result<(), String> {
             return ();
         }
         eprintln!("Testing {:?}", entry.path());
-        let results = crate::test_runner::run_test_file(&entry.path(), &None);
+        let results = crate::test_runner::run_test_file(&entry.path(), &None, 10_000);
         all_results.extend(
             results
                 .into_iter()
