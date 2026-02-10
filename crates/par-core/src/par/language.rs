@@ -123,6 +123,28 @@ pub enum Pattern {
     Default(Span, Box<Expression>, Box<Self>),
 }
 
+impl Pattern {
+    pub(crate) fn binds_name(&self, name: &LocalName) -> bool {
+        match self {
+            Pattern::Name(_, bound_name, _typ) => {
+                name == bound_name
+            }
+            Pattern::Receive(_, recv_pattern, then_pattern, _) => {}
+            Pattern::Continue(_) => false,
+            Pattern::ReceiveType(_, _type_name, pattern) => pattern.binds_name(name),
+            Pattern::Try(_, _label, pattern) => pattern.binds_name(name),
+            Pattern::Default(_, _default_expr, pattern) => pattern.binds_name(name),
+        }
+    }
+
+    pub(crate) fn contains_name_free(&self, name: &LocalName) -> bool {
+        match self {
+            Pattern::Default(_, default_expr, _pattern) => default_expr.contains_name_free(name),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Condition {
     Bool(Span, Box<Expression>),
@@ -1629,6 +1651,62 @@ impl Expression {
             }
         })
     }
+
+    pub(crate) fn contains_name_free(&self, name: &LocalName) -> bool {
+        match self {
+            Expression::Primitive(_, _) => false,
+            Expression::List(_, exprs) => exprs.iter().any(|e| e.contains_name_free(name)),
+            Expression::Global(_, _global_name) => false,
+            Expression::Variable(_, var_name) => name == var_name,
+            Expression::Poll { clients, name: bound_name, then, else_, .. } |
+            Expression::Repoll { clients, name: bound_name, then, else_, .. }=> {
+                if clients.iter().any(|e| e.contains_name_free(name)) {
+                    return true;
+                }
+                if else_.contains_name_free(name) {
+                    return true;
+                }
+                if bound_name == name {
+                    // shadowing
+                    return false;
+                }
+                then.contains_name_free(name)
+            }
+            Expression::Submit { values,.. } => values.iter().any(|e| e.contains_name_free(name)),
+            Expression::Condition(_, condition) => condition.contains_name_free(name),
+            Expression::Grouped(_, expr) => expr.contains_name_free(name),
+            Expression::TypeIn { expr, .. } => expr.contains_name_free(name),
+            Expression::Let { pattern, expression, then, .. } => {
+                if expression.contains_name_free(name) || pattern.contains_name_free(name) {
+                    return true;
+                }
+                if pattern.binds_name(name) {
+                    // shadowing
+                    return false;
+                }
+                then.contains_name_free(name)
+            }
+            Expression::Catch { pattern, block, then , ..} => {
+                if then.contains_name_free(name) {
+                    return true;
+                }
+
+                if pattern.binds_name(name) {
+                    // shadowing
+                    return false;
+                }
+
+                block.contains_name_free(name)
+            }
+            Expression::Throw(_, _, _) => {}
+            Expression::If { .. } => {}
+            Expression::Do { .. } => {}
+            Expression::Box(_, _) => {}
+            Expression::Chan { .. } => {}
+            Expression::Construction(_) => {}
+            Expression::Application(_, _, _) => {}
+        }
+    }
 }
 
 impl Spanning for Expression {
@@ -2487,6 +2565,26 @@ impl Command {
                 compile_pipe(span, object_name.clone(), function, process)
             }
         })
+    }
+
+    pub(crate) fn contains_subject(&self, name: &LocalName) -> bool {
+        match self {
+            Command::Then(_then) => false,
+            Command::Link(_, expr) => false,
+            Command::Send(_, expr, cmd) => {},
+            Command::Receive(_, pattern, cmd, vars) => {},
+            Command::Signal(_, _signal, cmd) => cmd.contains_var(name),
+            Command::Case(_, branches, else_branch, then) => false,
+            Command::Break(_) => false,
+            Command::Continue(_, _then) => false,
+            Command::Begin { .. } => false,
+            Command::Loop(_, _) => false,
+            Command::SendType(_, _type_name, cmd) => cmd.contains_var(name),
+            Command::ReceiveType(_, _type_name, cmd) => cmd.contains_var(name),
+            Command::Try(_, _label, cmd) => cmd.contains_var(name),
+            Command::Default(_, expr, cmd) => {}
+            Command::Pipe(_, expr, cmd) => {}
+        }
     }
 }
 
