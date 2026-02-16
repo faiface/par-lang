@@ -6,7 +6,7 @@ pub mod frontend {
     use std::sync::Arc;
 
     use crate::location::FileName;
-    use crate::par::language::{CompileError, Passes};
+    use crate::par::language::{CompileError, Context};
     use crate::par::parse::parse_module;
     use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 
@@ -45,8 +45,8 @@ pub mod frontend {
                      name,
                      expression,
                  }| {
-                    expression
-                        .compile(&mut Passes::new())
+                    Context::new()
+                        .compile_expression(&expression)
                         .map(|compiled| Definition {
                             span,
                             name,
