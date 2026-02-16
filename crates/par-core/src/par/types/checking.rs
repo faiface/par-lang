@@ -14,14 +14,14 @@ use std::sync::Arc;
 
 enum ProcessAnalyzerMode {
     Check,
-    Infer(LocalName)
+    Infer(LocalName),
 }
 impl Context {
-    fn analyze_process(&mut self,
+    fn analyze_process(
+        &mut self,
         process: &Process<()>,
-                       mode: &ProcessAnalyzerMode
-    )
-        -> Result<(Arc<Process<Type>>, Option<Type>), TypeError> {
+        mode: &ProcessAnalyzerMode,
+    ) -> Result<(Arc<Process<Type>>, Option<Type>), TypeError> {
         match mode {
             ProcessAnalyzerMode::Check => {
                 let process = self.check_process(process)?;
@@ -512,7 +512,8 @@ impl Context {
                 span,
                 object,
                 &self.type_defs.get(span, name, args)?,
-                command, mode,
+                command,
+                mode,
             );
         }
         if let Type::DualName(_, name, args) = typ {
@@ -526,14 +527,7 @@ impl Context {
             );
         }
         if let Type::Box(_, inner) = typ {
-            return self.check_command(
-                inference_subject,
-                span,
-                object,
-                inner,
-                command,
-                mode,
-            );
+            return self.check_command(inference_subject, span, object, inner, command, mode);
         }
         if let Type::DualBox(_, inner) = typ {
             if inner.is_positive(&self.type_defs)? {
