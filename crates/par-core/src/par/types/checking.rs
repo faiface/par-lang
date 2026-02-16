@@ -12,7 +12,27 @@ use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+enum ProcessAnalyzerMode {
+    Check,
+    Infer(LocalName),
+}
 impl Context {
+    fn analyze_process(
+        &mut self,
+        process: &Process<()>,
+        mode: &ProcessAnalyzerMode,
+    ) -> Result<(Arc<Process<Type>>, Option<Type>), TypeError> {
+        match mode {
+            ProcessAnalyzerMode::Check => {
+                let process = self.check_process(process)?;
+                Ok((process, None))
+            }
+            ProcessAnalyzerMode::Infer(inference_subject) => {
+                let (process, typ) = self.infer_process(process, &inference_subject)?;
+                Ok((process, Some(typ)))
+            }
+        }
+    }
     pub(crate) fn check_process(
         &mut self,
         process: &Process<()>,
@@ -64,7 +84,7 @@ impl Context {
                     object,
                     &typ,
                     command,
-                    &mut |context, process| Ok((context.check_process(process)?, None)),
+                    &ProcessAnalyzerMode::Check,
                 )?;
 
                 Ok(Arc::new(Process::Do {
@@ -484,11 +504,7 @@ impl Context {
         object: &LocalName,
         typ: &Type,
         command: &Command<()>,
-        analyze_process: &mut impl FnMut(
-            &mut Self,
-            &Process<()>,
-        )
-            -> Result<(Arc<Process<Type>>, Option<Type>), TypeError>,
+        mode: &ProcessAnalyzerMode,
     ) -> Result<(Command<Type>, Option<Type>), TypeError> {
         if let Type::Name(_, name, args) = typ {
             return self.check_command(
@@ -497,7 +513,7 @@ impl Context {
                 object,
                 &self.type_defs.get(span, name, args)?,
                 command,
-                analyze_process,
+                mode,
             );
         }
         if let Type::DualName(_, name, args) = typ {
@@ -507,18 +523,11 @@ impl Context {
                 object,
                 &self.type_defs.get_dual(span, name, args)?,
                 command,
-                analyze_process,
+                mode,
             );
         }
         if let Type::Box(_, inner) = typ {
-            return self.check_command(
-                inference_subject,
-                span,
-                object,
-                inner,
-                command,
-                analyze_process,
-            );
+            return self.check_command(inference_subject, span, object, inner, command, mode);
         }
         if let Type::DualBox(_, inner) = typ {
             if inner.is_positive(&self.type_defs)? {
@@ -528,7 +537,7 @@ impl Context {
                     object,
                     &inner.clone().dual(Span::None),
                     command,
-                    analyze_process,
+                    mode,
                 );
             }
         }
@@ -546,7 +555,7 @@ impl Context {
                     object,
                     &Type::expand_iterative(span, top_asc, top_label, body)?,
                     command,
-                    analyze_process,
+                    mode,
                 );
             }
         }
@@ -564,7 +573,7 @@ impl Context {
                     object,
                     &Type::expand_recursive(top_asc, top_label, body)?,
                     command,
-                    analyze_process,
+                    mode,
                 );
             }
         }
@@ -598,12 +607,12 @@ impl Context {
                         .clone()
                         .substitute(inferred_holes.iter().map(|(k, v)| (k, v)).collect())?;
                     self.put(span, object.clone(), then_type.clone())?;
-                    let (process, inferred_types) = analyze_process(self, process)?;
+                    let (process, inferred_types) = self.analyze_process(process, mode)?;
                     (Command::Send(argument, process), inferred_types)
                 } else {
                     let argument = self.check_expression(None, argument, &argument_type)?;
                     self.put(span, object.clone(), *then_type.clone())?;
-                    let (process, inferred_types) = analyze_process(self, process)?;
+                    let (process, inferred_types) = self.analyze_process(process, mode)?;
                     (Command::Send(argument, process), inferred_types)
                 }
             }
@@ -654,7 +663,7 @@ impl Context {
                 }
                 self.put(span, parameter.clone(), param_type.clone())?;
                 self.put(span, object.clone(), then_type)?;
-                let (process, inferred_types) = analyze_process(self, process)?;
+                let (process, inferred_types) = self.analyze_process(process, mode)?;
                 (
                     Command::Receive(
                         parameter.clone(),
@@ -683,7 +692,7 @@ impl Context {
                     ));
                 };
                 self.put(span, object.clone(), branch_type.clone())?;
-                let (process, inferred_types) = analyze_process(self, process)?;
+                let (process, inferred_types) = self.analyze_process(process, mode)?;
                 (Command::Signal(chosen.clone(), process), inferred_types)
             }
 
@@ -713,7 +722,7 @@ impl Context {
                         ));
                     };
                     self.put(span, object.clone(), branch_type)?;
-                    let (process, inferred_in_branch) = analyze_process(self, process)?;
+                    let (process, inferred_in_branch) = self.analyze_process(process, mode)?;
                     typed_processes.push(process);
 
                     match (inferred_type, inferred_in_branch) {
@@ -733,7 +742,7 @@ impl Context {
                         let object_type = Type::Either(Span::None, remaining_branches);
                         remaining_branches = BTreeMap::new();
                         self.put(span, object.clone(), object_type)?;
-                        let (process, inferred_in_branch) = analyze_process(self, process)?;
+                        let (process, inferred_in_branch) = self.analyze_process(process, mode)?;
 
                         match (inferred_type, inferred_in_branch) {
                             (None, Some(t2)) => inferred_type = Some(t2),
@@ -788,7 +797,7 @@ impl Context {
                         typ.clone(),
                     ));
                 };
-                let (process, inferred_types) = analyze_process(self, process)?;
+                let (process, inferred_types) = self.analyze_process(process, mode)?;
                 (Command::Continue(process), inferred_types)
             }
 
@@ -848,7 +857,7 @@ impl Context {
                     object.clone(),
                     Type::expand_recursive(&typ_asc, typ_label, typ_body)?,
                 )?;
-                let (process, _inferred_type) = analyze_process(self, process)?;
+                let (process, _inferred_type) = self.analyze_process(process, mode)?;
                 (
                     Command::Begin {
                         unfounded: *unfounded,
@@ -928,7 +937,7 @@ impl Context {
                     .clone()
                     .substitute(BTreeMap::from([(type_name, argument)]))?;
                 self.put(span, object.clone(), then_type)?;
-                let (process, inferred_types) = analyze_process(self, process)?;
+                let (process, inferred_types) = self.analyze_process(process, mode)?;
                 (Command::SendType(argument.clone(), process), inferred_types)
             }
 
@@ -946,7 +955,7 @@ impl Context {
                 )]))?;
                 self.type_defs.vars.insert(parameter.clone());
                 self.put(span, object.clone(), then_type)?;
-                let (process, inferred_types) = analyze_process(self, process)?;
+                let (process, inferred_types) = self.analyze_process(process, mode)?;
                 (
                     Command::ReceiveType(parameter.clone(), process),
                     inferred_types,
@@ -1019,10 +1028,7 @@ impl Context {
                     object,
                     &typ,
                     command,
-                    &mut |context, process| {
-                        let (process, typ) = context.infer_process(process, inference_subject)?;
-                        Ok((process, Some(typ)))
-                    },
+                    &ProcessAnalyzerMode::Infer(inference_subject.clone()),
                 )?;
 
                 let Some(inferred_type) = inferred_type else {
