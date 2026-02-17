@@ -50,7 +50,7 @@ pub mod frontend {
                         .map(|compiled| Definition {
                             span,
                             name,
-                            expression: compiled.optimize().fix_captures().0,
+                            expression: compiled.optimize().fix_captures().0.optimize_subject(None),
                         })
                 },
             )

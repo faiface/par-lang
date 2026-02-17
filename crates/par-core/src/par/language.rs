@@ -19,7 +19,6 @@ use crate::{
     location::{Span, Spanning},
     par::types::error::labels_from_span,
 };
-use arcstr::{literal, ArcStr};
 
 #[derive(Clone, Debug)]
 pub struct LocalName {
@@ -77,6 +76,13 @@ impl LocalName {
         Self {
             span: Span::None,
             string: literal!("#object"),
+        }
+    }
+
+    pub fn subject() -> Self {
+        Self {
+            span: Span::None,
+            string: literal!("#subject"),
         }
     }
 
@@ -542,6 +548,7 @@ impl CompileError {
 #[derive(Clone, Debug)]
 pub(crate) struct Context {
     passes: Passes,
+    original_object_name: Option<LocalName>,
 }
 
 #[derive(Clone, Debug)]
@@ -580,6 +587,30 @@ impl Context {
     pub(crate) fn new() -> Self {
         Self {
             passes: Passes::new(),
+            original_object_name: None,
+        }
+    }
+
+    pub(crate) fn restore_object_name(
+        &mut self,
+        name: Option<LocalName>,
+        process: Arc<process::Process<()>>,
+    ) -> Arc<process::Process<()>> {
+        match name {
+            None => process,
+            Some(original) => Arc::new(process::Process::Let {
+                span: original.span.clone(),
+                name: original.clone(),
+                annotation: None,
+                typ: (),
+                value: Arc::new(process::Expression::Variable(
+                    original.span.clone(),
+                    LocalName::subject(),
+                    (),
+                    VariableUsage::Unknown,
+                )),
+                then: process,
+            }),
         }
     }
 
@@ -1119,6 +1150,23 @@ impl Context {
 
             Pattern::Try(span, label, rest) => {
                 let catch_block = self.use_catch(span, label)?;
+                let catch_block = if let Some(original) = &self.original_object_name {
+                    Arc::new(process::Process::Let {
+                        span: original.span.clone(),
+                        name: original.clone(),
+                        annotation: None,
+                        typ: (),
+                        value: Arc::new(process::Expression::Variable(
+                            original.span.clone(),
+                            LocalName::subject(),
+                            (),
+                            VariableUsage::Unknown,
+                        )),
+                        then: catch_block,
+                    })
+                } else {
+                    catch_block
+                };
                 let then_process = self.compile_pattern_helper(rest, level, process)?;
                 Ok(self.compile_try(span, LocalName::match_(level), catch_block, then_process))
             }
@@ -1135,7 +1183,8 @@ impl Context {
         &mut self,
         expr: &Expression,
     ) -> Result<Arc<process::Expression<()>>, CompileError> {
-        Ok(match expr {
+        let original_name = std::mem::replace(&mut self.original_object_name, None);
+        let res = Ok(match expr {
             Expression::Primitive(span, value) => Arc::new(process::Expression::Primitive(
                 span.clone(),
                 value.clone(),
@@ -1568,7 +1617,13 @@ impl Context {
                     }),
                 })
             }
-        })
+        });
+        let None = self.original_object_name else {
+            unreachable!("original_object_name should be none after expression")
+        };
+        self.original_object_name = original_name;
+
+        res
     }
 
     pub(crate) fn compile_construct(
@@ -2114,7 +2169,38 @@ impl Context {
                 })
             }
 
-            Process::Command(name, command) => self.compile_command(command, name)?,
+            Process::Command(name, command) => {
+                let None = self.original_object_name else {
+                    // this should never happen. If it did it means we forgot to exit the alias-mode.
+                    unreachable!(
+                        "Can't be in more than one command chain at once. currently set to: {}",
+                        self.original_object_name.clone().unwrap().string
+                    )
+                };
+                self.original_object_name = Some(name.clone());
+                let then_process = self.compile_command(command, &LocalName::subject())?;
+                let None = self.original_object_name else {
+                    // this should never happen. If it did it means we forgot to exit the alias-mode.
+                    unreachable!(
+                        "Can't be in more than one command chain at once. {:?} was: {}",
+                        command,
+                        self.original_object_name.clone().unwrap().string
+                    )
+                };
+                Arc::new(process::Process::Let {
+                    span: name.span.clone(),
+                    name: LocalName::subject(),
+                    annotation: None,
+                    typ: (),
+                    value: Arc::new(process::Expression::Variable(
+                        name.span.clone(),
+                        name.clone(),
+                        (),
+                        VariableUsage::Unknown,
+                    )),
+                    then: then_process,
+                })
+            }
 
             Process::Telltypes(span, process) => Arc::new(process::Process::Telltypes(
                 span.clone(),
@@ -2134,12 +2220,17 @@ impl Context {
         object_name: &LocalName,
     ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match command {
-            Command::Then(process) => self.compile_process(process)?,
+            Command::Then(process) => {
+                let original = std::mem::take(&mut self.original_object_name);
+                let process = self.compile_process(process)?;
+                self.restore_object_name(original, process)
+            }
 
             Command::Link(span, expression) => {
                 self.disable_catches(CatchDisabledReason::DifferentProcess);
                 let expression = self.compile_expression(expression)?;
                 self.enable_catches();
+                self.original_object_name = None;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
                     name: object_name.clone(),
@@ -2164,8 +2255,22 @@ impl Context {
             }
 
             Command::Receive(span, pattern, command, vars) => {
+                let original = self.original_object_name.clone();
                 let process = self.compile_command(command, object_name)?;
-                self.compile_pattern_receive(pattern, 0, span, object_name, process, vars.clone())?
+                let None = self.original_object_name else {
+                    unreachable!("original_object_name should be none after command")
+                };
+                self.original_object_name = original;
+                let process = self.compile_pattern_receive(
+                    pattern,
+                    0,
+                    span,
+                    object_name,
+                    process,
+                    vars.clone(),
+                )?;
+                self.original_object_name = None;
+                process
             }
 
             Command::Signal(span, chosen, command) => {
@@ -2185,10 +2290,16 @@ impl Context {
                 else_branch,
                 optional_process,
             ) => {
+                let original = std::mem::replace(&mut self.original_object_name, None);
+                let object_name = match &original {
+                    None => object_name,
+                    Some(original) => original,
+                };
+
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
 
-                if let Some(process) = optional_process {
+                let process = if let Some(process) = optional_process {
                     let process = self.compile_process(process)?;
                     self.with_fallthrough(process, |pass| {
                         for (branch_name, process_branch) in process_branches {
@@ -2228,18 +2339,23 @@ impl Context {
                         typ: (),
                         command: process::Command::Case(branches, processes, else_process),
                     })
-                }
+                };
+                self.restore_object_name(original, process)
             }
 
-            Command::Break(span) => Arc::new(process::Process::Do {
-                span: span.clone(),
-                name: object_name.clone(),
-                usage: VariableUsage::Unknown,
-                typ: (),
-                command: process::Command::Break,
-            }),
+            Command::Break(span) => {
+                self.original_object_name = None;
+                Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: object_name.clone(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Break,
+                })
+            }
 
             Command::Continue(span, process) => {
+                self.original_object_name = None;
                 let process = self.compile_process(process)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
@@ -2271,17 +2387,20 @@ impl Context {
                 })
             }
 
-            Command::Loop(span, label) => Arc::new(process::Process::Do {
-                span: span.clone(),
-                name: object_name.clone(),
-                usage: VariableUsage::Unknown,
-                typ: (),
-                command: process::Command::Loop(
-                    label.clone(),
-                    LocalName::invalid(),
-                    Captures::new(),
-                ),
-            }),
+            Command::Loop(span, label) => {
+                self.original_object_name = None;
+                Arc::new(process::Process::Do {
+                    span: span.clone(),
+                    name: object_name.clone(),
+                    usage: VariableUsage::Unknown,
+                    typ: (),
+                    command: process::Command::Loop(
+                        label.clone(),
+                        LocalName::invalid(),
+                        Captures::new(),
+                    ),
+                })
+            }
 
             Command::SendType(span, argument, command) => {
                 let process = self.compile_command(command, object_name)?;
