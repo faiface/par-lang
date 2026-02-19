@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::readback::Handle;
 use super::reducer::NetHandle;
-use crate::par::types::{visit, Type, TypeDefs, TypeError};
+use crate::par::types::{Type, TypeDefs, TypeError, visit};
 
 use std::sync::OnceLock;
 
@@ -259,7 +259,7 @@ impl ProgramTranspiler {
                     })
                     .collect();
                 self.current_net_mut().num_vars = maximum_casebranch_length;
-                table.sort_by_key(|x| x.0 .0);
+                table.sort_by_key(|x| x.0.0);
                 let tree = self.transpile_tree_and_alloc(*captures);
                 Global::Destruct(GlobalCont::Choice(
                     tree,

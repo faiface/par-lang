@@ -374,8 +374,8 @@ impl CaptureAnalysis {
                     caps,
                 )
             }
-            Command::Loop(label, _, _) => {
-                if let Some(begin_id) = env.resolve(label) {
+            Command::Loop(label, _, _) => match env.resolve(label) {
+                Some(begin_id) => {
                     let driver = self
                         .begin_drivers
                         .get(&begin_id)
@@ -386,13 +386,12 @@ impl CaptureAnalysis {
                         Command::Loop(label.clone(), driver, loop_caps.clone()),
                         loop_caps,
                     )
-                } else {
-                    (
-                        Command::Loop(label.clone(), LocalName::invalid(), Captures::new()),
-                        Captures::new(),
-                    )
                 }
-            }
+                _ => (
+                    Command::Loop(label.clone(), LocalName::invalid(), Captures::new()),
+                    Captures::new(),
+                ),
+            },
             Command::SendType(argument, process) => {
                 let (process, caps) = self.fix_process(process, env);
                 (Command::SendType(argument.clone(), process), caps)

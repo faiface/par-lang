@@ -4,7 +4,7 @@ use crate::builtin::list::readback_list;
 use arcstr::literal;
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{process, Definition, Module, Type},
+    frontend::{Definition, Module, Type, process},
     runtime::Handle,
 };
 use std::sync::Arc;

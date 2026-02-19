@@ -1,14 +1,14 @@
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
-use clap::{arg, command, value_parser, Command};
+use clap::{Command, arg, command, value_parser};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use par_builtin::import_builtins;
 use par_core::{
     frontend::{
-        compile_runtime, lower, parse, set_miette_hook, type_check, ParseAndCompileError, Type,
-        TypeError,
+        ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
+        type_check,
     },
     runtime::RuntimeCompilerError,
 };

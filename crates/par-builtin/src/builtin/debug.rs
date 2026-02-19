@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use par_core::{
-    frontend::{process, Definition, Module, Type},
+    frontend::{Definition, Module, Type, process},
     runtime::Handle,
 };
 

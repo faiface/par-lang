@@ -4,7 +4,7 @@ members = ["crates/par-core", "crates/par-builtin"]
 [package]
 name = "par-lang"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/faiface/par-lang"
 
 [features]

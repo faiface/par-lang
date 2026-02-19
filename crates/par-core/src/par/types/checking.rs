@@ -1609,7 +1609,7 @@ impl Context {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
                     subject.clone(),
-                ))
+                ));
             }
 
             Command::ReceiveType(parameter, process) => {
@@ -1937,7 +1937,7 @@ fn merge_path_contexts(
                         name.clone(),
                         acc.clone(),
                         next.clone(),
-                    ))
+                    ));
                 }
             };
         }

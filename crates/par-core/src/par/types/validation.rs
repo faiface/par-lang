@@ -1,7 +1,7 @@
+use super::TypeDefs;
 use super::core::Type;
 use super::error::TypeError;
 use super::visit;
-use super::TypeDefs;
 
 impl Type {
     pub fn is_linear(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {

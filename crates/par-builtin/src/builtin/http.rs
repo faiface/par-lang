@@ -3,8 +3,8 @@ use std::{
     net::SocketAddr,
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, Ordering as AtomicOrdering},
         Arc,
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
     },
     time::Duration,
 };
@@ -12,16 +12,16 @@ use std::{
 use arcstr::literal;
 use bytes::Bytes;
 use futures::{
-    channel::{mpsc, oneshot},
     SinkExt, StreamExt,
+    channel::{mpsc, oneshot},
 };
 use http_body::Frame;
 use http_body_util::{self as body_util, BodyExt, Full, StreamBody};
 use hyper::{
-    body::Incoming,
-    http::{header::HOST, HeaderName, HeaderValue, StatusCode},
-    service::service_fn,
     Request, Response,
+    body::Incoming,
+    http::{HeaderName, HeaderValue, StatusCode, header::HOST},
+    service::service_fn,
 };
 use hyper_util::rt::TokioIo;
 use num_bigint::BigInt;
@@ -30,7 +30,7 @@ use url::Url as ParsedUrl;
 
 use crate::builtin::{list::readback_list, url::provide_url_value};
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type},
+    frontend::{Definition, Module, ParString, Type, process},
     runtime::Handle,
 };
 

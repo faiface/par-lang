@@ -47,20 +47,19 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Linear> {
             Linear::Request(_sender) => {
                 write!(f, "<external request>")?;
             }
-            Linear::ShareHole(mutex) => {
-                if let Ok(lock) = mutex.try_lock() {
-                    match &*lock {
-                        crate::runtime_impl::flat::runtime::SharedHole::Filled(_sync_shared) => {
-                            write!(f, "<unexpected filled share hole>")?;
-                        }
-                        crate::runtime_impl::flat::runtime::SharedHole::Unfilled(_nodes) => {
-                            write!(f, "<unfilled hole>")?;
-                        }
+            Linear::ShareHole(mutex) => match mutex.try_lock() {
+                Ok(lock) => match &*lock {
+                    crate::runtime_impl::flat::runtime::SharedHole::Filled(_sync_shared) => {
+                        write!(f, "<unexpected filled share hole>")?;
                     }
-                } else {
+                    crate::runtime_impl::flat::runtime::SharedHole::Unfilled(_nodes) => {
+                        write!(f, "<unfilled hole>")?;
+                    }
+                },
+                _ => {
                     write!(f, "<locked>")?;
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -69,20 +68,19 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Linear> {
 impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Shared> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
-            Shared::Async(mutex) => {
-                if let Ok(lock) = mutex.try_lock() {
-                    match &*lock {
-                        crate::runtime_impl::flat::runtime::SharedHole::Filled(sync_shared) => {
-                            write!(f, "{}", Showable(sync_shared, self.1))?;
-                        }
-                        crate::runtime_impl::flat::runtime::SharedHole::Unfilled(_) => {
-                            write!(f, "<waiting>")?;
-                        }
+            Shared::Async(mutex) => match mutex.try_lock() {
+                Ok(lock) => match &*lock {
+                    crate::runtime_impl::flat::runtime::SharedHole::Filled(sync_shared) => {
+                        write!(f, "{}", Showable(sync_shared, self.1))?;
                     }
-                } else {
+                    crate::runtime_impl::flat::runtime::SharedHole::Unfilled(_) => {
+                        write!(f, "<waiting>")?;
+                    }
+                },
+                _ => {
                     write!(f, "<locked>")?;
                 }
-            }
+            },
             Shared::Sync(sync_shared) => {
                 write!(f, "{}", Showable(sync_shared.as_ref(), self.1))?;
             }
@@ -154,7 +152,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a GlobalPtr> {
         if self.1.deref_globals {
             write!(f, "{}", Showable(self.1.arena.get(self.0.clone()), self.1))?;
         } else {
-            write!(f, "{}", self.0 .0)?;
+            write!(f, "{}", self.0.0)?;
         }
         Ok(())
     }

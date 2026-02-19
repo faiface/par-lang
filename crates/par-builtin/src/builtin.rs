@@ -18,7 +18,7 @@ mod url;
 
 use std::sync::Arc;
 
-use par_core::frontend::{process, Module};
+use par_core::frontend::{Module, process};
 use par_core::source::FileName;
 use par_core::testing::import_test_module;
 

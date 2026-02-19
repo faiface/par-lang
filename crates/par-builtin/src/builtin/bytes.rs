@@ -1,12 +1,12 @@
 use arcstr::literal;
 use bytes::Bytes;
-use futures::{channel::mpsc, StreamExt};
+use futures::{StreamExt, channel::mpsc};
 use num_bigint::BigInt;
 use std::{
     cmp::Ordering,
     sync::{
-        atomic::{AtomicBool, Ordering as AtomicOrdering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
     },
 };
 use tokio::sync::Notify;
@@ -14,10 +14,10 @@ use tokio::sync::Notify;
 use crate::builtin::{
     byte::ByteClass,
     list::readback_list,
-    parser::{provide_bytes_parser, ReaderRemainder},
+    parser::{ReaderRemainder, provide_bytes_parser},
 };
 use par_core::{
-    frontend::{process, Definition, Module, Type, TypeDef},
+    frontend::{Definition, Module, Type, TypeDef, process},
     runtime::Handle,
 };
 
@@ -354,13 +354,16 @@ async fn provide_pipe_reader_output(
             "close" => {
                 state.mark_reader_closed();
                 state.wait_result().await;
-                if let Some(err) = state.take_error() {
-                    handle.signal(literal!("err"));
-                    handle.link(err);
-                    return;
-                } else {
-                    handle.signal(literal!("ok"));
-                    return handle.break_();
+                match state.take_error() {
+                    Some(err) => {
+                        handle.signal(literal!("err"));
+                        handle.link(err);
+                        return;
+                    }
+                    _ => {
+                        handle.signal(literal!("ok"));
+                        return handle.break_();
+                    }
                 }
             }
             "read" => match rx.next().await {
@@ -372,14 +375,17 @@ async fn provide_pipe_reader_output(
                 None => {
                     state.mark_reader_closed();
                     state.wait_result().await;
-                    if let Some(err) = state.take_error() {
-                        handle.signal(literal!("err"));
-                        handle.link(err);
-                        return;
-                    } else {
-                        handle.signal(literal!("ok"));
-                        handle.signal(literal!("end"));
-                        return handle.break_();
+                    match state.take_error() {
+                        Some(err) => {
+                            handle.signal(literal!("err"));
+                            handle.link(err);
+                            return;
+                        }
+                        _ => {
+                            handle.signal(literal!("ok"));
+                            handle.signal(literal!("end"));
+                            return handle.break_();
+                        }
                     }
                 }
             },

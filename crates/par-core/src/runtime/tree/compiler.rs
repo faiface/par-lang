@@ -547,33 +547,34 @@ impl Compiler {
     }
 
     fn use_var(&mut self, var: &Var, usage: &VariableUsage, in_command: bool) -> Result<TypedTree> {
-        if let Some(tree) = self.context.vars.remove(var) {
-            if in_command {
-                return Ok(tree);
-            }
-            match usage {
-                VariableUsage::Move => Ok(tree),
-                VariableUsage::Copy => {
-                    let (w0, w1) = self.net.create_wire();
-                    let (v0, v1) = self.net.create_wire();
-                    self.net
-                        .link(Tree::Dup(Box::new(v0), Box::new(w0)), tree.tree);
-                    self.context.vars.insert(
-                        var.clone(),
-                        TypedTree {
-                            tree: w1,
-                            ty: tree.ty.clone(),
-                        },
-                    );
-                    Ok(TypedTree {
-                        tree: v1,
-                        ty: tree.ty.clone(),
-                    })
+        match self.context.vars.remove(var) {
+            Some(tree) => {
+                if in_command {
+                    return Ok(tree);
                 }
-                VariableUsage::Unknown => Err(Error::UnknownVariableUsage(Span::None)),
+                match usage {
+                    VariableUsage::Move => Ok(tree),
+                    VariableUsage::Copy => {
+                        let (w0, w1) = self.net.create_wire();
+                        let (v0, v1) = self.net.create_wire();
+                        self.net
+                            .link(Tree::Dup(Box::new(v0), Box::new(w0)), tree.tree);
+                        self.context.vars.insert(
+                            var.clone(),
+                            TypedTree {
+                                tree: w1,
+                                ty: tree.ty.clone(),
+                            },
+                        );
+                        Ok(TypedTree {
+                            tree: v1,
+                            ty: tree.ty.clone(),
+                        })
+                    }
+                    VariableUsage::Unknown => Err(Error::UnknownVariableUsage(Span::None)),
+                }
             }
-        } else {
-            Err(Error::UnboundVar(Default::default(), var.clone()))
+            _ => Err(Error::UnboundVar(Default::default(), var.clone())),
         }
     }
 

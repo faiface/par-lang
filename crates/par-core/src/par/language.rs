@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use arcstr::{literal, ArcStr};
+use arcstr::{ArcStr, literal};
 
 use super::{
     primitive::Primitive,
@@ -521,13 +521,12 @@ impl CompileError {
             Self::MatchingCatchDisabled(span, CatchDisabledReason::DifferentProcess) => {
                 mk_report(span, "Matching `catch` is in a different process.")
             }
-            Self::MatchingCatchDisabled(
-                span,
-                CatchDisabledReason::ValuePartiallyConstructed,
-            ) => mk_report(
-                span,
-                "The expression the matching `catch` would return from has its result already partially constructed.",
-            ),
+            Self::MatchingCatchDisabled(span, CatchDisabledReason::ValuePartiallyConstructed) => {
+                mk_report(
+                    span,
+                    "The expression the matching `catch` would return from has its result already partially constructed.",
+                )
+            }
             Self::NoSuchPollPoint(span, None) => {
                 mk_report(span, "No unlabeled `poll`/`repoll` point is in scope here.")
             }

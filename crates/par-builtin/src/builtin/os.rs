@@ -8,7 +8,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type},
+    frontend::{Definition, Module, ParString, Type, process},
     runtime::Handle,
 };
 use tokio::{

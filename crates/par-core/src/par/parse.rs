@@ -3,7 +3,7 @@ use super::{
         Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Condition,
         Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
     },
-    lexer::{lex, Input, Token, TokenKind},
+    lexer::{Input, Token, TokenKind, lex},
     primitive::Primitive,
 };
 use crate::par::{
@@ -23,12 +23,12 @@ use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use winnow::token::literal;
 use winnow::{
+    Parser,
     combinator::{alt, cut_err, not, opt, peek, preceded, repeat, separated, terminated, trace},
     error::{
         AddContext, ContextError, ErrMode, ModalError, ParserError, StrContext, StrContextValue,
     },
     stream::{Accumulate, Stream},
-    Parser,
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -103,7 +103,7 @@ where
 
 /// Like `t` for but for `n` tokens.
 macro_rules! tn {
-    ($s:literal: $($t:expr),+) => {
+    ($s:literal: $($t:expr_2021),+) => {
         ($($t),+).context(StrContext::Expected(StrContextValue::Description($s)))
     };
 }

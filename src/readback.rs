@@ -8,7 +8,7 @@ use futures::{
 };
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{parse_bytes, ParString, Primitive},
+    frontend::{ParString, Primitive, parse_bytes},
     runtime::{Rewrites, TypedHandle, TypedReadback},
 };
 use std::sync::{Arc, Mutex};

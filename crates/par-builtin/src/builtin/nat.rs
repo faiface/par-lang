@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 use std::{cmp::Ordering, sync::Arc};
 
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type, TypeDef},
+    frontend::{Definition, Module, ParString, Type, TypeDef, process},
     runtime::Handle,
 };
 

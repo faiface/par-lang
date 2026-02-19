@@ -3,7 +3,7 @@ use crate::language_server::data::ToLspPosition;
 use lsp_types::{self as lsp, Uri};
 use par_builtin::import_builtins;
 use par_core::frontend::{
-    lower, parse, type_check, CheckedModule, ParseAndCompileError, TypeError, TypeOnHover,
+    CheckedModule, ParseAndCompileError, TypeError, TypeOnHover, lower, parse, type_check,
 };
 use par_core::source::FileName;
 use std::collections::HashMap;
@@ -45,8 +45,8 @@ impl Instance {
         let pos = params.text_document_position_params.position;
 
         let payload = match self.type_on_hover.as_ref() {
-            Some(type_on_hover) => {
-                if let Some(name_info) = type_on_hover.query(&self.file, pos.line, pos.character) {
+            Some(type_on_hover) => match type_on_hover.query(&self.file, pos.line, pos.character) {
+                Some(name_info) => {
                     let mut buf = String::new();
                     if let Some(name) = name_info.name {
                         write!(&mut buf, "{}: ", name).unwrap();
@@ -56,10 +56,11 @@ impl Instance {
                         language: "par".to_owned(),
                         value: buf,
                     })
-                } else {
+                }
+                _ => {
                     return None;
                 }
-            }
+            },
             None => lsp::MarkedString::String("Not compiled".to_string()),
         };
 
