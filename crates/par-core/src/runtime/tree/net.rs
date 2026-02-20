@@ -494,11 +494,12 @@ impl Net {
             self.rewrites.last_busy_start = Some(Instant::now());
         }
 
-        let reduced = if let Some((a, b)) = self.redexes.pop_front() {
-            self.interact(a, b);
-            true
-        } else {
-            false
+        let reduced = match self.redexes.pop_front() {
+            Some((a, b)) => {
+                self.interact(a, b);
+                true
+            }
+            _ => false,
         };
 
         if !reduced {

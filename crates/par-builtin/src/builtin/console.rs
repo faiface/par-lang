@@ -1,12 +1,12 @@
 use std::{
-    io::{stdin, stdout, Write},
+    io::{Write, stdin, stdout},
     sync::Arc,
 };
 
 use arcstr::literal;
 
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type},
+    frontend::{Definition, Module, ParString, Type, process},
     runtime::Handle,
 };
 

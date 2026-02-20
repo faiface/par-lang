@@ -1,7 +1,7 @@
 use super::super::language::{GlobalName, LocalName};
 use crate::location::{Span, Spanning};
 use crate::par::types::visit::Polarity;
-use crate::par::types::{visit, TypeDefs, TypeError};
+use crate::par::types::{TypeDefs, TypeError, visit};
 use arcstr::ArcStr;
 use im::HashSet;
 use std::collections::BTreeMap;

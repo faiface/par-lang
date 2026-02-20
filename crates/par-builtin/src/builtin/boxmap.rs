@@ -7,7 +7,7 @@ use arcstr::literal;
 use im::OrdMap;
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{process, Definition, Module, Type},
+    frontend::{Definition, Module, Type, process},
     runtime::Handle,
 };
 

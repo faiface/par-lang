@@ -1,6 +1,6 @@
 use crate::location::Span;
 use crate::par::language::{GlobalName, LocalName};
-use crate::par::types::{visit, Type, TypeError};
+use crate::par::types::{Type, TypeError, visit};
 use indexmap::{IndexMap, IndexSet};
 use std::sync::Arc;
 

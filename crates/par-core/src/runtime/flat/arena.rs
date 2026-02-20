@@ -116,7 +116,7 @@ macro_rules! slice_indexable {
         impl Indexable for [$element] {
             type Store = (usize, usize);
             fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
-                &store.$field[index.0 .0..index.0 .0 + index.0 .1]
+                &store.$field[index.0.0..index.0.0 + index.0.1]
             }
             fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
                 let start = store.$field.len();
@@ -127,12 +127,12 @@ macro_rules! slice_indexable {
         impl Iterator for Index<[$element]> {
             type Item = Index<$element>;
             fn next(&mut self) -> Option<Index<$element>> {
-                if self.0 .1 == 0 {
+                if self.0.1 == 0 {
                     None
                 } else {
-                    let ret = Index(self.0 .0);
-                    self.0 .0 += 1;
-                    self.0 .1 -= 1;
+                    let ret = Index(self.0.0);
+                    self.0.0 += 1;
+                    self.0.1 -= 1;
                     Some(ret)
                 }
             }
@@ -165,7 +165,7 @@ sized_indexable!(nodes, Global);
 impl Indexable for str {
     type Store = (usize, usize);
     fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
-        &store.strings[index.0 .0..index.0 .0 + index.0 .1]
+        &store.strings[index.0.0..index.0.0 + index.0.1]
     }
     fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
         let start = store.strings.len();

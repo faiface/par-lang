@@ -2,15 +2,15 @@ use colored::Colorize;
 use par_builtin::import_builtins;
 use par_core::{
     frontend::{
-        compile_runtime, language::GlobalName, lower, parse, set_miette_hook, type_check,
-        CheckedModule, ParseAndCompileError, Type, TypeError,
+        CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
+        language::GlobalName, lower, parse, set_miette_hook, type_check,
     },
     runtime::{Compiled, RuntimeCompilerError},
-    testing::{provide_test, AssertionResult},
+    testing::{AssertionResult, provide_test},
 };
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use std::{fmt::Display, fs};
 use tokio::runtime::Runtime;

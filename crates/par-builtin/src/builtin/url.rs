@@ -5,7 +5,7 @@ use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type},
+    frontend::{Definition, Module, ParString, Type, process},
     runtime::Handle,
 };
 

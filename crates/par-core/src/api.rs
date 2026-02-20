@@ -86,5 +86,5 @@ pub mod execution {
 }
 
 pub mod testing {
-    pub use crate::test_assertion::{import_test_module, provide_test, AssertionResult};
+    pub use crate::test_assertion::{AssertionResult, import_test_module, provide_test};
 }

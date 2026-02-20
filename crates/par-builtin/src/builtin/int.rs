@@ -1,7 +1,7 @@
 use arcstr::literal;
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type, TypeDef},
+    frontend::{Definition, Module, ParString, Type, TypeDef, process},
     runtime::Handle,
 };
 use std::{cmp::Ordering, sync::Arc};

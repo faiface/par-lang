@@ -1,11 +1,11 @@
 use crate::location::{FileName, Point, Span};
 use core::str::FromStr;
 use winnow::{
+    Parser, Result,
     combinator::{alt, not, opt, peek, preceded, repeat},
     error::{EmptyError, ParserError},
     stream::{ParseSlice, TokenSlice},
     token::{any, literal, take, take_while},
-    Parser, Result,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

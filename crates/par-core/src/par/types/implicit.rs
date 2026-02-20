@@ -68,14 +68,17 @@ pub(crate) fn infer_holes(
 
     for name in names {
         let hole = holes_map.get(&name).unwrap();
-        if let Some(solved_type) = solve_constraints(hole, type_defs, span)? {
-            res.insert(name.clone(), solved_type);
-        } else {
-            return Err(TypeError::CannotAssignFromTo(
-                span.clone(),
-                typ.clone(),
-                pattern.clone(),
-            ));
+        match solve_constraints(hole, type_defs, span)? {
+            Some(solved_type) => {
+                res.insert(name.clone(), solved_type);
+            }
+            _ => {
+                return Err(TypeError::CannotAssignFromTo(
+                    span.clone(),
+                    typ.clone(),
+                    pattern.clone(),
+                ));
+            }
         }
     }
     Ok(res)

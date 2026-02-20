@@ -4,8 +4,8 @@ use crate::runtime_impl::flat::stats::Rewrites;
 use crate::spawn::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -104,19 +104,27 @@ impl Reducer {
                         }
                     }
                     self.runtime.rewrites.net_duration += start.elapsed();
-                } else if let Ok(msg) = self.inbox.try_recv() {
-                    self.handle_message(msg);
                 } else {
-                    break;
+                    match self.inbox.try_recv() {
+                        Ok(msg) => {
+                            self.handle_message(msg);
+                        }
+                        _ => {
+                            break;
+                        }
+                    }
                 }
             }
             if self.inbox.sender_strong_count() == 1 {
                 break;
             }
-            if let Some(msg) = self.inbox.recv().await {
-                self.handle_message(msg);
-            } else {
-                break;
+            match self.inbox.recv().await {
+                Some(msg) => {
+                    self.handle_message(msg);
+                }
+                _ => {
+                    break;
+                }
             }
         }
     }

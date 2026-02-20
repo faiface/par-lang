@@ -1,5 +1,5 @@
 use super::io::IO;
-use crate::language_server::feedback::{diagnostic_for_error, FeedbackBookKeeper};
+use crate::language_server::feedback::{FeedbackBookKeeper, diagnostic_for_error};
 use crate::language_server::instance::Instance;
 use lsp_server::Connection;
 use lsp_types::notification::DidSaveTextDocument;

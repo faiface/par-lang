@@ -484,15 +484,18 @@ impl Runtime {
                 Global::Variable(id) => {
                     let mut lock = instance.vars.0.lock().unwrap();
                     let slot = &mut lock[*id];
-                    if let Some(slot) = slot.take() {
-                        drop(lock);
-                        self.rewrites.share_sync += 1;
-                        Some(self.share_inner(slot)?)
-                    } else {
-                        self.rewrites.share_async += 1;
-                        let (hole, shared) = self.create_share_hole();
-                        slot.replace(hole);
-                        Some(shared)
+                    match slot.take() {
+                        Some(slot) => {
+                            drop(lock);
+                            self.rewrites.share_sync += 1;
+                            Some(self.share_inner(slot)?)
+                        }
+                        _ => {
+                            self.rewrites.share_async += 1;
+                            let (hole, shared) = self.create_share_hole();
+                            slot.replace(hole);
+                            Some(shared)
+                        }
                     }
                 }
             },

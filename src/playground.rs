@@ -16,8 +16,8 @@ use par_builtin::import_builtins;
 use par_core::{
     execution::TokioSpawn,
     frontend::{
-        compile_runtime, language::GlobalName, lower, parse, process, type_check, CheckedModule,
-        Module, ParseAndCompileError, Type, TypeError, TypeOnHover,
+        CheckedModule, Module, ParseAndCompileError, Type, TypeError, TypeOnHover, compile_runtime,
+        language::GlobalName, lower, parse, process, type_check,
     },
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
@@ -135,7 +135,7 @@ impl BuildResult {
             Err(error) => {
                 return Self::ParseAndCompileError {
                     error: ParseAndCompileError::Parse(error),
-                }
+                };
             }
         };
         let mut lowered = match lower(parsed) {
@@ -143,7 +143,7 @@ impl BuildResult {
             Err(error) => {
                 return Self::ParseAndCompileError {
                     error: ParseAndCompileError::Compile(error),
-                }
+                };
             }
         };
         imports(&mut lowered);
@@ -189,7 +189,7 @@ impl BuildResult {
                     checked,
                     type_on_hover,
                     error,
-                }
+                };
             }
         };
         Self::Ok {

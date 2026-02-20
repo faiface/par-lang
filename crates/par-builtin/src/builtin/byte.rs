@@ -4,7 +4,7 @@ use arcstr::literal;
 use num_bigint::BigInt;
 
 use par_core::{
-    frontend::{process, Definition, Module, Type, TypeDef},
+    frontend::{Definition, Module, Type, TypeDef, process},
     runtime::Handle,
 };
 

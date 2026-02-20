@@ -6,10 +6,10 @@ use num_bigint::BigInt;
 use crate::builtin::{
     char_::CharClass,
     list::readback_list,
-    parser::{provide_string_parser, ReaderRemainder},
+    parser::{ReaderRemainder, provide_string_parser},
 };
 use par_core::{
-    frontend::{process, Definition, Module, ParString, Type, TypeDef},
+    frontend::{Definition, Module, ParString, Type, TypeDef, process},
     runtime::Handle,
 };
 

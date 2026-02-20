@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{process, Definition, Module, Type},
+    frontend::{Definition, Module, Type, process},
     runtime::Handle,
 };
 use std::sync::Arc;
