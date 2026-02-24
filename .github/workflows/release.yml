@@ -34,5 +34,5 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2.5.0
         with:
-          files: ./target/release/par-lang test
+          files: ./target/release/par-lang
           generate_release_notes: true
