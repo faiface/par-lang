@@ -5,10 +5,11 @@ use indexmap::IndexMap;
 
 use crate::{
     location::{FileName, Point, Span, Spanning},
-    par::{language::Passes, parse::parse_module},
+    par::parse::parse_module,
     runtime::Handle,
 };
 
+use super::language;
 use super::{
     language::{CompileError, GlobalName, LocalName},
     parse::SyntaxError,
@@ -114,12 +115,12 @@ impl Module<Arc<process::Expression<()>>> {
                      name,
                      expression,
                  }| {
-                    expression
-                        .compile(&mut Passes::new())
+                    language::Context::new()
+                        .compile_expression(&expression)
                         .map(|compiled| Definition {
                             span,
                             name,
-                            expression: compiled.optimize().fix_captures().0,
+                            expression: compiled.optimize().fix_captures().0.optimize_subject(None),
                         })
                 },
             )
