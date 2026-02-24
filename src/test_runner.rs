@@ -99,7 +99,7 @@ pub struct TestResult {
     pub status: TestStatus,
 }
 
-pub fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) {
+pub fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) -> bool {
     set_miette_hook();
 
     let test_files = match file {
@@ -109,7 +109,7 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions
 
     if test_files.is_empty() {
         println!("{}", "No test files found".yellow());
-        return;
+        return false;
     }
 
     // TODO: placeholder for indicating that we are running tests
@@ -131,6 +131,7 @@ pub fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions
     let duration = start_time.elapsed();
     println!();
     print_summary(total_tests, passed_tests, duration);
+    return passed_tests == total_tests;
 }
 
 fn find_test_files() -> Vec<PathBuf> {
