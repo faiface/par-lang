@@ -1,0 +1,38 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # This workflow runs every time you push a tag starting with 'v'
+             # Example usage
+             # git tag v0.1.0
+             # git push origin v0.1.0
+
+jobs:
+  release:
+    name: Build and Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for creating the release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Cargo Test
+        run: cargo test
+      
+      - name: Build the release binary
+        run: cargo build --release
+
+      - name: Binary tests - Check
+        run: ./target/release/par-lang check examples/*.par
+      
+      - name: Binary tests - Test
+        run: cd tests && ../target/release/par-lang test      
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          files: ./target/release/par-lang test
+          generate_release_notes: true
