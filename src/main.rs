@@ -13,7 +13,6 @@ use par_core::{
     runtime::RuntimeCompilerError,
 };
 use tokio::time::Instant;
-use winnow::Parser;
 
 use std::fs::File;
 #[cfg(feature = "playground")]

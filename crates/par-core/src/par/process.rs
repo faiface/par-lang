@@ -298,7 +298,7 @@ impl Process<()> {
                 then,
             } => {
                 if let Expression::Variable(_span, var, _typ, usage) = value.as_ref() {
-                    if (name == &LocalName::subject())
+                    if name == &LocalName::subject()
                         && let VariableUsage::Move = usage
                     {
                         let replace = Some(var);
@@ -307,8 +307,8 @@ impl Process<()> {
                     }
 
                     if let Some(replace) = replace
-                        && (var == &LocalName::subject())
-                        && (replace == name)
+                        && var == &LocalName::subject()
+                        && replace == name
                     {
                         let replace = None;
                         let res = then.optimize_subject(replace);

@@ -1183,7 +1183,7 @@ impl Context {
         &mut self,
         expr: &Expression,
     ) -> Result<Arc<process::Expression<()>>, CompileError> {
-        let original_name = std::mem::replace(&mut self.original_object_name, None);
+        let original_name = std::mem::take(&mut self.original_object_name);
         let res = Ok(match expr {
             Expression::Primitive(span, value) => Arc::new(process::Expression::Primitive(
                 span.clone(),
@@ -2290,7 +2290,7 @@ impl Context {
                 else_branch,
                 optional_process,
             ) => {
-                let original = std::mem::replace(&mut self.original_object_name, None);
+                let original = std::mem::take(&mut self.original_object_name);
                 let object_name = match &original {
                     None => object_name,
                     Some(original) => original,
