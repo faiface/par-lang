@@ -179,7 +179,7 @@ fn main() -> ExitCode {
                 .get_one::<u32>("max_interactions")
                 .cloned()
                 .unwrap_or(MAX_INTERACTIONS_DEFAULT);
-            if(!run_tests(file.cloned(), filter.cloned(), max_interactions)) {
+            if !run_tests(file.cloned(), filter.cloned(), max_interactions) {
                 return ExitCode::FAILURE;
             }
         }
