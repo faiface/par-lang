@@ -1,5 +1,7 @@
 use super::reducer::{NetHandle, ReducerMessage};
-use super::runtime::{ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Value};
+use super::runtime::{
+    ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, Value,
+};
 use crate::par::primitive::Primitive;
 use crate::runtime_impl::flat::arena::Arena;
 use crate::runtime_impl::flat::runtime::Linker;
@@ -118,10 +120,29 @@ impl Handle {
             .unwrap();
     }
 
+    fn is_ready_node(&self, node: &Node) -> bool {
+        match node {
+            Node::Linear(Linear::ShareHole(..)) => false,
+            Node::Linear(..) => true,
+            Node::Shared(Shared::Async(..)) => false,
+            Node::Shared(Shared::Sync(shared)) => matches!(**shared, SyncShared::Value(..)),
+            Node::Global(_, global) => matches!(
+                self.arena.get(*global),
+                Global::Value(..) | Global::Destruct(..) | Global::Fanout(..)
+            ),
+        }
+    }
+
     pub async fn await_ready(mut self) -> Self {
-        let node = self.node.take().await;
-        self.node = HandleNode::Present(node);
-        self
+        loop {
+            let node = self.node.take().await;
+            if self.is_ready_node(&node) {
+                self.node = HandleNode::Present(node);
+                return self;
+            }
+            self.node = HandleNode::Present(node);
+            self.retry().await;
+        }
     }
 
     pub fn provide_external_closure<Fun, Fut>(self, f: Fun)
