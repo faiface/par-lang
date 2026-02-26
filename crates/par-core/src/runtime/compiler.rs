@@ -44,8 +44,7 @@ impl Compiled {
         &self,
         name: &GlobalName,
     ) -> (Handle, RemoteHandle<Rewrites>) {
-        let mut reducer = self.code.new_reducer();
-        let net_handle = reducer.net_handle().clone();
+        let (reducer, net_handle) = self.code.new_reducer();
         let spawner = reducer.spawner();
         let reducer_future = reducer.spawn_reducer();
         (

@@ -44,21 +44,41 @@ pub struct Reducer {
     pub runtime: Runtime,
     spawner: Arc<dyn Spawn + Send + Sync>,
     inbox: mpsc::UnboundedReceiver<ReducerMessage>,
-    handle: NetHandle,
+    sender: mpsc::WeakUnboundedSender<ReducerMessage>,
+    num_handles: Arc<AtomicUsize>,
 }
 
 impl Reducer {
-    pub fn from(runtime: Runtime) -> Self {
+    pub fn from(runtime: Runtime) -> (Self, NetHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
-        Self {
-            runtime,
-            spawner: Arc::new(TokioSpawn::new()),
-            inbox: rx,
-            handle: NetHandle(tx, 0, Arc::new(1.into())),
-        }
+        let num_handles = Arc::new(AtomicUsize::new(0));
+        (
+            Self {
+                runtime,
+                spawner: Arc::new(TokioSpawn::new()),
+                inbox: rx,
+                sender: tx.downgrade(),
+                num_handles: num_handles.clone(),
+            },
+            NetHandle(tx, 0, num_handles),
+        )
     }
-    pub fn net_handle(&mut self) -> NetHandle {
-        self.handle.clone()
+    // this function should only be called inside run, to avoid race conditions
+    fn net_handle(&mut self) -> NetHandle {
+        if let Some(sender) = self.sender.upgrade() {
+            NetHandle(
+                sender,
+                self.num_handles
+                    .fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+                self.num_handles.clone(),
+            )
+        } else {
+            // all senders have been dropped, so we can just create a new one channel
+            let (tx, rx) = mpsc::unbounded_channel();
+            self.inbox = rx;
+            self.sender = tx.downgrade();
+            NetHandle(tx, 0, self.num_handles.clone())
+        }
     }
     fn handle_message(&mut self, msg: ReducerMessage) {
         match msg {
@@ -114,9 +134,6 @@ impl Reducer {
                         }
                     }
                 }
-            }
-            if self.inbox.sender_strong_count() == 1 {
-                break;
             }
             match self.inbox.recv().await {
                 Some(msg) => {
