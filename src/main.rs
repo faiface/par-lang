@@ -14,11 +14,11 @@ use par_core::{
 };
 use tokio::time::Instant;
 
-use std::{fs::File, process::ExitCode};
 #[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{fs::File, process::ExitCode};
 
 mod language_server;
 #[cfg(feature = "playground")]
@@ -161,7 +161,7 @@ fn main() -> ExitCode {
         }
         Some(("check", args)) => {
             let files = args.get_many::<PathBuf>("file").unwrap().clone();
-            
+
             let mut results = Vec::new();
             for file in files {
                 println!("Checking file: {}", file.display());
@@ -186,7 +186,7 @@ fn main() -> ExitCode {
         _ => unreachable!(),
     }
 
-     ExitCode::SUCCESS
+    ExitCode::SUCCESS
 }
 
 #[cfg(feature = "playground")]
