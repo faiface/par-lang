@@ -104,7 +104,7 @@ impl Transpiled {
     pub fn new_runtime(&self) -> Runtime {
         Runtime::from(self.arena.clone())
     }
-    pub fn new_reducer(&self) -> Reducer {
+    pub fn new_reducer(&self) -> (Reducer, NetHandle) {
         Reducer::from(Runtime::from(self.arena.clone()))
     }
     pub fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
