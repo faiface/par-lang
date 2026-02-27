@@ -14,11 +14,11 @@ use par_core::{
 };
 use tokio::time::Instant;
 
-use std::fs::File;
 #[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{fs::File, process::ExitCode};
 
 mod language_server;
 #[cfg(feature = "playground")]
@@ -84,7 +84,7 @@ fn build_runtime(
     Ok((checked, rt_compiled))
 }
 
-fn main() {
+fn main() -> ExitCode {
     let matches = command!()
         .subcommand_required(true)
         .subcommand(
@@ -161,9 +161,14 @@ fn main() {
         }
         Some(("check", args)) => {
             let files = args.get_many::<PathBuf>("file").unwrap().clone();
+
+            let mut results = Vec::new();
             for file in files {
                 println!("Checking file: {}", file.display());
-                let _ = check(file.clone());
+                results.push(check(file.clone()));
+            }
+            if results.iter().any(|r| r.is_err()) {
+                return ExitCode::FAILURE;
             }
         }
         Some(("lsp", _)) => run_language_server(),
@@ -174,10 +179,14 @@ fn main() {
                 .get_one::<u32>("max_interactions")
                 .cloned()
                 .unwrap_or(MAX_INTERACTIONS_DEFAULT);
-            run_tests(file.cloned(), filter.cloned(), max_interactions);
+            if !run_tests(file.cloned(), filter.cloned(), max_interactions) {
+                return ExitCode::FAILURE;
+            }
         }
         _ => unreachable!(),
     }
+
+    ExitCode::SUCCESS
 }
 
 #[cfg(feature = "playground")]
@@ -303,6 +312,6 @@ fn run_language_server() {
     language_server::language_server_main::main()
 }
 
-fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) {
-    test_runner::run_tests(file, filter, max_interactions);
+fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) -> bool {
+    test_runner::run_tests(file, filter, max_interactions)
 }

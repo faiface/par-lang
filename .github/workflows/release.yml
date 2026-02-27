@@ -1,0 +1,93 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # PHASE 1: Build and test natively on all 3 operating systems
+  build-and-test:
+    name: Build and Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # --- LINUX ---
+          - os: ubuntu-latest # x86_64
+            bin_name: par-lang
+            asset_name: par-lang-linux-x86_64
+          - os: ubuntu-24.04-arm # ARM64
+            bin_name: par-lang
+            asset_name: par-lang-linux-arm64
+
+          # --- MACOS ---
+          - os: macos-latest # ARM64 (Apple Silicon)
+            bin_name: par-lang
+            asset_name: par-lang-macos-arm64
+          - os: macos-15-intel # x86_64 (Intel Mac)
+            bin_name: par-lang
+            asset_name: par-lang-macos-x86_64
+
+          # --- WINDOWS ---
+          - os: windows-latest # x86_64
+            bin_name: par-lang.exe
+            asset_name: par-lang-windows-x86_64.exe
+          - os: windows-11-arm # ARM64
+            bin_name: par-lang.exe
+            asset_name: par-lang-windows-arm64.exe
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo Test
+        run: cargo test
+      
+      - name: Build the release binary
+        run: cargo build --release
+
+      # Using ${{ matrix.bin_name }} handles the .exe extension on Windows
+      - name: Binary tests - Check
+        run: ./target/release/${{ matrix.bin_name }} check examples/*.par
+      
+      - name: Binary tests - Test
+        run: cd tests && ../target/release/${{ matrix.bin_name }} test      
+
+      - name: Rename binary for upload
+        run: mv target/release/${{ matrix.bin_name }} ${{ matrix.asset_name }}
+
+      - name: Temporarily save binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+
+  # PHASE 2: Gather binaries and publish via GitHub CLI
+  release:
+    name: Publish Release
+    needs: build-and-test # Waits for all OS builds and tests to pass
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download all compiled binaries
+        uses: actions/download-artifact@v7
+        with:
+          path: release-binaries
+          merge-multiple: true
+
+      - name: Publish to GitHub Releases (Official CLI)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            --title "Auto-Build #${{ github.run_number }}" \
+            --generate-notes \
+            release-binaries/*
