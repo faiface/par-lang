@@ -16,8 +16,8 @@ use super::{
 };
 use crate::frontend_impl::process::VariableUsage;
 use crate::{
-    location::{Span, Spanning},
     frontend_impl::types::error::labels_from_span,
+    location::{Span, Spanning},
 };
 
 #[derive(Clone, Debug)]

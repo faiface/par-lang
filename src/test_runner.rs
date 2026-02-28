@@ -1,9 +1,14 @@
 use colored::Colorize;
 use par_builtin::import_builtins;
-use par_core::{frontend::{
-    CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
-    language::GlobalName, lower, parse, set_miette_hook, type_check,
-}, runtime, runtime::{Compiled, RuntimeCompilerError}, testing::{AssertionResult, provide_test}};
+use par_core::{
+    frontend::{
+        CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
+        language::GlobalName, lower, parse, set_miette_hook, type_check,
+    },
+    runtime,
+    runtime::{Compiled, RuntimeCompilerError},
+    testing::{AssertionResult, provide_test},
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;

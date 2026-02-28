@@ -1,6 +1,6 @@
-use crate::location::Span;
 use crate::frontend_impl::process::NameWithType;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
+use crate::location::Span;
 use std::fmt;
 use std::fmt::Write;
 

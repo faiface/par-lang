@@ -5,8 +5,8 @@ use super::{
     types::Type,
 };
 use crate::{
-    location::{Span, Spanning},
     frontend_impl::program::CheckedModule,
+    location::{Span, Spanning},
     runtime::Handle,
 };
 use indexmap::IndexSet;

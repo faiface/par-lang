@@ -1,6 +1,6 @@
-use crate::location::Span;
 use crate::frontend_impl::types::assignability::SubtypeResult::{Compatible, Cycle, Incompatible};
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs, TypeError};
+use crate::location::Span;
 use indexmap::IndexSet;
 use std::cmp::max;
 use std::collections::BTreeMap;

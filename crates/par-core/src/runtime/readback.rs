@@ -1,7 +1,7 @@
-use crate::location::Span;
 use crate::frontend_impl::language::LocalName;
 use crate::frontend_impl::primitive::{ParString, Primitive};
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
+use crate::location::Span;
 use arcstr::ArcStr;
 use bytes::Bytes;
 use num_bigint::BigInt;

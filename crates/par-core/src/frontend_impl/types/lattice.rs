@@ -1,5 +1,5 @@
-use crate::location::Span;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs, TypeError};
+use crate::location::Span;
 use std::collections::BTreeMap;
 
 pub(crate) fn union_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {

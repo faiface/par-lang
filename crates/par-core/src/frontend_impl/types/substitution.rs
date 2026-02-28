@@ -1,8 +1,8 @@
 use super::super::language::LocalName;
 use super::core::Type;
 use super::error::TypeError;
-use crate::location::Span;
 use crate::frontend_impl::types::visit;
+use crate::location::Span;
 use std::collections::BTreeMap;
 
 impl Type {

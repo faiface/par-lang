@@ -5,10 +5,14 @@ use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use par_builtin::import_builtins;
-use par_core::{frontend::{
-    ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
-    type_check,
-}, runtime, runtime::RuntimeCompilerError};
+use par_core::{
+    frontend::{
+        ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
+        type_check,
+    },
+    runtime,
+    runtime::RuntimeCompilerError,
+};
 use tokio::time::Instant;
 
 #[cfg(feature = "playground")]

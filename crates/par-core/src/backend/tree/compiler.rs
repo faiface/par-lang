@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::runtime_impl::tree::net::{Net, Tree};
 use crate::frontend_impl::process::VariableUsage;
 use crate::frontend_impl::{
     language::{GlobalName, LocalName},
@@ -13,12 +12,13 @@ use crate::frontend_impl::{
     types::Type,
 };
 use crate::runtime_impl::tree::net::FanBehavior;
+use crate::runtime_impl::tree::net::{Net, Tree};
 use crate::{
-    location::{Span, Spanning},
     frontend_impl::{
         program::{CheckedModule, Definition},
         types::TypeDefs,
     },
+    location::{Span, Spanning},
 };
 use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};

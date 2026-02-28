@@ -5,9 +5,9 @@ pub mod source {
 pub mod frontend {
     use std::sync::Arc;
 
-    use crate::location::FileName;
     use crate::frontend_impl::language::{CompileError, Context};
     use crate::frontend_impl::parse::parse_module;
+    use crate::location::FileName;
     use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 
     pub mod language {
@@ -77,7 +77,8 @@ pub mod frontend {
 
 pub mod runtime {
     pub use crate::runtime_impl::{
-        Compiled, Handle, Rewrites, RuntimeCompilerError, TypedHandle, TypedReadback, executor::start_and_instantiate
+        Compiled, Handle, Rewrites, RuntimeCompilerError, TypedHandle, TypedReadback,
+        executor::start_and_instantiate,
     };
 }
 

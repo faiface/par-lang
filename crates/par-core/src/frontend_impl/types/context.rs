@@ -1,7 +1,7 @@
-use crate::location::Span;
 use crate::frontend_impl::language::{GlobalName, LocalName};
 use crate::frontend_impl::process::{Captures, Expression};
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError};
+use crate::location::Span;
 use indexmap::{IndexMap, IndexSet};
 use std::sync::{Arc, RwLock};
 

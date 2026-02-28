@@ -1,10 +1,10 @@
-use futures::future::RemoteHandle;
-use futures::task::SpawnExt;
 use crate::frontend::language::GlobalName;
 use crate::runtime::{Handle, Rewrites};
 use crate::runtime_impl::Compiled;
 use crate::runtime_impl::flat::reducer::Reducer;
 use crate::runtime_impl::flat::runtime::Runtime;
+use futures::future::RemoteHandle;
+use futures::task::SpawnExt;
 
 pub async fn start_and_instantiate(
     compiled: &Compiled,

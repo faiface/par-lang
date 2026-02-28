@@ -14,14 +14,18 @@ mod tests {
                 Type::Box(_, inner) => match inner.as_ref() {
                     Type::Choice(_, branches) => {
                         assert_eq!(branches.len(), 2);
-                        assert!(branches.contains_key(&crate::frontend_impl::language::LocalName {
-                            span: crate::location::Span::None,
-                            string: arcstr::ArcStr::from("method1"),
-                        }));
-                        assert!(branches.contains_key(&crate::frontend_impl::language::LocalName {
-                            span: crate::location::Span::None,
-                            string: arcstr::ArcStr::from("method2"),
-                        }));
+                        assert!(branches.contains_key(
+                            &crate::frontend_impl::language::LocalName {
+                                span: crate::location::Span::None,
+                                string: arcstr::ArcStr::from("method1"),
+                            }
+                        ));
+                        assert!(branches.contains_key(
+                            &crate::frontend_impl::language::LocalName {
+                                span: crate::location::Span::None,
+                                string: arcstr::ArcStr::from("method2"),
+                            }
+                        ));
                     }
                     _ => panic!("Expected Choice type inside Box"),
                 },

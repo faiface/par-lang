@@ -3,8 +3,8 @@ use crate::runtime_impl::flat::runtime::{Linear, Node, Runtime, UserData};
 use crate::spawn::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -91,7 +91,7 @@ impl Reducer {
             ReducerMessage::Created(_) => {}
         }
     }
-    pub(crate)  async fn run(&mut self) {
+    pub(crate) async fn run(&mut self) {
         loop {
             loop {
                 if !self.runtime.redexes.is_empty() {

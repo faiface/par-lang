@@ -12,8 +12,8 @@ use crate::frontend_impl::{
     types::Type,
 };
 use crate::{
-    location::{FileName, Span, Spanning},
     frontend_impl::primitive::ParString,
+    location::{FileName, Span, Spanning},
 };
 use arcstr::ArcStr;
 use bytes::Bytes;

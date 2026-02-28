@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
-use crate::frontend_impl::types::{visit, Type, TypeDefs, TypeError};
+use crate::frontend_impl::types::{Type, TypeDefs, TypeError, visit};
 use crate::runtime_impl::flat::readback::Handle;
 use crate::runtime_impl::flat::reducer::NetHandle;
 
@@ -88,10 +88,8 @@ impl Transpiled {
         max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         let type_defs = module.type_defs.clone();
-        let ic_compiled = crate::backend::tree::compiler::IcCompiled::compile_file(
-            module,
-            max_interactions,
-        )?;
+        let ic_compiled =
+            crate::backend::tree::compiler::IcCompiled::compile_file(module, max_interactions)?;
         let transpiled = Self::transpile(ic_compiled, type_defs);
         Ok(transpiled)
     }

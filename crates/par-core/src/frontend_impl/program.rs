@@ -4,8 +4,8 @@ use arcstr::ArcStr;
 use indexmap::IndexMap;
 
 use crate::{
-    location::{FileName, Point, Span, Spanning},
     frontend_impl::parse::parse_module,
+    location::{FileName, Point, Span, Spanning},
     runtime::Handle,
 };
 
