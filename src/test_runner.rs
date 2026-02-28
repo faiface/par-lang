@@ -1,13 +1,9 @@
 use colored::Colorize;
 use par_builtin::import_builtins;
-use par_core::{
-    frontend::{
-        CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
-        language::GlobalName, lower, parse, set_miette_hook, type_check,
-    },
-    runtime::{Compiled, RuntimeCompilerError},
-    testing::{AssertionResult, provide_test},
-};
+use par_core::{frontend::{
+    CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
+    language::GlobalName, lower, parse, set_miette_hook, type_check,
+}, runtime, runtime::{Compiled, RuntimeCompilerError}, testing::{AssertionResult, provide_test}};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -303,7 +299,7 @@ fn run_single_definition(
             .get_type_of(name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
 
-        let (handle, fut) = rt_compiled.start_and_instantiate(name).await;
+        let (handle, fut) = runtime::start_and_instantiate(&rt_compiled, name).await;
         handle.continue_();
         fut.await;
         Ok(TestStatus::PassedWithNoAssertions)
@@ -330,7 +326,7 @@ async fn run_test_with_test_type(
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = mpsc::channel();
 
-    let (mut root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
+    let (mut root, reducer_future) = runtime::start_and_instantiate(&rt_compiled, name).await;
 
     // Spawn the test function execution
     //

@@ -5,13 +5,10 @@ use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use par_builtin::import_builtins;
-use par_core::{
-    frontend::{
-        ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
-        type_check,
-    },
-    runtime::RuntimeCompilerError,
-};
+use par_core::{frontend::{
+    ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
+    type_check,
+}, runtime, runtime::RuntimeCompilerError};
 use tokio::time::Instant;
 
 #[cfg(feature = "playground")]
@@ -276,7 +273,7 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_inte
 
         let start = Instant::now();
 
-        let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
+        let (root, reducer_future) = runtime::start_and_instantiate(&rt_compiled, name).await;
 
         root.continue_();
         let stats = reducer_future.await;

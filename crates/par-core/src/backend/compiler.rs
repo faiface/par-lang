@@ -1,16 +1,8 @@
-use futures::{future::RemoteHandle, task::SpawnExt};
-
-use crate::{
-    frontend_impl::{language::GlobalName, types::Type},
-    runtime_impl::{
-        flat::stats::Rewrites,
-        readback::Handle,
-    },
-};
+use crate::frontend_impl::{language::GlobalName, types::Type};
 use std::collections::HashMap;
 
-use std::fmt::Display;
 use crate::backend::flat::transpiler::Transpiled;
+use std::fmt::Display;
 
 #[derive(Clone)]
 pub struct Compiled {
@@ -40,22 +32,5 @@ impl Compiled {
     }
     pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
         self.name_to_ty.get(name).cloned()
-    }
-    pub async fn start_and_instantiate(
-        &self,
-        name: &GlobalName,
-    ) -> (Handle, RemoteHandle<Rewrites>) {
-        let (reducer, net_handle) = self.code.new_reducer();
-        let spawner = reducer.spawner();
-        let reducer_future = reducer.spawn_reducer();
-        (
-            Handle::from(self.code.instantiate(net_handle, name).unwrap()),
-            spawner
-                .spawn_with_handle(async move {
-                    let reducer = reducer_future.await;
-                    reducer.runtime.rewrites
-                })
-                .unwrap(),
-        )
     }
 }

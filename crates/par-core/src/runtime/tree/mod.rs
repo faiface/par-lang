@@ -16,4 +16,3 @@
 
 pub(crate) mod net;
 pub(crate) use net::Net;
-use crate::backend::tree::compiler;

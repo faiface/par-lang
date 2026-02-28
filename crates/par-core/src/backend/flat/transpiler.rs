@@ -3,22 +3,21 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
+use crate::frontend_impl::types::{visit, Type, TypeDefs, TypeError};
 use crate::runtime_impl::flat::readback::Handle;
 use crate::runtime_impl::flat::reducer::NetHandle;
-use crate::frontend_impl::types::{Type, TypeDefs, TypeError, visit};
 
 use std::sync::OnceLock;
 
+use crate::backend::tree::compiler::IcCompiled;
 use crate::frontend_impl::language::GlobalName;
 use crate::runtime_impl::flat::arena::{Arena, Index};
-use crate::runtime_impl::flat::reducer::Reducer;
 use crate::runtime_impl::flat::runtime::{
     ExternalArc, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
 };
 use crate::runtime_impl::{flat, tree};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
-use crate::backend::tree::compiler::IcCompiled;
 
 use crate::runtime_impl::tree::Net;
 use flat::runtime::Global;
@@ -103,9 +102,6 @@ impl Transpiled {
 
     pub fn new_runtime(&self) -> Runtime {
         Runtime::from(self.arena.clone())
-    }
-    pub fn new_reducer(&self) -> (Reducer, NetHandle) {
-        Reducer::from(Runtime::from(self.arena.clone()))
     }
     pub fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
         let package = self.get_with_name(name)?;

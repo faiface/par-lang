@@ -77,7 +77,7 @@ pub mod frontend {
 
 pub mod runtime {
     pub use crate::runtime_impl::{
-        Compiled, Handle, Rewrites, RuntimeCompilerError, TypedHandle, TypedReadback,
+        Compiled, Handle, Rewrites, RuntimeCompilerError, TypedHandle, TypedReadback, executor::start_and_instantiate
     };
 }
 

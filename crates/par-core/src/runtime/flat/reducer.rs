@@ -1,11 +1,10 @@
 use super::readback::Handle;
 use crate::runtime_impl::flat::runtime::{Linear, Node, Runtime, UserData};
-use crate::runtime_impl::flat::stats::Rewrites;
 use crate::spawn::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -40,7 +39,7 @@ impl Drop for NetHandle {
     }
 }
 
-pub struct Reducer {
+pub(crate) struct Reducer {
     pub runtime: Runtime,
     spawner: Arc<dyn Spawn + Send + Sync>,
     inbox: mpsc::UnboundedReceiver<ReducerMessage>,
@@ -49,7 +48,7 @@ pub struct Reducer {
 }
 
 impl Reducer {
-    pub fn from(runtime: Runtime) -> (Self, NetHandle) {
+    pub(crate) fn from(runtime: Runtime) -> (Self, NetHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
         let num_handles = Arc::new(AtomicUsize::new(0));
         (
@@ -92,7 +91,7 @@ impl Reducer {
             ReducerMessage::Created(_) => {}
         }
     }
-    pub async fn run(&mut self) {
+    pub(crate)  async fn run(&mut self) {
         loop {
             loop {
                 if !self.runtime.redexes.is_empty() {
@@ -145,7 +144,7 @@ impl Reducer {
             }
         }
     }
-    pub fn spawn_reducer(mut self) -> RemoteHandle<Self> {
+    pub(crate) fn spawn_reducer(mut self) -> RemoteHandle<Self> {
         self.spawner
             .clone()
             .spawn_with_handle(async move {
@@ -154,10 +153,7 @@ impl Reducer {
             })
             .unwrap()
     }
-    pub fn stats(&self) -> Rewrites {
-        self.runtime.rewrites.clone()
-    }
-    pub fn spawner(&self) -> Arc<dyn Spawn + Send + Sync> {
+    pub(crate) fn spawner(&self) -> Arc<dyn Spawn + Send + Sync> {
         self.spawner.clone()
     }
 }
