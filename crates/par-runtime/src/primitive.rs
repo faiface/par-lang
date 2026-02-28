@@ -6,8 +6,6 @@ use std::{
 use bytes::Bytes;
 use num_bigint::BigInt;
 
-use super::types::Type;
-
 #[derive(Clone, Debug)]
 pub enum Primitive {
     Int(BigInt),
@@ -39,22 +37,6 @@ impl Primitive {
         self.pretty(&mut buf, 0).unwrap();
         buf
     }
-
-    pub fn get_type(&self) -> Type {
-        match self {
-            Self::Int(n) if n >= &BigInt::ZERO => Type::nat(),
-            Self::Int(_) => Type::int(),
-            Self::String(s) if is_single_char(s.as_str()) => Type::char(),
-            Self::String(_) => Type::string(),
-            Self::Bytes(b) if b.len() == 1 => Type::byte(),
-            Self::Bytes(_) => Type::bytes(),
-        }
-    }
-}
-
-fn is_single_char(string: &str) -> bool {
-    let mut chars = string.chars();
-    chars.next().is_some() && chars.next().is_none()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

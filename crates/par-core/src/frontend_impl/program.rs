@@ -6,8 +6,9 @@ use indexmap::IndexMap;
 use crate::{
     frontend_impl::parse::parse_module,
     location::{FileName, Point, Span, Spanning},
-    runtime::Handle,
 };
+
+use par_runtime::readback::Handle;
 
 use super::language;
 use super::{

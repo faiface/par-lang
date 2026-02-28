@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
-use crate::runtime_impl::flat::{
+use crate::flat::{
     runtime::PackageBody,
     show::{Showable, Shower},
 };

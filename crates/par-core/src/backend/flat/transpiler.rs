@@ -1,26 +1,26 @@
-use crate::runtime_impl::flat::runtime::Runtime;
+use par_runtime::flat::runtime::Runtime;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError, visit};
-use crate::runtime_impl::flat::readback::Handle;
-use crate::runtime_impl::flat::reducer::NetHandle;
+use par_runtime::flat::readback::Handle;
+use par_runtime::flat::reducer::NetHandle;
 
 use std::sync::OnceLock;
 
 use crate::backend::tree::compiler::IcCompiled;
 use crate::frontend_impl::language::GlobalName;
-use crate::runtime_impl::flat::arena::{Arena, Index};
-use crate::runtime_impl::flat::runtime::{
-    ExternalArc, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
-};
-use crate::runtime_impl::{flat, tree};
+use crate::runtime_impl::tree;
 use arcstr::ArcStr;
 use indexmap::IndexMap;
+use par_runtime::flat::arena::{Arena, Index};
+use par_runtime::flat::runtime::{
+    ExternalArc, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
+};
 
 use crate::runtime_impl::tree::Net;
-use flat::runtime::Global;
+use par_runtime::flat::runtime::Global;
 
 #[derive(Default)]
 pub(crate) struct NetTranspiler {

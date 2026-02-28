@@ -3,10 +3,8 @@ use std::sync::Arc;
 use arcstr::literal;
 use num_bigint::BigInt;
 
-use par_core::{
-    frontend::{Definition, Module, Type, TypeDef, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, Type, TypeDef, process};
+use par_runtime::readback::Handle;
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

@@ -2,9 +2,9 @@ use super::reducer::{NetHandle, ReducerMessage};
 use super::runtime::{
     ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, Value,
 };
-use crate::frontend_impl::primitive::Primitive;
-use crate::runtime_impl::flat::arena::Arena;
-use crate::runtime_impl::flat::runtime::Linker;
+use crate::flat::arena::Arena;
+use crate::flat::runtime::Linker;
+use crate::primitive::Primitive;
 use arcstr::ArcStr;
 use futures::task::FutureObj;
 use std::future::Future;

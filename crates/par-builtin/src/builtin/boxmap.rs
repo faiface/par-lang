@@ -6,10 +6,8 @@ use crate::builtin::list::readback_list;
 use arcstr::literal;
 use im::OrdMap;
 use num_bigint::BigInt;
-use par_core::{
-    frontend::{Definition, Module, Type, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, Type, process};
+use par_runtime::readback::Handle;
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

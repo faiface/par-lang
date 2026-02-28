@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 par-core = { path = "../par-core" }
+par-runtime = { path = "../par-runtime" }
 
 arcstr = "1.2.0"
 bytes = "1.6.1"

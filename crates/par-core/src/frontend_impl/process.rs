@@ -1,15 +1,15 @@
 pub use super::captures::{Captures, VariableUsage};
 use super::{
     language::{GlobalName, LocalName},
-    primitive::Primitive,
     types::Type,
 };
 use crate::{
     frontend_impl::program::CheckedModule,
     location::{Span, Spanning},
-    runtime::Handle,
 };
 use indexmap::IndexSet;
+use par_runtime::primitive::Primitive;
+use par_runtime::readback::Handle;
 use std::{
     fmt::{self, Write},
     future::Future,

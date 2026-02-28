@@ -1,0 +1,15 @@
+[package]
+name = "par-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+playground=[]
+
+[dependencies]
+arcstr = "1.2.0"
+futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal", "sync"] }
+stacker = "0.1.19"
+num-bigint = "0.4.6"
+bytes = "1.6.1"

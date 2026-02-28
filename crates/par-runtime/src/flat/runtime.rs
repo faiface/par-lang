@@ -30,17 +30,18 @@ use core::panic;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
-use crate::runtime_impl::flat::show::Shower;
-use crate::{frontend_impl::primitive::Primitive, runtime_impl::flat::show::Showable};
+use crate::flat::show::Showable;
+use crate::flat::show::Shower;
+use crate::primitive::Primitive;
 
 use super::arena::*;
-use crate::runtime_impl::flat::stats::Rewrites;
-use crate::runtime_impl::tree::net::FanBehavior;
+use crate::fan_behavior::FanBehavior;
+use crate::flat::stats::Rewrites;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::oneshot;
 
-pub(crate) type PackagePtr = Index<OnceLock<Package>>;
+pub type PackagePtr = Index<OnceLock<Package>>;
 pub(crate) type GlobalPtr = Index<Global>;
 type Str = Index<str>;
 
@@ -104,10 +105,10 @@ pub enum UserData {
 }
 
 pub(crate) type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
-pub(crate) type ExternalFn = fn(crate::runtime_impl::Handle) -> ExternalFnRet;
+pub(crate) type ExternalFn = fn(crate::readback::Handle) -> ExternalFnRet;
 
 #[derive(Clone)]
-pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::runtime_impl::Handle) -> ExternalFnRet>);
+pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::readback::Handle) -> ExternalFnRet>);
 
 impl Debug for ExternalArc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -229,7 +230,7 @@ pub enum SyncShared {
     Value(Value<Shared>),
 }
 
-pub(crate) type GlobalValue = Value<GlobalPtr>;
+pub type GlobalValue = Value<GlobalPtr>;
 #[derive(Debug)]
 /// Linear nodes are not stored in the global arena; instead, they
 /// are created by the runtime and by the external dynamically, as needed

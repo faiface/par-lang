@@ -32,9 +32,9 @@
 //!
 //! Hopefully, this runtime will work well enough for a long time.
 
-pub(crate) mod arena;
-pub(crate) mod readback;
-pub(crate) mod reducer;
-pub(crate) mod runtime;
+pub mod arena;
+pub mod readback;
+pub mod reducer;
+pub mod runtime;
 pub(crate) mod show;
-pub(crate) mod stats;
+pub mod stats;

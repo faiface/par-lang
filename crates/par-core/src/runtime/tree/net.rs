@@ -13,7 +13,8 @@ use futures::channel::oneshot;
 use indexmap::IndexMap;
 use num_bigint::BigInt;
 
-use crate::frontend_impl::primitive::{ParString, Primitive};
+use par_runtime::fan_behavior::FanBehavior;
+use par_runtime::primitive::{ParString, Primitive};
 
 pub(crate) type VarId = usize;
 
@@ -27,18 +28,6 @@ pub(crate) fn number_to_string(mut number: usize) -> String {
         number = (number - 1) / 26;
     }
     result
-}
-
-#[derive(Clone, Debug)]
-/// The behavior of a `Package` node when it interacts
-/// with a fan node (duplicate or erase)
-pub enum FanBehavior {
-    /// Expand the package and then duplicate/erase it
-    /// Used for side-effectful and top level packages
-    Expand,
-    /// Propagate the fan operator through the captures
-    /// Used in boxes.
-    Propagate,
 }
 
 /// A `Tree` corresponds to a port that is the root of a tree of interaction combinators.
@@ -63,12 +52,12 @@ pub enum Tree {
     StringRequest(oneshot::Sender<ParString>),
     BytesRequest(oneshot::Sender<Bytes>),
 
-    External(fn(crate::runtime_impl::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
+    External(fn(par_runtime::readback::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
     ExternalBox(
         Arc<
             dyn Send
                 + Sync
-                + Fn(crate::runtime_impl::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+                + Fn(par_runtime::readback::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
         >,
     ),
 }

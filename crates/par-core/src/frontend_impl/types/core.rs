@@ -4,6 +4,8 @@ use crate::frontend_impl::types::{TypeDefs, TypeError, visit};
 use crate::location::{Span, Spanning};
 use arcstr::ArcStr;
 use im::HashSet;
+use num_bigint::BigInt;
+use par_runtime::primitive::Primitive;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
@@ -30,6 +32,22 @@ pub enum PrimitiveType {
     Char,
     Byte,
     Bytes,
+}
+
+pub(crate) fn get_primitive_type(primitive: &Primitive) -> Type {
+    match primitive {
+        Primitive::Int(n) if n >= &BigInt::ZERO => Type::nat(),
+        Primitive::Int(_) => Type::int(),
+        Primitive::String(s) if is_single_char(s.as_str()) => Type::char(),
+        Primitive::String(_) => Type::string(),
+        Primitive::Bytes(b) if b.len() == 1 => Type::byte(),
+        Primitive::Bytes(_) => Type::bytes(),
+    }
+}
+
+pub(crate) fn is_single_char(string: &str) -> bool {
+    let mut chars = string.chars();
+    chars.next().is_some() && chars.next().is_none()
 }
 
 #[derive(Debug, Clone, Copy)]

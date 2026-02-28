@@ -20,13 +20,13 @@ pub mod frontend {
 
     pub use crate::frontend_impl::parse::SyntaxError;
     pub use crate::frontend_impl::parse_bytes;
-    pub use crate::frontend_impl::primitive::{ParString, Primitive};
     pub use crate::frontend_impl::program::{
         CheckedModule, Declaration, Definition, Module, ParseAndCompileError, TypeDef, TypeOnHover,
     };
     pub use crate::frontend_impl::set_miette_hook;
     pub use crate::frontend_impl::types::lattice::{intersect_types, union_types};
     pub use crate::frontend_impl::types::{Operation, PrimitiveType, Type, TypeDefs, TypeError};
+    pub use par_runtime::primitive::{ParString, Primitive};
 
     pub type HighLevelModule = Module<language::Expression>;
     pub type LowLevelModule = Module<Arc<process::Expression<()>>>;
@@ -76,14 +76,12 @@ pub mod frontend {
 }
 
 pub mod runtime {
-    pub use crate::runtime_impl::{
-        Compiled, Handle, Rewrites, RuntimeCompilerError, TypedHandle, TypedReadback,
-        executor::start_and_instantiate,
-    };
+    pub use crate::runtime_impl::{Compiled, RuntimeCompilerError};
+    pub use crate::typed_readback::{TypedHandle, TypedReadback};
 }
 
 pub mod execution {
-    pub use crate::spawn::TokioSpawn;
+    pub use par_runtime::spawn::TokioSpawn;
 }
 
 pub mod testing {

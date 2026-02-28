@@ -2914,6 +2914,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "par-core",
+ "par-runtime",
  "percent-encoding",
  "reqwest",
  "serde",
@@ -2935,8 +2936,7 @@ dependencies = [
  "indexmap",
  "miette",
  "num-bigint",
- "stacker",
- "tokio",
+ "par-runtime",
  "unescaper",
  "winnow",
 ]
@@ -2965,6 +2965,7 @@ dependencies = [
  "num-traits",
  "par-builtin",
  "par-core",
+ "par-runtime",
  "percent-encoding",
  "reqwest",
  "rfd",
@@ -2980,6 +2981,18 @@ dependencies = [
  "url",
  "wild",
  "winnow",
+]
+
+[[package]]
+name = "par-runtime"
+version = "0.1.0"
+dependencies = [
+ "arcstr",
+ "bytes",
+ "futures",
+ "num-bigint",
+ "stacker",
+ "tokio",
 ]
 
 [[package]]

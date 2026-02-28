@@ -4,22 +4,19 @@ use super::{
         Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
     },
     lexer::{Input, Token, TokenKind, lex},
-    primitive::Primitive,
 };
 use crate::frontend_impl::{
     language::LocalName,
     program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
-use crate::{
-    frontend_impl::primitive::ParString,
-    location::{FileName, Span, Spanning},
-};
+use crate::location::{FileName, Span, Spanning};
 use arcstr::ArcStr;
 use bytes::Bytes;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
+use par_runtime::primitive::{ParString, Primitive};
 use std::collections::BTreeMap;
 use winnow::token::literal;
 use winnow::{

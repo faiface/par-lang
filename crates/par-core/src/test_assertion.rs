@@ -6,7 +6,7 @@ use crate::frontend_impl::process;
 use crate::frontend_impl::program::{Module, TypeDef};
 use crate::frontend_impl::types::Type;
 use crate::location::Span;
-use crate::runtime_impl::Handle;
+use par_runtime::readback::Handle;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssertionResult {

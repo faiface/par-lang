@@ -10,7 +10,6 @@ use par_core::{
         ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
         type_check,
     },
-    runtime,
     runtime::RuntimeCompilerError,
 };
 use tokio::time::Instant;
@@ -276,8 +275,9 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_inte
         };
 
         let start = Instant::now();
-
-        let (root, reducer_future) = runtime::start_and_instantiate(&rt_compiled, name).await;
+        let package = rt_compiled.code.get_with_name(name).unwrap();
+        let (root, reducer_future) =
+            par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
 
         root.continue_();
         let stats = reducer_future.await;

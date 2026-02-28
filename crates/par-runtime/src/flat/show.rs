@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
-use crate::runtime_impl::flat::arena::Arena;
-use crate::runtime_impl::flat::runtime::{
+use crate::flat::arena::Arena;
+use crate::flat::runtime::{
     Global, GlobalPtr, Linear, Node, PackageBody, Shared, SyncShared, Value,
 };
 
@@ -49,10 +49,10 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Linear> {
             }
             Linear::ShareHole(mutex) => match mutex.try_lock() {
                 Ok(lock) => match &*lock {
-                    crate::runtime_impl::flat::runtime::SharedHole::Filled(_sync_shared) => {
+                    crate::flat::runtime::SharedHole::Filled(_sync_shared) => {
                         write!(f, "<unexpected filled share hole>")?;
                     }
-                    crate::runtime_impl::flat::runtime::SharedHole::Unfilled(_nodes) => {
+                    crate::flat::runtime::SharedHole::Unfilled(_nodes) => {
                         write!(f, "<unfilled hole>")?;
                     }
                 },
@@ -70,10 +70,10 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Shared> {
         match self.0 {
             Shared::Async(mutex) => match mutex.try_lock() {
                 Ok(lock) => match &*lock {
-                    crate::runtime_impl::flat::runtime::SharedHole::Filled(sync_shared) => {
+                    crate::flat::runtime::SharedHole::Filled(sync_shared) => {
                         write!(f, "{}", Showable(sync_shared, self.1))?;
                     }
-                    crate::runtime_impl::flat::runtime::SharedHole::Unfilled(_) => {
+                    crate::flat::runtime::SharedHole::Unfilled(_) => {
                         write!(f, "<waiting>")?;
                     }
                 },
@@ -119,7 +119,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Global> {
                 write!(f, "}}")?;
             }
             Global::Destruct(global_cont) => {
-                use crate::runtime_impl::flat::runtime::GlobalCont::*;
+                use crate::flat::runtime::GlobalCont::*;
                 match global_cont {
                     Continue => write!(f, "?")?,
                     Par(a, b) => {
@@ -163,7 +163,7 @@ where
     Showable<'a, 'b, &'a P>: Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::runtime_impl::flat::runtime::Value::*;
+        use crate::flat::runtime::Value::*;
         match self.0 {
             Break => write!(f, "!")?,
             Pair(a, b) => {

@@ -7,10 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use arcstr::{ArcStr, literal};
-
 use super::{
-    primitive::Primitive,
     process::{self, Captures},
     types::Type,
 };
@@ -19,6 +16,8 @@ use crate::{
     frontend_impl::types::error::labels_from_span,
     location::{Span, Spanning},
 };
+use arcstr::{ArcStr, literal};
+use par_runtime::primitive::Primitive;
 
 #[derive(Clone, Debug)]
 pub struct LocalName {

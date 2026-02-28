@@ -1,5 +1,5 @@
 use super::readback::Handle;
-use crate::runtime_impl::flat::runtime::{Linear, Node, Runtime, UserData};
+use crate::flat::runtime::{Linear, Node, Runtime, UserData};
 use crate::spawn::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};

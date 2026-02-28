@@ -1,12 +1,12 @@
-use arcstr::literal;
-use bytes::Bytes;
-use std::collections::VecDeque;
-
 use crate::builtin::{
     bytes::{BytesMachine, BytesPattern},
     string::{StringMachine, StringPattern},
 };
-use par_core::{frontend::ParString, runtime::Handle};
+use arcstr::literal;
+use bytes::Bytes;
+use par_core::frontend::ParString;
+use par_runtime::readback::Handle;
+use std::collections::VecDeque;
 
 pub(super) trait BytesRemainder {
     type Err;

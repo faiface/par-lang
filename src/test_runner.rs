@@ -5,7 +5,6 @@ use par_core::{
         CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
         language::GlobalName, lower, parse, set_miette_hook, type_check,
     },
-    runtime,
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
 };
@@ -303,8 +302,10 @@ fn run_single_definition(
         let _ty = rt_compiled
             .get_type_of(name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
+        let package = rt_compiled.code.get_with_name(name).unwrap();
 
-        let (handle, fut) = runtime::start_and_instantiate(&rt_compiled, name).await;
+        let (handle, fut) =
+            par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
         handle.continue_();
         fut.await;
         Ok(TestStatus::PassedWithNoAssertions)
@@ -331,7 +332,9 @@ async fn run_test_with_test_type(
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = mpsc::channel();
 
-    let (mut root, reducer_future) = runtime::start_and_instantiate(&rt_compiled, name).await;
+    let package = rt_compiled.code.get_with_name(name).unwrap();
+    let (mut root, reducer_future) =
+        par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
 
     // Spawn the test function execution
     //

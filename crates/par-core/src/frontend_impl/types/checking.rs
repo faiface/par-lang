@@ -1,7 +1,7 @@
 use super::super::language::LocalName;
 use super::super::process::{Command, Expression, PollKind, Process};
 use super::context::{PollPointScope, PollScope};
-use super::core::{LoopId, Operation, Type};
+use super::core::{LoopId, Operation, Type, get_primitive_type};
 use super::error::TypeError;
 use super::lattice::union_types;
 use super::{Context, TypeDefs};
@@ -1739,7 +1739,7 @@ impl Context {
             }
 
             Expression::Primitive(span, value, ()) => {
-                let typ = value.get_type();
+                let typ = get_primitive_type(value);
                 typ.check_assignable(span, target_type, &self.type_defs)?;
                 Ok(Arc::new(Expression::Primitive(
                     span.clone(),
@@ -1857,7 +1857,7 @@ impl Context {
             }
 
             Expression::Primitive(span, value, ()) => {
-                let typ = value.get_type();
+                let typ = get_primitive_type(value);
                 Ok((
                     Arc::new(Expression::Primitive(
                         span.clone(),

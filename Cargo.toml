@@ -9,11 +9,12 @@ repository = "https://github.com/faiface/par-lang"
 
 [features]
 default = ["playground"]
-playground = ["eframe", "egui_code_editor", "rfd", "par-core/playground"]
+playground = ["eframe", "egui_code_editor", "rfd", "par-core/playground", "par-runtime/playground"]
 
 [dependencies]
 par-core = { path = "crates/par-core" }
 par-builtin = { path = "crates/par-builtin" }
+par-runtime = { path = "crates/par-runtime" }
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
 eframe = { version = "0.33.0", features = ["default", "__screenshot"], optional = true }
 egui_code_editor = { version = "0.2.20", optional = true }

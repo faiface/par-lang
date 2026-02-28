@@ -1,9 +1,7 @@
 use arcstr::literal;
 use num_bigint::BigInt;
-use par_core::{
-    frontend::{Definition, Module, ParString, Type, TypeDef, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, ParString, Type, TypeDef, process};
+use par_runtime::readback::Handle;
 use std::{cmp::Ordering, sync::Arc};
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {

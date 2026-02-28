@@ -6,12 +6,12 @@ use std::{
 };
 
 use crate::frontend_impl::process::VariableUsage;
+use crate::frontend_impl::types::core::get_primitive_type;
 use crate::frontend_impl::{
     language::{GlobalName, LocalName},
     process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
 };
-use crate::runtime_impl::tree::net::FanBehavior;
 use crate::runtime_impl::tree::net::{Net, Tree};
 use crate::{
     frontend_impl::{
@@ -22,6 +22,7 @@ use crate::{
 };
 use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
+use par_runtime::fan_behavior::FanBehavior;
 use std::hash::Hash;
 
 #[derive(Clone, Debug)]
@@ -242,19 +243,18 @@ pub(crate) struct Compiler {
 }
 
 fn poll_token(
-    handle: crate::runtime_impl::Handle,
+    handle: par_runtime::readback::Handle,
 ) -> Pin<Box<dyn Send + core::future::Future<Output = ()>>> {
     Box::pin(poll_token_server(handle))
 }
 
-async fn poll_token_server(mut handle: crate::runtime_impl::Handle) {
+async fn poll_token_server(mut handle: par_runtime::readback::Handle) {
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
     use futures::stream::StreamExt as _;
 
-    let mut clients: FuturesUnordered<
-        BoxFuture<'static, crate::runtime_impl::flat::readback::Handle>,
-    > = FuturesUnordered::new();
+    let mut clients: FuturesUnordered<BoxFuture<'static, par_runtime::flat::readback::Handle>> =
+        FuturesUnordered::new();
 
     loop {
         let op = handle.case().await;
@@ -276,7 +276,7 @@ async fn poll_token_server(mut handle: crate::runtime_impl::Handle) {
                     .expect("poll clients stream unexpectedly empty");
 
                 result_slot.signal(ArcStr::from("#client"));
-                result_slot.link(crate::runtime_impl::Handle::from(client));
+                result_slot.link(par_runtime::readback::Handle::from(client));
             }
 
             "#submit" => {
@@ -666,7 +666,7 @@ impl Compiler {
 
             Expression::Primitive(_, value, _) => Ok(TypedTree {
                 tree: Tree::Primitive(value.clone()),
-                ty: value.get_type(),
+                ty: get_primitive_type(value),
             }),
 
             Expression::External(_, f, typ) => Ok(TypedTree {
