@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use super::net::{Net, Tree};
+use crate::runtime_impl::tree::net::{Net, Tree};
 use crate::frontend_impl::process::VariableUsage;
 use crate::frontend_impl::{
     language::{GlobalName, LocalName},

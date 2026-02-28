@@ -3,13 +3,14 @@ use futures::{future::RemoteHandle, task::SpawnExt};
 use crate::{
     frontend_impl::{language::GlobalName, types::Type},
     runtime_impl::{
-        flat::{stats::Rewrites, transpiler::Transpiled},
+        flat::stats::Rewrites,
         readback::Handle,
     },
 };
 use std::collections::HashMap;
 
 use std::fmt::Display;
+use crate::backend::flat::transpiler::Transpiled;
 
 #[derive(Clone)]
 pub struct Compiled {

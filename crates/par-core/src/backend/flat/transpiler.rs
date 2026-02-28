@@ -1,10 +1,10 @@
-use super::runtime::Runtime;
+use crate::runtime_impl::flat::runtime::Runtime;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
-use super::readback::Handle;
-use super::reducer::NetHandle;
+use crate::runtime_impl::flat::readback::Handle;
+use crate::runtime_impl::flat::reducer::NetHandle;
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError, visit};
 
 use std::sync::OnceLock;
@@ -18,7 +18,7 @@ use crate::runtime_impl::flat::runtime::{
 use crate::runtime_impl::{flat, tree};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
-use tree::compiler::IcCompiled;
+use crate::backend::tree::compiler::IcCompiled;
 
 use crate::runtime_impl::tree::Net;
 use flat::runtime::Global;
@@ -89,7 +89,7 @@ impl Transpiled {
         max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         let type_defs = module.type_defs.clone();
-        let ic_compiled = crate::runtime_impl::tree::compiler::IcCompiled::compile_file(
+        let ic_compiled = crate::backend::tree::compiler::IcCompiled::compile_file(
             module,
             max_interactions,
         )?;

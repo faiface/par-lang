@@ -14,6 +14,6 @@
 //! The [`readback`] module exposes an async API to progressively read back normal-form interaction combinator nets
 //! back into Par expressions.
 
-pub(crate) mod compiler;
 pub(crate) mod net;
 pub(crate) use net::Net;
+use crate::backend::tree::compiler;
