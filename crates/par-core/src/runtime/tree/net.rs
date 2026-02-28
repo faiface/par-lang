@@ -13,7 +13,7 @@ use futures::channel::oneshot;
 use indexmap::IndexMap;
 use num_bigint::BigInt;
 
-use crate::par::primitive::{ParString, Primitive};
+use crate::frontend_impl::primitive::{ParString, Primitive};
 
 pub(crate) type VarId = usize;
 

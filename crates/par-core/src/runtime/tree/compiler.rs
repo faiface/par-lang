@@ -6,8 +6,8 @@ use std::{
 };
 
 use super::net::{Net, Tree};
-use crate::par::process::VariableUsage;
-use crate::par::{
+use crate::frontend_impl::process::VariableUsage;
+use crate::frontend_impl::{
     language::{GlobalName, LocalName},
     process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
@@ -15,7 +15,7 @@ use crate::par::{
 use crate::runtime_impl::tree::net::FanBehavior;
 use crate::{
     location::{Span, Spanning},
-    par::{
+    frontend_impl::{
         program::{CheckedModule, Definition},
         types::TypeDefs,
     },

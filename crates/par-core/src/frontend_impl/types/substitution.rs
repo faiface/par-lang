@@ -2,7 +2,7 @@ use super::super::language::LocalName;
 use super::core::Type;
 use super::error::TypeError;
 use crate::location::Span;
-use crate::par::types::visit;
+use crate::frontend_impl::types::visit;
 use std::collections::BTreeMap;
 
 impl Type {

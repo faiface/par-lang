@@ -1,7 +1,7 @@
 use crate::location::Span;
-use crate::par::language::LocalName;
-use crate::par::types::visit;
-use crate::par::types::{LoopId, Type, TypeDefs, TypeError};
+use crate::frontend_impl::language::LocalName;
+use crate::frontend_impl::types::visit;
+use crate::frontend_impl::types::{LoopId, Type, TypeDefs, TypeError};
 use im::HashSet;
 
 impl Type {

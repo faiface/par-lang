@@ -1,8 +1,8 @@
 use crate::location::Span;
-use crate::par::language::LocalName;
-use crate::par::types::core::Hole;
-use crate::par::types::lattice::{intersect_types, union_types};
-use crate::par::types::{Type, TypeDefs, TypeError};
+use crate::frontend_impl::language::LocalName;
+use crate::frontend_impl::types::core::Hole;
+use crate::frontend_impl::types::lattice::{intersect_types, union_types};
+use crate::frontend_impl::types::{Type, TypeDefs, TypeError};
 use im::HashMap;
 use std::collections::BTreeMap;
 

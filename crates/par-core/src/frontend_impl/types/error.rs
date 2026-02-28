@@ -1,6 +1,6 @@
 use crate::location::{Span, Spanning};
-use crate::par::language::{GlobalName, LocalName};
-use crate::par::types::{LoopId, Operation, Type};
+use crate::frontend_impl::language::{GlobalName, LocalName};
+use crate::frontend_impl::types::{LoopId, Operation, Type};
 use indexmap::IndexMap;
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;

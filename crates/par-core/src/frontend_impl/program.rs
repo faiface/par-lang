@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use crate::{
     location::{FileName, Point, Span, Spanning},
-    par::parse::parse_module,
+    frontend_impl::parse::parse_module,
     runtime::Handle,
 };
 

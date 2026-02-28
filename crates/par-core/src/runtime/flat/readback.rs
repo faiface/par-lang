@@ -2,7 +2,7 @@ use super::reducer::{NetHandle, ReducerMessage};
 use super::runtime::{
     ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, Value,
 };
-use crate::par::primitive::Primitive;
+use crate::frontend_impl::primitive::Primitive;
 use crate::runtime_impl::flat::arena::Arena;
 use crate::runtime_impl::flat::runtime::Linker;
 use arcstr::ArcStr;

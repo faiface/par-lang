@@ -1,7 +1,7 @@
 use super::super::language::LocalName;
 use super::core::Type;
 use crate::location::Span;
-use crate::par::types::visit;
+use crate::frontend_impl::types::visit;
 
 impl Type {
     pub fn dual(self, span0: Span) -> Self {

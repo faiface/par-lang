@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use crate::location::Span;
-use crate::par::language::GlobalName;
-use crate::par::process;
-use crate::par::program::{Module, TypeDef};
-use crate::par::types::Type;
+use crate::frontend_impl::language::GlobalName;
+use crate::frontend_impl::process;
+use crate::frontend_impl::program::{Module, TypeDef};
+use crate::frontend_impl::types::Type;
 use crate::runtime_impl::Handle;
 
 #[derive(Debug, Clone, PartialEq)]

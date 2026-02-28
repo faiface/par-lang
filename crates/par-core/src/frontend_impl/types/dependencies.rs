@@ -1,6 +1,6 @@
 use super::super::language::GlobalName;
 use super::core::Type;
-use crate::par::types::visit;
+use crate::frontend_impl::types::visit;
 
 impl Type {
     pub fn get_dependencies(&self) -> Vec<GlobalName> {

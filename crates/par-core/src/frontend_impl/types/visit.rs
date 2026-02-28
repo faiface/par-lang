@@ -1,6 +1,6 @@
 use super::{Type, TypeDefs, TypeError};
 use crate::location::Span;
-use crate::par::language::{GlobalName, LocalName};
+use crate::frontend_impl::language::{GlobalName, LocalName};
 use indexmap::IndexSet;
 
 pub(crate) fn continue_<E, F>(typ: &Type, mut visit: F) -> Result<(), E>

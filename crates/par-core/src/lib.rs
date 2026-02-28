@@ -3,7 +3,7 @@
 #[path = "api.rs"]
 mod facade;
 pub(crate) mod location;
-pub(crate) mod par;
+pub(crate) mod frontend_impl;
 #[path = "runtime/mod.rs"]
 pub(crate) mod runtime_impl;
 pub(crate) mod spawn;

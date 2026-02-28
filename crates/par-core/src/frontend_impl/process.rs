@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     location::{Span, Spanning},
-    par::program::CheckedModule,
+    frontend_impl::program::CheckedModule,
     runtime::Handle,
 };
 use indexmap::IndexSet;

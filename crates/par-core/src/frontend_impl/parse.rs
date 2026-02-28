@@ -6,14 +6,14 @@ use super::{
     lexer::{Input, Token, TokenKind, lex},
     primitive::Primitive,
 };
-use crate::par::{
+use crate::frontend_impl::{
     language::LocalName,
     program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
 use crate::{
     location::{FileName, Span, Spanning},
-    par::primitive::ParString,
+    frontend_impl::primitive::ParString,
 };
 use arcstr::ArcStr;
 use bytes::Bytes;

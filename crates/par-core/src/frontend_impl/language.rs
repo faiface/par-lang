@@ -14,10 +14,10 @@ use super::{
     process::{self, Captures},
     types::Type,
 };
-use crate::par::process::VariableUsage;
+use crate::frontend_impl::process::VariableUsage;
 use crate::{
     location::{Span, Spanning},
-    par::types::error::labels_from_span,
+    frontend_impl::types::error::labels_from_span,
 };
 
 #[derive(Clone, Debug)]

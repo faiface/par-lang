@@ -31,7 +31,7 @@ use std::fmt::Debug;
 use std::sync::OnceLock;
 
 use crate::runtime_impl::flat::show::Shower;
-use crate::{par::primitive::Primitive, runtime_impl::flat::show::Showable};
+use crate::{frontend_impl::primitive::Primitive, runtime_impl::flat::show::Showable};
 
 use super::arena::*;
 use crate::runtime_impl::flat::stats::Rewrites;

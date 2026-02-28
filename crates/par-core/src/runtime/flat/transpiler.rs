@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use super::readback::Handle;
 use super::reducer::NetHandle;
-use crate::par::types::{Type, TypeDefs, TypeError, visit};
+use crate::frontend_impl::types::{Type, TypeDefs, TypeError, visit};
 
 use std::sync::OnceLock;
 
-use crate::par::language::GlobalName;
+use crate::frontend_impl::language::GlobalName;
 use crate::runtime_impl::flat::arena::{Arena, Index};
 use crate::runtime_impl::flat::reducer::Reducer;
 use crate::runtime_impl::flat::runtime::{
@@ -85,7 +85,7 @@ impl Transpiled {
     }
 
     pub fn compile_file(
-        module: &crate::par::program::CheckedModule,
+        module: &crate::frontend_impl::program::CheckedModule,
         max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         let type_defs = module.type_defs.clone();
