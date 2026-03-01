@@ -1,6 +1,5 @@
+use par_runtime::readback::Handle;
 use std::future::Future;
-
-use par_core::runtime::Handle;
 
 pub(super) async fn readback_list<T, F>(
     mut handle: Handle,

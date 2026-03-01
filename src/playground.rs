@@ -14,7 +14,6 @@ use crate::readback::{Element, RunStats};
 use core::time::Duration;
 use par_builtin::import_builtins;
 use par_core::{
-    execution::TokioSpawn,
     frontend::{
         CheckedModule, Module, ParseAndCompileError, Type, TypeError, TypeOnHover, compile_runtime,
         language::GlobalName, lower, parse, process, type_check,
@@ -22,6 +21,7 @@ use par_core::{
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
 };
+use par_runtime::spawn::TokioSpawn;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::time::Instant;
@@ -572,7 +572,11 @@ impl Playground {
                 *cancel_token = Some(token.clone());
 
                 let ty = name_to_ty.get(name).unwrap();
-                let (handle, reducer_future) = tokio.block_on(compiled.start_and_instantiate(name));
+                let package = compiled.code.get_with_name(name).unwrap();
+                let (handle, reducer_future) = tokio.block_on(par_runtime::start_and_instantiate(
+                    compiled.code.arena.clone(),
+                    package,
+                ));
                 let stats: RunStats = Arc::new(Mutex::new(None));
 
                 let ctx = ui.ctx().clone();

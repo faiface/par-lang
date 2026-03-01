@@ -275,8 +275,9 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_inte
         };
 
         let start = Instant::now();
-
-        let (root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
+        let package = rt_compiled.code.get_with_name(name).unwrap();
+        let (root, reducer_future) =
+            par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
 
         root.continue_();
         let stats = reducer_future.await;

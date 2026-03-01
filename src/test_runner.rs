@@ -302,8 +302,10 @@ fn run_single_definition(
         let _ty = rt_compiled
             .get_type_of(name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
+        let package = rt_compiled.code.get_with_name(name).unwrap();
 
-        let (handle, fut) = rt_compiled.start_and_instantiate(name).await;
+        let (handle, fut) =
+            par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
         handle.continue_();
         fut.await;
         Ok(TestStatus::PassedWithNoAssertions)
@@ -330,7 +332,9 @@ async fn run_test_with_test_type(
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = mpsc::channel();
 
-    let (mut root, reducer_future) = rt_compiled.start_and_instantiate(name).await;
+    let package = rt_compiled.code.get_with_name(name).unwrap();
+    let (mut root, reducer_future) =
+        par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
 
     // Spawn the test function execution
     //

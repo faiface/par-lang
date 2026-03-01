@@ -8,10 +8,8 @@ use crate::builtin::{
     list::readback_list,
     parser::{ReaderRemainder, provide_string_parser},
 };
-use par_core::{
-    frontend::{Definition, Module, ParString, Type, TypeDef, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, ParString, Type, TypeDef, process};
+use par_runtime::readback::Handle;
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

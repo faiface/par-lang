@@ -7,10 +7,8 @@ use arcstr::literal;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use num_bigint::BigInt;
-use par_core::{
-    frontend::{Definition, Module, ParString, Type, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, ParString, Type, process};
+use par_runtime::readback::Handle;
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},

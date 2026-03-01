@@ -9,8 +9,9 @@ use futures::{
 use num_bigint::BigInt;
 use par_core::{
     frontend::{ParString, Primitive, parse_bytes},
-    runtime::{Rewrites, TypedHandle, TypedReadback},
+    runtime::{TypedHandle, TypedReadback},
 };
+use par_runtime::flat::stats::Rewrites;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

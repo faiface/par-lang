@@ -1,8 +1,6 @@
 use num_bigint::BigInt;
-use par_core::{
-    frontend::{Definition, Module, Type, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, Type, process};
+use par_runtime::readback::Handle;
 use std::sync::Arc;
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {

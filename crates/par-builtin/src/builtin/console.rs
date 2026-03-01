@@ -5,10 +5,8 @@ use std::{
 
 use arcstr::literal;
 
-use par_core::{
-    frontend::{Definition, Module, ParString, Type, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, ParString, Type, process};
+use par_runtime::readback::Handle;
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

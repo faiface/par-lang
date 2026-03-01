@@ -16,10 +16,8 @@ use crate::builtin::{
     list::readback_list,
     parser::{ReaderRemainder, provide_bytes_parser},
 };
-use par_core::{
-    frontend::{Definition, Module, Type, TypeDef, process},
-    runtime::Handle,
-};
+use par_core::frontend::{Definition, Module, Type, TypeDef, process};
+use par_runtime::readback::Handle;
 
 pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
     Module {

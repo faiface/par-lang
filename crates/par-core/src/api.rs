@@ -5,28 +5,28 @@ pub mod source {
 pub mod frontend {
     use std::sync::Arc;
 
+    use crate::frontend_impl::language::{CompileError, Context};
+    use crate::frontend_impl::parse::parse_module;
     use crate::location::FileName;
-    use crate::par::language::{CompileError, Context};
-    use crate::par::parse::parse_module;
     use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 
     pub mod language {
-        pub use crate::par::language::*;
+        pub use crate::frontend_impl::language::*;
     }
 
     pub mod process {
-        pub use crate::par::process::*;
+        pub use crate::frontend_impl::process::*;
     }
 
-    pub use crate::par::parse::SyntaxError;
-    pub use crate::par::parse_bytes;
-    pub use crate::par::primitive::{ParString, Primitive};
-    pub use crate::par::program::{
+    pub use crate::frontend_impl::parse::SyntaxError;
+    pub use crate::frontend_impl::parse_bytes;
+    pub use crate::frontend_impl::program::{
         CheckedModule, Declaration, Definition, Module, ParseAndCompileError, TypeDef, TypeOnHover,
     };
-    pub use crate::par::set_miette_hook;
-    pub use crate::par::types::lattice::{intersect_types, union_types};
-    pub use crate::par::types::{Operation, PrimitiveType, Type, TypeDefs, TypeError};
+    pub use crate::frontend_impl::set_miette_hook;
+    pub use crate::frontend_impl::types::lattice::{intersect_types, union_types};
+    pub use crate::frontend_impl::types::{Operation, PrimitiveType, Type, TypeDefs, TypeError};
+    pub use par_runtime::primitive::{ParString, Primitive};
 
     pub type HighLevelModule = Module<language::Expression>;
     pub type LowLevelModule = Module<Arc<process::Expression<()>>>;
@@ -76,13 +76,12 @@ pub mod frontend {
 }
 
 pub mod runtime {
-    pub use crate::runtime_impl::{
-        Compiled, Handle, Rewrites, RuntimeCompilerError, TypedHandle, TypedReadback,
-    };
+    pub use crate::runtime_impl::{Compiled, RuntimeCompilerError};
+    pub use crate::typed_readback::{TypedHandle, TypedReadback};
 }
 
 pub mod execution {
-    pub use crate::spawn::TokioSpawn;
+    pub use par_runtime::spawn::TokioSpawn;
 }
 
 pub mod testing {
