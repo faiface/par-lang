@@ -5,11 +5,13 @@ mod bytes;
 mod char_;
 mod console;
 mod debug;
+#[cfg(not(target_arch = "wasm32"))]
 mod http;
 mod int;
 mod list;
 mod map;
 mod nat;
+#[cfg(not(target_arch = "wasm32"))]
 mod os;
 mod parser;
 mod string;
@@ -28,6 +30,16 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         Module::parse_and_compile(include_str!("./builtin/Builtin.par"), FileName::BUILTIN)
             .unwrap(),
     );
+    #[cfg(not(target_arch = "wasm32"))]
+    module.import(
+        None,
+        Module::parse_and_compile(
+            include_str!("./builtin/NativeBuiltin.par"),
+            FileName::NATIVE_BUILTIN,
+        )
+        .unwrap(),
+    );
+
     module.import(Some("Nat"), nat::external_module());
     module.import(Some("Int"), int::external_module());
     module.import(Some("Bench"), bench::external_module());
@@ -37,10 +49,12 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(Some("Bytes"), bytes::external_module());
     module.import(Some("Debug"), debug::external_module());
     module.import(Some("Console"), console::external_module());
+    #[cfg(not(target_arch = "wasm32"))]
     module.import(Some("Os"), os::external_module());
     module.import(Some("Map"), map::external_module());
     module.import(Some("BoxMap"), boxmap::external_module());
     module.import(Some("Url"), url::external_module());
+    #[cfg(not(target_arch = "wasm32"))]
     module.import(Some("Http"), http::external_module());
     module.import(Some("Time"), time::external_module());
     import_test_module(module);

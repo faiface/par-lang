@@ -8,12 +8,12 @@ use par_core::{
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
 };
+use par_runtime::spawn::TokioSpawn;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use std::{fmt::Display, fs};
-use tokio::runtime::Runtime;
 
 #[derive(Debug, Clone)]
 enum BuildError {
@@ -234,7 +234,7 @@ fn test_single_definition(
 ) -> TestResult {
     let start = Instant::now();
 
-    let runtime = match Runtime::new() {
+    let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
         Err(e) => {
             return TestResult {
@@ -280,7 +280,7 @@ fn run_single_definition(
 ) -> TestResult {
     let start = Instant::now();
 
-    let runtime = match Runtime::new() {
+    let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
         Err(e) => {
             return TestResult {
@@ -304,8 +304,11 @@ fn run_single_definition(
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
         let package = rt_compiled.code.get_with_name(name).unwrap();
 
-        let (handle, fut) =
-            par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
+        let (handle, fut) = par_runtime::start_and_instantiate(
+            Arc::new(TokioSpawn::new()),
+            rt_compiled.code.arena.clone(),
+            package,
+        );
         handle.continue_();
         fut.await;
         Ok(TestStatus::PassedWithNoAssertions)
@@ -333,8 +336,11 @@ async fn run_test_with_test_type(
     let (sender, receiver) = mpsc::channel();
 
     let package = rt_compiled.code.get_with_name(name).unwrap();
-    let (mut root, reducer_future) =
-        par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
+    let (mut root, reducer_future) = par_runtime::start_and_instantiate(
+        Arc::new(TokioSpawn::new()),
+        rt_compiled.code.arena.clone(),
+        package,
+    );
 
     // Spawn the test function execution
     //

@@ -48,13 +48,16 @@ pub(crate) struct Reducer {
 }
 
 impl Reducer {
-    pub(crate) fn from(runtime: Runtime) -> (Self, NetHandle) {
+    pub(crate) fn from(
+        runtime: Runtime,
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
+    ) -> (Self, NetHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
         let num_handles = Arc::new(AtomicUsize::new(0));
         (
             Self {
                 runtime,
-                spawner: Arc::new(TokioSpawn::new()),
+                spawner,
                 inbox: rx,
                 sender: tx.downgrade(),
                 num_handles: num_handles.clone(),
@@ -95,6 +98,7 @@ impl Reducer {
         loop {
             loop {
                 if !self.runtime.redexes.is_empty() {
+                    #[cfg(not(target_arch = "wasm32"))]
                     let start = Instant::now();
                     if let Some((a, b)) = self.runtime.reduce() {
                         match (a, b) {
@@ -122,7 +126,10 @@ impl Reducer {
                             }
                         }
                     }
-                    self.runtime.rewrites.net_duration += start.elapsed();
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        self.runtime.rewrites.net_duration += start.elapsed();
+                    }
                 } else {
                     match self.inbox.try_recv() {
                         Ok(msg) => {
