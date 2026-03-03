@@ -132,6 +132,7 @@ pub struct FileName(pub ArcStr);
 
 impl FileName {
     pub const BUILTIN: Self = FileName(arcstr::literal!("par:Builtin"));
+    pub const NATIVE_BUILTIN: Self = FileName(arcstr::literal!("par:NativeBuiltin"));
 }
 
 impl From<&str> for FileName {

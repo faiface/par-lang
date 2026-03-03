@@ -479,6 +479,7 @@ impl Net {
 
     /// Returns whether a reduction was carried out
     pub fn reduce_one(&mut self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
         if self.rewrites.last_busy_start.is_none() {
             self.rewrites.last_busy_start = Some(Instant::now());
         }

@@ -3,12 +3,12 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    thread,
     time::SystemTime,
 };
 
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
+use futures::task::{Spawn, SpawnExt};
 
 use crate::readback::{Element, RunStats};
 use core::time::Duration;
@@ -24,8 +24,13 @@ use par_core::{
 use par_runtime::spawn::TokioSpawn;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::pin::Pin;
+use std::task::Poll;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
+
+#[cfg(target_arch = "wasm32")]
+use crate::wasm_spawn::WasmSpawn;
 
 #[derive(Debug, Clone)]
 enum BuildError {
@@ -212,10 +217,13 @@ pub struct Playground {
     element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (u32, u32),
     theme_mode: ThemeMode,
+    #[cfg(not(target_arch = "wasm32"))]
     rt: tokio::runtime::Runtime,
+    spawner: Arc<dyn Spawn + Send + Sync + 'static>,
     cancel_token: Option<CancellationToken>,
     file_old_mtime: Option<SystemTime>,
     max_interactions: u32,
+    future: Option<Pin<Box<dyn Future<Output = ()>>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,6 +291,15 @@ impl Playground {
             style.wrap_mode = Some(egui::TextWrapMode::Extend);
         });
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let runtime =
+            crate::tokio_factory::create_runtime().expect("Failed to create Tokio runtime");
+        #[cfg(not(target_arch = "wasm32"))]
+        let spawner = Arc::new(TokioSpawn::from_handle(runtime.handle().clone()));
+
+        #[cfg(target_arch = "wasm32")]
+        let spawner = Arc::new(WasmSpawn::new());
+
         let mut playground = Box::new(Self {
             file_path: file_path.clone(),
             code: "".to_owned(),
@@ -294,13 +311,13 @@ impl Playground {
             element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
-            rt: tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create Tokio runtime"),
+            #[cfg(not(target_arch = "wasm32"))]
+            rt: runtime,
+            spawner,
             cancel_token: None,
             file_old_mtime: None,
             max_interactions: max_interactions,
+            future: None,
         });
 
         if let Some(path) = file_path {
@@ -489,11 +506,15 @@ fn row_and_column(source: &str, index: usize) -> (u32, u32) {
 }
 
 impl Playground {
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_file(&mut self) {
         if let Some(path) = rfd::FileDialog::new().pick_file() {
             self.open(path);
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    fn open_file(&mut self) {}
 
     fn open(&mut self, file_path: PathBuf) {
         if let Ok(file_content) = File::open(&file_path).and_then(|mut file| {
@@ -517,6 +538,7 @@ impl Playground {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn save_file_as(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .set_can_create_directories(true)
@@ -526,6 +548,9 @@ impl Playground {
             self.file_path = Some(path);
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    fn save_file_as(&mut self) {}
 
     fn save_file(&mut self, path: &Path) {
         let _ = File::create(&path).and_then(|mut file| {
@@ -555,14 +580,14 @@ impl Playground {
     }
 
     fn readback(
-        tokio: tokio::runtime::Handle,
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
         cancel_token: &mut Option<CancellationToken>,
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedModule>,
         compiled: &Compiled,
         name_to_ty: &HashMap<GlobalName, Type>,
-    ) {
+    ) -> () {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
                 if let Some(cancel_token) = cancel_token {
@@ -573,10 +598,11 @@ impl Playground {
 
                 let ty = name_to_ty.get(name).unwrap();
                 let package = compiled.code.get_with_name(name).unwrap();
-                let (handle, reducer_future) = tokio.block_on(par_runtime::start_and_instantiate(
+                let (handle, reducer_future) = par_runtime::start_and_instantiate(
+                    spawner.clone(),
                     compiled.code.arena.clone(),
                     package,
-                ));
+                );
                 let stats: RunStats = Arc::new(Mutex::new(None));
 
                 let ctx = ui.ctx().clone();
@@ -584,30 +610,29 @@ impl Playground {
                     Arc::new(move || {
                         ctx.request_repaint();
                     }),
-                    Arc::new(TokioSpawn::from_handle(tokio.clone())),
+                    spawner.clone(),
                     TypedHandle::new(program.type_defs.clone(), ty.clone(), handle),
                     Arc::clone(&stats),
                 ));
-                let tokio_clone = tokio.clone();
                 let stats_clone = Arc::clone(&stats);
                 let ctx = ui.ctx().clone();
-                thread::spawn(move || {
+                spawner.spawn(async move {
+                    #[cfg(not(target_arch = "wasm32"))]
                     let start = Instant::now();
-                    tokio_clone.block_on(async {
-                        tokio::select! {
-                            _ = token.cancelled() => {
-                                println!("Note: Reducer cancelled.");
-                            }
-                            result = reducer_future => {
+                    tokio::select! {
+                        _ = token.cancelled() => {
+                            println!("Note: Reducer cancelled.");
+                        }
+                        result = reducer_future => {
+                           #[cfg(not(target_arch = "wasm32"))] {
                                 let elapsed = start.elapsed();
                                 *stats_clone.lock().unwrap() = Some((result, elapsed));
-                                ctx.request_repaint();
-                                println!("Note: Reducer completed.");
-                            }
+                           }
+                            ctx.request_repaint();
+                            println!("Note: Reducer completed.");
                         }
-                    });
+                    }
                 });
-                break;
             }
         }
     }
@@ -657,7 +682,7 @@ impl Playground {
                         .ui(ui, |ui| {
                             egui::ScrollArea::vertical().show(ui, |ui| {
                                 Self::readback(
-                                    self.rt.handle().clone(),
+                                    self.spawner.clone(),
                                     &mut self.cancel_token,
                                     &mut self.element,
                                     ui,

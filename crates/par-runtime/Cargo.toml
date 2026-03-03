@@ -9,7 +9,12 @@ playground=[]
 [dependencies]
 arcstr = "1.2.0"
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal", "sync"] }
 stacker = "0.1.19"
 num-bigint = "0.4.6"
 bytes = "1.6.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1.49.0", features = ["rt", "macros", "io-util"] }

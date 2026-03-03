@@ -19,7 +19,6 @@ futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
 eframe = { version = "0.33.0", features = ["default", "__screenshot"], optional = true }
 egui_code_editor = { version = "0.2.20", optional = true }
 indexmap = "2.7.0"
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
 stacker = "0.1.19"
 rfd = { version = "0.15.2", optional = true }
 winnow = { version = "0.7.4", features = [
@@ -54,3 +53,12 @@ percent-encoding = "2.3.1"
 
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1.49.0", features = ["rt", "macros", "io-util"] }
+log = "0.4.28"
+wasm-bindgen-futures = "0.4.64"
+web-sys = "0.3.91"

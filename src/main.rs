@@ -14,6 +14,7 @@ use par_core::{
 };
 use tokio::time::Instant;
 
+use par_runtime::spawn::TokioSpawn;
 #[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
@@ -27,6 +28,9 @@ mod playground;
 mod readback;
 mod test;
 mod test_runner;
+mod tokio_factory;
+#[cfg(target_arch = "wasm32")]
+mod wasm_spawn;
 
 const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
@@ -84,6 +88,7 @@ fn build_runtime(
     Ok((checked, rt_compiled))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> ExitCode {
     let matches = command!()
         .subcommand_required(true)
@@ -189,6 +194,54 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        let file = None;
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Playground::new(cc, file, MAX_INTERACTIONS_DEFAULT))),
+            )
+            .await;
+
+        // Remove the loading text and spinner:
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                }
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p> The app has crashed. See the developer console for details. </p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                }
+            }
+        }
+    });
+}
+
 #[cfg(feature = "playground")]
 /// String to save on crash. Used by the playground to avoid losing everything on panic.
 static CRASH_STR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
@@ -198,6 +251,7 @@ fn run_playground(_: Option<PathBuf>) {
     eprintln!("Playground was disabled when building Par")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "playground")]
 fn run_playground(file: Option<PathBuf>, max_interactions: u32) {
     let options = eframe::NativeOptions {
@@ -233,7 +287,7 @@ fn run_playground(file: Option<PathBuf>, max_interactions: u32) {
 }
 
 fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_interactions: u32) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio_factory::create_runtime().expect("Failed to create Tokio runtime");
     runtime.block_on(async {
         let Ok(code) = File::open(&file).and_then(|mut file| {
             use std::io::Read;
@@ -276,8 +330,11 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_inte
 
         let start = Instant::now();
         let package = rt_compiled.code.get_with_name(name).unwrap();
-        let (root, reducer_future) =
-            par_runtime::start_and_instantiate(rt_compiled.code.arena.clone(), package).await;
+        let (root, reducer_future) = par_runtime::start_and_instantiate(
+            Arc::new(TokioSpawn::new()),
+            rt_compiled.code.arena.clone(),
+            package,
+        );
 
         root.continue_();
         let stats = reducer_future.await;
