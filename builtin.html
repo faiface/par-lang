@@ -721,44 +721,6 @@ type Console = iterative choice {
 
 dec Console.Open : Console
 
-
-/// Os
-
-type Os.Error  = String
-type Os.Reader = Bytes.Reader&lt;Os.Error&gt;
-type Os.Writer = Bytes.Writer&lt;Os.Error&gt;
-
-type Os.Path = iterative@append recursive@parent box choice {
-  .name =&gt; Bytes,
-  .absolute =&gt; Bytes,
-  .parts =&gt; List&lt;Bytes&gt;,
-
-  .parent =&gt; Option&lt;self@parent&gt;,
-  .append(Bytes) =&gt; self@append,
-}
-
-dec Os.Path : [Bytes] Os.Path
-
-dec Os.Stdin  : Os.Reader
-dec Os.Stdout : Os.Writer
-dec Os.Stderr : Os.Writer
-
-dec Os.OpenFile             : [Os.Path] Result&lt;Os.Error, Os.Reader&gt;
-dec Os.CreateOrReplaceFile  : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
-dec Os.CreateNewFile        : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
-dec Os.AppendToFile         : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
-dec Os.CreateOrAppendToFile : [Os.Path] Result&lt;Os.Error, Os.Writer&gt;
-
-dec Os.CreateDir   : [Os.Path] Result&lt;Os.Error, !&gt;
-dec Os.ListDir     : [Os.Path] Result&lt;Os.Error, List&lt;Os.Path&gt;&gt;
-dec Os.TraverseDir : [Os.Path] Result&lt;Os.Error, recursive either {
-  .end!,
-  .file(Os.Path) self,
-  .dir(Os.Path, self) self,
-}&gt;
-
-dec Os.Env : BoxMap.Readonly&lt;Bytes, Bytes&gt;
-
 /// Url
 
 type Url.Error = String
@@ -774,30 +736,6 @@ type Url = iterative box choice {
 }
 
 dec Url.FromString : [String] Result&lt;Url.Error, Url&gt;
-
-
-/// Http
-
-type Http.Error  = String
-
-type Http.Request =
-  (String)
-  (Url)
-  (List&lt;(String) Bytes&gt;)
-  Bytes.Reader&lt;Http.Error&gt;
-
-type Http.Response =
-  (Nat)
-  (List&lt;(String) Bytes&gt;)
-  Bytes.Reader&lt;Http.Error&gt;
-
-dec Http.Fetch : [Http.Request] Result&lt;Http.Error, Http.Response&gt;
-
-dec Http.Listen : [String] recursive either {
-  .shutdown Result&lt;Http.Error, !&gt;,
-  .incoming(Http.Request, [Http.Response] Result&lt;Http.Error, !&gt;) self,
-}
-
 
 /// Time
 
