@@ -1,5 +1,5 @@
 use super::{
-    language::LocalName,
+    language::{LocalName, Unresolved},
     process::{Command, Expression, Process},
 };
 use crate::location::Span;
@@ -111,7 +111,7 @@ struct CaptureAnalysis {
 }
 
 impl CaptureAnalysis {
-    fn from_process(process: &Process<()>) -> Self {
+    fn from_process(process: &Process<(), Unresolved>) -> Self {
         let (block_envs, begin_drivers) = BlockEnvAnalyzer::analyze_process(process);
         let (begin_caps, block_caps, poll_caps) =
             compute_captures_from_process(process, &block_envs);
@@ -124,7 +124,7 @@ impl CaptureAnalysis {
         }
     }
 
-    fn from_expression(expression: &Expression<()>) -> Self {
+    fn from_expression(expression: &Expression<(), Unresolved>) -> Self {
         let (block_envs, begin_drivers) = BlockEnvAnalyzer::analyze_expression(expression);
         let (begin_caps, block_caps, poll_caps) =
             compute_captures_from_expression(expression, &block_envs);
@@ -137,7 +137,11 @@ impl CaptureAnalysis {
         }
     }
 
-    fn fix_process(&self, process: &Process<()>, env: &LoopEnv) -> (Arc<Process<()>>, Captures) {
+    fn fix_process(
+        &self,
+        process: &Process<(), Unresolved>,
+        env: &LoopEnv,
+    ) -> (Arc<Process<(), Unresolved>>, Captures) {
         match process {
             Process::Let {
                 span,
@@ -294,10 +298,10 @@ impl CaptureAnalysis {
 
     fn fix_command(
         &self,
-        command: &Command<()>,
+        command: &Command<(), Unresolved>,
         span: &Span,
         env: &LoopEnv,
-    ) -> (Command<()>, Captures) {
+    ) -> (Command<(), Unresolved>, Captures) {
         match command {
             Command::Link(expression) => {
                 let (expression, caps) = self.fix_expression(expression, env, &Captures::new());
@@ -405,10 +409,10 @@ impl CaptureAnalysis {
 
     fn fix_expression(
         &self,
-        expression: &Expression<()>,
+        expression: &Expression<(), Unresolved>,
         env: &LoopEnv,
         later_captures: &Captures,
-    ) -> (Arc<Expression<()>>, Captures) {
+    ) -> (Arc<Expression<(), Unresolved>>, Captures) {
         match expression {
             Expression::Global(span, name, typ) => (
                 Arc::new(Expression::Global(span.clone(), name.clone(), typ.clone())),
@@ -497,10 +501,10 @@ impl CaptureAnalysis {
 }
 
 struct BlockEnvAnalyzer {
-    blocks: IndexMap<usize, Arc<Process<()>>>,
+    blocks: IndexMap<usize, Arc<Process<(), Unresolved>>>,
     begin_drivers: IndexMap<BeginId, LocalName>,
     block_envs: IndexMap<usize, LoopEnv>,
-    queue: VecDeque<(Arc<Process<()>>, LoopEnv)>,
+    queue: VecDeque<(Arc<Process<(), Unresolved>>, LoopEnv)>,
 }
 
 impl BlockEnvAnalyzer {
@@ -514,7 +518,7 @@ impl BlockEnvAnalyzer {
     }
 
     fn analyze_process(
-        process: &Process<()>,
+        process: &Process<(), Unresolved>,
     ) -> (IndexMap<usize, LoopEnv>, IndexMap<BeginId, LocalName>) {
         let mut analyzer = Self::new();
         analyzer.visit_process(process, &LoopEnv::default());
@@ -523,7 +527,7 @@ impl BlockEnvAnalyzer {
     }
 
     fn analyze_expression(
-        expression: &Expression<()>,
+        expression: &Expression<(), Unresolved>,
     ) -> (IndexMap<usize, LoopEnv>, IndexMap<BeginId, LocalName>) {
         let mut analyzer = Self::new();
         analyzer.visit_expression(expression, &LoopEnv::default());
@@ -537,7 +541,7 @@ impl BlockEnvAnalyzer {
         }
     }
 
-    fn visit_expression(&mut self, expression: &Expression<()>, env: &LoopEnv) {
+    fn visit_expression(&mut self, expression: &Expression<(), Unresolved>, env: &LoopEnv) {
         match expression {
             Expression::Box(_, _, expr, _) => self.visit_expression(expr, env),
             Expression::Chan { process, .. } => self.visit_process(process, env),
@@ -548,7 +552,7 @@ impl BlockEnvAnalyzer {
         }
     }
 
-    fn visit_process(&mut self, process: &Process<()>, env: &LoopEnv) {
+    fn visit_process(&mut self, process: &Process<(), Unresolved>, env: &LoopEnv) {
         match process {
             Process::Let { value, then, .. } => {
                 self.visit_expression(value, env);
@@ -597,7 +601,7 @@ impl BlockEnvAnalyzer {
 
     fn visit_command(
         &mut self,
-        command: &Command<()>,
+        command: &Command<(), Unresolved>,
         span: &Span,
         subject: &LocalName,
         env: &LoopEnv,
@@ -662,7 +666,7 @@ impl BlockEnvAnalyzer {
 }
 
 fn compute_captures_from_process(
-    process: &Process<()>,
+    process: &Process<(), Unresolved>,
     block_envs: &IndexMap<usize, LoopEnv>,
 ) -> (
     IndexMap<BeginId, Captures>,
@@ -678,7 +682,7 @@ fn compute_captures_from_process(
 }
 
 fn compute_captures_from_expression(
-    expression: &Expression<()>,
+    expression: &Expression<(), Unresolved>,
     block_envs: &IndexMap<usize, LoopEnv>,
 ) -> (
     IndexMap<BeginId, Captures>,
@@ -743,7 +747,11 @@ struct CaptureCollector<'a> {
 }
 
 impl<'a> CaptureCollector<'a> {
-    fn expression_captures(&mut self, expression: &Expression<()>, env: &LoopEnv) -> Captures {
+    fn expression_captures(
+        &mut self,
+        expression: &Expression<(), Unresolved>,
+        env: &LoopEnv,
+    ) -> Captures {
         match expression {
             Expression::Global(_, _, _) => Captures::new(),
             Expression::Variable(span, name, _, _) => {
@@ -762,7 +770,7 @@ impl<'a> CaptureCollector<'a> {
         }
     }
 
-    fn process_captures(&mut self, process: &Process<()>, env: &LoopEnv) -> Captures {
+    fn process_captures(&mut self, process: &Process<(), Unresolved>, env: &LoopEnv) -> Captures {
         match process {
             Process::Let {
                 name, value, then, ..
@@ -838,7 +846,7 @@ impl<'a> CaptureCollector<'a> {
 
     fn command_captures(
         &mut self,
-        command: &Command<()>,
+        command: &Command<(), Unresolved>,
         span: &Span,
         subject: &LocalName,
         env: &LoopEnv,
@@ -917,14 +925,14 @@ impl<'a> CaptureCollector<'a> {
     }
 }
 
-impl Process<()> {
+impl Process<(), Unresolved> {
     pub fn fix_captures(&self) -> (Arc<Self>, Captures) {
         let analysis = CaptureAnalysis::from_process(self);
         analysis.fix_process(self, &LoopEnv::default())
     }
 }
 
-impl Expression<()> {
+impl Expression<(), Unresolved> {
     pub fn fix_captures(&self) -> (Arc<Self>, Captures) {
         let analysis = CaptureAnalysis::from_expression(self);
         analysis.fix_expression(self, &LoopEnv::default(), &Captures::new())

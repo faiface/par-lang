@@ -5,9 +5,12 @@ use crate::frontend_impl::types::visit;
 use crate::location::Span;
 use std::collections::BTreeMap;
 
-impl Type {
-    pub fn substitute(self, map: BTreeMap<&LocalName, &Type>) -> Result<Self, TypeError> {
-        fn inner(typ: &mut Type, map: &BTreeMap<&LocalName, &Type>) -> Result<(), TypeError> {
+impl<S: Clone> Type<S> {
+    pub fn substitute(self, map: BTreeMap<&LocalName, &Type<S>>) -> Result<Self, TypeError<S>> {
+        fn inner<S: Clone>(
+            typ: &mut Type<S>,
+            map: &BTreeMap<&LocalName, &Type<S>>,
+        ) -> Result<(), TypeError<S>> {
             match typ {
                 Type::Var(_span, name) if map.contains_key(name) => {
                     *typ = map.get(name).cloned().cloned().unwrap();
@@ -34,7 +37,7 @@ impl Type {
                     inner(body, &map)?
                 }
                 _ => {
-                    visit::continue_mut(typ, |child: &mut Type| inner(child, map))?;
+                    visit::continue_mut(typ, |child: &mut Type<S>| inner(child, map))?;
                 }
             }
             Ok(())
@@ -46,7 +49,7 @@ impl Type {
     }
 
     pub fn contains_var(&self, var: &LocalName) -> bool {
-        fn inner(result: &mut bool, typ: &Type, target_name: &LocalName) -> Result<(), ()> {
+        fn inner<S>(result: &mut bool, typ: &Type<S>, target_name: &LocalName) -> Result<(), ()> {
             match typ {
                 Type::Var(_span, name) | Type::DualVar(_span, name) if name == target_name => {
                     *result = true;

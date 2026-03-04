@@ -12,53 +12,81 @@ use par_runtime::readback::Handle;
 
 use super::language;
 use super::{
-    language::{CompileError, GlobalName, LocalName},
+    language::{CompileError, GlobalName, LocalName, Unresolved},
     parse::SyntaxError,
     process::{self, NameWithType},
     types::{Context, Type, TypeDefs, TypeError},
 };
 
 #[derive(Clone, Debug)]
-pub struct Module<Expr> {
-    pub type_defs: Vec<TypeDef>,
-    pub declarations: Vec<Declaration>,
-    pub definitions: Vec<Definition<Expr>>,
+pub struct Module<Expr, S> {
+    pub type_defs: Vec<TypeDef<S>>,
+    pub declarations: Vec<Declaration<S>>,
+    pub definitions: Vec<Definition<Expr, S>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ModuleDecl {
+    pub span: Span,
+    pub name: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImportPath {
+    pub dependency: Option<String>,
+    pub directories: Vec<String>,
+    pub module: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImportDecl {
+    pub span: Span,
+    pub path: ImportPath,
+    pub alias: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceFile<Expr> {
+    pub module_decl: Option<ModuleDecl>,
+    pub imports: Vec<ImportDecl>,
+    pub body: Module<Expr, Unresolved>,
 }
 
 #[derive(Debug, Clone)]
-pub struct CheckedModule {
-    pub type_defs: TypeDefs,
-    pub declarations: IndexMap<GlobalName, Declaration>,
-    pub definitions: IndexMap<GlobalName, (Definition<Arc<process::Expression<Type>>>, Type)>,
+pub struct CheckedModule<S> {
+    pub type_defs: TypeDefs<S>,
+    pub declarations: IndexMap<GlobalName<S>, Declaration<S>>,
+    pub definitions:
+        IndexMap<GlobalName<S>, (Definition<Arc<process::Expression<Type<S>, S>>, S>, Type<S>)>,
 }
 
 #[derive(Clone, Debug)]
-pub struct TypeDef {
+pub struct TypeDef<S> {
     pub span: Span,
-    pub name: GlobalName,
+    pub name: GlobalName<S>,
     pub params: Vec<LocalName>,
-    pub typ: Type,
+    pub typ: Type<S>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Declaration {
+pub struct Declaration<S> {
     pub span: Span,
-    pub name: GlobalName,
-    pub typ: Type,
+    pub name: GlobalName<S>,
+    pub typ: Type<S>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Definition<Expr> {
+pub struct Definition<Expr, S> {
     pub span: Span,
-    pub name: GlobalName,
+    pub name: GlobalName<S>,
     pub expression: Expr,
 }
 
-impl TypeDef {
-    pub fn external(name: &'static str, params: &[&'static str], typ: Type) -> Self {
+impl TypeDef<Unresolved> {
+    pub fn external(name: &'static str, params: &[&'static str], typ: Type<Unresolved>) -> Self {
         Self {
             span: Default::default(),
-            name: GlobalName::external(None, name),
+            name: GlobalName::<Unresolved>::external(None, name),
             params: params
                 .into_iter()
                 .map(|&var| LocalName {
@@ -71,15 +99,15 @@ impl TypeDef {
     }
 }
 
-impl Definition<Arc<process::Expression<()>>> {
+impl Definition<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     pub fn external(
         name: &'static str,
-        typ: Type,
+        typ: Type<Unresolved>,
         f: fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
     ) -> Self {
         Self {
             span: Default::default(),
-            name: GlobalName::external(None, name),
+            name: GlobalName::<Unresolved>::external(None, name),
             expression: Arc::new(process::Expression::External(typ, f, ())),
         }
     }
@@ -103,7 +131,7 @@ impl From<CompileError> for ParseAndCompileError {
     }
 }
 
-impl Module<Arc<process::Expression<()>>> {
+impl Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     pub fn parse_and_compile(source: &str, file: FileName) -> Result<Self, ParseAndCompileError> {
         let parsed = parse_module(source, file)?;
 
@@ -133,42 +161,70 @@ impl Module<Arc<process::Expression<()>>> {
             definitions: compiled_definitions,
         })
     }
+}
 
-    pub fn import(&mut self, module_name: Option<&str>, module: Self) {
-        let mut module = module;
-        module.qualify(module_name);
-        self.type_defs.append(&mut module.type_defs);
-        self.declarations.append(&mut module.declarations);
-        self.definitions.append(&mut module.definitions);
+impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
+    pub fn map_global_names<T, E>(
+        self,
+        mut map_name: impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Module<Arc<process::Expression<(), T>>, T>, E> {
+        Ok(Module {
+            type_defs: self
+                .type_defs
+                .into_iter()
+                .map(
+                    |TypeDef {
+                         span,
+                         name,
+                         params,
+                         typ,
+                     }| {
+                        Ok(TypeDef {
+                            span,
+                            name: map_name(name)?,
+                            params,
+                            typ: typ.map_global_names(&mut map_name)?,
+                        })
+                    },
+                )
+                .collect::<Result<Vec<_>, _>>()?,
+            declarations: self
+                .declarations
+                .into_iter()
+                .map(|Declaration { span, name, typ }| {
+                    Ok(Declaration {
+                        span,
+                        name: map_name(name)?,
+                        typ: typ.map_global_names(&mut map_name)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            definitions: self
+                .definitions
+                .into_iter()
+                .map(
+                    |Definition {
+                         span,
+                         name,
+                         expression,
+                     }| {
+                        Ok(Definition {
+                            span,
+                            name: map_name(name)?,
+                            expression: Arc::new(
+                                Arc::unwrap_or_clone(expression).map_global_names(&mut map_name)?,
+                            ),
+                        })
+                    },
+                )
+                .collect::<Result<Vec<_>, _>>()?,
+        })
     }
 
-    fn qualify(&mut self, module: Option<&str>) {
-        for TypeDef {
-            span: _,
-            name,
-            params: _,
-            typ,
-        } in &mut self.type_defs
-        {
-            name.qualify(module);
-            typ.qualify(module);
-        }
-        for Declaration { span: _, name, typ } in &mut self.declarations {
-            name.qualify(module);
-            typ.qualify(module);
-        }
-        for Definition {
-            span: _,
-            name,
-            expression,
-        } in &mut self.definitions
-        {
-            name.qualify(module);
-            expression.qualify(module);
-        }
-    }
-
-    pub fn type_check(&self) -> Result<CheckedModule, TypeError> {
+    pub fn type_check(&self) -> Result<CheckedModule<S>, TypeError<S>>
+    where
+        S: Eq + std::hash::Hash,
+    {
         let type_defs = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
@@ -246,7 +302,7 @@ impl Module<Arc<process::Expression<()>>> {
     }
 }
 
-impl<Expr> Default for Module<Expr> {
+impl<Expr, S> Default for Module<Expr, S> {
     fn default() -> Self {
         Self {
             type_defs: Vec::new(),
@@ -257,18 +313,24 @@ impl<Expr> Default for Module<Expr> {
 }
 
 #[derive(Clone)]
-pub struct TypeOnHover {
-    files: HashMap<FileName, FileHovers>,
+pub struct TypeOnHover<S> {
+    files: HashMap<FileName, FileHovers<S>>,
 }
 
-#[derive(Default, Clone)]
-struct FileHovers {
-    pairs: Vec<((Point, Point), NameWithType)>,
+#[derive(Clone)]
+struct FileHovers<S> {
+    pairs: Vec<((Point, Point), NameWithType<S>)>,
 }
 
-impl TypeOnHover {
-    pub fn new(program: &CheckedModule) -> Self {
-        let mut files = HashMap::<_, FileHovers>::new();
+impl<S> Default for FileHovers<S> {
+    fn default() -> Self {
+        Self { pairs: Vec::new() }
+    }
+}
+
+impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
+    pub fn new(program: &CheckedModule<S>) -> Self {
+        let mut files = HashMap::<_, FileHovers<S>>::new();
 
         for (name, (span, _, typ)) in program.type_defs.globals.iter() {
             let Some(file) = span.file() else { continue };
@@ -337,13 +399,13 @@ impl TypeOnHover {
         Self { files }
     }
 
-    pub fn query(&self, file: &FileName, row: u32, column: u32) -> Option<NameWithType> {
+    pub fn query(&self, file: &FileName, row: u32, column: u32) -> Option<NameWithType<S>> {
         self.files.get(file)?.query(row, column)
     }
 }
 
-impl FileHovers {
-    fn push(&mut self, span: Span, name_info: NameWithType) {
+impl<S: Clone> FileHovers<S> {
+    fn push(&mut self, span: Span, name_info: NameWithType<S>) {
         if let Some(points) = span.points() {
             self.pairs.push((points, name_info))
         }
@@ -352,7 +414,7 @@ impl FileHovers {
         self.pairs.sort_by_key(|((start, _), _)| start.offset);
         self.pairs.dedup_by_key(|((start, _), _)| start.offset);
     }
-    fn query(&self, row: u32, column: u32) -> Option<NameWithType> {
+    fn query(&self, row: u32, column: u32) -> Option<NameWithType<S>> {
         let sorted_pairs = &self.pairs;
         if sorted_pairs.is_empty() {
             return None;

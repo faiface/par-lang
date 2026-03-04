@@ -16,12 +16,12 @@ enum ProcessAnalyzerMode {
     Check,
     Infer(LocalName),
 }
-impl Context {
+impl<S: Clone + Eq + std::hash::Hash> Context<S> {
     fn analyze_process(
         &mut self,
-        process: &Process<()>,
+        process: &Process<(), S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Arc<Process<Type>>, Option<Type>), TypeError> {
+    ) -> Result<(Arc<Process<Type<S>, S>>, Option<Type<S>>), TypeError<S>> {
         match mode {
             ProcessAnalyzerMode::Check => {
                 let process = self.check_process(process)?;
@@ -35,8 +35,8 @@ impl Context {
     }
     pub(crate) fn check_process(
         &mut self,
-        process: &Process<()>,
-    ) -> Result<Arc<Process<Type>>, TypeError> {
+        process: &Process<(), S>,
+    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
         match process {
             Process::Let {
                 span,
@@ -502,10 +502,10 @@ impl Context {
         inference_subject: Option<&LocalName>,
         span: &Span,
         object: &LocalName,
-        typ: &Type,
-        command: &Command<()>,
+        typ: &Type<S>,
+        command: &Command<(), S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type>, Option<Type>), TypeError> {
+    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
         if let Type::Name(_, name, args) = typ {
             return self.check_command(
                 inference_subject,
@@ -639,7 +639,7 @@ impl Context {
                 }
 
                 let (param_type, then_type) = if !type_names.is_empty() {
-                    let type_vars: Vec<Type> = type_parameters
+                    let type_vars: Vec<Type<S>> = type_parameters
                         .iter()
                         .map(|v| Type::Var(Span::None, v.clone()))
                         .collect();
@@ -709,7 +709,7 @@ impl Context {
 
                 let mut original_context = self.clone();
                 let mut typed_processes = Vec::new();
-                let mut inferred_type: Option<Type> = None;
+                let mut inferred_type: Option<Type<S>> = None;
 
                 for (branch, process) in branches.iter().zip(processes.iter()) {
                     *self = original_context.clone();
@@ -966,9 +966,9 @@ impl Context {
 
     pub(crate) fn infer_process(
         &mut self,
-        process: &Process<()>,
+        process: &Process<(), S>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type>>, Type), TypeError> {
+    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
         match process {
             Process::Let {
                 span,
@@ -1472,8 +1472,8 @@ impl Context {
         &mut self,
         span: &Span,
         subject: &LocalName,
-        command: &Command<()>,
-    ) -> Result<(Command<Type>, Type), TypeError> {
+        command: &Command<(), S>,
+    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
         Ok(match command {
             Command::Link(expression) => {
                 let (expression, typ) = self.infer_expression(Some(subject), expression)?;
@@ -1626,9 +1626,9 @@ impl Context {
     pub(crate) fn check_expression(
         &mut self,
         inference_subject: Option<&LocalName>,
-        expression: &Expression<()>,
-        target_type: &Type,
-    ) -> Result<Arc<Expression<Type>>, TypeError> {
+        expression: &Expression<(), S>,
+        target_type: &Type<S>,
+    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
         match expression {
             Expression::Global(span, name, ()) => {
                 let typ = self.get_global(span, name)?;
@@ -1765,8 +1765,8 @@ impl Context {
     pub(crate) fn infer_expression(
         &mut self,
         inference_subject: Option<&LocalName>,
-        expression: &Expression<()>,
-    ) -> Result<(Arc<Expression<Type>>, Type), TypeError> {
+        expression: &Expression<(), S>,
+    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
         match expression {
             Expression::Global(span, name, ()) => {
                 let typ = self.get_global(span, name)?;
@@ -1881,12 +1881,12 @@ impl Context {
     }
 }
 
-fn merge_path_contexts(
-    typedefs: &TypeDefs,
+fn merge_path_contexts<S: Clone + Eq + std::hash::Hash>(
+    typedefs: &TypeDefs<S>,
     span: &Span,
-    paths: &Vec<IndexMap<LocalName, Type>>,
+    paths: &Vec<IndexMap<LocalName, Type<S>>>,
     free_vars: &IndexSet<LocalName>,
-) -> Result<IndexMap<LocalName, Type>, TypeError> {
+) -> Result<IndexMap<LocalName, Type<S>>, TypeError<S>> {
     // Collect all variable names present in any path.
     let mut all_names: IndexSet<LocalName> = IndexSet::new();
     for map in paths {
@@ -1896,7 +1896,7 @@ fn merge_path_contexts(
     let mut merged_variables = IndexMap::new();
     for name in all_names {
         let used = free_vars.contains(&name);
-        let mut present_types: Vec<Type> = Vec::new();
+        let mut present_types: Vec<Type<S>> = Vec::new();
         let mut missing = false;
         for map in paths {
             if let Some(t) = map.get(&name) {
@@ -1910,9 +1910,10 @@ fn merge_path_contexts(
             .iter()
             .any(|t| t.is_linear(typedefs).unwrap_or(true));
 
-        let is_absurd = present_types
-            .iter()
-            .any(|t| t.is_assignable_to(&Type::either(vec![]), typedefs).unwrap());
+        let is_absurd = present_types.iter().any(|t| {
+            t.is_assignable_to(&Type::either(vec![]), typedefs)
+                .unwrap_or(false)
+        });
 
         if !used && !is_linear && !is_absurd {
             // Drop it.

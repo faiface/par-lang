@@ -1,10 +1,14 @@
+use crate::frontend_impl::language::GlobalName;
 use crate::frontend_impl::process::NameWithType;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
 use crate::location::Span;
 use std::fmt;
 use std::fmt::Write;
 
-impl Type {
+impl<S: Clone> Type<S>
+where
+    GlobalName<S>: fmt::Display,
+{
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
@@ -415,9 +419,11 @@ impl Type {
 
     pub fn types_at_spans(
         &self,
-        type_defs: &TypeDefs,
-        consume: &mut impl FnMut(Span, NameWithType),
-    ) {
+        type_defs: &TypeDefs<S>,
+        consume: &mut impl FnMut(Span, NameWithType<S>),
+    ) where
+        S: Eq + std::hash::Hash,
+    {
         match self {
             Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
             Self::Var(_, _) | Self::DualVar(_, _) => {}
@@ -480,7 +486,10 @@ impl Type {
     }
 }
 
-impl fmt::Display for Type {
+impl<S: Clone> fmt::Display for Type<S>
+where
+    GlobalName<S>: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.pretty_compact(f)
     }

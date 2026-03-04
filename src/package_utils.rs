@@ -1,0 +1,142 @@
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+
+use miette::{LabeledSpan, SourceOffset, SourceSpan};
+use par_core::frontend::TypeError;
+use par_core::frontend::language::{Universal, UniversalPackage};
+use par_core::source::{FileName, Span};
+
+use crate::package_loader::CanonicalModulePath;
+
+pub type SourceLookup = HashMap<FileName, Arc<str>>;
+
+pub fn source_for_fallback(sources: &SourceLookup) -> Arc<str> {
+    sources
+        .values()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| Arc::from(""))
+}
+
+pub fn source_for_span(span: &Span, sources: &SourceLookup) -> Arc<str> {
+    span.file()
+        .and_then(|file| sources.get(&file).cloned())
+        .unwrap_or_else(|| source_for_fallback(sources))
+}
+
+pub fn source_for_type_error(error: &TypeError<Universal>, sources: &SourceLookup) -> Arc<str> {
+    let (span, _related) = error.spans();
+    source_for_span(&span, sources)
+}
+
+pub fn format_with_source_span(
+    source: Arc<str>,
+    span: &Span,
+    message: impl Into<String>,
+) -> String {
+    let message = message.into();
+    let Some(start) = span.start() else {
+        return message;
+    };
+    let label = LabeledSpan::new_with_span(
+        None,
+        SourceSpan::new(
+            SourceOffset::from(start.offset as usize),
+            span.len() as usize,
+        ),
+    );
+    format!(
+        "{:?}",
+        miette::miette!(labels = vec![label], "{message}").with_source_code(source)
+    )
+}
+
+pub fn local_module_slash_path(module: &Universal) -> Option<String> {
+    if module.package != UniversalPackage::Local {
+        return None;
+    }
+    if module.directories.is_empty() {
+        return Some(module.module.clone());
+    }
+    Some(format!(
+        "{}/{}",
+        module.directories.join("/"),
+        module.module
+    ))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedTarget {
+    pub module_path: String,
+    pub definition_name: Option<String>,
+}
+
+pub fn parse_target(target: &str) -> ParsedTarget {
+    let target = target.trim();
+    if target.is_empty() {
+        return ParsedTarget {
+            module_path: "Main".to_string(),
+            definition_name: None,
+        };
+    }
+
+    if let Some(last_slash_index) = target.rfind('/') {
+        let after_last_slash = &target[last_slash_index + 1..];
+        if let Some(dot_index) = after_last_slash.rfind('.') {
+            let module = format!(
+                "{}{}",
+                &target[..last_slash_index + 1],
+                &after_last_slash[..dot_index]
+            );
+            let definition = after_last_slash[dot_index + 1..].to_string();
+            return ParsedTarget {
+                module_path: module,
+                definition_name: Some(definition),
+            };
+        }
+        return ParsedTarget {
+            module_path: target.to_string(),
+            definition_name: None,
+        };
+    }
+
+    if let Some(dot_index) = target.rfind('.') {
+        let module = target[..dot_index].to_string();
+        let definition = target[dot_index + 1..].to_string();
+        return ParsedTarget {
+            module_path: module,
+            definition_name: Some(definition),
+        };
+    }
+
+    ParsedTarget {
+        module_path: target.to_string(),
+        definition_name: None,
+    }
+}
+
+pub fn find_local_module<'a>(
+    module_target: &str,
+    local_modules: &'a [CanonicalModulePath],
+) -> Option<&'a CanonicalModulePath> {
+    let module_target = module_target.trim_matches('/');
+    if module_target.is_empty() {
+        return None;
+    }
+
+    let mut segments: Vec<&str> = module_target.split('/').collect();
+    let module_name = segments.pop()?;
+    let directories: Vec<String> = segments
+        .into_iter()
+        .map(|segment| segment.to_lowercase())
+        .collect();
+
+    local_modules.iter().find(|candidate| {
+        candidate.directories == directories && candidate.module.eq_ignore_ascii_case(module_name)
+    })
+}
+
+pub fn normalized_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::mpsc;
 
-use crate::frontend_impl::language::GlobalName;
+use crate::frontend_impl::language::{GlobalName, Unresolved};
 use crate::frontend_impl::process;
 use crate::frontend_impl::program::{Module, TypeDef};
 use crate::frontend_impl::types::Type;
@@ -14,11 +14,16 @@ pub struct AssertionResult {
     pub passed: bool,
 }
 
-pub fn import_test_module(module: &mut Module<Arc<process::Expression<()>>>) {
-    module.import(Some("Test"), test_module());
+pub fn import_test_module(
+    module: &mut Module<Arc<process::Expression<(), Unresolved>>, Unresolved>,
+) {
+    let mut test = test_module();
+    module.type_defs.append(&mut test.type_defs);
+    module.declarations.append(&mut test.declarations);
+    module.definitions.append(&mut test.definitions);
 }
 
-fn test_module() -> Module<Arc<process::Expression<()>>> {
+fn test_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     Module {
         type_defs: vec![TypeDef {
             span: Span::None,

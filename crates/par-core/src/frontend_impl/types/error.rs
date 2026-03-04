@@ -7,50 +7,50 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub enum TypeError {
-    TypeNameAlreadyDefined(Span, Span, GlobalName),
-    NameAlreadyDeclared(Span, Span, GlobalName),
-    NameAlreadyDefined(Span, Span, GlobalName),
-    DeclaredButNotDefined(Span, GlobalName),
+pub enum TypeError<S> {
+    TypeNameAlreadyDefined(Span, Span, GlobalName<S>),
+    NameAlreadyDeclared(Span, Span, GlobalName<S>),
+    NameAlreadyDefined(Span, Span, GlobalName<S>),
+    DeclaredButNotDefined(Span, GlobalName<S>),
     NoMatchingRecursiveOrIterative(Span),
     SelfUsedInNegativePosition(Span),
     UnguardedRecursiveSelf(Span),
     UnguardedIterativeSelf(Span),
-    TypeNameNotDefined(Span, GlobalName),
+    TypeNameNotDefined(Span, GlobalName<S>),
     TypeVariableNotDefined(Span, LocalName),
-    DependencyCycle(Span, Vec<GlobalName>),
-    WrongNumberOfTypeArgs(Span, GlobalName, usize, usize),
-    GlobalNameNotDefined(Span, GlobalName),
+    DependencyCycle(Span, Vec<GlobalName<S>>),
+    WrongNumberOfTypeArgs(Span, GlobalName<S>, usize, usize),
+    GlobalNameNotDefined(Span, GlobalName<S>),
     VariableDoesNotExist(Span, LocalName),
     ShadowedObligation(Span, LocalName),
     TypeMustBeKnownAtThisPoint(Span, #[allow(unused)] LocalName),
     ParameterTypeMustBeKnown(Span, LocalName),
-    CannotAssignFromTo(Span, Type, Type),
+    CannotAssignFromTo(Span, Type<S>, Type<S>),
     UnfulfilledObligations(Span, Vec<LocalName>),
-    InvalidOperation(Span, #[allow(unused)] Operation, Type),
-    InvalidBranch(Span, LocalName, Type),
-    MissingBranch(Span, LocalName, Type),
-    RedundantBranch(Span, LocalName, Type),
+    InvalidOperation(Span, #[allow(unused)] Operation, Type<S>),
+    InvalidBranch(Span, LocalName, Type<S>),
+    MissingBranch(Span, LocalName, Type<S>),
+    RedundantBranch(Span, LocalName, Type<S>),
     MergeVariableMissing(Span, LocalName),
-    MergeVariableTypesCannotBeUnified(Span, LocalName, Type, Type),
-    TypesCannotBeUnified(Type, Type),
+    MergeVariableTypesCannotBeUnified(Span, LocalName, Type<S>, Type<S>),
+    TypesCannotBeUnified(Type<S>, Type<S>),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] LoopId),
     CannotUnrollAscendantIterative(Span, #[allow(unused)] Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
-    LoopVariableChangedType(Span, LocalName, Type, Type),
+    LoopVariableChangedType(Span, LocalName, Type<S>, Type<S>),
     PollMustHaveAtLeastOneClient(Span),
-    PollClientMustBeRecursive(Span, Type),
+    PollClientMustBeRecursive(Span, Type<S>),
     SubmitOutsidePoll(Span),
     RepollOutsidePoll(Span),
-    SubmittedClientNotAssignableToPoll(Span, Type, Type),
+    SubmittedClientNotAssignableToPoll(Span, Type<S>, Type<S>),
     SubmittedClientDoesNotDescend(Span),
-    SubmitCannotTargetPollPoint(Span, Type, Type),
+    SubmitCannotTargetPollPoint(Span, Type<S>, Type<S>),
     PollVariableNotPreserved(Span, LocalName),
-    PollVariableChangedType(Span, LocalName, Type, Type),
+    PollVariableChangedType(Span, LocalName, Type<S>, Type<S>),
     PollBranchMustSubmit(Span),
     CannotUseLinearVariableInBox(Span, LocalName),
-    Telltypes(Span, IndexMap<LocalName, Type>),
+    Telltypes(Span, IndexMap<LocalName, Type<S>>),
     NonExhaustiveIf(Span),
 }
 
@@ -87,7 +87,7 @@ fn two_labels_from_two_spans(
     labels
 }
 
-impl TypeError {
+impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
     pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
         let code = &source_code;
         match self {
@@ -473,7 +473,7 @@ impl TypeError {
     }
 }
 
-impl TypeError {
+impl<S: Clone + Eq + std::hash::Hash> TypeError<S> {
     pub fn spans(&self) -> (Span, Option<Span>) {
         match self {
             Self::TypeNameAlreadyDefined(span1, span2, _)

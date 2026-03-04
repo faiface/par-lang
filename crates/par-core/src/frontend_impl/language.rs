@@ -1,4 +1,4 @@
-// why not rename this file to ast.rs?
+﻿// why not rename this file to ast.rs?
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -25,19 +25,63 @@ pub struct LocalName {
     pub string: ArcStr,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Unresolved {
+    pub qualifier: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Resolved {
+    pub directories: Vec<String>,
+    pub module: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UniversalPackage {
+    Local,
+    Dependency(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Universal {
+    pub package: UniversalPackage,
+    pub directories: Vec<String>,
+    pub module: String,
+}
+
 #[derive(Clone, Debug)]
-pub struct GlobalName {
+pub struct GlobalName<S> {
     pub span: Span,
-    pub module: Option<String>,
+    pub module: S,
     pub primary: String,
 }
 
-impl GlobalName {
+impl GlobalName<Unresolved> {
     pub fn external(module: Option<&'static str>, primary: &'static str) -> Self {
+        Self::new(
+            Default::default(),
+            Unresolved {
+                qualifier: module.map(String::from),
+            },
+            String::from(primary),
+        )
+    }
+}
+
+impl<S> GlobalName<S> {
+    pub fn new(span: Span, module: S, primary: String) -> Self {
+        Self {
+            span,
+            module,
+            primary,
+        }
+    }
+
+    pub fn map_module_path<T>(self, mut map: impl FnMut(S) -> T) -> GlobalName<T> {
         GlobalName {
-            span: Default::default(),
-            module: module.map(String::from),
-            primary: String::from(primary),
+            span: self.span,
+            module: map(self.module),
+            primary: self.primary,
         }
     }
 }
@@ -57,7 +101,7 @@ impl Spanning for LocalName {
     }
 }
 
-impl Spanning for GlobalName {
+impl<S> Spanning for GlobalName<S> {
     fn span(&self) -> Span {
         self.span.clone()
     }
@@ -120,30 +164,30 @@ impl LocalName {
 }
 
 #[derive(Clone, Debug)]
-pub enum Pattern {
-    Name(Span, LocalName, Option<Type>),
+pub enum Pattern<S> {
+    Name(Span, LocalName, Option<Type<S>>),
     Receive(Span, Box<Self>, Box<Self>, Vec<LocalName>),
     Continue(Span),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
-    Default(Span, Box<Expression>, Box<Self>),
+    Default(Span, Box<Expression<S>>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Condition {
-    Bool(Span, Box<Expression>),
+pub enum Condition<S> {
+    Bool(Span, Box<Expression<S>>),
     Is {
         span: Span,
-        value: Expression,
+        value: Expression<S>,
         variant: LocalName,
-        pattern: Pattern,
+        pattern: Pattern<S>,
     },
     And(Span, Box<Self>, Box<Self>),
     Or(Span, Box<Self>, Box<Self>),
     Not(Span, Box<Self>),
 }
 
-impl Condition {
+impl<S> Condition<S> {
     pub fn span(&self) -> Span {
         match self {
             Self::Bool(span, _)
@@ -156,83 +200,83 @@ impl Condition {
 }
 
 #[derive(Clone, Debug)]
-pub enum Expression {
+pub enum Expression<S> {
     Primitive(Span, Primitive),
     List(Span, Vec<Self>),
-    Global(Span, GlobalName),
+    Global(Span, GlobalName<S>),
     Variable(Span, LocalName),
     Poll {
         span: Span,
         label: Option<LocalName>,
-        clients: Vec<Expression>,
+        clients: Vec<Expression<S>>,
         name: LocalName,
-        then: Box<Expression>,
-        else_: Box<Expression>,
+        then: Box<Expression<S>>,
+        else_: Box<Expression<S>>,
     },
     Repoll {
         span: Span,
         label: Option<LocalName>,
-        clients: Vec<Expression>,
+        clients: Vec<Expression<S>>,
         name: LocalName,
-        then: Box<Expression>,
-        else_: Box<Expression>,
+        then: Box<Expression<S>>,
+        else_: Box<Expression<S>>,
     },
     Submit {
         span: Span,
         label: Option<LocalName>,
-        values: Vec<Expression>,
+        values: Vec<Expression<S>>,
     },
-    Condition(Span, Box<Condition>),
+    Condition(Span, Box<Condition<S>>),
     Grouped(Span, Box<Self>),
     TypeIn {
         span: Span,
-        typ: Type,
+        typ: Type<S>,
         expr: Box<Self>,
     },
     Let {
         span: Span,
-        pattern: Pattern,
+        pattern: Pattern<S>,
         expression: Box<Self>,
         then: Box<Self>,
     },
     Catch {
         span: Span,
         label: Option<LocalName>,
-        pattern: Pattern,
+        pattern: Pattern<S>,
         block: Box<Self>,
         then: Box<Self>,
     },
     Throw(Span, Option<LocalName>, Box<Self>),
     If {
         span: Span,
-        branches: Vec<(Condition, Expression)>,
+        branches: Vec<(Condition<S>, Expression<S>)>,
         else_: Option<Box<Self>>,
     },
     Do {
         span: Span,
-        process: Box<Process>,
+        process: Box<Process<S>>,
         then: Box<Self>,
     },
     Box(Span, Box<Self>),
     Chan {
         span: Span,
-        pattern: Pattern,
-        process: Box<Process>,
+        pattern: Pattern<S>,
+        process: Box<Process<S>>,
     },
-    Construction(Construct),
-    Application(Span, Box<Self>, Apply),
+    Construction(Construct<S>),
+    Application(Span, Box<Self>, Apply<S>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Construct {
+pub enum Construct<S> {
     /// wraps an expression
-    Then(Box<Expression>),
-    Send(Span, Box<Expression>, Box<Self>),
-    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
+    Then(Box<Expression<S>>),
+    Send(Span, Box<Expression<S>>, Box<Self>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
     /// constructs an either type
     Signal(Span, LocalName, Box<Self>),
     /// constructs a choice type
-    Case(Span, ConstructBranches, Option<Box<ConstructBranch>>),
+    Case(Span, ConstructBranches<S>, Option<Box<ConstructBranch<S>>>),
     /// ! (unit)
     Break(Span),
     Begin {
@@ -242,26 +286,26 @@ pub enum Construct {
         then: Box<Self>,
     },
     Loop(Span, Option<LocalName>),
-    SendType(Span, Type, Box<Self>),
+    SendType(Span, Type<S>, Box<Self>),
     ReceiveType(Span, LocalName, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub struct ConstructBranches(pub BTreeMap<LocalName, ConstructBranch>);
+pub struct ConstructBranches<S>(pub BTreeMap<LocalName, ConstructBranch<S>>);
 
 #[derive(Clone, Debug)]
-pub enum ConstructBranch {
-    Then(Span, Expression),
-    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
+pub enum ConstructBranch<S> {
+    Then(Span, Expression<S>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
     ReceiveType(Span, LocalName, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Apply {
+pub enum Apply<S> {
     Noop(Span),
-    Send(Span, Box<Expression>, Box<Self>),
+    Send(Span, Box<Expression<S>>, Box<Self>),
     Signal(Span, LocalName, Box<Self>),
-    Case(Span, ApplyBranches, Option<Box<ApplyBranch>>),
+    Case(Span, ApplyBranches<S>, Option<Box<ApplyBranch<S>>>),
     Begin {
         span: Span,
         unfounded: bool,
@@ -269,90 +313,90 @@ pub enum Apply {
         then: Box<Self>,
     },
     Loop(Span, Option<LocalName>),
-    SendType(Span, Type, Box<Self>),
+    SendType(Span, Type<S>, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
-    Default(Span, Box<Expression>, Box<Self>),
-    Pipe(Span, Box<Expression>, Box<Self>),
+    Default(Span, Box<Expression<S>>, Box<Self>),
+    Pipe(Span, Box<Expression<S>>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub struct ApplyBranches(pub BTreeMap<LocalName, ApplyBranch>);
+pub struct ApplyBranches<S>(pub BTreeMap<LocalName, ApplyBranch<S>>);
 
 #[derive(Clone, Debug)]
-pub enum ApplyBranch {
-    Then(Span, LocalName, Expression),
-    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
-    Continue(Span, Expression),
+pub enum ApplyBranch<S> {
+    Then(Span, LocalName, Expression<S>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
+    Continue(Span, Expression<S>),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
-    Default(Span, Box<Expression>, Box<Self>),
+    Default(Span, Box<Expression<S>>, Box<Self>),
 }
 
 // span doesn't include the "then" process
 #[derive(Clone, Debug)]
-pub enum Process {
+pub enum Process<S> {
     Let {
         span: Span,
-        pattern: Pattern,
-        value: Box<Expression>,
+        pattern: Pattern<S>,
+        value: Box<Expression<S>>,
         then: Box<Self>,
     },
     Poll {
         span: Span,
         label: Option<LocalName>,
-        clients: Vec<Expression>,
+        clients: Vec<Expression<S>>,
         name: LocalName,
-        then: Box<Process>,
-        else_: Box<Process>,
+        then: Box<Process<S>>,
+        else_: Box<Process<S>>,
     },
     Repoll {
         span: Span,
         label: Option<LocalName>,
-        clients: Vec<Expression>,
+        clients: Vec<Expression<S>>,
         name: LocalName,
-        then: Box<Process>,
-        else_: Box<Process>,
+        then: Box<Process<S>>,
+        else_: Box<Process<S>>,
     },
     Submit {
         span: Span,
         label: Option<LocalName>,
-        values: Vec<Expression>,
+        values: Vec<Expression<S>>,
     },
     Catch {
         span: Span,
         label: Option<LocalName>,
-        pattern: Pattern,
+        pattern: Pattern<S>,
         block: Box<Self>,
         then: Box<Self>,
     },
-    Throw(Span, Option<LocalName>, Box<Expression>),
+    Throw(Span, Option<LocalName>, Box<Expression<S>>),
     If {
         span: Span,
-        branches: Vec<(Condition, Process)>,
-        else_: Option<Box<Process>>,
-        then: Option<Box<Process>>,
+        branches: Vec<(Condition<S>, Process<S>)>,
+        else_: Option<Box<Process<S>>>,
+        then: Option<Box<Process<S>>>,
     },
-    GlobalCommand(GlobalName, Command),
-    Command(LocalName, Command),
+    GlobalCommand(GlobalName<S>, Command<S>),
+    Command(LocalName, Command<S>),
     Telltypes(Span, Box<Self>),
     Noop(Span),
 }
 
 #[derive(Clone, Debug)]
-pub enum Command {
-    Then(Box<Process>),
-    Link(Span, Box<Expression>),
-    Send(Span, Expression, Box<Self>),
-    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
+pub enum Command<S> {
+    Then(Box<Process<S>>),
+    Link(Span, Box<Expression<S>>),
+    Send(Span, Expression<S>, Box<Self>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
     Signal(Span, LocalName, Box<Self>),
     Case(
         Span,
-        CommandBranches,
-        Option<Box<CommandBranch>>,
-        Option<Box<Process>>,
+        CommandBranches<S>,
+        Option<Box<CommandBranch<S>>>,
+        Option<Box<Process<S>>>,
     ),
     Break(Span),
-    Continue(Span, Box<Process>),
+    Continue(Span, Box<Process<S>>),
     Begin {
         span: Span,
         unfounded: bool,
@@ -360,25 +404,25 @@ pub enum Command {
         then: Box<Self>,
     },
     Loop(Span, Option<LocalName>),
-    SendType(Span, Type, Box<Self>),
+    SendType(Span, Type<S>, Box<Self>),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
-    Default(Span, Box<Expression>, Box<Self>),
-    Pipe(Span, Box<Expression>, Box<Self>),
+    Default(Span, Box<Expression<S>>, Box<Self>),
+    Pipe(Span, Box<Expression<S>>, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub struct CommandBranches(pub BTreeMap<LocalName, CommandBranch>);
+pub struct CommandBranches<S>(pub BTreeMap<LocalName, CommandBranch<S>>);
 
 #[derive(Clone, Debug)]
-pub enum CommandBranch {
-    Then(Span, Process),
-    BindThen(Span, LocalName, Process),
-    Receive(Span, Pattern, Box<Self>, Vec<LocalName>),
-    Continue(Span, Process),
+pub enum CommandBranch<S> {
+    Then(Span, Process<S>),
+    BindThen(Span, LocalName, Process<S>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
+    Continue(Span, Process<S>),
     ReceiveType(Span, LocalName, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
-    Default(Span, Box<Expression>, Box<Self>),
+    Default(Span, Box<Expression<S>>, Box<Self>),
 }
 
 impl Hash for LocalName {
@@ -408,65 +452,74 @@ impl Display for LocalName {
     }
 }
 
-impl GlobalName {
-    pub fn qualify(&mut self, module: Option<&str>) {
-        self.module = match self.module.take() {
-            Some(old) => Some(old),
-            None => module.map(String::from),
-        };
-    }
-
-    fn no_module_or_same_as_primary(&self) -> bool {
-        if let Some(module) = &self.module {
-            module == &self.primary
+impl Display for Resolved {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.directories.is_empty() {
+            write!(f, "{}", self.module)
         } else {
-            true
+            write!(f, "{}/{}", self.directories.join("/"), self.module)
         }
     }
 }
 
-impl Hash for GlobalName {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        if !self.no_module_or_same_as_primary() {
-            self.module.hash(state);
+impl Display for Unresolved {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.qualifier {
+            Some(qualifier) => write!(f, "{}", qualifier),
+            None => Ok(()),
         }
+    }
+}
+
+impl Display for Universal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let package = match &self.package {
+            UniversalPackage::Local => None,
+            UniversalPackage::Dependency(name) => Some(format!("@{name}")),
+        };
+        match (&package, self.directories.is_empty()) {
+            (None, true) => write!(f, "{}", self.module),
+            (None, false) => write!(f, "{}/{}", self.directories.join("/"), self.module),
+            (Some(package), true) => write!(f, "{package}/{}", self.module),
+            (Some(package), false) => {
+                write!(
+                    f,
+                    "{package}/{}/{}",
+                    self.directories.join("/"),
+                    self.module
+                )
+            }
+        }
+    }
+}
+
+impl<S: Hash> Hash for GlobalName<S> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.module.hash(state);
         self.primary.hash(state);
     }
 }
-impl PartialEq for GlobalName {
+impl<S: PartialEq> PartialEq for GlobalName<S> {
     fn eq(&self, other: &Self) -> bool {
-        if self.no_module_or_same_as_primary() && other.no_module_or_same_as_primary() {
-            self.primary == other.primary
-        } else {
-            (&self.module, &self.primary) == (&other.module, &other.primary)
-        }
+        (&self.module, &self.primary) == (&other.module, &other.primary)
     }
 }
-impl Eq for GlobalName {}
-impl PartialOrd for GlobalName {
+impl<S: Eq> Eq for GlobalName<S> {}
+impl<S: PartialOrd> PartialOrd for GlobalName<S> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self.no_module_or_same_as_primary() && other.no_module_or_same_as_primary() {
-            self.primary.partial_cmp(&other.primary)
-        } else {
-            (&self.module, &self.primary).partial_cmp(&(&other.module, &other.primary))
-        }
+        (&self.module, &self.primary).partial_cmp(&(&other.module, &other.primary))
     }
 }
-impl Ord for GlobalName {
+impl<S: Ord> Ord for GlobalName<S> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.no_module_or_same_as_primary() && other.no_module_or_same_as_primary() {
-            self.primary.cmp(&other.primary)
-        } else {
-            (&self.module, &self.primary).cmp(&(&other.module, &other.primary))
-        }
+        (&self.module, &self.primary).cmp(&(&other.module, &other.primary))
     }
 }
-impl Display for GlobalName {
+impl<S: Display> Display for GlobalName<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.no_module_or_same_as_primary() {
-            if let Some(module) = &self.module {
-                write!(f, "{}.", module)?;
-            }
+        let module = self.module.to_string();
+        if !module.is_empty() {
+            write!(f, "{}.", module)?;
         }
         write!(f, "{}", self.primary)
     }
@@ -593,8 +646,8 @@ impl Context {
     pub(crate) fn restore_object_name(
         &mut self,
         name: Option<LocalName>,
-        process: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        process: Arc<process::Process<(), Unresolved>>,
+    ) -> Arc<process::Process<(), Unresolved>> {
         match name {
             None => process,
             Some(original) => Arc::new(process::Process::Let {
@@ -623,8 +676,8 @@ impl Context {
 
     fn without_fallthrough(
         &mut self,
-        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         self.passes
             .fallthrough_stash
             .push(self.passes.fallthrough.take());
@@ -635,9 +688,9 @@ impl Context {
 
     fn with_fallthrough(
         &mut self,
-        body: Arc<process::Process<()>>,
-        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        body: Arc<process::Process<(), Unresolved>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         self.passes
             .fallthrough_stash
             .push(self.passes.fallthrough.take());
@@ -662,8 +715,8 @@ impl Context {
 
     fn expr_without_fallthrough(
         &mut self,
-        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
-    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError> {
         self.passes
             .fallthrough_stash
             .push(self.passes.fallthrough.take());
@@ -675,9 +728,9 @@ impl Context {
     fn expr_with_fallthrough(
         &mut self,
         span: &Span,
-        body: Arc<process::Process<()>>,
-        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
-    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        body: Arc<process::Process<(), Unresolved>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError> {
         Ok(Arc::new(process::Expression::Chan {
             span: span.clone(),
             captures: Captures::new(),
@@ -697,7 +750,7 @@ impl Context {
         }))
     }
 
-    fn use_fallthrough(&mut self, span: &Span) -> Option<Arc<process::Process<()>>> {
+    fn use_fallthrough(&mut self, span: &Span) -> Option<Arc<process::Process<(), Unresolved>>> {
         self.passes
             .fallthrough
             .as_mut()
@@ -789,11 +842,11 @@ impl Context {
         span: &Span,
         kind: process::PollKind,
         label: &Option<LocalName>,
-        clients: Vec<Arc<process::Expression<()>>>,
+        clients: Vec<Arc<process::Expression<(), Unresolved>>>,
         name: LocalName,
-        then: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
-        else_: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        then: impl FnOnce(&mut Self) -> Result<Arc<process::Process<(), Unresolved>>, CompileError>,
+        else_: impl FnOnce(&mut Self) -> Result<Arc<process::Process<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         let id = self.get_poll_index();
         let point = LocalName {
             span: span.clone(),
@@ -840,8 +893,8 @@ impl Context {
         &mut self,
         span: &Span,
         label: &Option<LocalName>,
-        values: Vec<Arc<process::Expression<()>>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        values: Vec<Arc<process::Expression<(), Unresolved>>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         let driver = self
             .current_poll_driver()
             .cloned()
@@ -869,9 +922,9 @@ impl Context {
     fn with_catch(
         &mut self,
         label: Option<LocalName>,
-        body: Arc<process::Process<()>>,
-        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        body: Arc<process::Process<(), Unresolved>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Process<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         self.passes
             .catch_stash
             .entry(label.clone())
@@ -911,9 +964,9 @@ impl Context {
         &mut self,
         span: &Span,
         label: Option<LocalName>,
-        body: Arc<process::Process<()>>,
-        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<()>>, CompileError>,
-    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        body: Arc<process::Process<(), Unresolved>>,
+        f: impl FnOnce(&mut Self) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError> {
         Ok(Arc::new(process::Expression::Chan {
             span: span.clone(),
             captures: Captures::new(),
@@ -937,7 +990,7 @@ impl Context {
         &mut self,
         span: &Span,
         label: &Option<LocalName>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         match self.passes.catch.get_mut(label) {
             Some(pass) => {
                 if let Some(reason) = pass.disabled_reasons.last().cloned() {
@@ -967,11 +1020,11 @@ impl Context {
 
     pub(crate) fn compile_pattern_let(
         &mut self,
-        pattern: &Pattern,
+        pattern: &Pattern<Unresolved>,
         span: &Span,
-        expression: Arc<process::Expression<()>>,
-        process: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        expression: Arc<process::Expression<(), Unresolved>>,
+        process: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         if let Pattern::Name(_, name, annotation) = pattern {
             return Ok(Arc::new(process::Process::Let {
                 span: span.clone(),
@@ -994,10 +1047,10 @@ impl Context {
 
     pub(crate) fn compile_pattern_chan(
         &mut self,
-        pattern: &Pattern,
+        pattern: &Pattern<Unresolved>,
         span: &Span,
-        process: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        process: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError> {
         if let Pattern::Name(_, name, annotation) = pattern {
             return Ok(Arc::new(process::Expression::Chan {
                 span: span.clone(),
@@ -1022,10 +1075,10 @@ impl Context {
 
     pub(crate) fn compile_pattern_catch_block(
         &mut self,
-        pattern: &Pattern,
+        pattern: &Pattern<Unresolved>,
         span: &Span,
-        block: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        block: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         if let Pattern::Name(_, name, annotation) = pattern {
             return Ok(Arc::new(process::Process::Let {
                 span: span.clone(),
@@ -1058,13 +1111,13 @@ impl Context {
 
     pub(crate) fn compile_pattern_receive(
         &mut self,
-        pattern: &Pattern,
+        pattern: &Pattern<Unresolved>,
         level: usize,
         span: &Span,
         subject: &LocalName,
-        process: Arc<process::Process<()>>,
+        process: Arc<process::Process<(), Unresolved>>,
         vars: Vec<LocalName>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         if let Pattern::Name(_, name, annotation) = pattern {
             return Ok(Arc::new(process::Process::Do {
                 span: span.clone(),
@@ -1097,10 +1150,10 @@ impl Context {
 
     fn compile_pattern_helper(
         &mut self,
-        pattern: &Pattern,
+        pattern: &Pattern<Unresolved>,
         level: usize,
-        process: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        process: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         match pattern {
             Pattern::Name(span, name, annotation) => Ok(Arc::new(process::Process::Let {
                 span: span.clone(),
@@ -1180,8 +1233,8 @@ impl Context {
 
     pub(crate) fn compile_expression(
         &mut self,
-        expr: &Expression,
-    ) -> Result<Arc<process::Expression<()>>, CompileError> {
+        expr: &Expression<Unresolved>,
+    ) -> Result<Arc<process::Expression<(), Unresolved>>, CompileError> {
         let original_name = std::mem::take(&mut self.original_object_name);
         let res = Ok(match expr {
             Expression::Primitive(span, value) => Arc::new(process::Expression::Primitive(
@@ -1627,8 +1680,8 @@ impl Context {
 
     pub(crate) fn compile_construct(
         &mut self,
-        construct: &Construct,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        construct: &Construct<Unresolved>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match construct {
             Construct::Then(expression) => {
                 let span = expression.span().clone();
@@ -1766,8 +1819,8 @@ impl Context {
 
     pub(crate) fn compile_construct_branch(
         &mut self,
-        branch: &ConstructBranch,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        branch: &ConstructBranch<Unresolved>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match branch {
             ConstructBranch::Then(span, expression) => {
                 let expression = self.compile_expression(expression)?;
@@ -1807,8 +1860,8 @@ impl Context {
 
     pub(crate) fn compile_apply(
         &mut self,
-        apply: &Apply,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        apply: &Apply<Unresolved>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match apply {
             Apply::Noop(span) => Arc::new(process::Process::Do {
                 span: span.clone(),
@@ -1934,8 +1987,8 @@ impl Context {
 
     pub(crate) fn compile_apply_branch(
         &mut self,
-        branch: &ApplyBranch,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        branch: &ApplyBranch<Unresolved>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match branch {
             ApplyBranch::Then(span, name, expression) => {
                 let expression = self.compile_expression(expression)?;
@@ -2016,8 +2069,8 @@ impl Context {
 
     pub(crate) fn compile_process(
         &mut self,
-        process: &Process,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        process: &Process<Unresolved>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match process {
             Process::If {
                 span,
@@ -2215,9 +2268,9 @@ impl Context {
 
     pub(crate) fn compile_command(
         &mut self,
-        command: &Command,
+        command: &Command<Unresolved>,
         object_name: &LocalName,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match command {
             Command::Then(process) => {
                 let original = std::mem::take(&mut self.original_object_name);
@@ -2447,9 +2500,9 @@ impl Context {
 
     pub(crate) fn compile_command_branch(
         &mut self,
-        branch: &CommandBranch,
+        branch: &CommandBranch<Unresolved>,
         object_name: &LocalName,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match branch {
             CommandBranch::Then(_, process) => self.compile_process(process)?,
 
@@ -2514,9 +2567,9 @@ impl Context {
         &self,
         span: &Span,
         variable: LocalName,
-        catch_block: Arc<process::Process<()>>,
-        ok_process: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        catch_block: Arc<process::Process<(), Unresolved>>,
+        ok_process: Arc<process::Process<(), Unresolved>>,
+    ) -> Arc<process::Process<(), Unresolved>> {
         Arc::new(process::Process::Do {
             span: span.clone(),
             name: variable.clone(),
@@ -2552,9 +2605,9 @@ impl Context {
         &mut self,
         span: &Span,
         variable: LocalName,
-        default_expr: Arc<process::Expression<()>>,
-        ok_process: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        default_expr: Arc<process::Expression<(), Unresolved>>,
+        ok_process: Arc<process::Process<(), Unresolved>>,
+    ) -> Arc<process::Process<(), Unresolved>> {
         self.with_fallthrough(ok_process, |pass| {
             Ok(Arc::new(process::Process::Do {
                 span: span.clone(),
@@ -2588,9 +2641,9 @@ impl Context {
         &self,
         span: &Span,
         variable: LocalName,
-        function: Arc<process::Expression<()>>,
-        then: Arc<process::Process<()>>,
-    ) -> Arc<process::Process<()>> {
+        function: Arc<process::Expression<(), Unresolved>>,
+        then: Arc<process::Process<(), Unresolved>>,
+    ) -> Arc<process::Process<(), Unresolved>> {
         Arc::new(process::Process::Let {
             span: span.clone(),
             name: LocalName::temp(),
@@ -2629,10 +2682,10 @@ impl Context {
 
     fn attach_pattern_to_process_compiled(
         &mut self,
-        pattern: &Pattern,
-        body: Arc<process::Process<()>>,
+        pattern: &Pattern<Unresolved>,
+        body: Arc<process::Process<(), Unresolved>>,
         subject: &LocalName,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         if matches!(pattern, Pattern::Continue(_)) {
             return Ok(body);
         }
@@ -2652,8 +2705,8 @@ impl Context {
     fn compile_restorations(
         &mut self,
         restores: &[Restoration],
-        tail: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        tail: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         restores.iter().rev().try_fold(tail, |acc, restore| {
             let value = self.compile_expression(&restore.value)?;
             Ok(Arc::new(process::Process::Let {
@@ -2669,10 +2722,10 @@ impl Context {
 
     fn condition_process_core(
         &mut self,
-        condition: &Condition,
-        success: Arc<process::Process<()>>,
-        failure: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        condition: &Condition<Unresolved>,
+        success: Arc<process::Process<(), Unresolved>>,
+        failure: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         Ok(match condition {
             Condition::Bool(span, expr) => {
                 let temp = LocalName::temp();
@@ -2759,10 +2812,10 @@ impl Context {
 
     fn compile_condition_process(
         &mut self,
-        condition: &Condition,
-        success_body: Arc<process::Process<()>>,
-        failure_body: Arc<process::Process<()>>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        condition: &Condition<Unresolved>,
+        success_body: Arc<process::Process<(), Unresolved>>,
+        failure_body: Arc<process::Process<(), Unresolved>>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         let span = condition.span();
         self.with_fallthrough(failure_body, |pass| {
             let goto_failure = pass.use_fallthrough(&span).unwrap();
@@ -2775,10 +2828,14 @@ impl Context {
 
     fn compile_if_branches<B>(
         &mut self,
-        branches: &[(Condition, B)],
-        else_proc: Arc<process::Process<()>>,
-        mut compile_body: impl FnMut(&B, &mut Self) -> Result<Arc<process::Process<()>>, CompileError>,
-    ) -> Result<Arc<process::Process<()>>, CompileError> {
+        branches: &[(Condition<Unresolved>, B)],
+        else_proc: Arc<process::Process<(), Unresolved>>,
+        mut compile_body: impl FnMut(
+            &B,
+            &mut Self,
+        )
+            -> Result<Arc<process::Process<(), Unresolved>>, CompileError>,
+    ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         branches
             .iter()
             .rev()
@@ -2825,7 +2882,7 @@ impl Pass {
         }
     }
 
-    fn use_at(&mut self, span: &Span) -> Arc<process::Process<()>> {
+    fn use_at(&mut self, span: &Span) -> Arc<process::Process<(), Unresolved>> {
         self.used = true;
         Arc::new(process::Process::Goto(
             span.clone(),
@@ -2835,8 +2892,11 @@ impl Pass {
     }
 }
 
-impl Pattern {
-    fn annotation(&self) -> Option<Type> {
+impl<S> Pattern<S> {
+    fn annotation(&self) -> Option<Type<S>>
+    where
+        S: Clone,
+    {
         match self {
             Self::Name(_, _, annotation) => annotation.clone(),
             Self::Receive(span, first, rest, vars) => {
@@ -2864,7 +2924,7 @@ impl Pattern {
     }
 }
 
-impl Spanning for Pattern {
+impl<S> Spanning for Pattern<S> {
     fn span(&self) -> Span {
         match self {
             Self::Name(span, _, _)
@@ -2877,7 +2937,7 @@ impl Spanning for Pattern {
     }
 }
 
-impl Spanning for Expression {
+impl<S> Spanning for Expression<S> {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
@@ -2904,7 +2964,7 @@ impl Spanning for Expression {
     }
 }
 
-impl Spanning for Construct {
+impl<S> Spanning for Construct<S> {
     fn span(&self) -> Span {
         match self {
             Self::Send(span, _, _)
@@ -2922,7 +2982,7 @@ impl Spanning for Construct {
     }
 }
 
-impl Spanning for ConstructBranch {
+impl<S> Spanning for ConstructBranch<S> {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _) | Self::Receive(span, _, _, _) | Self::ReceiveType(span, _, _) => {
@@ -2932,7 +2992,7 @@ impl Spanning for ConstructBranch {
     }
 }
 
-impl Spanning for Apply {
+impl<S> Spanning for Apply<S> {
     fn span(&self) -> Span {
         match self {
             Self::Send(span, _, _)
@@ -2949,7 +3009,7 @@ impl Spanning for Apply {
     }
 }
 
-impl Spanning for ApplyBranch {
+impl<S> Spanning for ApplyBranch<S> {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _, _)
@@ -2962,7 +3022,7 @@ impl Spanning for ApplyBranch {
     }
 }
 
-impl Spanning for Process {
+impl<S> Spanning for Process<S> {
     fn span(&self) -> Span {
         match self {
             Self::Let { span, .. } => span.clone(),
@@ -2980,7 +3040,7 @@ impl Spanning for Process {
     }
 }
 
-impl Spanning for Command {
+impl<S> Spanning for Command<S> {
     fn span(&self) -> Span {
         match self {
             Self::Link(span, _)
@@ -3003,7 +3063,7 @@ impl Spanning for Command {
     }
 }
 
-impl Spanning for CommandBranch {
+impl<S> Spanning for CommandBranch<S> {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _)
@@ -3021,10 +3081,10 @@ impl Spanning for CommandBranch {
 struct Restoration {
     span: Span,
     name: LocalName,
-    value: Expression,
+    value: Expression<Unresolved>,
 }
 
-fn pattern_to_expression(pattern: &Pattern) -> Option<Expression> {
+fn pattern_to_expression(pattern: &Pattern<Unresolved>) -> Option<Expression<Unresolved>> {
     match pattern {
         Pattern::Name(span, name, _) => Some(Expression::Variable(span.clone(), name.clone())),
         Pattern::Receive(span, first, rest, _vars) => {
@@ -3041,7 +3101,7 @@ fn pattern_to_expression(pattern: &Pattern) -> Option<Expression> {
     }
 }
 
-fn construct_from_pattern(pattern: &Pattern) -> Option<Construct> {
+fn construct_from_pattern(pattern: &Pattern<Unresolved>) -> Option<Construct<Unresolved>> {
     match pattern {
         Pattern::Name(span, name, _) => Some(Construct::Then(Box::new(Expression::Variable(
             span.clone(),
@@ -3063,9 +3123,9 @@ fn construct_from_pattern(pattern: &Pattern) -> Option<Construct> {
 
 fn reconstruction_for_is(
     span: &Span,
-    value: &Expression,
+    value: &Expression<Unresolved>,
     variant: &LocalName,
-    pattern: &Pattern,
+    pattern: &Pattern<Unresolved>,
 ) -> Option<Restoration> {
     let Expression::Variable(_, name) = value else {
         return None;
@@ -3083,7 +3143,7 @@ fn reconstruction_for_is(
     })
 }
 
-fn collect_restorations(condition: &Condition) -> Vec<Restoration> {
+fn collect_restorations(condition: &Condition<Unresolved>) -> Vec<Restoration> {
     match condition {
         Condition::Bool(_, _) => Vec::new(),
         Condition::Is {
@@ -3104,7 +3164,7 @@ fn collect_restorations(condition: &Condition) -> Vec<Restoration> {
     }
 }
 
-fn link_process_from_expr(expr: &Expression) -> Process {
+fn link_process_from_expr(expr: &Expression<Unresolved>) -> Process<Unresolved> {
     Process::Command(
         LocalName::result(),
         Command::Link(expr.span(), Box::new(expr.clone())),

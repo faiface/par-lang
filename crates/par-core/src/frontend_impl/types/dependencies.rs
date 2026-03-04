@@ -2,9 +2,9 @@ use super::super::language::GlobalName;
 use super::core::Type;
 use crate::frontend_impl::types::visit;
 
-impl Type {
-    pub fn get_dependencies(&self) -> Vec<GlobalName> {
-        fn inner(typ: &Type, deps: &mut Vec<GlobalName>) -> Result<(), ()> {
+impl<S: Clone> Type<S> {
+    pub fn get_dependencies(&self) -> Vec<GlobalName<S>> {
+        fn inner<S: Clone>(typ: &Type<S>, deps: &mut Vec<GlobalName<S>>) -> Result<(), ()> {
             match typ {
                 Type::Name(_, name, args) | Type::DualName(_, name, args) => {
                     deps.push(name.clone());

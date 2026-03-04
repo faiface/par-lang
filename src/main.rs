@@ -1,27 +1,34 @@
+use crate::package_builder::{PackageBuildError, load_lowered_package};
+use crate::package_loader::{CanonicalModulePath, PackageLoadError};
+use crate::package_utils::{
+    SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
+    parse_target, source_for_fallback, source_for_type_error,
+};
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
 use clap::{Command, arg, command, value_parser};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
-use par_builtin::import_builtins;
+use par_core::frontend::language::Universal;
 use par_core::{
-    frontend::{
-        ParseAndCompileError, Type, TypeError, compile_runtime, lower, parse, set_miette_hook,
-        type_check,
-    },
+    frontend::{Type, TypeError, compile_runtime, set_miette_hook, type_check},
     runtime::RuntimeCompilerError,
 };
 use tokio::time::Instant;
 
 use par_runtime::spawn::TokioSpawn;
+use std::fmt::Display;
 #[cfg(feature = "playground")]
 use std::io::Write;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::Arc;
-use std::{fs::File, process::ExitCode};
 
 mod language_server;
+mod package_builder;
+mod package_loader;
+mod package_utils;
 #[cfg(feature = "playground")]
 mod playground;
 #[cfg(feature = "playground")]
@@ -36,56 +43,108 @@ const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
 #[derive(Debug, Clone)]
 enum BuildError {
-    ParseAndCompile(ParseAndCompileError),
-    Type(TypeError),
-    InetCompile(RuntimeCompilerError),
+    PackageBuild(PackageBuildError),
+    Type {
+        error: TypeError<Universal>,
+        sources: SourceLookup,
+    },
+    InetCompile {
+        error: RuntimeCompilerError,
+        sources: SourceLookup,
+    },
 }
 
 impl BuildError {
-    fn display(&self, code: Arc<str>) -> String {
+    fn display(&self) -> String {
         match self {
-            Self::ParseAndCompile(ParseAndCompileError::Parse(error)) => {
+            Self::PackageBuild(PackageBuildError::Load(PackageLoadError::ParseError {
+                source,
+                error,
+                ..
+            })) => format!(
+                "{:?}",
+                miette::Report::from(error.to_owned()).with_source_code(source.clone())
+            ),
+            Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
+                format!("{:?}", error.to_report(source.clone()))
+            }
+            Self::PackageBuild(PackageBuildError::UnsupportedDependency {
+                source, span, ..
+            })
+            | Self::PackageBuild(PackageBuildError::ImportedModuleNotFound {
+                source, span, ..
+            })
+            | Self::PackageBuild(PackageBuildError::DuplicateImportAlias {
+                source, span, ..
+            })
+            | Self::PackageBuild(PackageBuildError::UnknownModuleQualifier {
+                source, span, ..
+            })
+            | Self::PackageBuild(PackageBuildError::ResolvedModuleNotFound {
+                source, span, ..
+            }) => format_with_source_span(source.clone(), span, self.to_string()),
+            Self::PackageBuild(error) => error.to_string(),
+            Self::Type { error, sources } => {
                 format!(
                     "{:?}",
-                    miette::Report::from(error.to_owned()).with_source_code(code)
+                    error.to_report(source_for_type_error(error, sources))
                 )
             }
-            Self::ParseAndCompile(ParseAndCompileError::Compile(error)) => {
-                format!("{:?}", error.to_report(code))
-            }
-            Self::Type(error) => format!("{:?}", error.to_report(code)),
-            Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
+            Self::InetCompile { error, sources } => format!(
+                "inet compilation error: {}",
+                error.display(&source_for_fallback(sources))
+            ),
         }
     }
 }
 
-fn build_checked(
-    code: &str,
-    file: &PathBuf,
-) -> Result<par_core::frontend::CheckedModule, BuildError> {
-    let parsed = parse(code, file.clone().into())
-        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Parse(error)))?;
-    let mut lowered = lower(parsed)
-        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Compile(error)))?;
-    import_builtins(&mut lowered);
-    type_check(&lowered).map_err(BuildError::Type)
+impl Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PackageBuild(error) => write!(f, "{error}"),
+            Self::Type { error, .. } => write!(f, "{error:?}"),
+            Self::InetCompile { error, .. } => write!(f, "{error:?}"),
+        }
+    }
 }
 
-fn build_runtime(
-    code: &str,
-    file: &PathBuf,
-    max_interactions: u32,
+fn build_checked_package(
+    package_path: &PathBuf,
 ) -> Result<
     (
-        par_core::frontend::CheckedModule,
-        par_core::runtime::Compiled,
+        par_core::frontend::CheckedModule<Universal>,
+        Vec<CanonicalModulePath>,
+        SourceLookup,
     ),
     BuildError,
 > {
-    let checked = build_checked(code, file)?;
+    let lowered_package = load_lowered_package(package_path).map_err(BuildError::PackageBuild)?;
+    let sources = lowered_package.sources;
+    let checked = type_check(&lowered_package.lowered).map_err(|error| BuildError::Type {
+        error,
+        sources: sources.clone(),
+    })?;
+    Ok((checked, lowered_package.local_modules, sources))
+}
+
+fn build_runtime_package(
+    package_path: &PathBuf,
+    max_interactions: u32,
+) -> Result<
+    (
+        par_core::frontend::CheckedModule<Universal>,
+        par_core::runtime::Compiled,
+        Vec<CanonicalModulePath>,
+    ),
+    BuildError,
+> {
+    let (checked, local_modules, sources) = build_checked_package(package_path)?;
     let rt_compiled =
-        compile_runtime(&checked, max_interactions).map_err(BuildError::InetCompile)?;
-    Ok((checked, rt_compiled))
+        compile_runtime(&checked, max_interactions).map_err(|error| BuildError::InetCompile {
+            error,
+            sources: sources.clone(),
+        })?;
+    Ok((checked, rt_compiled, local_modules))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -108,21 +167,25 @@ fn main() -> ExitCode {
         )
         .subcommand(
             Command::new("run")
-                .about("Run a Par file in the CLI")
+                .about("Run a definition in a Par package")
                 .arg(arg!(--stats "Print statistics after running the definition"))
-                .arg(arg!(<file> "The Par file to run").value_parser(value_parser!(PathBuf)))
-                .arg(arg!([definition] "The definition to run").default_value("Main"))
+                .arg(
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
+                )
+                .arg(arg!([target] "Target to run: `path/to/Module` or `path/to/Module.Def`"))
                 .arg(arg!(-f --flag <FLAG> ... "Set a flag"))
                 .arg(arg!(--max_interactions <MAX_INTERACTIONS> ... "Maximum number of interactions during compilation")
             .value_parser(value_parser!(u32))),
         )
         .subcommand(
             Command::new("check")
-                .about("Type check a Par file in the CLI")
+                .about("Type check a Par package in the CLI")
                 .arg(
-                    arg!(<file> "The Par file(s) to check")
-                        .num_args(1..)
-                        .value_parser(value_parser!(PathBuf)),
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
                 )
                 .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
         )
@@ -135,9 +198,11 @@ fn main() -> ExitCode {
             Command::new("test")
                 .about("Run Par tests")
                 .arg(
-                    arg!([file] "Run tests in a specific file")
-                        .value_parser(value_parser!(PathBuf)),
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
                 )
+                .arg(arg!([target] "Test target: `path/to/Module` or `path/to/Module.TestName`"))
                 .arg(arg!(--filter <FILTER> "Only run tests matching this filter").required(false))
                 .arg(arg!(-f --flag <FLAG> ... "Set a flag"))
                 .arg(arg!(--max_interactions <MAX_INTERACTIONS> ... "Maximum number of interactions during compilation")
@@ -156,35 +221,30 @@ fn main() -> ExitCode {
         }
         Some(("run", args)) => {
             let stats = *args.get_one::<bool>("stats").unwrap();
-            let file = args.get_one::<PathBuf>("file").unwrap().clone();
-            let definition = args.get_one::<String>("definition").unwrap().clone();
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            let target = args.get_one::<String>("target").cloned();
             let max_interactions = args
                 .get_one::<u32>("max_interactions")
                 .cloned()
                 .unwrap_or(MAX_INTERACTIONS_DEFAULT);
-            run_definition(file, definition, stats, max_interactions);
+            run_definition(package, target, stats, max_interactions);
         }
         Some(("check", args)) => {
-            let files = args.get_many::<PathBuf>("file").unwrap().clone();
-
-            let mut results = Vec::new();
-            for file in files {
-                println!("Checking file: {}", file.display());
-                results.push(check(file.clone()));
-            }
-            if results.iter().any(|r| r.is_err()) {
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            if check(package).is_err() {
                 return ExitCode::FAILURE;
             }
         }
         Some(("lsp", _)) => run_language_server(),
         Some(("test", args)) => {
-            let file = args.get_one::<PathBuf>("file");
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            let target = args.get_one::<String>("target").cloned();
             let filter = args.get_one::<String>("filter");
             let max_interactions = args
                 .get_one::<u32>("max_interactions")
                 .cloned()
                 .unwrap_or(MAX_INTERACTIONS_DEFAULT);
-            if !run_tests(file.cloned(), filter.cloned(), max_interactions) {
+            if !run_tests(package, target, filter.cloned(), max_interactions) {
                 return ExitCode::FAILURE;
             }
         }
@@ -247,7 +307,7 @@ fn main() {
 static CRASH_STR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 #[cfg(not(feature = "playground"))]
-fn run_playground(_: Option<PathBuf>) {
+fn run_playground(_: Option<PathBuf>, _: u32) {
     eprintln!("Playground was disabled when building Par")
 }
 
@@ -279,43 +339,35 @@ fn run_playground(file: Option<PathBuf>, max_interactions: u32) {
     }));
 
     eframe::run_native(
-        "⅋layground",
+        "Par Playground",
         options,
         Box::new(|cc| Ok(Playground::new(cc, file, max_interactions))),
     )
     .expect("egui crashed");
 }
 
-fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_interactions: u32) {
+fn run_definition(
+    package_path: PathBuf,
+    target: Option<String>,
+    print_stats: bool,
+    max_interactions: u32,
+) {
     let runtime = tokio_factory::create_runtime().expect("Failed to create Tokio runtime");
     runtime.block_on(async {
-        let Ok(code) = File::open(&file).and_then(|mut file| {
-            use std::io::Read;
-            let mut buf = String::new();
-            file.read_to_string(&mut buf)?;
-            Ok(buf)
-        }) else {
-            println!("{} {}", "Could not read file:".bright_red(), file.display());
-            return;
-        };
-
-        let (checked, rt_compiled) = match stacker::grow(32 * 1024 * 1024, || {
-            build_runtime(&code, &file, max_interactions)
+        let (checked, rt_compiled, local_modules) = match stacker::grow(32 * 1024 * 1024, || {
+            build_runtime_package(&package_path, max_interactions)
         }) {
-            Ok(result) => result,
+            Ok((checked, rt_compiled, local_modules)) => (checked, rt_compiled, local_modules),
             Err(error) => {
-                println!("{}", error.display(Arc::from(code.as_str())).bright_red());
+                println!("{}", error.display().bright_red());
                 return;
             }
         };
 
-        let Some((name, _)) = checked
-            .definitions
-            .iter()
-            .find(|(name, _)| name.primary == definition)
-            .clone()
+        let Some(name) = resolve_target_definition(target.as_deref(), &checked, &local_modules)
         else {
-            println!("{}: {}", "Definition not found".bright_red(), definition);
+            let target = target.unwrap_or_else(|| "Main.Main".to_string());
+            println!("{}: {}", "Definition not found".bright_red(), target);
             return;
         };
 
@@ -323,17 +375,17 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_inte
             println!(
                 "{}: {}",
                 "Definition does not have the unit (!) type".bright_red(),
-                definition
+                target.unwrap_or_else(|| "Main.Main".to_string())
             );
             return;
         };
 
         let start = Instant::now();
-        let package = rt_compiled.code.get_with_name(name).unwrap();
+        let package_to_run = rt_compiled.code.get_with_name(name).unwrap();
         let (root, reducer_future) = par_runtime::start_and_instantiate(
             Arc::new(TokioSpawn::new()),
             rt_compiled.code.arena.clone(),
-            package,
+            package_to_run,
         );
 
         root.continue_();
@@ -346,20 +398,36 @@ fn run_definition(file: PathBuf, definition: String, print_stats: bool, max_inte
     });
 }
 
-fn check(file: PathBuf) -> Result<(), String> {
-    let Ok(code) = File::open(&file).and_then(|mut file| {
-        use std::io::Read;
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
-        Ok(buf)
-    }) else {
-        println!("{} {}", "Could not read file:".bright_red(), file.display());
-        return Err(format!("Could not read file: {}", file.display()));
-    };
+fn resolve_target_definition<'a>(
+    target: Option<&str>,
+    checked: &'a par_core::frontend::CheckedModule<Universal>,
+    local_modules: &[CanonicalModulePath],
+) -> Option<&'a par_core::frontend::language::GlobalName<par_core::frontend::language::Universal>> {
+    let target = target.unwrap_or("Main.Main");
+    let parsed_target = parse_target(target);
+    let definition_target = parsed_target
+        .definition_name
+        .unwrap_or_else(|| "Main".to_string());
 
-    let checked_result = stacker::grow(32 * 1024 * 1024, || build_checked(&code, &file));
+    let canonical_module = find_local_module(&parsed_target.module_path, local_modules)?;
+    let module_name = canonical_module.to_slash_path();
+
+    checked
+        .definitions
+        .iter()
+        .find(|(name, _)| {
+            name.primary == definition_target
+                && local_module_slash_path(&name.module).as_deref() == Some(module_name.as_str())
+        })
+        .map(|(name, _)| name)
+}
+
+fn check(package_path: PathBuf) -> Result<(), String> {
+    println!("Checking package: {}", package_path.display());
+
+    let checked_result = stacker::grow(32 * 1024 * 1024, || build_checked_package(&package_path));
     if let Err(error) = checked_result {
-        let error_string = error.display(Arc::from(code.as_str()));
+        let error_string = error.display();
         eprintln!("{}", error_string.bright_red());
         return Err(error_string);
     }
@@ -370,6 +438,11 @@ fn run_language_server() {
     language_server::language_server_main::main()
 }
 
-fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) -> bool {
-    test_runner::run_tests(file, filter, max_interactions)
+fn run_tests(
+    package_path: PathBuf,
+    target: Option<String>,
+    filter: Option<String>,
+    max_interactions: u32,
+) -> bool {
+    test_runner::run_tests(package_path, target, filter, max_interactions)
 }

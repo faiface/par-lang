@@ -3,9 +3,9 @@ use crate::frontend_impl::language::{GlobalName, LocalName};
 use crate::location::Span;
 use indexmap::IndexSet;
 
-pub(crate) fn continue_<E, F>(typ: &Type, mut visit: F) -> Result<(), E>
+pub(crate) fn continue_<S, E, F>(typ: &Type<S>, mut visit: F) -> Result<(), E>
 where
-    F: FnMut(&Type) -> Result<(), E>,
+    F: FnMut(&Type<S>) -> Result<(), E>,
 {
     match typ {
         Type::Name(_, _, args) => {
@@ -50,9 +50,9 @@ where
     Ok(())
 }
 
-pub(crate) fn continue_mut<E, F>(typ: &mut Type, mut visit: F) -> Result<(), E>
+pub(crate) fn continue_mut<S, E, F>(typ: &mut Type<S>, mut visit: F) -> Result<(), E>
 where
-    F: FnMut(&mut Type) -> Result<(), E>,
+    F: FnMut(&mut Type<S>) -> Result<(), E>,
 {
     match typ {
         Type::Name(_, _, args) => {
@@ -97,9 +97,13 @@ where
     Ok(())
 }
 
-pub(crate) fn continue_deref<F>(typ: &Type, defs: &TypeDefs, mut visit: F) -> Result<(), TypeError>
+pub(crate) fn continue_deref<S: Clone + Eq + std::hash::Hash, F>(
+    typ: &Type<S>,
+    defs: &TypeDefs<S>,
+    mut visit: F,
+) -> Result<(), TypeError<S>>
 where
-    F: FnMut(&Type) -> Result<(), TypeError>,
+    F: FnMut(&Type<S>) -> Result<(), TypeError<S>>,
 {
     match typ {
         Type::Name(span, name, args) => {
@@ -117,14 +121,14 @@ where
     Ok(())
 }
 
-pub(crate) fn continue_deref_polarized<F>(
-    typ: &Type,
+pub(crate) fn continue_deref_polarized<S: Clone + Eq + std::hash::Hash, F>(
+    typ: &Type<S>,
     is_positive: bool,
-    defs: &TypeDefs,
+    defs: &TypeDefs<S>,
     mut visit: F,
-) -> Result<(), TypeError>
+) -> Result<(), TypeError<S>>
 where
-    F: FnMut(&Type, bool) -> Result<(), TypeError>,
+    F: FnMut(&Type<S>, bool) -> Result<(), TypeError<S>>,
 {
     match typ {
         Type::DualName(..) => {
@@ -171,11 +175,11 @@ impl Polarity {
     }
 }
 
-fn get_args_polarity(
+fn get_args_polarity<S: Clone + Eq + std::hash::Hash>(
     span: &Span,
-    name: &GlobalName,
-    defs: &TypeDefs,
-) -> Result<Vec<Polarity>, TypeError> {
+    name: &GlobalName<S>,
+    defs: &TypeDefs<S>,
+) -> Result<Vec<Polarity>, TypeError<S>> {
     let Some((_span, vars, body)) = defs.globals.get(name) else {
         return Err(TypeError::GlobalNameNotDefined(span.clone(), name.clone()));
     };
@@ -183,14 +187,14 @@ fn get_args_polarity(
     let mut positive_vars: IndexSet<LocalName> = IndexSet::new();
     let mut negative_vars: IndexSet<LocalName> = IndexSet::new();
 
-    fn inner(
-        typ: &Type,
+    fn inner<S: Clone + Eq + std::hash::Hash>(
+        typ: &Type<S>,
         is_positive: bool,
         positive_vars: &mut IndexSet<LocalName>,
         negative_vars: &mut IndexSet<LocalName>,
         names: &IndexSet<LocalName>,
-        defs: &TypeDefs,
-    ) -> Result<(), TypeError> {
+        defs: &TypeDefs<S>,
+    ) -> Result<(), TypeError<S>> {
         match typ {
             Type::Var(_, name) if names.contains(name) => {
                 if is_positive {
@@ -256,14 +260,14 @@ fn get_args_polarity(
         .collect())
 }
 
-pub(crate) fn continue_mut_polarized<F>(
-    typ: &mut Type,
+pub(crate) fn continue_mut_polarized<S: Clone + Eq + std::hash::Hash, F>(
+    typ: &mut Type<S>,
     polarity: Polarity,
-    defs: &TypeDefs,
+    defs: &TypeDefs<S>,
     mut visit: F,
-) -> Result<(), TypeError>
+) -> Result<(), TypeError<S>>
 where
-    F: FnMut(&mut Type, Polarity) -> Result<(), TypeError>,
+    F: FnMut(&mut Type<S>, Polarity) -> Result<(), TypeError<S>>,
 {
     match typ {
         Type::Name(span, name, args) => {

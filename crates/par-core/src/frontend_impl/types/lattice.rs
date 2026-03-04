@@ -2,35 +2,38 @@ use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use crate::location::Span;
 use std::collections::BTreeMap;
 
-pub(crate) fn union_primitives(p1: &PrimitiveType, p2: &PrimitiveType) -> Option<PrimitiveType> {
-    if Type::is_primitive_subtype(p1, p2) {
-        Some(p2.clone())
-    } else if Type::is_primitive_subtype(p2, p1) {
-        Some(p1.clone())
-    } else {
-        None
-    }
-}
-
-pub(crate) fn intersect_primitives(
+pub(crate) fn union_primitives<S: Clone + Eq + std::hash::Hash>(
     p1: &PrimitiveType,
     p2: &PrimitiveType,
 ) -> Option<PrimitiveType> {
-    if Type::is_primitive_subtype(p1, p2) {
+    if Type::<S>::is_primitive_subtype(p1, p2) {
+        Some(p2.clone())
+    } else if Type::<S>::is_primitive_subtype(p2, p1) {
         Some(p1.clone())
-    } else if Type::is_primitive_subtype(p2, p1) {
+    } else {
+        None
+    }
+}
+
+pub(crate) fn intersect_primitives<S: Clone + Eq + std::hash::Hash>(
+    p1: &PrimitiveType,
+    p2: &PrimitiveType,
+) -> Option<PrimitiveType> {
+    if Type::<S>::is_primitive_subtype(p1, p2) {
+        Some(p1.clone())
+    } else if Type::<S>::is_primitive_subtype(p2, p1) {
         Some(p2.clone())
     } else {
         None
     }
 }
 
-pub fn union_types(
-    typedefs: &TypeDefs,
+pub fn union_types<S: Clone + Eq + std::hash::Hash>(
+    typedefs: &TypeDefs<S>,
     span: &Span,
-    type1: &Type,
-    type2: &Type,
-) -> Result<Type, TypeError> {
+    type1: &Type<S>,
+    type2: &Type<S>,
+) -> Result<Type<S>, TypeError<S>> {
     if type1.is_assignable_to(type2, typedefs)? {
         return Ok(type2.clone());
     }
@@ -72,7 +75,7 @@ pub fn union_types(
         (Type::Break(_), Type::Break(_)) => Type::Break(span.clone()),
         (Type::Continue(_), Type::Continue(_)) => Type::Continue(span.clone()),
         (Type::Primitive(_, p1), Type::Primitive(_, p2)) if p1 == p2 => {
-            if let Some(p) = union_primitives(p1, p2) {
+            if let Some(p) = union_primitives::<S>(p1, p2) {
                 Type::Primitive(span.clone(), p)
             } else {
                 return Err(TypeError::TypesCannotBeUnified(
@@ -82,7 +85,7 @@ pub fn union_types(
             }
         }
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
-            if let Some(p) = intersect_primitives(p1, p2) {
+            if let Some(p) = intersect_primitives::<S>(p1, p2) {
                 Type::DualPrimitive(span.clone(), p)
             } else {
                 return Err(TypeError::TypesCannotBeUnified(
@@ -163,12 +166,12 @@ pub fn union_types(
     })
 }
 
-pub fn intersect_types(
-    typedefs: &TypeDefs,
+pub fn intersect_types<S: Clone + Eq + std::hash::Hash>(
+    typedefs: &TypeDefs<S>,
     span: &Span,
-    type1: &Type,
-    type2: &Type,
-) -> Result<Type, TypeError> {
+    type1: &Type<S>,
+    type2: &Type<S>,
+) -> Result<Type<S>, TypeError<S>> {
     if type1.is_assignable_to(type2, typedefs)? {
         return Ok(type1.clone());
     }
@@ -205,12 +208,12 @@ pub fn intersect_types(
         ),
         (Type::DualBox(_, inner1), Type::DualBox(_, inner2)) => Type::DualBox(
             span.clone(),
-            Box::new(union_types(typedefs, span, &inner1, &inner2)?),
+            Box::new(union_types(typedefs, span, inner1, inner2)?),
         ),
         (Type::Break(_), Type::Break(_)) => Type::Break(span.clone()),
         (Type::Continue(_), Type::Continue(_)) => Type::Continue(span.clone()),
         (Type::Primitive(_, p1), Type::Primitive(_, p2)) if p1 == p2 => {
-            if let Some(p) = intersect_primitives(p1, p2) {
+            if let Some(p) = intersect_primitives::<S>(p1, p2) {
                 Type::Primitive(span.clone(), p)
             } else {
                 return Err(TypeError::TypesCannotBeUnified(
@@ -220,7 +223,7 @@ pub fn intersect_types(
             }
         }
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
-            if let Some(p) = union_primitives(p1, p2) {
+            if let Some(p) = union_primitives::<S>(p1, p2) {
                 Type::DualPrimitive(span.clone(), p)
             } else {
                 return Err(TypeError::TypesCannotBeUnified(
@@ -244,7 +247,7 @@ pub fn intersect_types(
         {
             Type::Function(
                 span.clone(),
-                Box::new(union_types(typedefs, span, &arg1, &arg2)?),
+                Box::new(union_types(typedefs, span, arg1, arg2)?),
                 Box::new(intersect_types(typedefs, span, ret1, ret2)?),
                 vec![],
             )

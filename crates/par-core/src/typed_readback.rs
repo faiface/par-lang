@@ -1,5 +1,5 @@
 use crate::frontend::{PrimitiveType, Type, TypeDefs};
-use crate::frontend_impl::language::LocalName;
+use crate::frontend_impl::language::{LocalName, Universal};
 use crate::location::Span;
 use arcstr::ArcStr;
 use bytes::Bytes;
@@ -29,17 +29,20 @@ pub enum TypedReadback {
 
     Break,
     Continue,
-    Unreadable { typ: Type, handle: TypedHandle },
+    Unreadable {
+        typ: Type<Universal>,
+        handle: TypedHandle,
+    },
 }
 
 pub struct TypedHandle {
-    type_defs: TypeDefs,
-    typ: Type,
+    type_defs: TypeDefs<Universal>,
+    typ: Type<Universal>,
     handle: Handle,
 }
 
 impl TypedHandle {
-    pub fn new(type_defs: TypeDefs, typ: Type, handle: Handle) -> Self {
+    pub fn new(type_defs: TypeDefs<Universal>, typ: Type<Universal>, handle: Handle) -> Self {
         Self {
             type_defs,
             typ,
@@ -161,7 +164,7 @@ impl TypedHandle {
     }
 }
 
-fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
+fn expand_type(typ: Type<Universal>, type_defs: &TypeDefs<Universal>) -> Type<Universal> {
     let mut typ = typ;
     loop {
         typ = match typ {

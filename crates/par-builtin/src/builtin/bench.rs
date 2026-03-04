@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use futures::FutureExt;
 
+use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Definition, Module, Type, process};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     Module {
         type_defs: vec![],
         declarations: vec![],

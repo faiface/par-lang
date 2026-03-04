@@ -8,19 +8,19 @@ use std::env;
 use std::ops::BitAnd;
 
 #[derive(Clone)]
-struct SubtypeContext<'a> {
-    type_defs: &'a TypeDefs,
-    visited: IndexSet<(Type, Type)>,
+struct SubtypeContext<'a, S> {
+    type_defs: &'a TypeDefs<S>,
+    visited: IndexSet<(Type<S>, Type<S>)>,
 }
 
-impl<'a> SubtypeContext<'a> {
-    fn new<'b>(type_defs: &'b TypeDefs) -> SubtypeContext<'b> {
+impl<'a, S: Clone + Eq + std::hash::Hash> SubtypeContext<'a, S> {
+    fn new<'b>(type_defs: &'b TypeDefs<S>) -> SubtypeContext<'b, S> {
         SubtypeContext {
             type_defs,
             visited: Default::default(),
         }
     }
-    fn normalize(&mut self, typ: Type) -> Result<Type, TypeError> {
+    fn normalize(&mut self, typ: Type<S>) -> Result<Type<S>, TypeError<S>> {
         Ok(match typ {
             Type::Name(span, name, args) => {
                 self.normalize(self.type_defs.get(&span, &name, &args)?)?
@@ -33,13 +33,13 @@ impl<'a> SubtypeContext<'a> {
     }
 }
 
-enum SubtypeResult {
+enum SubtypeResult<S> {
     Compatible,
     Incompatible,
     Cycle {
-        min_left: Type,
+        min_left: Type<S>,
         size_left: u32,
-        min_right: Type,
+        min_right: Type<S>,
         size_right: u32,
         /**
         Time To Live. To avoid merging cycles that don't intersect, as we bubble up the recursive call stack,
@@ -53,8 +53,8 @@ enum SubtypeResult {
     },
 }
 
-impl BitAnd for SubtypeResult {
-    type Output = SubtypeResult;
+impl<S: Clone> BitAnd for SubtypeResult<S> {
+    type Output = SubtypeResult<S>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
@@ -106,7 +106,7 @@ impl BitAnd for SubtypeResult {
     }
 }
 
-impl SubtypeResult {
+impl<S: Clone> SubtypeResult<S> {
     fn ttl_dec(mut self) -> Self {
         match &mut self {
             Cycle { ttl, .. } => {
@@ -122,13 +122,13 @@ impl SubtypeResult {
     }
 }
 
-impl Type {
+impl<S: Clone + Eq + std::hash::Hash> Type<S> {
     pub fn check_assignable(
         &self,
         span: &Span,
-        u: &Type,
-        type_defs: &TypeDefs,
-    ) -> Result<(), TypeError> {
+        u: &Type<S>,
+        type_defs: &TypeDefs<S>,
+    ) -> Result<(), TypeError<S>> {
         if !self.is_assignable_to(u, type_defs)? {
             return Err(TypeError::CannotAssignFromTo(
                 span.clone(),
@@ -139,7 +139,11 @@ impl Type {
         Ok(())
     }
 
-    pub fn is_assignable_to(&self, other: &Self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
+    pub fn is_assignable_to(
+        &self,
+        other: &Self,
+        type_defs: &TypeDefs<S>,
+    ) -> Result<bool, TypeError<S>> {
         match Type::is_subtype_helper(self.clone(), other.clone(), SubtypeContext::new(type_defs))?
         {
             Compatible => Ok(true),
@@ -181,8 +185,8 @@ impl Type {
     fn is_subtype_helper(
         mut type1: Self,
         mut type2: Self,
-        mut ctx: SubtypeContext,
-    ) -> Result<SubtypeResult, TypeError> {
+        mut ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
         // Debug trace helper
         if debug_enabled() {
             debug_log_entry(&type1, &type2, &ctx);
@@ -207,7 +211,9 @@ impl Type {
                 .skip(ind)
                 .map(|(t1, _t2)| t1)
                 .filter(|t1| t1.is_fixpoint())
-                .min_by_key(|t1| t1.size(ctx.type_defs).unwrap())
+                .filter_map(|t1| t1.size(ctx.type_defs).ok().map(|size| (size, t1)))
+                .min_by_key(|(size, _)| *size)
+                .map(|(_, typ)| typ)
                 .expect("minimum should exist");
             let min_right = ctx
                 .visited
@@ -215,12 +221,10 @@ impl Type {
                 .skip(ind)
                 .map(|(_t1, t2)| t2)
                 .filter(|t2| t2.is_fixpoint())
-                .min_by_key(|t2| t2.size(ctx.type_defs).unwrap())
+                .filter_map(|t2| t2.size(ctx.type_defs).ok().map(|size| (size, t2)))
+                .min_by_key(|(size, _)| *size)
+                .map(|(_, typ)| typ)
                 .expect("minimum should exist");
-            if debug_enabled() {
-                eprintln!("min_left: {:}", min_left);
-                eprintln!("min_right: {:}", min_right);
-            }
             if !matches!(min_left, Type::Recursive { .. })
                 && !matches!(min_right, Type::Iterative { .. })
             {
@@ -276,7 +280,7 @@ impl Type {
             return Ok(Type::is_subtype_helper(type1.clone(), type2, ctx.clone())?.ttl_dec());
         }
 
-        let res: SubtypeResult = match (type1, type2) {
+        let res: SubtypeResult<S> = match (type1, type2) {
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => {
                 if Self::is_primitive_subtype(&p1, &p2) {
                     Compatible
@@ -359,8 +363,8 @@ impl Type {
                 if vars1.len() != vars2.len() {
                     return Ok(Incompatible);
                 }
-                let mut t2: Type = *t2.clone();
-                let mut u2: Type = *u2.clone();
+                let mut t2: Type<S> = *t2.clone();
+                let mut u2: Type<S> = *u2.clone();
                 for (var1, var2) in vars1.iter().zip(vars2.iter()) {
                     t2 = t2.substitute(BTreeMap::from([(
                         var2,
@@ -380,8 +384,8 @@ impl Type {
                 if vars1.len() != vars2.len() {
                     return Ok(Incompatible);
                 }
-                let mut t2: Type = t2;
-                let mut u2: Type = *u2.clone();
+                let mut t2: Type<S> = t2;
+                let mut u2: Type<S> = *u2.clone();
                 for (var1, var2) in vars1.iter().zip(vars2.iter()) {
                     t2 = t2.substitute(BTreeMap::from([(
                         var2,
@@ -450,16 +454,15 @@ fn debug_log(msg: &str) {
     eprintln!("[subtype] {}", msg);
 }
 
-fn debug_log_entry(left: &Type, right: &Type, ctx: &SubtypeContext) {
+fn debug_log_entry<S>(_left: &Type<S>, _right: &Type<S>, ctx: &SubtypeContext<S>) {
     eprintln!("-----------------------");
-    eprintln!("[subtype] {} <= {}", left, right);
     eprintln!("[subtype]   visited={}", ctx.visited.len());
 }
 
-fn debug_log_stack(ctx: &SubtypeContext) {
+fn debug_log_stack<S>(ctx: &SubtypeContext<S>) {
     eprintln!("[subtype] -------Stack-------");
-    for (i, (type1, type2)) in ctx.visited.iter().rev().enumerate() {
-        eprintln!("[subtype] #{i}: {} <= {}", type1, type2);
+    for (i, _) in ctx.visited.iter().rev().enumerate() {
+        eprintln!("[subtype] #{i}: <pair>");
     }
     eprintln!("[subtype] -------Stack-End-------");
 }

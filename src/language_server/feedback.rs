@@ -1,4 +1,5 @@
 use crate::language_server::instance::CompileError;
+use crate::package_utils::format_with_source_span;
 use lsp_types::{self as lsp, Uri};
 use miette::Diagnostic;
 use par_core::source::{Span, Spanning};
@@ -56,20 +57,6 @@ impl FeedbackBookKeeper {
 
 pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnostic {
     let (span, message, help, _related_spans) = match err {
-        CompileError::ParseAndCompile(par_core::frontend::ParseAndCompileError::Parse(err)) => (
-            err.span(),
-            format!(
-                "{:?}",
-                miette::Report::from(err.to_owned()).with_source_code(code)
-            ),
-            err.help().map(|s| s.to_string()),
-            vec![],
-        ),
-        CompileError::ParseAndCompile(par_core::frontend::ParseAndCompileError::Compile(error)) => {
-            let span = error.span();
-            let error = error.to_report(code);
-            (span, format!("{error:?}"), None, vec![])
-        }
         CompileError::Type(err) => {
             let (span, related_span) = err.spans();
             (
@@ -79,6 +66,67 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
                 related_span.into_iter().collect(),
             )
         }
+        CompileError::PackageBuild(crate::package_builder::PackageBuildError::Load(
+            crate::package_loader::PackageLoadError::ParseError { source, error, .. },
+        )) => (
+            error.span(),
+            format!(
+                "{:?}",
+                miette::Report::from(error.to_owned()).with_source_code(source.clone())
+            ),
+            error.help().map(|s| s.to_string()),
+            vec![],
+        ),
+        CompileError::PackageBuild(crate::package_builder::PackageBuildError::LowerError {
+            source,
+            error,
+            ..
+        }) => {
+            let span = error.span();
+            let report = error.to_report(source.clone());
+            (span, format!("{report:?}"), None, vec![])
+        }
+        CompileError::PackageBuild(
+            error @ crate::package_builder::PackageBuildError::UnsupportedDependency {
+                source,
+                span,
+                ..
+            },
+        )
+        | CompileError::PackageBuild(
+            error @ crate::package_builder::PackageBuildError::ImportedModuleNotFound {
+                source,
+                span,
+                ..
+            },
+        )
+        | CompileError::PackageBuild(
+            error @ crate::package_builder::PackageBuildError::DuplicateImportAlias {
+                source,
+                span,
+                ..
+            },
+        )
+        | CompileError::PackageBuild(
+            error @ crate::package_builder::PackageBuildError::UnknownModuleQualifier {
+                source,
+                span,
+                ..
+            },
+        )
+        | CompileError::PackageBuild(
+            error @ crate::package_builder::PackageBuildError::ResolvedModuleNotFound {
+                source,
+                span,
+                ..
+            },
+        ) => (
+            span.clone(),
+            format_with_source_span(source.clone(), span, error.to_string()),
+            None,
+            vec![],
+        ),
+        CompileError::PackageBuild(error) => (Span::None, error.to_string(), None, vec![]),
     };
     let message = match help {
         Some(help) => format!("{}\n{}", message, help),

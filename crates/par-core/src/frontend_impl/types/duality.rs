@@ -3,7 +3,7 @@ use super::core::Type;
 use crate::frontend_impl::types::visit;
 use crate::location::Span;
 
-impl Type {
+impl<S> Type<S> {
     pub fn dual(self, span0: Span) -> Self {
         match self {
             Self::Primitive(span, p) => Self::DualPrimitive(span0.join(span), p),
@@ -85,7 +85,7 @@ impl Type {
     }
 
     fn dualize_self(mut self, label: &Option<LocalName>) -> Self {
-        fn inner(typ: &mut Type, target_label: &Option<LocalName>) -> Result<(), ()> {
+        fn inner<S>(typ: &mut Type<S>, target_label: &Option<LocalName>) -> Result<(), ()> {
             match typ {
                 Type::Self_(span, label) if label == target_label => {
                     *typ = Type::DualSelf(span.clone(), label.clone());
@@ -99,7 +99,7 @@ impl Type {
                     // our label is shadowed
                 }
                 _ => {
-                    visit::continue_mut(typ, |child: &mut Type| inner(child, target_label))?;
+                    visit::continue_mut(typ, |child: &mut Type<S>| inner(child, target_label))?;
                 }
             }
             Ok(())

@@ -24,13 +24,13 @@ pub enum PollKind {
 }
 
 #[derive(Clone, Debug)]
-pub enum Process<Typ> {
+pub enum Process<Typ, S> {
     Let {
         span: Span,
         name: LocalName,
-        annotation: Option<Type>,
+        annotation: Option<Type<S>>,
         typ: Typ,
-        value: Arc<Expression<Typ>>,
+        value: Arc<Expression<Typ, S>>,
         then: Arc<Self>,
     },
     Do {
@@ -38,14 +38,14 @@ pub enum Process<Typ> {
         name: LocalName,
         usage: VariableUsage,
         typ: Typ,
-        command: Command<Typ>,
+        command: Command<Typ, S>,
     },
     Poll {
         span: Span,
         kind: PollKind,
         driver: LocalName,
         point: LocalName,
-        clients: Vec<Arc<Expression<Typ>>>,
+        clients: Vec<Arc<Expression<Typ, S>>>,
         name: LocalName,
         name_typ: Typ,
         captures: Captures,
@@ -56,7 +56,7 @@ pub enum Process<Typ> {
         span: Span,
         driver: LocalName,
         point: LocalName,
-        values: Vec<Arc<Expression<Typ>>>,
+        values: Vec<Arc<Expression<Typ, S>>>,
         captures: Captures,
     },
     Telltypes(Span, Arc<Self>),
@@ -66,58 +66,58 @@ pub enum Process<Typ> {
 }
 
 #[derive(Clone, Debug)]
-pub enum Command<Typ> {
-    Link(Arc<Expression<Typ>>),
-    Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
+pub enum Command<Typ, S> {
+    Link(Arc<Expression<Typ, S>>),
+    Send(Arc<Expression<Typ, S>>, Arc<Process<Typ, S>>),
     Receive(
         LocalName,
-        Option<Type>,
+        Option<Type<S>>,
         Typ,
-        Arc<Process<Typ>>,
+        Arc<Process<Typ, S>>,
         Vec<LocalName>,
     ),
-    Signal(LocalName, Arc<Process<Typ>>),
+    Signal(LocalName, Arc<Process<Typ, S>>),
     Case(
         Arc<[LocalName]>,
-        Box<[Arc<Process<Typ>>]>,
-        Option<Arc<Process<Typ>>>,
+        Box<[Arc<Process<Typ, S>>]>,
+        Option<Arc<Process<Typ, S>>>,
     ),
     Break,
-    Continue(Arc<Process<Typ>>),
+    Continue(Arc<Process<Typ, S>>),
     Begin {
         unfounded: bool,
         label: Option<LocalName>,
         captures: Captures,
-        body: Arc<Process<Typ>>,
+        body: Arc<Process<Typ, S>>,
     },
     Loop(Option<LocalName>, LocalName, Captures),
-    SendType(Type, Arc<Process<Typ>>),
-    ReceiveType(LocalName, Arc<Process<Typ>>),
+    SendType(Type<S>, Arc<Process<Typ, S>>),
+    ReceiveType(LocalName, Arc<Process<Typ, S>>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Expression<Typ> {
-    Global(Span, GlobalName, Typ),
+pub enum Expression<Typ, S> {
+    Global(Span, GlobalName<S>, Typ),
     Variable(Span, LocalName, Typ, VariableUsage),
     Box(Span, Captures, Arc<Self>, Typ),
     Chan {
         span: Span,
         captures: Captures,
         chan_name: LocalName,
-        chan_annotation: Option<Type>,
+        chan_annotation: Option<Type<S>>,
         chan_type: Typ,
         expr_type: Typ,
-        process: Arc<Process<Typ>>,
+        process: Arc<Process<Typ, S>>,
     },
     Primitive(Span, Primitive, Typ),
     External(
-        Type,
+        Type<S>,
         fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
         Typ,
     ),
 }
 
-impl<Typ> Spanning for Process<Typ> {
+impl<Typ, S> Spanning for Process<Typ, S> {
     fn span(&self) -> Span {
         match self {
             Self::Let { span, .. } => span.clone(),
@@ -132,7 +132,7 @@ impl<Typ> Spanning for Process<Typ> {
     }
 }
 
-impl Process<()> {
+impl<S: Clone> Process<(), S> {
     pub fn optimize(&self) -> Arc<Self> {
         match self {
             Self::Let {
@@ -497,11 +497,11 @@ impl Process<()> {
     }
 }
 
-impl Process<Type> {
+impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
     pub fn types_at_spans(
         &self,
-        program: &CheckedModule,
-        consume: &mut impl FnMut(Span, NameWithType),
+        program: &CheckedModule<S>,
+        consume: &mut impl FnMut(Span, NameWithType<S>),
     ) {
         match self {
             Process::Let {
@@ -572,7 +572,7 @@ impl Process<Type> {
     }
 }
 
-impl<Typ> Command<Typ> {
+impl<Typ, S> Command<Typ, S> {
     pub fn free_variables(&self) -> IndexSet<LocalName> {
         match self {
             Command::Link(expression) => expression.free_variables(),
@@ -609,11 +609,11 @@ impl<Typ> Command<Typ> {
     }
 }
 
-impl Command<Type> {
+impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Command<Type<S>, S> {
     pub fn types_at_spans(
         &self,
-        program: &CheckedModule,
-        consume: &mut impl FnMut(Span, NameWithType),
+        program: &CheckedModule<S>,
+        consume: &mut impl FnMut(Span, NameWithType<S>),
     ) {
         match self {
             Self::Link(expression) => {
@@ -659,8 +659,8 @@ impl Command<Type> {
     }
 }
 
-impl Expression<()> {
-    pub(crate) fn optimize_subject(&self, replace: Option<&LocalName>) -> Arc<Expression<()>> {
+impl<S: Clone> Expression<(), S> {
+    pub(crate) fn optimize_subject(&self, replace: Option<&LocalName>) -> Arc<Expression<(), S>> {
         match self {
             Self::Global(span, name, typ) => {
                 Arc::new(Self::Global(span.clone(), name.clone(), typ.clone()))
@@ -757,15 +757,15 @@ impl Expression<()> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NameWithType {
+pub struct NameWithType<S> {
     pub name: Option<String>,
-    pub typ: Type,
+    pub typ: Type<S>,
     pub def_span: Span,
     pub decl_span: Span,
 }
 
-impl NameWithType {
-    pub fn new(name: Option<String>, typ: Type) -> Self {
+impl<S> NameWithType<S> {
+    pub fn new(name: Option<String>, typ: Type<S>) -> Self {
         NameWithType {
             name,
             typ,
@@ -773,19 +773,19 @@ impl NameWithType {
             decl_span: Span::None,
         }
     }
-    pub fn named(name: impl ToString, typ: Type) -> Self {
+    pub fn named(name: impl ToString, typ: Type<S>) -> Self {
         Self::new(Some(name.to_string()), typ)
     }
-    pub fn unnamed(typ: Type) -> Self {
+    pub fn unnamed(typ: Type<S>) -> Self {
         Self::new(None, typ)
     }
 }
 
-impl Expression<Type> {
+impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S> {
     pub fn types_at_spans(
         &self,
-        program: &CheckedModule,
-        consume: &mut impl FnMut(Span, NameWithType),
+        program: &CheckedModule<S>,
+        consume: &mut impl FnMut(Span, NameWithType<S>),
     ) {
         match self {
             Self::Global(_, name, typ) => {
@@ -834,7 +834,7 @@ impl Expression<Type> {
     }
 }
 
-impl<Typ: Clone> Expression<Typ> {
+impl<Typ: Clone, S> Expression<Typ, S> {
     pub fn get_type(&self) -> Typ {
         match self {
             Self::Global(_, _, typ) => typ.clone(),
@@ -847,129 +847,224 @@ impl<Typ: Clone> Expression<Typ> {
     }
 }
 
-impl Process<()> {
-    pub fn qualify(self: &mut Arc<Self>, module: Option<&str>) {
-        match Arc::make_mut(self) {
-            Self::Let {
-                span: _,
-                name: _,
+impl<S: Clone> Process<(), S> {
+    pub fn map_global_names<T, E>(
+        self,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(match self {
+            Process::Let {
+                span,
+                name,
                 annotation,
                 typ: (),
                 value,
                 then,
-            } => {
-                if let Some(annotation) = annotation {
-                    annotation.qualify(module);
-                }
-                value.qualify(module);
-                then.qualify(module);
-            }
-            Self::Do {
-                span: _,
-                name: _,
-                usage: _,
+            } => Process::Let {
+                span,
+                name,
+                annotation: annotation.map(|typ| typ.map_global_names(f)).transpose()?,
+                typ: (),
+                value: Arc::new(Arc::unwrap_or_clone(value).map_global_names(f)?),
+                then: Arc::new(Arc::unwrap_or_clone(then).map_global_names(f)?),
+            },
+            Process::Do {
+                span,
+                name,
+                usage,
                 typ: (),
                 command,
-            } => command.qualify(module),
-            Self::Poll {
+            } => Process::Do {
+                span,
+                name,
+                usage,
+                typ: (),
+                command: command.map_global_names(f)?,
+            },
+            Process::Poll {
+                span,
+                kind,
+                driver,
+                point,
                 clients,
+                name,
+                name_typ: (),
+                captures,
                 then,
                 else_,
-                ..
-            } => {
-                for client in clients {
-                    client.qualify(module);
-                }
-                then.qualify(module);
-                else_.qualify(module);
-            }
-            Self::Submit { values, .. } => {
-                for value in values {
-                    value.qualify(module);
-                }
-            }
-            Self::Telltypes(_span, process) => process.qualify(module),
-            Self::Block(_, _, body, process) => {
-                body.qualify(module);
-                process.qualify(module);
-            }
-            Self::Goto(_, _, _) => {}
-            Self::Unreachable(_) => {}
-        }
+            } => Process::Poll {
+                span,
+                kind,
+                driver,
+                point,
+                clients: clients
+                    .into_iter()
+                    .map(|client| {
+                        Arc::unwrap_or_clone(client)
+                            .map_global_names(f)
+                            .map(Arc::new)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                name,
+                name_typ: (),
+                captures,
+                then: Arc::new(Arc::unwrap_or_clone(then).map_global_names(f)?),
+                else_: Arc::new(Arc::unwrap_or_clone(else_).map_global_names(f)?),
+            },
+            Process::Submit {
+                span,
+                driver,
+                point,
+                values,
+                captures,
+            } => Process::Submit {
+                span,
+                driver,
+                point,
+                values: values
+                    .into_iter()
+                    .map(|value| {
+                        Arc::unwrap_or_clone(value)
+                            .map_global_names(f)
+                            .map(Arc::new)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                captures,
+            },
+            Process::Telltypes(span, process) => Process::Telltypes(
+                span,
+                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+            ),
+            Process::Block(span, index, body, then) => Process::Block(
+                span,
+                index,
+                Arc::new(Arc::unwrap_or_clone(body).map_global_names(f)?),
+                Arc::new(Arc::unwrap_or_clone(then).map_global_names(f)?),
+            ),
+            Process::Goto(span, index, captures) => Process::Goto(span, index, captures),
+            Process::Unreachable(span) => Process::Unreachable(span),
+        })
     }
 }
 
-impl Command<()> {
-    pub fn qualify(&mut self, module: Option<&str>) {
-        match self {
-            Self::Link(expression) => expression.qualify(module),
-            Self::Send(expression, process) => {
-                expression.qualify(module);
-                process.qualify(module);
+impl<S: Clone> Command<(), S> {
+    pub fn map_global_names<T, E>(
+        self,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(match self {
+            Command::Link(expression) => Command::Link(Arc::new(
+                Arc::unwrap_or_clone(expression).map_global_names(f)?,
+            )),
+            Command::Send(argument, process) => Command::Send(
+                Arc::new(Arc::unwrap_or_clone(argument).map_global_names(f)?),
+                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+            ),
+            Command::Receive(parameter, annotation, (), process, vars) => Command::Receive(
+                parameter,
+                annotation.map(|typ| typ.map_global_names(f)).transpose()?,
+                (),
+                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+                vars,
+            ),
+            Command::Signal(chosen, process) => Command::Signal(
+                chosen,
+                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+            ),
+            Command::Case(branches, processes, else_process) => Command::Case(
+                branches,
+                processes
+                    .into_vec()
+                    .into_iter()
+                    .map(|process| {
+                        Arc::unwrap_or_clone(process)
+                            .map_global_names(f)
+                            .map(Arc::new)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+                else_process
+                    .map(|process| {
+                        Arc::unwrap_or_clone(process)
+                            .map_global_names(f)
+                            .map(Arc::new)
+                    })
+                    .transpose()?,
+            ),
+            Command::Break => Command::Break,
+            Command::Continue(process) => {
+                Command::Continue(Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?))
             }
-            Self::Receive(_, annotation, (), process, _) => {
-                if let Some(annotation) = annotation {
-                    annotation.qualify(module);
-                }
-                process.qualify(module);
-            }
-            Self::Signal(_, process) => {
-                process.qualify(module);
-            }
-            Self::Case(_, branches, else_process) => {
-                for process in branches {
-                    process.qualify(module);
-                }
-                if let Some(process) = else_process {
-                    process.qualify(module);
-                }
-            }
-            Self::Break => {}
-            Self::Continue(process) => {
-                process.qualify(module);
-            }
-            Self::Begin { body, .. } => {
-                body.qualify(module);
-            }
-            Self::Loop(_, _, _) => {}
-            Self::SendType(argument, process) => {
-                argument.qualify(module);
-                process.qualify(module);
-            }
-            Self::ReceiveType(_, process) => {
-                process.qualify(module);
-            }
-        }
+            Command::Begin {
+                unfounded,
+                label,
+                captures,
+                body,
+            } => Command::Begin {
+                unfounded,
+                label,
+                captures,
+                body: Arc::new(Arc::unwrap_or_clone(body).map_global_names(f)?),
+            },
+            Command::Loop(label, driver, captures) => Command::Loop(label, driver, captures),
+            Command::SendType(argument, process) => Command::SendType(
+                argument.map_global_names(f)?,
+                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+            ),
+            Command::ReceiveType(parameter, process) => Command::ReceiveType(
+                parameter,
+                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+            ),
+        })
     }
 }
 
-impl Expression<()> {
-    pub fn qualify(self: &mut Arc<Self>, module: Option<&str>) {
-        match Arc::make_mut(self) {
-            Self::Global(_span, name, ()) => name.qualify(module),
-            Self::Variable(_span, _name, (), _usage) => {}
-            Self::Box(_span, _caps, expression, ()) => expression.qualify(module),
-            Self::Chan {
-                span: _,
-                captures: _,
-                chan_name: _,
+impl<S: Clone> Expression<(), S> {
+    pub fn map_global_names<T, E>(
+        self,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Expression<(), T>, E> {
+        Ok(match self {
+            Expression::Global(span, name, ()) => Expression::Global(span, f(name)?, ()),
+            Expression::Variable(span, name, (), usage) => {
+                Expression::Variable(span, name, (), usage)
+            }
+            Expression::Box(span, captures, expression, ()) => Expression::Box(
+                span,
+                captures,
+                Arc::new(Arc::unwrap_or_clone(expression).map_global_names(f)?),
+                (),
+            ),
+            Expression::Chan {
+                span,
+                captures,
+                chan_name,
                 chan_annotation,
                 chan_type: (),
                 expr_type: (),
                 process,
-            } => {
-                if let Some(chan_annotation) = chan_annotation {
-                    chan_annotation.qualify(module);
-                }
-                process.qualify(module)
+            } => Expression::Chan {
+                span,
+                captures,
+                chan_name,
+                chan_annotation: chan_annotation
+                    .map(|typ| typ.map_global_names(f))
+                    .transpose()?,
+                chan_type: (),
+                expr_type: (),
+                process: Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
+            },
+            Expression::Primitive(span, primitive, ()) => {
+                Expression::Primitive(span, primitive, ())
             }
-            Self::Primitive(_span, _primitive, ()) => {}
-            Self::External(claimed_type, _, _) => claimed_type.qualify(module),
-        }
+            Expression::External(claimed_type, external, ()) => {
+                Expression::External(claimed_type.map_global_names(f)?, external, ())
+            }
+        })
     }
 }
 
-impl<Typ> Process<Typ> {
+impl<Typ, S> Process<Typ, S> {
     pub fn free_variables(&self) -> IndexSet<LocalName> {
         match self {
             Process::Let {
@@ -1025,7 +1120,9 @@ impl<Typ> Process<Typ> {
             Process::Unreachable(_) => IndexSet::new(),
         }
     }
+}
 
+impl<Typ, S: Clone + std::fmt::Display> Process<Typ, S> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Let {
@@ -1242,7 +1339,7 @@ impl<Typ> Process<Typ> {
     }
 }
 
-impl<Typ> Expression<Typ> {
+impl<Typ, S> Expression<Typ, S> {
     pub fn free_variables(&self) -> IndexSet<LocalName> {
         match self {
             Expression::Global(_, _, _) => IndexSet::new(),
@@ -1257,7 +1354,9 @@ impl<Typ> Expression<Typ> {
             Expression::External(_, _, _) => IndexSet::new(),
         }
     }
+}
 
+impl<Typ, S: Clone + std::fmt::Display> Expression<Typ, S> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Global(_, name, _) => {

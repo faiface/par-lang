@@ -1,4 +1,5 @@
-use crate::frontend_impl::{language::GlobalName, types::Type};
+use crate::frontend_impl::language::{GlobalName, Universal};
+use crate::frontend_impl::types::Type;
 use std::collections::HashMap;
 
 use crate::backend::flat::transpiler::Transpiled;
@@ -7,7 +8,7 @@ use std::fmt::Display;
 #[derive(Clone)]
 pub struct Compiled {
     pub code: Transpiled,
-    pub name_to_ty: HashMap<GlobalName, Type>,
+    pub name_to_ty: HashMap<GlobalName<Universal>, Type<Universal>>,
 }
 
 impl Display for Compiled {
@@ -18,7 +19,7 @@ impl Display for Compiled {
 
 impl Compiled {
     pub fn compile_file(
-        module: &crate::frontend_impl::program::CheckedModule,
+        module: &crate::frontend_impl::program::CheckedModule<Universal>,
         max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         Ok(Self {
@@ -30,7 +31,7 @@ impl Compiled {
                 .collect(),
         })
     }
-    pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
+    pub fn get_type_of(&self, name: &GlobalName<Universal>) -> Option<Type<Universal>> {
         self.name_to_ty.get(name).cloned()
     }
 }

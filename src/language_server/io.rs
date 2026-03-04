@@ -22,6 +22,10 @@ impl IO {
     pub fn read(&self, uri: &Uri) -> Option<String> {
         self.virtual_files.read(uri)
     }
+
+    pub fn snapshot(&self) -> Vec<(Uri, String)> {
+        self.virtual_files.snapshot()
+    }
 }
 
 // not thread safe (is this ok?)
@@ -43,5 +47,13 @@ impl VirtualFiles {
 
     fn read(&self, uri: &Uri) -> Option<String> {
         self.files.borrow().get(uri).cloned()
+    }
+
+    fn snapshot(&self) -> Vec<(Uri, String)> {
+        self.files
+            .borrow()
+            .iter()
+            .map(|(uri, source)| (uri.clone(), source.clone()))
+            .collect()
     }
 }

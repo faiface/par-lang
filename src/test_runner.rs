@@ -1,59 +1,102 @@
+use std::collections::BTreeMap;
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
 use colored::Colorize;
-use par_builtin::import_builtins;
 use par_core::{
     frontend::{
-        CheckedModule, ParseAndCompileError, Type, TypeError, compile_runtime,
-        language::GlobalName, lower, parse, set_miette_hook, type_check,
+        CheckedModule, Type, TypeError, compile_runtime,
+        language::{GlobalName, Universal},
+        set_miette_hook, type_check,
     },
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
 };
 use par_runtime::spawn::TokioSpawn;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
-use std::{fmt::Display, fs};
+
+use crate::package_builder::{PackageBuildError, load_lowered_package};
+use crate::package_loader::{CanonicalModulePath, PackageLoadError};
+use crate::package_utils::{
+    SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
+    parse_target, source_for_fallback, source_for_type_error,
+};
 
 #[derive(Debug, Clone)]
 enum BuildError {
-    ParseAndCompile(ParseAndCompileError),
-    Type(TypeError),
-    InetCompile(RuntimeCompilerError),
+    PackageBuild(PackageBuildError),
+    Type {
+        error: TypeError<Universal>,
+        sources: SourceLookup,
+    },
+    InetCompile {
+        error: RuntimeCompilerError,
+        sources: SourceLookup,
+    },
 }
 
 impl BuildError {
-    fn display(&self, code: Arc<str>) -> String {
+    fn display(&self) -> String {
         match self {
-            Self::ParseAndCompile(ParseAndCompileError::Parse(error)) => {
+            Self::PackageBuild(PackageBuildError::Load(PackageLoadError::ParseError {
+                source,
+                error,
+                ..
+            })) => format!(
+                "{:?}",
+                miette::Report::from(error.to_owned()).with_source_code(source.clone())
+            ),
+            Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
+                format!("{:?}", error.to_report(source.clone()))
+            }
+            Self::PackageBuild(
+                error @ PackageBuildError::UnsupportedDependency { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::ImportedModuleNotFound { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::DuplicateImportAlias { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::ResolvedModuleNotFound { source, span, .. },
+            ) => format_with_source_span(source.clone(), span, error.to_string()),
+            Self::PackageBuild(error) => error.to_string(),
+            Self::Type { error, sources } => {
                 format!(
                     "{:?}",
-                    miette::Report::from(error.to_owned()).with_source_code(code)
+                    error.to_report(source_for_type_error(error, sources))
                 )
             }
-            Self::ParseAndCompile(ParseAndCompileError::Compile(error)) => {
-                format!("{:?}", error.to_report(code))
-            }
-            Self::Type(error) => format!("{:?}", error.to_report(code)),
-            Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
+            Self::InetCompile { error, sources } => format!(
+                "inet compilation error: {}",
+                error.display(&source_for_fallback(sources))
+            ),
         }
     }
 }
 
 fn build_for_run(
-    code: &str,
-    file: &Path,
+    package_path: &Path,
     max_interactions: u32,
-) -> Result<(CheckedModule, Compiled), BuildError> {
-    let parsed = parse(code, file.to_path_buf().into())
-        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Parse(error)))?;
-    let mut lowered = lower(parsed)
-        .map_err(|error| BuildError::ParseAndCompile(ParseAndCompileError::Compile(error)))?;
-    import_builtins(&mut lowered);
-    let checked = type_check(&lowered).map_err(BuildError::Type)?;
-    let rt_compiled =
-        compile_runtime(&checked, max_interactions).map_err(BuildError::InetCompile)?;
-    Ok((checked, rt_compiled))
+) -> Result<(CheckedModule<Universal>, Compiled, Vec<CanonicalModulePath>), BuildError> {
+    let lowered_package = load_lowered_package(package_path).map_err(BuildError::PackageBuild)?;
+    let sources = lowered_package.sources;
+    let checked = type_check(&lowered_package.lowered).map_err(|error| BuildError::Type {
+        error,
+        sources: sources.clone(),
+    })?;
+    let compiled =
+        compile_runtime(&checked, max_interactions).map_err(|error| BuildError::InetCompile {
+            error,
+            sources: sources.clone(),
+        })?;
+    Ok((checked, compiled, lowered_package.local_modules))
 }
 
 #[derive(Debug)]
@@ -62,9 +105,6 @@ pub enum TestStatus {
     PassedWithNoAssertions,
     Failed(String),
     FailedWithAssertions(Vec<AssertionResult>),
-    CompileError(String),
-    TypeError(String),
-    ReadError(String),
 }
 
 impl TestStatus {
@@ -85,9 +125,6 @@ impl Display for TestStatus {
             TestStatus::FailedWithAssertions(v) => {
                 write!(f, "failed with {} assertion(s)", v.len())
             }
-            TestStatus::CompileError(msg) => write!(f, "compile error: {msg}"),
-            TestStatus::TypeError(msg) => write!(f, "type error: {msg}"),
-            TestStatus::ReadError(msg) => write!(f, "read error: {msg}"),
         }
     }
 }
@@ -99,146 +136,162 @@ pub struct TestResult {
     pub status: TestStatus,
 }
 
-pub fn run_tests(file: Option<PathBuf>, filter: Option<String>, max_interactions: u32) -> bool {
+pub fn run_tests(
+    package_path: PathBuf,
+    target: Option<String>,
+    filter: Option<String>,
+    max_interactions: u32,
+) -> bool {
     set_miette_hook();
+    println!(
+        "{} {}",
+        "Running tests in package:".bright_blue(),
+        package_path.display()
+    );
+    println!();
 
-    let test_files = match file {
-        Some(f) => vec![f],
-        None => find_test_files(),
+    let (checked, rt_compiled, local_modules) = match stacker::grow(32 * 1024 * 1024, || {
+        build_for_run(&package_path, max_interactions)
+    }) {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("{}", error.display().bright_red());
+            return false;
+        }
     };
 
-    if test_files.is_empty() {
-        println!("{}", "No test files found".yellow());
+    let parsed_target = target.as_deref().map(parse_target);
+    let module_selector = parsed_target
+        .as_ref()
+        .map(|parsed| parsed.module_path.as_str());
+    let name_selector = parsed_target
+        .as_ref()
+        .and_then(|parsed| parsed.definition_name.as_deref());
+    let selected_module = module_selector.as_deref().and_then(|selector| {
+        find_local_module(selector, &local_modules).map(CanonicalModulePath::to_slash_path)
+    });
+
+    if module_selector.is_some() && selected_module.is_none() {
+        eprintln!(
+            "{} {}",
+            "No such local module for test target:".bright_red(),
+            target.unwrap_or_default()
+        );
         return false;
     }
 
-    // TODO: placeholder for indicating that we are running tests
-    println!("{}", "Running tests...".bright_blue());
-    println!();
+    let selected_module = selected_module.as_deref();
+    let selected_name = name_selector.as_deref();
 
-    let mut total_tests = 0;
-    let mut passed_tests = 0;
+    let mut grouped_results: BTreeMap<String, Vec<TestResult>> = BTreeMap::new();
+    let mut total_tests = 0usize;
+    let mut passed_tests = 0usize;
     let start_time = Instant::now();
 
-    for test_file in test_files {
-        let results = run_test_file(&test_file, &filter, max_interactions);
-        print_test_results(&test_file, &results);
+    let tests = collect_test_definitions(
+        &checked,
+        &local_modules,
+        selected_module,
+        selected_name,
+        filter.as_deref(),
+    );
 
-        total_tests += results.len();
-        passed_tests += results.iter().filter(|r| r.status.is_passed()).count();
+    if tests.is_empty() {
+        println!("{}", "No test definitions found".yellow());
+        return false;
+    }
+
+    for (name, kind) in tests {
+        let result = match kind {
+            DefinitionKind::Test => test_single_definition(&checked, &rt_compiled, &name),
+            DefinitionKind::Run => run_single_definition(&checked, &rt_compiled, &name),
+        };
+        total_tests += 1;
+        if result.status.is_passed() {
+            passed_tests += 1;
+        }
+        let module =
+            local_module_slash_path(&name.module).unwrap_or_else(|| "<unknown>".to_string());
+        grouped_results.entry(module).or_default().push(result);
+    }
+
+    for (module, results) in &grouped_results {
+        print_test_results(module, results);
     }
 
     let duration = start_time.elapsed();
     println!();
     print_summary(total_tests, passed_tests, duration);
-    return passed_tests == total_tests;
+    passed_tests == total_tests
 }
 
-fn find_test_files() -> Vec<PathBuf> {
-    let mut test_files = Vec::new();
+#[derive(Debug, Clone, Copy)]
+enum DefinitionKind {
+    Test,
+    Run,
+}
 
-    // TODO: For now, just look for .par files in the current directory
-    // In the future, when multi-file is supported, we can add back directory scanning
-    if let Ok(entries) = fs::read_dir(".") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map(|e| e == "par").unwrap_or(false) {
-                test_files.push(path);
+fn collect_test_definitions(
+    checked: &CheckedModule<Universal>,
+    local_modules: &[CanonicalModulePath],
+    selected_module: Option<&str>,
+    selected_name: Option<&str>,
+    filter: Option<&str>,
+) -> Vec<(GlobalName<Universal>, DefinitionKind)> {
+    checked
+        .definitions
+        .iter()
+        .filter_map(|(name, _)| {
+            let module = local_module_slash_path(&name.module)?;
+            if !is_local_module(module.as_str(), local_modules) {
+                return None;
             }
-        }
-    }
 
-    test_files.sort();
-    test_files
+            if let Some(selected_module) = selected_module
+                && module != selected_module
+            {
+                return None;
+            }
+            if let Some(selected_name) = selected_name
+                && name.primary != selected_name
+            {
+                return None;
+            }
+            if let Some(filter) = filter
+                && !name.primary.contains(filter)
+            {
+                return None;
+            }
+
+            if name.primary.starts_with("Test") && name.primary != "Test" {
+                return Some((name.clone(), DefinitionKind::Test));
+            }
+            if name.primary.starts_with("Run") && name.primary != "Run" {
+                return Some((name.clone(), DefinitionKind::Run));
+            }
+            None
+        })
+        .collect()
 }
 
-pub fn run_test_file(
-    file: &Path,
-    filter: &Option<String>,
-    max_interactions: u32,
-) -> Vec<TestResult> {
-    let mut results = Vec::new();
-
-    let Ok(code) = fs::read_to_string(file) else {
-        results.push(TestResult {
-            name: file.to_string_lossy().to_string(),
-            duration: Duration::ZERO,
-            status: TestStatus::ReadError(format!("Failed to read file: {}", file.display())),
-        });
-        return results;
-    };
-
-    let (checked, rt_compiled) = match stacker::grow(32 * 1024 * 1024, || {
-        build_for_run(&code, file, max_interactions)
-    }) {
-        Ok(result) => result,
-        Err(error) => {
-            let message = error.display(Arc::from(code.as_str())).to_string();
-            let status = match error {
-                BuildError::Type(_) => TestStatus::TypeError(message),
-                _ => TestStatus::CompileError(message),
-            };
-            results.push(TestResult {
-                name: file.to_string_lossy().to_string(),
-                duration: Duration::ZERO,
-                status,
-            });
-            return results;
-        }
-    };
-
-    // Look for definitions that start with Test (case-sensitive)
-    let test_definitions: Vec<_> = checked
-        .definitions
+fn is_local_module(module: &str, local_modules: &[CanonicalModulePath]) -> bool {
+    local_modules
         .iter()
-        .filter(|(name, _)| name.primary.starts_with("Test") && name.primary != "Test")
-        .filter(|(name, _)| {
-            filter
-                .as_ref()
-                .map(|f| name.primary.contains(f))
-                .unwrap_or(true)
-        })
-        .collect();
-
-    // Look for definitions that start with
-
-    for (name, _) in test_definitions {
-        let result = test_single_definition(&checked, &rt_compiled, name.primary.clone());
-        results.push(result);
-    }
-
-    let run_definitions: Vec<_> = checked
-        .definitions
-        .iter()
-        .filter(|(name, _)| name.primary.starts_with("Run") && name.primary != "Run")
-        .filter(|(name, _)| {
-            filter
-                .as_ref()
-                .map(|f| name.primary.contains(f))
-                .unwrap_or(true)
-        })
-        .collect();
-
-    for (name, _) in run_definitions {
-        let result = run_single_definition(&checked, &rt_compiled, name.primary.clone());
-        results.push(result);
-    }
-
-    results
+        .any(|candidate| candidate.to_slash_path() == module)
 }
 
 fn test_single_definition(
-    program: &CheckedModule,
+    program: &CheckedModule<Universal>,
     rt_compiled: &Compiled,
-    test_name: String,
+    test_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
-
+    let name_label = test_name.to_string();
     let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
         Err(e) => {
             return TestResult {
-                name: test_name,
+                name: name_label,
                 duration: start.elapsed(),
                 status: TestStatus::Failed(format!("Failed to create runtime: {}", e)),
             };
@@ -246,18 +299,10 @@ fn test_single_definition(
     };
 
     let result = runtime.block_on(async {
-        let name = program
-            .definitions
-            .iter()
-            .find(|(n, _)| n.primary == test_name)
-            .map(|(n, _)| n)
-            .ok_or_else(|| format!("Test definition '{}' not found", test_name))?;
-
         let ty = rt_compiled
-            .get_type_of(name)
+            .get_type_of(test_name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
-
-        run_test_with_test_type(program, rt_compiled, name, &ty).await
+        run_test_with_test_type(program, rt_compiled, test_name, &ty).await
     });
 
     let duration = start.elapsed();
@@ -267,24 +312,24 @@ fn test_single_definition(
     };
 
     TestResult {
-        name: test_name,
+        name: name_label,
         duration,
         status: final_result,
     }
 }
 
 fn run_single_definition(
-    program: &CheckedModule,
+    _program: &CheckedModule<Universal>,
     rt_compiled: &Compiled,
-    test_name: String,
+    run_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
-
+    let name_label = run_name.to_string();
     let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
         Err(e) => {
             return TestResult {
-                name: test_name,
+                name: name_label,
                 duration: start.elapsed(),
                 status: TestStatus::Failed(format!("Failed to create runtime: {}", e)),
             };
@@ -292,17 +337,10 @@ fn run_single_definition(
     };
 
     let result = runtime.block_on(async {
-        let name = program
-            .definitions
-            .iter()
-            .find(|(n, _)| n.primary == test_name)
-            .map(|(n, _)| n)
-            .ok_or_else(|| format!("Test definition '{}' not found", test_name))?;
-
         let _ty = rt_compiled
-            .get_type_of(name)
-            .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
-        let package = rt_compiled.code.get_with_name(name).unwrap();
+            .get_type_of(run_name)
+            .ok_or_else(|| format!("Type not found for test '{}'", run_name))?;
+        let package = rt_compiled.code.get_with_name(run_name).unwrap();
 
         let (handle, fut) = par_runtime::start_and_instantiate(
             Arc::new(TokioSpawn::new()),
@@ -321,17 +359,17 @@ fn run_single_definition(
     };
 
     TestResult {
-        name: test_name,
+        name: name_label,
         duration,
         status: final_result,
     }
 }
 
 async fn run_test_with_test_type(
-    _program: &CheckedModule,
+    _program: &CheckedModule<Universal>,
     rt_compiled: &Compiled,
-    name: &GlobalName,
-    _ty: &Type,
+    name: &GlobalName<Universal>,
+    _ty: &Type<Universal>,
 ) -> Result<TestStatus, String> {
     let (sender, receiver) = mpsc::channel();
 
@@ -342,22 +380,12 @@ async fn run_test_with_test_type(
         package,
     );
 
-    // Spawn the test function execution
-    //
-    // The test function expects [Test.Test] !
-    // We need to send a Test instance
     let test_handle = root.send();
-
-    // Provide the Test instance with the sender directly
     provide_test(test_handle, sender).await;
-
-    // Continue with the test execution
     root.continue_();
-    // collect results from the receiver
     reducer_future.await;
 
     let mut results = vec![];
-
     while let Ok(result) = receiver.try_recv() {
         results.push(result);
     }
@@ -372,15 +400,10 @@ async fn run_test_with_test_type(
     }
 }
 
-const PASSED: &str = "✓";
-const FAILED: &str = "✗";
+const PASSED: &str = "[PASS]";
+const FAILED: &str = "[FAIL]";
 
-// TODO: Current implementation only outputting the top-level test suite name, but should output sub-cases as well.
-fn print_test_results(file: &Path, results: &[TestResult]) {
-    let file_label = file
-        .file_name()
-        .map(|n| n.to_string_lossy())
-        .unwrap_or_else(|| file.to_string_lossy());
+fn print_test_results(module: &str, results: &[TestResult]) {
     let all_passed = results.iter().all(|r| r.status.is_passed());
     let icon = if all_passed {
         PASSED.green()
@@ -388,7 +411,7 @@ fn print_test_results(file: &Path, results: &[TestResult]) {
         FAILED.red()
     };
 
-    println!("{} {}", icon, file_label.bright_white());
+    println!("{} {}", icon, module.bright_white());
 
     for r in results {
         let icon = if r.status.is_passed() {
@@ -400,10 +423,7 @@ fn print_test_results(file: &Path, results: &[TestResult]) {
         println!("  {} {} {}", icon, r.name, duration);
 
         match &r.status {
-            TestStatus::Failed(msg)
-            | TestStatus::CompileError(msg)
-            | TestStatus::TypeError(msg)
-            | TestStatus::ReadError(msg) => {
+            TestStatus::Failed(msg) => {
                 println!("    {}", msg.red());
             }
             TestStatus::FailedWithAssertions(assertions) => {

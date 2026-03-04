@@ -5,12 +5,12 @@ use indexmap::{IndexMap, IndexSet};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub struct TypeDefs {
-    pub globals: Arc<IndexMap<GlobalName, (Span, Vec<LocalName>, Type)>>,
+pub struct TypeDefs<S> {
+    pub globals: Arc<IndexMap<GlobalName<S>, (Span, Vec<LocalName>, Type<S>)>>,
     pub vars: IndexSet<LocalName>,
 }
 
-impl Default for TypeDefs {
+impl<S: Clone + Eq + std::hash::Hash> Default for TypeDefs<S> {
     fn default() -> Self {
         Self {
             globals: Default::default(),
@@ -19,10 +19,13 @@ impl Default for TypeDefs {
     }
 }
 
-impl TypeDefs {
+impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
     pub fn new_with_validation<'a>(
-        globals: impl Iterator<Item = (&'a Span, &'a GlobalName, &'a Vec<LocalName>, &'a Type)>,
-    ) -> Result<Self, TypeError> {
+        globals: impl Iterator<Item = (&'a Span, &'a GlobalName<S>, &'a Vec<LocalName>, &'a Type<S>)>,
+    ) -> Result<Self, TypeError<S>>
+    where
+        S: 'a,
+    {
         let mut globals_map = IndexMap::new();
         for (span, name, params, typ) in globals {
             if let Some((span1, _, _)) =
@@ -41,7 +44,7 @@ impl TypeDefs {
             vars: IndexSet::new(),
         };
 
-        let mut deps_map: IndexMap<GlobalName, Vec<GlobalName>> = Default::default();
+        let mut deps_map: IndexMap<GlobalName<S>, Vec<GlobalName<S>>> = Default::default();
         for (name, (_, _, typ)) in type_defs.globals.iter() {
             deps_map.insert(name.clone(), typ.get_dependencies());
         }
@@ -61,16 +64,21 @@ impl TypeDefs {
         Ok(type_defs)
     }
 
-    pub fn get(&self, span: &Span, name: &GlobalName, args: &[Type]) -> Result<Type, TypeError> {
+    pub fn get(
+        &self,
+        span: &Span,
+        name: &GlobalName<S>,
+        args: &[Type<S>],
+    ) -> Result<Type<S>, TypeError<S>> {
         self.get_with_span(span, name, args).map(|(_, typ)| typ)
     }
 
     pub fn get_with_span(
         &self,
         span: &Span,
-        name: &GlobalName,
-        args: &[Type],
-    ) -> Result<(&Span, Type), TypeError> {
+        name: &GlobalName<S>,
+        args: &[Type<S>],
+    ) -> Result<(&Span, Type<S>), TypeError<S>> {
         match self.globals.get(name) {
             Some((span, params, typ)) => {
                 if params.len() != args.len() {
@@ -91,9 +99,9 @@ impl TypeDefs {
     pub fn get_dual(
         &self,
         span: &Span,
-        name: &GlobalName,
-        args: &[Type],
-    ) -> Result<Type, TypeError> {
+        name: &GlobalName<S>,
+        args: &[Type<S>],
+    ) -> Result<Type<S>, TypeError<S>> {
         self.get_dual_with_span(span, name, args)
             .map(|(_, typ)| typ)
     }
@@ -101,9 +109,9 @@ impl TypeDefs {
     pub fn get_dual_with_span(
         &self,
         span: &Span,
-        name: &GlobalName,
-        args: &[Type],
-    ) -> Result<(&Span, Type), TypeError> {
+        name: &GlobalName<S>,
+        args: &[Type<S>],
+    ) -> Result<(&Span, Type<S>), TypeError<S>> {
         match self.globals.get(name) {
             Some((span, params, typ)) => {
                 if params.len() != args.len() {
@@ -126,10 +134,10 @@ impl TypeDefs {
 
     pub fn validate_acyclic(
         &self,
-        name: &GlobalName,
-        deps_stack: &IndexSet<GlobalName>,
-        deps_map: &IndexMap<GlobalName, Vec<GlobalName>>,
-    ) -> Result<(), TypeError> {
+        name: &GlobalName<S>,
+        deps_stack: &IndexSet<GlobalName<S>>,
+        deps_map: &IndexMap<GlobalName<S>, Vec<GlobalName<S>>>,
+    ) -> Result<(), TypeError<S>> {
         let mut deps_stack = deps_stack.clone();
         if !deps_stack.insert(name.clone()) {
             return Err(TypeError::DependencyCycle(
@@ -149,16 +157,20 @@ impl TypeDefs {
         Ok(())
     }
 
-    pub fn validate_type(&self, typ: &Type) -> Result<(), TypeError> {
+    pub fn validate_type(&self, typ: &Type<S>) -> Result<(), TypeError<S>> {
         #[derive(Clone)]
-        struct Ctx {
-            defs: TypeDefs,
+        struct Ctx<S> {
+            defs: TypeDefs<S>,
             check_self: bool,
             self_polarity: IndexMap<Option<LocalName>, bool>,
             unguarded_self_rec: IndexSet<Option<LocalName>>,
             unguarded_self_iter: IndexSet<Option<LocalName>>,
         }
-        fn inner(typ: &Type, positive: bool, mut ctx: Ctx) -> Result<(), TypeError> {
+        fn inner<S: Clone + Eq + std::hash::Hash>(
+            typ: &Type<S>,
+            positive: bool,
+            mut ctx: Ctx<S>,
+        ) -> Result<(), TypeError<S>> {
             match typ {
                 Type::Name(_span, _name, args) | Type::DualName(_span, _name, args) => {
                     for arg in args {

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Definition, Module, Type, process};
 use par_runtime::readback::Handle;
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     Module {
         type_defs: vec![],
         declarations: vec![],

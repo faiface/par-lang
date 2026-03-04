@@ -2,12 +2,15 @@ use super::{
     language::{
         Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Condition,
         Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
+        Unresolved,
     },
     lexer::{Input, Token, TokenKind, lex},
 };
 use crate::frontend_impl::{
     language::LocalName,
-    program::{Declaration, Definition, Module, TypeDef},
+    program::{
+        Declaration, Definition, ImportDecl, ImportPath, Module, ModuleDecl, SourceFile, TypeDef,
+    },
     types::Type,
 };
 use crate::location::{FileName, Span, Spanning};
@@ -173,7 +176,7 @@ fn local_name(input: &mut Input) -> Result<LocalName> {
         .parse_next(input)
 }
 
-fn global_name(input: &mut Input) -> Result<GlobalName> {
+fn global_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
     (
         uppercase_identifier,
         opt((t(TokenKind::Dot), uppercase_identifier)),
@@ -185,13 +188,120 @@ fn global_name(input: &mut Input) -> Result<GlobalName> {
                 }
                 None => (first_span, None, first),
             };
-            GlobalName {
-                span,
-                module,
-                primary,
-            }
+            GlobalName::new(span, Unresolved { qualifier: module }, primary)
         })
         .parse_next(input)
+}
+
+fn module_decl(input: &mut Input) -> Result<ModuleDecl> {
+    commit_after(t(TokenKind::Module), uppercase_identifier)
+        .map(|(module_kw, (name_span, name))| ModuleDecl {
+            span: module_kw.span.join(name_span),
+            name,
+        })
+        .parse_next(input)
+}
+
+fn any_identifier(input: &mut Input) -> Result<(Span, String)> {
+    alt((lowercase_identifier, uppercase_identifier)).parse_next(input)
+}
+
+fn import_path(input: &mut Input) -> Result<(Span, ImportPath)> {
+    alt((
+        (
+            preceded(
+                t(TokenKind::At),
+                lowercase_identifier.map(|(_, string)| string),
+            ),
+            t(TokenKind::Slash),
+            any_identifier,
+            repeat(0.., preceded(t(TokenKind::Slash), any_identifier)),
+        )
+            .map(
+                |(dependency, _slash, first, mut rest): (
+                    String,
+                    &Token,
+                    (Span, String),
+                    Vec<(Span, String)>,
+                )| {
+                    let mut directories = Vec::new();
+                    let mut end_span = first.0.clone();
+                    let mut module = first.1;
+                    for (span, segment) in rest.drain(..) {
+                        directories.push(module);
+                        module = segment;
+                        end_span = span;
+                    }
+                    (
+                        first.0.join(end_span),
+                        ImportPath {
+                            dependency: Some(dependency),
+                            directories,
+                            module,
+                        },
+                    )
+                },
+            ),
+        (
+            any_identifier,
+            repeat(0.., preceded(t(TokenKind::Slash), any_identifier)),
+        )
+            .map(|(first, mut rest): ((Span, String), Vec<(Span, String)>)| {
+                let mut directories = Vec::new();
+                let mut end_span = first.0.clone();
+                let mut module = first.1;
+                for (span, segment) in rest.drain(..) {
+                    directories.push(module);
+                    module = segment;
+                    end_span = span;
+                }
+                (
+                    first.0.join(end_span),
+                    ImportPath {
+                        dependency: None,
+                        directories,
+                        module,
+                    },
+                )
+            }),
+    ))
+    .parse_next(input)
+}
+
+fn import_entry(input: &mut Input) -> Result<ImportDecl> {
+    (
+        import_path,
+        opt(preceded(
+            t(TokenKind::As),
+            uppercase_identifier.map(|(_, string)| string),
+        )),
+    )
+        .map(
+            |((path_span, path), alias): ((Span, ImportPath), Option<String>)| {
+                let span = path_span;
+                ImportDecl { span, path, alias }
+            },
+        )
+        .parse_next(input)
+}
+
+fn import_statement(input: &mut Input) -> Result<Vec<ImportDecl>> {
+    commit_after(
+        t(TokenKind::Import),
+        alt((
+            commit_after(
+                t(TokenKind::LCurly),
+                (
+                    repeat(0.., terminated(import_entry, opt(t(TokenKind::Comma)))),
+                    t(TokenKind::RCurly),
+                ),
+            )
+            .map(|(_lcurly, (items, _rcurly))| items),
+            import_entry.map(|item| vec![item]),
+        )),
+    )
+    .map(|(_import, entries)| entries)
+    .parse_next(input)
 }
 
 struct ProgramParseError {
@@ -207,11 +317,13 @@ impl ProgramParseError {
     }
 }
 
-fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramParseError> {
+fn source_file(
+    mut input: Input,
+) -> std::result::Result<SourceFile<Expression<Unresolved>>, ProgramParseError> {
     enum Item<Expr> {
-        TypeDef(TypeDef),
-        Declaration(Declaration),
-        Definition(Definition<Expr>, Option<Type>),
+        TypeDef(TypeDef<Unresolved>),
+        Declaration(Declaration<Unresolved>),
+        Definition(Definition<Expr, Unresolved>, Option<Type<Unresolved>>),
     }
 
     let parser = repeat(
@@ -258,8 +370,20 @@ fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramP
 
     let start = input.checkpoint();
     (
-        parser,
+        (
+            opt(module_decl),
+            repeat(0.., import_statement).map(|groups: Vec<Vec<ImportDecl>>| {
+                groups.into_iter().flatten().collect::<Vec<ImportDecl>>()
+            }),
+            parser,
+        ),
         winnow::combinator::eof
+            .context(StrContext::Expected(StrContextValue::StringLiteral(
+                "module",
+            )))
+            .context(StrContext::Expected(StrContextValue::StringLiteral(
+                "import",
+            )))
             .context(StrContext::Expected(StrContextValue::StringLiteral("type")))
             .context(StrContext::Expected(StrContextValue::StringLiteral("dec")))
             .context(StrContext::Expected(StrContextValue::StringLiteral("def")))
@@ -268,8 +392,12 @@ fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramP
             ))),
     )
         .parse_next(&mut input)
-        .map(|(x, _eof)| x)
-        .map_err(|e| {
+        .map(|((module_decl, imports, body), _eof)| SourceFile {
+            module_decl,
+            imports,
+            body,
+        })
+        .map_err(|e: Error| {
             let e = e.into_inner().unwrap_or_else(|_err| {
                 panic!("complete parsers should not report `ErrMode::Incomplete(_)`")
             });
@@ -325,9 +453,16 @@ pub fn set_miette_hook() {
 pub(crate) fn parse_module(
     input: &str,
     file: FileName,
-) -> std::result::Result<Module<Expression>, SyntaxError> {
+) -> std::result::Result<Module<Expression<Unresolved>, Unresolved>, SyntaxError> {
+    parse_source_file(input, file).map(|source_file| source_file.body)
+}
+
+pub(crate) fn parse_source_file(
+    input: &str,
+    file: FileName,
+) -> std::result::Result<SourceFile<Expression<Unresolved>>, SyntaxError> {
     let tokens = lex(&input, &file);
-    let e = match program(Input::new(&tokens)) {
+    let e = match source_file(Input::new(&tokens)) {
         Ok(x) => return Ok(x),
         Err(e) => e,
     };
@@ -367,7 +502,7 @@ pub fn parse_bytes(input: &str, file: &FileName) -> Option<Vec<u8>> {
         .ok()
 }
 
-fn type_def(input: &mut Input) -> Result<TypeDef> {
+fn type_def(input: &mut Input) -> Result<TypeDef<Unresolved>> {
     commit_after(
         t(TokenKind::Type),
         (global_name, type_params, t(TokenKind::Eq), typ),
@@ -382,7 +517,7 @@ fn type_def(input: &mut Input) -> Result<TypeDef> {
     .parse_next(input)
 }
 
-fn declaration(input: &mut Input) -> Result<Declaration> {
+fn declaration(input: &mut Input) -> Result<Declaration<Unresolved>> {
     commit_after(t(TokenKind::Dec), (global_name, t(TokenKind::Colon), typ))
         .map(|(pre, (name, _, typ))| Declaration {
             span: pre.span.join(typ.span()),
@@ -393,7 +528,12 @@ fn declaration(input: &mut Input) -> Result<Declaration> {
         .parse_next(input)
 }
 
-fn definition(input: &mut Input) -> Result<(Definition<Expression>, Option<Type>)> {
+fn definition(
+    input: &mut Input,
+) -> Result<(
+    Definition<Expression<Unresolved>, Unresolved>,
+    Option<Type<Unresolved>>,
+)> {
     commit_after(
         t(TokenKind::Def),
         (global_name, annotation, t(TokenKind::Eq), expression),
@@ -487,7 +627,7 @@ where
     .context(StrContext::Label("either/choice branches"))
 }
 
-fn typ(input: &mut Input) -> Result<Type> {
+fn typ(input: &mut Input) -> Result<Type<Unresolved>> {
     alt((
         typ_var,
         typ_name,
@@ -510,7 +650,7 @@ fn typ(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_var(input: &mut Input) -> Result<Type> {
+fn typ_var(input: &mut Input) -> Result<Type<Unresolved>> {
     trace(
         "typ_var",
         local_name.map(|name| Type::Var(name.span(), name)),
@@ -518,7 +658,7 @@ fn typ_var(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_name(input: &mut Input) -> Result<Type> {
+fn typ_name(input: &mut Input) -> Result<Type<Unresolved>> {
     trace(
         "typ_name",
         (global_name, type_args).map(|(name, type_args)| match type_args {
@@ -531,7 +671,7 @@ fn typ_name(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_box(input: &mut Input) -> Result<Type> {
+fn typ_box(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Box),
         typ.context(StrContext::Label("box type")),
@@ -540,7 +680,7 @@ fn typ_box(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_chan(input: &mut Input) -> Result<Type> {
+fn typ_chan(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Dual),
         typ.context(StrContext::Label("dual type")),
@@ -549,7 +689,7 @@ fn typ_chan(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_send(input: &mut Input) -> Result<Type> {
+fn typ_send(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(typ), t(TokenKind::RParen), typ),
@@ -563,7 +703,7 @@ fn typ_send(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_receive(input: &mut Input) -> Result<Type> {
+fn typ_receive(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::LBrack),
         (list1(typ), t(TokenKind::RBrack), typ),
@@ -582,7 +722,9 @@ enum SendOrReceive {
     Receive,
 }
 
-fn typ_simple_send(input: &mut Input) -> Result<(SendOrReceive, Type, Type, Span)> {
+fn typ_simple_send(
+    input: &mut Input,
+) -> Result<(SendOrReceive, Type<Unresolved>, Type<Unresolved>, Span)> {
     commit_after(t(TokenKind::LParen), (typ, t(TokenKind::RParen), typ))
         .map(|(open, (arg, close, then))| {
             let span = open.span.join(close.span());
@@ -591,7 +733,9 @@ fn typ_simple_send(input: &mut Input) -> Result<(SendOrReceive, Type, Type, Span
         .parse_next(input)
 }
 
-fn typ_simple_receive(input: &mut Input) -> Result<(SendOrReceive, Type, Type, Span)> {
+fn typ_simple_receive(
+    input: &mut Input,
+) -> Result<(SendOrReceive, Type<Unresolved>, Type<Unresolved>, Span)> {
     commit_after(t(TokenKind::LBrack), (typ, t(TokenKind::RBrack), typ))
         .map(|(open, (arg, close, then))| {
             let span = open.span.join(close.span());
@@ -600,7 +744,7 @@ fn typ_simple_receive(input: &mut Input) -> Result<(SendOrReceive, Type, Type, S
         .parse_next(input)
 }
 
-fn typ_generic(input: &mut Input) -> Result<Type> {
+fn typ_generic(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -625,7 +769,7 @@ fn typ_generic(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_either(input: &mut Input) -> Result<Type> {
+fn typ_either(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(t(TokenKind::Either), branches_without_else_body(typ))
         .map(|(pre, (branches_span, branches))| {
             Type::Either(pre.span.join(branches_span), branches)
@@ -633,7 +777,7 @@ fn typ_either(input: &mut Input) -> Result<Type> {
         .parse_next(input)
 }
 
-fn typ_choice(input: &mut Input) -> Result<Type> {
+fn typ_choice(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(t(TokenKind::Choice), branches_without_else_body(typ_branch))
         .map(|(pre, (branches_span, branches))| {
             Type::Choice(pre.span.join(branches_span), branches)
@@ -641,19 +785,19 @@ fn typ_choice(input: &mut Input) -> Result<Type> {
         .parse_next(input)
 }
 
-fn typ_break(input: &mut Input) -> Result<Type> {
+fn typ_break(input: &mut Input) -> Result<Type<Unresolved>> {
     t(TokenKind::Bang)
         .map(|token| Type::Break(token.span()))
         .parse_next(input)
 }
 
-fn typ_continue(input: &mut Input) -> Result<Type> {
+fn typ_continue(input: &mut Input) -> Result<Type<Unresolved>> {
     t(TokenKind::Quest)
         .map(|token| Type::Continue(token.span()))
         .parse_next(input)
 }
 
-fn typ_recursive(input: &mut Input) -> Result<Type> {
+fn typ_recursive(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(t(TokenKind::Recursive), (label, typ))
         .map(|(pre, (label, typ))| Type::Recursive {
             span: pre.span.join(typ.span()),
@@ -664,7 +808,7 @@ fn typ_recursive(input: &mut Input) -> Result<Type> {
         .parse_next(input)
 }
 
-fn typ_iterative(input: &mut Input) -> Result<Type> {
+fn typ_iterative(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Iterative),
         (label, typ).context(StrContext::Label("iterative type body")),
@@ -678,7 +822,7 @@ fn typ_iterative(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_self(input: &mut Input) -> Result<Type> {
+fn typ_self(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Self_),
         label.context(StrContext::Label("self type loop label")),
@@ -695,7 +839,7 @@ fn typ_self(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_send_type<'s>(input: &mut Input) -> Result<Type> {
+fn typ_send_type<'s>(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (
@@ -713,7 +857,7 @@ fn typ_send_type<'s>(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_recv_type(input: &mut Input) -> Result<Type> {
+fn typ_recv_type(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
         (
@@ -740,7 +884,7 @@ fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
     .parse_next(input)
 }
 
-fn type_args<'s>(input: &mut Input) -> Result<Option<(Span, Vec<Type>)>> {
+fn type_args<'s>(input: &mut Input) -> Result<Option<(Span, Vec<Type<Unresolved>>)>> {
     opt(commit_after(
         t(TokenKind::Lt),
         (list1(typ), t(TokenKind::Gt)),
@@ -749,18 +893,18 @@ fn type_args<'s>(input: &mut Input) -> Result<Option<(Span, Vec<Type>)>> {
     .parse_next(input)
 }
 
-fn typ_branch(input: &mut Input) -> Result<Type> {
+fn typ_branch(input: &mut Input) -> Result<Type<Unresolved>> {
     // try recv_type first so `(` is unambiguous on `typ_branch_received`
     alt((typ_branch_then, typ_branch_recv_type, typ_branch_receive)).parse_next(input)
 }
 
-fn typ_branch_then(input: &mut Input) -> Result<Type> {
+fn typ_branch_then(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(t(TokenKind::FatArrow), typ)
         .map(|(_, typ)| typ)
         .parse_next(input)
 }
 
-fn typ_branch_receive(input: &mut Input) -> Result<Type> {
+fn typ_branch_receive(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(typ), t(TokenKind::RParen), typ_branch),
@@ -774,7 +918,7 @@ fn typ_branch_receive(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn typ_branch_recv_type(input: &mut Input) -> Result<Type> {
+fn typ_branch_recv_type(input: &mut Input) -> Result<Type<Unresolved>> {
     (
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         cut_err((list1(local_name), t(TokenKind::RParen), typ_branch)),
@@ -788,14 +932,14 @@ fn typ_branch_recv_type(input: &mut Input) -> Result<Type> {
         .parse_next(input)
 }
 
-fn annotation(input: &mut Input) -> Result<Option<Type>> {
+fn annotation(input: &mut Input) -> Result<Option<Type<Unresolved>>> {
     opt(commit_after(t(TokenKind::Colon), typ))
         .map(|opt| opt.map(|(_, typ)| typ))
         .parse_next(input)
 }
 
 // pattern           = { pattern_name | pattern_receive | pattern_continue | pattern_recv_type }
-fn pattern(input: &mut Input) -> Result<Pattern> {
+fn pattern(input: &mut Input) -> Result<Pattern<Unresolved>> {
     alt((
         pattern_name,
         pattern_receive_type,
@@ -808,7 +952,7 @@ fn pattern(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn pattern_name(input: &mut Input) -> Result<Pattern> {
+fn pattern_name(input: &mut Input) -> Result<Pattern<Unresolved>> {
     (local_name, annotation)
         .map(|(name, annotation)| {
             Pattern::Name(
@@ -823,7 +967,7 @@ fn pattern_name(input: &mut Input) -> Result<Pattern> {
         .parse_next(input)
 }
 
-fn pattern_receive(input: &mut Input) -> Result<Pattern> {
+fn pattern_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(pattern), t(TokenKind::RParen), pattern),
@@ -837,7 +981,7 @@ fn pattern_receive(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn pattern_generic_receive(input: &mut Input) -> Result<Pattern> {
+fn pattern_generic_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -858,19 +1002,19 @@ fn pattern_generic_receive(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn pattern_continue(input: &mut Input) -> Result<Pattern> {
+fn pattern_continue(input: &mut Input) -> Result<Pattern<Unresolved>> {
     t(TokenKind::Bang)
         .map(|token| Pattern::Continue(token.span()))
         .parse_next(input)
 }
 
-fn pattern_try(input: &mut Input) -> Result<Pattern> {
+fn pattern_try(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(t(TokenKind::Try), (label, pattern))
         .map(|(pre, (label, rest))| Pattern::Try(pre.span.join(rest.span()), label, Box::new(rest)))
         .parse_next(input)
 }
 
-fn pattern_default(input: &mut Input) -> Result<Pattern> {
+fn pattern_default(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         (t(TokenKind::Default), t(TokenKind::LParen)),
         (expression, t(TokenKind::RParen), pattern),
@@ -881,7 +1025,7 @@ fn pattern_default(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
+fn pattern_receive_type(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(local_name), t(TokenKind::RParen), pattern),
@@ -895,39 +1039,43 @@ fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn condition(input: &mut Input) -> Result<Condition> {
+fn condition(input: &mut Input) -> Result<Condition<Unresolved>> {
     condition_or(input)
 }
 
-fn condition_or(input: &mut Input) -> Result<Condition> {
+fn condition_or(input: &mut Input) -> Result<Condition<Unresolved>> {
     (
         condition_and,
         repeat(0.., (t(TokenKind::Or), condition_and)),
     )
-        .map(|(first, rest): (Condition, Vec<(_, Condition)>)| {
-            rest.into_iter().fold(first, |left, (_or_tok, right)| {
-                let span = left.span().join(right.span());
-                Condition::Or(span, Box::new(left), Box::new(right))
-            })
-        })
+        .map(
+            |(first, rest): (Condition<Unresolved>, Vec<(_, Condition<Unresolved>)>)| {
+                rest.into_iter().fold(first, |left, (_or_tok, right)| {
+                    let span = left.span().join(right.span());
+                    Condition::Or(span, Box::new(left), Box::new(right))
+                })
+            },
+        )
         .parse_next(input)
 }
 
-fn condition_and(input: &mut Input) -> Result<Condition> {
+fn condition_and(input: &mut Input) -> Result<Condition<Unresolved>> {
     (
         condition_not,
         repeat(0.., (t(TokenKind::And), condition_not)),
     )
-        .map(|(first, rest): (Condition, Vec<(_, Condition)>)| {
-            rest.into_iter().fold(first, |left, (_and_tok, right)| {
-                let span = left.span().join(right.span());
-                Condition::And(span, Box::new(left), Box::new(right))
-            })
-        })
+        .map(
+            |(first, rest): (Condition<Unresolved>, Vec<(_, Condition<Unresolved>)>)| {
+                rest.into_iter().fold(first, |left, (_and_tok, right)| {
+                    let span = left.span().join(right.span());
+                    Condition::And(span, Box::new(left), Box::new(right))
+                })
+            },
+        )
         .parse_next(input)
 }
 
-fn condition_not(input: &mut Input) -> Result<Condition> {
+fn condition_not(input: &mut Input) -> Result<Condition<Unresolved>> {
     alt((
         (t(TokenKind::Not), cut_err(condition_not))
             .map(|(not_tok, cond)| Condition::Not(not_tok.span.join(cond.span()), Box::new(cond))),
@@ -936,23 +1084,23 @@ fn condition_not(input: &mut Input) -> Result<Condition> {
     .parse_next(input)
 }
 
-fn condition_primary(input: &mut Input) -> Result<Condition> {
+fn condition_primary(input: &mut Input) -> Result<Condition<Unresolved>> {
     alt((condition_grouped, condition_is, condition_bool)).parse_next(input)
 }
 
-fn condition_grouped(input: &mut Input) -> Result<Condition> {
+fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
     commit_after(t(TokenKind::LCurly), (condition, t(TokenKind::RCurly)))
         .map(|(_open, (cond, _close))| cond)
         .parse_next(input)
 }
 
-fn condition_bool(input: &mut Input) -> Result<Condition> {
+fn condition_bool(input: &mut Input) -> Result<Condition<Unresolved>> {
     expression_no_condition
         .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
         .parse_next(input)
 }
 
-fn condition_is(input: &mut Input) -> Result<Condition> {
+fn condition_is(input: &mut Input) -> Result<Condition<Unresolved>> {
     (
         expression_no_condition,
         t(TokenKind::Is),
@@ -972,7 +1120,7 @@ fn condition_is(input: &mut Input) -> Result<Condition> {
         .parse_next(input)
 }
 
-fn condition_payload_pattern(input: &mut Input) -> Result<Pattern> {
+fn condition_payload_pattern(input: &mut Input) -> Result<Pattern<Unresolved>> {
     alt((
         pattern_payload_receive,
         pattern_payload_recv_type,
@@ -982,7 +1130,7 @@ fn condition_payload_pattern(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn pattern_payload_receive(input: &mut Input) -> Result<Pattern> {
+fn pattern_payload_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(pattern), t(TokenKind::RParen), pattern),
@@ -996,7 +1144,7 @@ fn pattern_payload_receive(input: &mut Input) -> Result<Pattern> {
     .parse_next(input)
 }
 
-fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern> {
+fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(local_name), t(TokenKind::RParen), pattern),
@@ -1039,7 +1187,7 @@ fn looks_like_condition(input: &Input) -> bool {
     false
 }
 
-fn expression(input: &mut Input) -> Result<Expression> {
+fn expression(input: &mut Input) -> Result<Expression<Unresolved>> {
     if looks_like_condition(input) {
         let checkpoint = input.checkpoint();
         match expr_condition.parse_next(input) {
@@ -1055,7 +1203,7 @@ fn expression(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expression_no_condition(input: &mut Input) -> Result<Expression> {
+fn expression_no_condition(input: &mut Input) -> Result<Expression<Unresolved>> {
     alt((
         expr_literal,
         expr_list,
@@ -1077,7 +1225,7 @@ fn expression_no_condition(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_grouped(input: &mut Input) -> Result<Expression> {
+fn expr_grouped(input: &mut Input) -> Result<Expression<Unresolved>> {
     (t(TokenKind::LCurly), expression, t(TokenKind::RCurly))
         .map(|(open, expr, close)| {
             Expression::Grouped(open.span.join(close.span()), Box::new(expr))
@@ -1085,7 +1233,7 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expr_condition(input: &mut Input) -> Result<Expression> {
+fn expr_condition(input: &mut Input) -> Result<Expression<Unresolved>> {
     let cond = condition.parse_next(input)?;
     if matches!(cond, Condition::Bool(_, _)) {
         Err(ErrMode::Backtrack(ParseContextError::from_input(input)))
@@ -1095,11 +1243,11 @@ fn expr_condition(input: &mut Input) -> Result<Expression> {
     }
 }
 
-fn expr_literal(input: &mut Input) -> Result<Expression> {
+fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
     alt((expr_literal_int, expr_literal_string, expr_literal_bytes)).parse_next(input)
 }
 
-fn expr_list(input: &mut Input) -> Result<Expression> {
+fn expr_list(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Star),
         (
@@ -1112,7 +1260,7 @@ fn expr_list(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_literal_int(input: &mut Input) -> Result<Expression> {
+fn expr_literal_int(input: &mut Input) -> Result<Expression<Unresolved>> {
     literal_int
         .map(|(span, i)| Expression::Primitive(span, Primitive::Int(i)))
         .parse_next(input)
@@ -1127,7 +1275,7 @@ fn literal_int(input: &mut Input) -> Result<(Span, BigInt)> {
         .parse_next(input)
 }
 
-fn expr_literal_string(input: &mut Input) -> Result<Expression> {
+fn expr_literal_string(input: &mut Input) -> Result<Expression<Unresolved>> {
     t(TokenKind::String)
         .map(|token| {
             // validated in lexer
@@ -1137,11 +1285,11 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expr_literal_bytes(input: &mut Input) -> Result<Expression> {
+fn expr_literal_bytes(input: &mut Input) -> Result<Expression<Unresolved>> {
     alt((expr_literal_bytes_empty, expr_literal_bytes_nonempty)).parse_next(input)
 }
 
-fn expr_literal_bytes_empty(input: &mut Input) -> Result<Expression> {
+fn expr_literal_bytes_empty(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after((t(TokenKind::Lt), t(TokenKind::Link)), t(TokenKind::Gt))
         .map(|((pre, _), post)| {
             Expression::Primitive(pre.span.join(post.span()), Primitive::Bytes(Bytes::new()))
@@ -1149,7 +1297,7 @@ fn expr_literal_bytes_empty(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expr_literal_bytes_nonempty(input: &mut Input) -> Result<Expression> {
+fn expr_literal_bytes_nonempty(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         (t(TokenKind::Lt), t(TokenKind::Lt)),
         (literal_bytes_inner, t(TokenKind::Gt), t(TokenKind::Gt)),
@@ -1184,7 +1332,7 @@ fn literal_byte(input: &mut Input) -> Result<u8> {
         .parse_next(input)
 }
 
-fn expr_let(input: &mut Input) -> Result<Expression> {
+fn expr_let(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Let),
         (
@@ -1206,7 +1354,7 @@ fn expr_let(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_catch(input: &mut Input) -> Result<Expression> {
+fn expr_catch(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Catch),
         (
@@ -1230,7 +1378,7 @@ fn expr_catch(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_throw(input: &mut Input) -> Result<Expression> {
+fn expr_throw(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(t(TokenKind::Throw), (label, expression))
         .map(|(pre, (label, expression))| {
             Expression::Throw(
@@ -1242,7 +1390,7 @@ fn expr_throw(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expr_type_in(input: &mut Input) -> Result<Expression> {
+fn expr_type_in(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(t(TokenKind::Type), (typ, t(TokenKind::In), expression))
         .map(|(pre, (typ, _in_tok, expr))| Expression::TypeIn {
             span: pre.span.join(expr.span()),
@@ -1252,7 +1400,7 @@ fn expr_type_in(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn expr_if(input: &mut Input) -> Result<Expression> {
+fn expr_if(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::If),
         (
@@ -1274,7 +1422,7 @@ fn expr_if(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_poll(input: &mut Input) -> Result<Expression> {
+fn expr_poll(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Poll),
         (
@@ -1325,7 +1473,7 @@ fn expr_poll(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_repoll(input: &mut Input) -> Result<Expression> {
+fn expr_repoll(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Repoll),
         (
@@ -1376,7 +1524,7 @@ fn expr_repoll(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_submit(input: &mut Input) -> Result<Expression> {
+fn expr_submit(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Submit),
         (
@@ -1394,7 +1542,7 @@ fn expr_submit(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_if_branch(input: &mut Input) -> Result<(Condition, Expression)> {
+fn expr_if_branch(input: &mut Input) -> Result<(Condition<Unresolved>, Expression<Unresolved>)> {
     (
         condition,
         t(TokenKind::FatArrow),
@@ -1405,7 +1553,7 @@ fn expr_if_branch(input: &mut Input) -> Result<(Condition, Expression)> {
         .parse_next(input)
 }
 
-fn expr_do(input: &mut Input) -> Result<Expression> {
+fn expr_do(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Do),
         (
@@ -1428,13 +1576,13 @@ fn expr_do(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn expr_box(input: &mut Input) -> Result<Expression> {
+fn expr_box(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(t(TokenKind::Box), expression)
         .map(|(pre, expression)| Expression::Box(pre.span(), Box::new(expression)))
         .parse_next(input)
 }
 
-fn expr_chan(input: &mut Input) -> Result<Expression> {
+fn expr_chan(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(
         t(TokenKind::Chan),
         (
@@ -1455,7 +1603,7 @@ fn expr_chan(input: &mut Input) -> Result<Expression> {
     .parse_next(input)
 }
 
-fn construction(input: &mut Input) -> Result<Construct> {
+fn construction(input: &mut Input) -> Result<Construct<Unresolved>> {
     alt((
         cons_begin,
         cons_unfounded,
@@ -1474,7 +1622,7 @@ fn construction(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_then(input: &mut Input) -> Result<Construct> {
+fn cons_then(input: &mut Input) -> Result<Construct<Unresolved>> {
     alt((
         expr_literal,
         expr_list,
@@ -1497,7 +1645,7 @@ fn cons_then(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_send(input: &mut Input) -> Result<Construct> {
+fn cons_send(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), construction),
@@ -1511,7 +1659,7 @@ fn cons_send(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_receive(input: &mut Input) -> Result<Construct> {
+fn cons_receive(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(
         t(TokenKind::LBrack),
         (list1(pattern), t(TokenKind::RBrack), construction),
@@ -1525,7 +1673,7 @@ fn cons_receive(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_generic_receive(input: &mut Input) -> Result<Construct> {
+fn cons_generic_receive(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -1546,7 +1694,7 @@ fn cons_generic_receive(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_signal(input: &mut Input) -> Result<Construct> {
+fn cons_signal(input: &mut Input) -> Result<Construct<Unresolved>> {
     // Note this can't be a commit_after because its possible that this is not a signal construction, and instead a branch of an either.
     (t(TokenKind::Dot), (local_name, construction))
         .map(|(pre, (chosen, construct))| {
@@ -1555,7 +1703,7 @@ fn cons_signal(input: &mut Input) -> Result<Construct> {
         .parse_next(input)
 }
 
-fn cons_case(input: &mut Input) -> Result<Construct> {
+fn cons_case(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(t(TokenKind::Case), branches_body(cons_branch))
         .map(|(pre, (_branches_span, branches, else_branch))| {
             Construct::Case(pre.span(), ConstructBranches(branches), else_branch)
@@ -1563,13 +1711,13 @@ fn cons_case(input: &mut Input) -> Result<Construct> {
         .parse_next(input)
 }
 
-fn cons_break(input: &mut Input) -> Result<Construct> {
+fn cons_break(input: &mut Input) -> Result<Construct<Unresolved>> {
     t(TokenKind::Bang)
         .map(|token| Construct::Break(token.span()))
         .parse_next(input)
 }
 
-fn cons_begin(input: &mut Input) -> Result<Construct> {
+fn cons_begin(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(t(TokenKind::Begin), (label, construction))
         .map(|(unfounded, (label, construct))| Construct::Begin {
             span: unfounded.span.join(construct.span()),
@@ -1580,7 +1728,7 @@ fn cons_begin(input: &mut Input) -> Result<Construct> {
         .parse_next(input)
 }
 
-fn cons_unfounded(input: &mut Input) -> Result<Construct> {
+fn cons_unfounded(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(t(TokenKind::Unfounded), (label, construction))
         .map(|(unfounded, (label, construct))| Construct::Begin {
             span: unfounded.span.join(construct.span()),
@@ -1591,7 +1739,7 @@ fn cons_unfounded(input: &mut Input) -> Result<Construct> {
         .parse_next(input)
 }
 
-fn cons_loop(input: &mut Input) -> Result<Construct> {
+fn cons_loop(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(t(TokenKind::Loop), label)
         .map(|(token, label)| {
             Construct::Loop(
@@ -1605,7 +1753,7 @@ fn cons_loop(input: &mut Input) -> Result<Construct> {
         .parse_next(input)
 }
 
-fn cons_send_type(input: &mut Input) -> Result<Construct> {
+fn cons_send_type(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(typ), t(TokenKind::RParen), construction),
@@ -1619,7 +1767,7 @@ fn cons_send_type(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_recv_type(input: &mut Input) -> Result<Construct> {
+fn cons_recv_type(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
         (list1(local_name), t(TokenKind::RBrack), construction),
@@ -1633,7 +1781,7 @@ fn cons_recv_type(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_branch(input: &mut Input) -> Result<ConstructBranch> {
+fn cons_branch(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     alt((
         cons_branch_then,
         cons_branch_recv_type,
@@ -1643,7 +1791,7 @@ fn cons_branch(input: &mut Input) -> Result<ConstructBranch> {
     .parse_next(input)
 }
 
-fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch> {
+fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     commit_after(t(TokenKind::FatArrow), expression)
         .map(|(pre, expression)| {
             ConstructBranch::Then(pre.span.join(expression.span()), expression)
@@ -1651,7 +1799,7 @@ fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch> {
         .parse_next(input)
 }
 
-fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch> {
+fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(pattern), t(TokenKind::RParen), cons_branch),
@@ -1665,7 +1813,7 @@ fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch> {
     .parse_next(input)
 }
 
-fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch> {
+fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -1686,7 +1834,7 @@ fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch> {
     .parse_next(input)
 }
 
-fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch> {
+fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(local_name), t(TokenKind::RParen), cons_branch),
@@ -1700,7 +1848,7 @@ fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch> {
     .parse_next(input)
 }
 
-fn application(input: &mut Input) -> Result<Expression> {
+fn application(input: &mut Input) -> Result<Expression<Unresolved>> {
     (
         alt((
             global_name.map(|name| Expression::Global(name.span(), name)),
@@ -1719,7 +1867,7 @@ fn application(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
-fn apply(input: &mut Input) -> Result<Option<Apply>> {
+fn apply(input: &mut Input) -> Result<Option<Apply<Unresolved>>> {
     opt(alt((
         apply_begin,
         apply_unfounded,
@@ -1735,7 +1883,7 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
     .parse_next(input)
 }
 
-fn apply_send(input: &mut Input) -> Result<Apply> {
+fn apply_send(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), apply),
@@ -1753,7 +1901,7 @@ fn apply_send(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
-fn apply_signal(input: &mut Input) -> Result<Apply> {
+fn apply_signal(input: &mut Input) -> Result<Apply<Unresolved>> {
     (t(TokenKind::Dot), (local_name, apply))
         .map(|(pre, (chosen, then))| {
             let then = match then {
@@ -1765,7 +1913,7 @@ fn apply_signal(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
-fn apply_case(input: &mut Input) -> Result<Apply> {
+fn apply_case(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Case)),
         branches_body(apply_branch),
@@ -1776,7 +1924,7 @@ fn apply_case(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
-fn apply_begin(input: &mut Input) -> Result<Apply> {
+fn apply_begin(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (label, apply))
         .map(|((pre, _), (label, then))| {
             let then = match (&label, then) {
@@ -1794,7 +1942,7 @@ fn apply_begin(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
-fn apply_unfounded(input: &mut Input) -> Result<Apply> {
+fn apply_unfounded(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, apply))
         .map(|((pre, _), (label, then))| {
             let then = match (&label, then) {
@@ -1812,7 +1960,7 @@ fn apply_unfounded(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
-fn apply_loop(input: &mut Input) -> Result<Apply> {
+fn apply_loop(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
         .map(|((pre1, pre2), label)| {
             Apply::Loop(
@@ -1826,7 +1974,7 @@ fn apply_loop(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
-fn apply_send_type(input: &mut Input) -> Result<Apply> {
+fn apply_send_type(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(typ), t(TokenKind::RParen), apply),
@@ -1844,7 +1992,7 @@ fn apply_send_type(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
-fn apply_try(input: &mut Input) -> Result<Apply> {
+fn apply_try(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Try)), (label, apply))
         .map(|((_, pre), (label, then))| {
             let then = match then {
@@ -1856,7 +2004,7 @@ fn apply_try(input: &mut Input) -> Result<Apply> {
         .parse_next(input)
 }
 
-fn apply_default(input: &mut Input) -> Result<Apply> {
+fn apply_default(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Default)),
         (
@@ -1876,7 +2024,7 @@ fn apply_default(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
-fn apply_pipe(input: &mut Input) -> Result<Apply> {
+fn apply_pipe(input: &mut Input) -> Result<Apply<Unresolved>> {
     commit_after(
         t(TokenKind::ThinArrow),
         (
@@ -1902,7 +2050,7 @@ fn apply_pipe(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
-fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     alt((
         apply_branch_then,
         apply_branch_recv_type,
@@ -1915,7 +2063,7 @@ fn apply_branch(input: &mut Input) -> Result<ApplyBranch> {
     .parse_next(input)
 }
 
-fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     (local_name, cut_err((t(TokenKind::FatArrow), expression)))
         .map(|(name, (_, expression))| {
             ApplyBranch::Then(name.span.join(expression.span()), name, expression)
@@ -1923,7 +2071,7 @@ fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch> {
         .parse_next(input)
 }
 
-fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(pattern), t(TokenKind::RParen), apply_branch),
@@ -1937,7 +2085,7 @@ fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch> {
     .parse_next(input)
 }
 
-fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -1958,7 +2106,7 @@ fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch> {
     .parse_next(input)
 }
 
-fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(t(TokenKind::Bang), (t(TokenKind::FatArrow), expression))
         .map(|(token, (_, expression))| {
             ApplyBranch::Continue(token.span.join(expression.span()), expression)
@@ -1966,7 +2114,7 @@ fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch> {
         .parse_next(input)
 }
 
-fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(local_name), t(TokenKind::RParen), apply_branch),
@@ -1980,7 +2128,7 @@ fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch> {
     .parse_next(input)
 }
 
-fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(t(TokenKind::Try), (label, apply_branch))
         .map(|(kw, (label, rest))| {
             ApplyBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
@@ -1988,7 +2136,7 @@ fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch> {
         .parse_next(input)
 }
 
-fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch> {
+fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(
         (t(TokenKind::Default), t(TokenKind::LParen)),
         (expression, t(TokenKind::RParen), apply_branch),
@@ -1999,7 +2147,7 @@ fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch> {
     .parse_next(input)
 }
 
-fn process(input: &mut Input) -> Result<Process> {
+fn process(input: &mut Input) -> Result<Process<Unresolved>> {
     alt((
         proc_if,
         proc_poll,
@@ -2016,7 +2164,7 @@ fn process(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_let(input: &mut Input) -> Result<Process> {
+fn proc_let(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(
         t(TokenKind::Let),
         (pattern, t(TokenKind::Eq), expression, opt(process)),
@@ -2033,7 +2181,7 @@ fn proc_let(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_catch(input: &mut Input) -> Result<Process> {
+fn proc_catch(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(
         t(TokenKind::Catch),
         (
@@ -2058,7 +2206,7 @@ fn proc_catch(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_throw(input: &mut Input) -> Result<Process> {
+fn proc_throw(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(t(TokenKind::Throw), (label, expression))
         .map(|(pre, (label, expression))| {
             Process::Throw(
@@ -2070,7 +2218,7 @@ fn proc_throw(input: &mut Input) -> Result<Process> {
         .parse_next(input)
 }
 
-fn proc_telltypes(input: &mut Input) -> Result<Process> {
+fn proc_telltypes(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(t(TokenKind::Telltypes), opt(process))
         .map(|(token, process)| {
             Process::Telltypes(
@@ -2084,7 +2232,7 @@ fn proc_telltypes(input: &mut Input) -> Result<Process> {
         .parse_next(input)
 }
 
-fn proc_poll(input: &mut Input) -> Result<Process> {
+fn proc_poll(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(
         t(TokenKind::Poll),
         (
@@ -2146,7 +2294,7 @@ fn proc_poll(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_repoll(input: &mut Input) -> Result<Process> {
+fn proc_repoll(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(
         t(TokenKind::Repoll),
         (
@@ -2208,7 +2356,7 @@ fn proc_repoll(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_submit(input: &mut Input) -> Result<Process> {
+fn proc_submit(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(
         t(TokenKind::Submit),
         (
@@ -2226,11 +2374,11 @@ fn proc_submit(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_if(input: &mut Input) -> Result<Process> {
+fn proc_if(input: &mut Input) -> Result<Process<Unresolved>> {
     alt((proc_if_inline, proc_if_block)).parse_next(input)
 }
 
-fn proc_if_block(input: &mut Input) -> Result<Process> {
+fn proc_if_block(input: &mut Input) -> Result<Process<Unresolved>> {
     commit_after(
         (t(TokenKind::If), t(TokenKind::LCurly)),
         (
@@ -2256,7 +2404,7 @@ fn proc_if_block(input: &mut Input) -> Result<Process> {
     .parse_next(input)
 }
 
-fn proc_if_branch(input: &mut Input) -> Result<(Condition, Process)> {
+fn proc_if_branch(input: &mut Input) -> Result<(Condition<Unresolved>, Process<Unresolved>)> {
     (
         condition,
         t(TokenKind::FatArrow),
@@ -2274,7 +2422,7 @@ fn proc_if_branch(input: &mut Input) -> Result<(Condition, Process)> {
         .parse_next(input)
 }
 
-fn proc_if_else_body(input: &mut Input) -> Result<Option<Process>> {
+fn proc_if_else_body(input: &mut Input) -> Result<Option<Process<Unresolved>>> {
     (
         t(TokenKind::FatArrow),
         t(TokenKind::LCurly),
@@ -2286,7 +2434,7 @@ fn proc_if_else_body(input: &mut Input) -> Result<Option<Process>> {
         .parse_next(input)
 }
 
-fn proc_if_inline(input: &mut Input) -> Result<Process> {
+fn proc_if_inline(input: &mut Input) -> Result<Process<Unresolved>> {
     (
         t(TokenKind::If),
         alt((
@@ -2315,7 +2463,7 @@ fn proc_if_inline(input: &mut Input) -> Result<Process> {
         .parse_next(input)
 }
 
-fn global_command(input: &mut Input) -> Result<Process> {
+fn global_command(input: &mut Input) -> Result<Process<Unresolved>> {
     (global_name, cmd)
         .map(|(name, cmd)| match cmd {
             Some(cmd) => Process::GlobalCommand(name, cmd),
@@ -2327,7 +2475,7 @@ fn global_command(input: &mut Input) -> Result<Process> {
         .parse_next(input)
 }
 
-fn command(input: &mut Input) -> Result<Process> {
+fn command(input: &mut Input) -> Result<Process<Unresolved>> {
     (local_name, cmd)
         .map(|(name, cmd)| match cmd {
             Some(cmd) => Process::Command(name, cmd),
@@ -2339,11 +2487,11 @@ fn command(input: &mut Input) -> Result<Process> {
         .parse_next(input)
 }
 
-fn noop_cmd(span: Span) -> Command {
+fn noop_cmd(span: Span) -> Command<Unresolved> {
     Command::Then(Box::new(Process::Noop(span)))
 }
 
-fn cmd(input: &mut Input) -> Result<Option<Command>> {
+fn cmd(input: &mut Input) -> Result<Option<Command<Unresolved>>> {
     alt((
         alt((
             cmd_link,
@@ -2370,13 +2518,13 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
     .parse_next(input)
 }
 
-fn cmd_then(input: &mut Input) -> Result<Option<Command>> {
+fn cmd_then(input: &mut Input) -> Result<Option<Command<Unresolved>>> {
     (opt(t(TokenKind::Semicolon)), opt(process))
         .map(|(_, opt)| opt.map(|process| Command::Then(Box::new(process))))
         .parse_next(input)
 }
 
-fn cmd_link(input: &mut Input) -> Result<Command> {
+fn cmd_link(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(t(TokenKind::Link), expression)
         .map(|(token, expression)| {
             Command::Link(token.span.join(expression.span()), Box::new(expression))
@@ -2384,7 +2532,7 @@ fn cmd_link(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_send(input: &mut Input) -> Result<Command> {
+fn cmd_send(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), cmd),
@@ -2402,7 +2550,7 @@ fn cmd_send(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_receive(input: &mut Input) -> Result<Command> {
+fn cmd_receive(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         t(TokenKind::LBrack),
         (list1(pattern), t(TokenKind::RBrack), cmd),
@@ -2420,7 +2568,7 @@ fn cmd_receive(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_generic_receive(input: &mut Input) -> Result<Command> {
+fn cmd_generic_receive(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -2445,7 +2593,7 @@ fn cmd_generic_receive(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_signal(input: &mut Input) -> Result<Command> {
+fn cmd_signal(input: &mut Input) -> Result<Command<Unresolved>> {
     (t(TokenKind::Dot), (local_name, cmd))
         .map(|(pre, (name, cmd))| {
             let cmd = match cmd {
@@ -2457,7 +2605,7 @@ fn cmd_signal(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_case(input: &mut Input) -> Result<Command> {
+fn cmd_case(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Case)),
         (branches_body(cmd_branch), opt(pass_process)),
@@ -2475,13 +2623,13 @@ fn cmd_case(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_break(input: &mut Input) -> Result<Command> {
+fn cmd_break(input: &mut Input) -> Result<Command<Unresolved>> {
     t(TokenKind::Bang)
         .map(|token| Command::Break(token.span()))
         .parse_next(input)
 }
 
-fn cmd_continue(input: &mut Input) -> Result<Command> {
+fn cmd_continue(input: &mut Input) -> Result<Command<Unresolved>> {
     (t(TokenKind::Quest), opt(process))
         .map(|(token, process)| match process {
             Some(process) => Command::Continue(token.span.join(process.span()), Box::new(process)),
@@ -2490,7 +2638,7 @@ fn cmd_continue(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_begin(input: &mut Input) -> Result<Command> {
+fn cmd_begin(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (label, cmd))
         .map(|((pre, _), (label, cmd))| {
             let cmd = match (&label, cmd) {
@@ -2508,7 +2656,7 @@ fn cmd_begin(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_unfounded(input: &mut Input) -> Result<Command> {
+fn cmd_unfounded(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, cmd))
         .map(|((pre, _), (label, cmd))| {
             let cmd = match (&label, cmd) {
@@ -2526,7 +2674,7 @@ fn cmd_unfounded(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_loop(input: &mut Input) -> Result<Command> {
+fn cmd_loop(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
         .map(|((pre1, pre2), label)| {
             Command::Loop(
@@ -2540,7 +2688,7 @@ fn cmd_loop(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_send_type(input: &mut Input) -> Result<Command> {
+fn cmd_send_type(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(typ), t(TokenKind::RParen), cmd),
@@ -2558,7 +2706,7 @@ fn cmd_send_type(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_recv_type(input: &mut Input) -> Result<Command> {
+fn cmd_recv_type(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
         (list1(local_name), t(TokenKind::RBrack), cmd),
@@ -2576,7 +2724,7 @@ fn cmd_recv_type(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_try(input: &mut Input) -> Result<Command> {
+fn cmd_try(input: &mut Input) -> Result<Command<Unresolved>> {
     (t(TokenKind::Dot), (t(TokenKind::Try), label, cmd))
         .map(|(_, (try_kw, label, cmd))| {
             let cmd = match cmd {
@@ -2588,7 +2736,7 @@ fn cmd_try(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_default(input: &mut Input) -> Result<Command> {
+fn cmd_default(input: &mut Input) -> Result<Command<Unresolved>> {
     (
         t(TokenKind::Dot),
         (
@@ -2609,7 +2757,7 @@ fn cmd_default(input: &mut Input) -> Result<Command> {
         .parse_next(input)
 }
 
-fn cmd_pipe(input: &mut Input) -> Result<Command> {
+fn cmd_pipe(input: &mut Input) -> Result<Command<Unresolved>> {
     commit_after(
         t(TokenKind::ThinArrow),
         (
@@ -2635,11 +2783,11 @@ fn cmd_pipe(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn pass_process(input: &mut Input) -> Result<Process> {
+fn pass_process(input: &mut Input) -> Result<Process<Unresolved>> {
     alt((proc_if, proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
 
-fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     alt((
         cmd_branch_then,
         cmd_branch_bind_then,
@@ -2653,7 +2801,7 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         t(TokenKind::FatArrow),
         (t(TokenKind::LCurly), opt(process), t(TokenKind::RCurly)),
@@ -2670,7 +2818,7 @@ fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     (
         local_name,
         cut_err((
@@ -2691,7 +2839,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
         .parse_next(input)
 }
 
-fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
         (list1(pattern), t(TokenKind::RParen), cmd_branch),
@@ -2705,7 +2853,7 @@ fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn cmd_branch_generic_receive(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_generic_receive(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -2726,7 +2874,7 @@ fn cmd_branch_generic_receive(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         t(TokenKind::Bang),
         (
@@ -2748,7 +2896,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(local_name), t(TokenKind::RParen), cmd_branch),
@@ -2762,7 +2910,7 @@ fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(t(TokenKind::Try), (label, cmd_branch))
         .map(|(kw, (label, rest))| {
             CommandBranch::Try(kw.span.join(rest.span()), label, Box::new(rest))
@@ -2770,7 +2918,7 @@ fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch> {
         .parse_next(input)
 }
 
-fn cmd_branch_default(input: &mut Input) -> Result<CommandBranch> {
+fn cmd_branch_default(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         (t(TokenKind::Default), t(TokenKind::LParen)),
         (expression, t(TokenKind::RParen), cmd_branch),

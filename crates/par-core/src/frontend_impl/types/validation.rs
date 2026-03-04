@@ -3,13 +3,17 @@ use super::core::Type;
 use super::error::TypeError;
 use super::visit;
 
-impl Type {
-    pub fn is_linear(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
+impl<S: Clone + Eq + std::hash::Hash> Type<S> {
+    pub fn is_linear(&self, type_defs: &TypeDefs<S>) -> Result<bool, TypeError<S>> {
         Ok(!self.is_positive(type_defs)?)
     }
 
-    pub fn is_positive(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
-        fn visit(result: &mut bool, typ: &Type, type_defs: &TypeDefs) -> Result<(), TypeError> {
+    pub fn is_positive(&self, type_defs: &TypeDefs<S>) -> Result<bool, TypeError<S>> {
+        fn visit<S: Clone + Eq + std::hash::Hash>(
+            result: &mut bool,
+            typ: &Type<S>,
+            type_defs: &TypeDefs<S>,
+        ) -> Result<(), TypeError<S>> {
             match typ {
                 // Box is always positive
                 Type::Box(..) => {}

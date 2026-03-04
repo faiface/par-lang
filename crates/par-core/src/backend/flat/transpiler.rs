@@ -10,7 +10,7 @@ use par_runtime::flat::reducer::NetHandle;
 use std::sync::OnceLock;
 
 use crate::backend::tree::compiler::IcCompiled;
-use crate::frontend_impl::language::GlobalName;
+use crate::frontend_impl::language::{GlobalName, Universal};
 use crate::runtime_impl::tree;
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -40,8 +40,8 @@ pub(crate) struct ProgramTranspiler {
 #[derive(Clone)]
 pub struct Transpiled {
     pub arena: Arc<Arena>,
-    pub name_to_package: HashMap<GlobalName, PackagePtr>,
-    pub type_defs: TypeDefs,
+    pub name_to_package: HashMap<GlobalName<Universal>, PackagePtr>,
+    pub type_defs: TypeDefs<Universal>,
 }
 
 impl Display for Transpiled {
@@ -51,11 +51,15 @@ impl Display for Transpiled {
 }
 
 impl Transpiled {
-    pub fn transpile(ic_compiled: IcCompiled, type_defs: TypeDefs) -> Self {
+    pub fn transpile(ic_compiled: IcCompiled, type_defs: TypeDefs<Universal>) -> Self {
         let this: ProgramTranspiler = ProgramTranspiler::transpile_program(&ic_compiled);
         let mut arena = this.dest;
-        let mut closure = |ty: &Type| {
-            fn helper(ty: &Type, defs: &TypeDefs, arena: &mut Arena) -> Result<(), TypeError> {
+        let mut closure = |ty: &Type<Universal>| {
+            fn helper(
+                ty: &Type<Universal>,
+                defs: &TypeDefs<Universal>,
+                arena: &mut Arena,
+            ) -> Result<(), TypeError<Universal>> {
                 match ty {
                     Type::Either(_, variants) | Type::Choice(_, variants) => {
                         for k in variants.keys() {
@@ -64,7 +68,7 @@ impl Transpiled {
                     }
                     _ => {}
                 }
-                visit::continue_deref(&ty, defs, |ty: &Type| helper(ty, &defs, arena))
+                visit::continue_deref(&ty, defs, |ty: &Type<Universal>| helper(ty, &defs, arena))
             }
             helper(ty, &type_defs, &mut arena)
         };
@@ -84,7 +88,7 @@ impl Transpiled {
     }
 
     pub fn compile_file(
-        module: &crate::frontend_impl::program::CheckedModule,
+        module: &crate::frontend_impl::program::CheckedModule<Universal>,
         max_interactions: u32,
     ) -> Result<Self, crate::runtime_impl::RuntimeCompilerError> {
         let type_defs = module.type_defs.clone();
@@ -94,14 +98,14 @@ impl Transpiled {
         Ok(transpiled)
     }
 
-    pub fn get_with_name(&self, name: &GlobalName) -> Option<PackagePtr> {
+    pub fn get_with_name(&self, name: &GlobalName<Universal>) -> Option<PackagePtr> {
         Some(self.name_to_package.get(name).cloned()?)
     }
 
     pub fn new_runtime(&self) -> Runtime {
         Runtime::from(self.arena.clone())
     }
-    pub fn instantiate(&self, handle: NetHandle, name: &GlobalName) -> Option<Handle> {
+    pub fn instantiate(&self, handle: NetHandle, name: &GlobalName<Universal>) -> Option<Handle> {
         let package = self.get_with_name(name)?;
         Handle::from_package(self.arena.clone(), handle, package).ok()
     }

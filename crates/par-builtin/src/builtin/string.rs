@@ -8,10 +8,11 @@ use crate::builtin::{
     list::readback_list,
     parser::{ReaderRemainder, provide_string_parser},
 };
+use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Definition, Module, ParString, Type, TypeDef, process};
 use par_runtime::readback::Handle;
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     Module {
         type_defs: vec![TypeDef::external("String", &[], Type::string())],
         declarations: vec![],

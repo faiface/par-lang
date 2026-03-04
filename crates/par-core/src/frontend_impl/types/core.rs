@@ -1,4 +1,4 @@
-use super::super::language::{GlobalName, LocalName};
+use super::super::language::{GlobalName, LocalName, Unresolved};
 use crate::frontend_impl::types::visit::Polarity;
 use crate::frontend_impl::types::{TypeDefs, TypeError, visit};
 use crate::location::{Span, Spanning};
@@ -34,7 +34,7 @@ pub enum PrimitiveType {
     Bytes,
 }
 
-pub(crate) fn get_primitive_type(primitive: &Primitive) -> Type {
+pub(crate) fn get_primitive_type<S: Clone>(primitive: &Primitive) -> Type<S> {
     match primitive {
         Primitive::Int(n) if n >= &BigInt::ZERO => Type::nat(),
         Primitive::Int(_) => Type::int(),
@@ -67,15 +67,15 @@ pub enum Operation {
     ReceiveType,
 }
 
-struct HoleConstraints {
-    upper_bounds: Vec<Type>,
-    lower_bounds: Vec<Type>,
+struct HoleConstraints<S> {
+    upper_bounds: Vec<Type<S>>,
+    lower_bounds: Vec<Type<S>>,
 }
 
 #[derive(Clone)]
-pub struct Hole(Arc<Mutex<HoleConstraints>>);
+pub struct Hole<S>(Arc<Mutex<HoleConstraints<S>>>);
 
-impl Debug for Hole {
+impl<S: Debug> Debug for Hole<S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let constraints = self.0.lock().unwrap();
         f.debug_struct("Hole")
@@ -85,48 +85,71 @@ impl Debug for Hole {
     }
 }
 
-impl PartialEq for Hole {
+impl<S> PartialEq for Hole<S> {
     fn eq(&self, _other: &Self) -> bool {
         true
     }
 }
-impl Eq for Hole {}
+impl<S> Eq for Hole<S> {}
 
-impl Hash for Hole {
+impl<S> Hash for Hole<S> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // All holes are considered equal for hashing purposes
         0.hash(state);
     }
 }
 
-impl Hole {
-    pub fn add_lower_bound(&self, bound: Type) {
+impl<S: Clone> Hole<S> {
+    pub fn add_lower_bound(&self, bound: Type<S>) {
         let mut constraints = self.0.lock().unwrap();
         constraints.lower_bounds.push(bound);
     }
 
-    pub fn add_upper_bound(&self, bound: Type) {
+    pub fn add_upper_bound(&self, bound: Type<S>) {
         let mut constraints = self.0.lock().unwrap();
         constraints.upper_bounds.push(bound);
     }
 
-    pub fn get_constraints(&self) -> (Vec<Type>, Vec<Type>) {
+    pub fn get_constraints(&self) -> (Vec<Type<S>>, Vec<Type<S>>) {
         let constraints = self.0.lock().unwrap();
         (
             constraints.lower_bounds.clone(),
             constraints.upper_bounds.clone(),
         )
     }
+
+    fn map_global_names<T, E>(
+        &self,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Hole<T>, E> {
+        let constraints = self.0.lock().unwrap();
+        let lower_bounds = constraints
+            .lower_bounds
+            .clone()
+            .into_iter()
+            .map(|typ| typ.map_global_names(f))
+            .collect::<Result<Vec<_>, _>>()?;
+        let upper_bounds = constraints
+            .upper_bounds
+            .clone()
+            .into_iter()
+            .map(|typ| typ.map_global_names(f))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Hole(Arc::new(Mutex::new(HoleConstraints {
+            upper_bounds,
+            lower_bounds,
+        }))))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Type {
+pub enum Type<S> {
     Primitive(Span, PrimitiveType),
     DualPrimitive(Span, PrimitiveType),
     Var(Span, LocalName),
     DualVar(Span, LocalName),
-    Name(Span, GlobalName, Vec<Self>),
-    DualName(Span, GlobalName, Vec<Self>),
+    Name(Span, GlobalName<S>, Vec<Self>),
+    DualName(Span, GlobalName<S>, Vec<Self>),
     Box(Span, Box<Self>),
     DualBox(Span, Box<Self>),
     Pair(Span, Box<Self>, Box<Self>, Vec<LocalName>),
@@ -155,12 +178,12 @@ pub enum Type {
     DualSelf(Span, Option<LocalName>),
     Exists(Span, LocalName, Box<Self>),
     Forall(Span, LocalName, Box<Self>),
-    Hole(Span, LocalName, Hole),
-    DualHole(Span, LocalName, Hole),
+    Hole(Span, LocalName, Hole<S>),
+    DualHole(Span, LocalName, Hole<S>),
 }
 
 #[allow(unused)]
-impl Type {
+impl<S: Clone> Type<S> {
     pub fn nat() -> Self {
         Self::Primitive(Span::None, PrimitiveType::Nat)
     }
@@ -185,10 +208,6 @@ impl Type {
         Self::Primitive(Span::None, PrimitiveType::Bytes)
     }
 
-    pub fn name(module: Option<&'static str>, primary: &'static str, args: Vec<Self>) -> Self {
-        Self::Name(Span::None, GlobalName::external(module, primary), args)
-    }
-
     pub fn var(name: &'static str) -> Self {
         Self::Var(
             Span::None,
@@ -199,7 +218,7 @@ impl Type {
         )
     }
 
-    pub fn hole(name: LocalName) -> (Self, Hole) {
+    pub fn hole(name: LocalName) -> (Self, Hole<S>) {
         let constraints = Arc::new(Mutex::new(HoleConstraints {
             upper_bounds: Vec::new(),
             lower_bounds: Vec::new(),
@@ -349,7 +368,10 @@ impl Type {
         matches!(self, Self::Recursive { .. } | Self::Iterative { .. })
     }
 
-    pub fn size(&self, defs: &TypeDefs) -> Result<u32, TypeError> {
+    pub fn size(&self, defs: &TypeDefs<S>) -> Result<u32, TypeError<S>>
+    where
+        S: Eq + std::hash::Hash,
+    {
         Ok(match self {
             Self::Primitive(_, _) | Self::DualPrimitive(_, _) => 1,
             Self::Var(_, _) | Self::DualVar(_, _) => 1,
@@ -374,27 +396,111 @@ impl Type {
     }
 }
 
-impl Type {
-    pub fn qualify(&mut self, module: Option<&str>) {
-        fn inner(typ: &mut Type, module: Option<&str>) -> Result<(), ()> {
-            match typ {
-                Type::Name(_, name, args) | Type::DualName(_, name, args) => {
-                    name.qualify(module);
-                    for arg in args {
-                        inner(arg, module)?;
-                    }
-                }
-                _ => {
-                    visit::continue_mut(typ, |child: &mut Type| inner(child, module))?;
-                }
-            }
-            Ok(())
-        }
-        inner(self, module).unwrap();
+impl Type<Unresolved> {
+    pub fn name(module: Option<&'static str>, primary: &'static str, args: Vec<Self>) -> Self {
+        Self::Name(Span::None, GlobalName::external(module, primary), args)
     }
 }
 
-impl Spanning for Type {
+impl<S: Clone> Type<S> {
+    pub fn map_global_names<T, E>(
+        self,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Type<T>, E> {
+        Ok(match self {
+            Self::Primitive(span, primitive) => Type::Primitive(span, primitive),
+            Self::DualPrimitive(span, primitive) => Type::DualPrimitive(span, primitive),
+            Self::Var(span, name) => Type::Var(span, name),
+            Self::DualVar(span, name) => Type::DualVar(span, name),
+            Self::Break(span) => Type::Break(span),
+            Self::Continue(span) => Type::Continue(span),
+            Self::Self_(span, label) => Type::Self_(span, label),
+            Self::DualSelf(span, label) => Type::DualSelf(span, label),
+            Self::Name(span, name, args) => {
+                let mapped_name = f(name)?;
+                let mapped_args = args
+                    .into_iter()
+                    .map(|arg| arg.map_global_names(f))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Type::Name(span, mapped_name, mapped_args)
+            }
+            Self::DualName(span, name, args) => {
+                let mapped_name = f(name)?;
+                let mapped_args = args
+                    .into_iter()
+                    .map(|arg| arg.map_global_names(f))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Type::DualName(span, mapped_name, mapped_args)
+            }
+            Self::Box(span, inner) => {
+                let mapped_inner = Box::new(inner.map_global_names(f)?);
+                Type::Box(span, mapped_inner)
+            }
+            Self::DualBox(span, inner) => {
+                let mapped_inner = Box::new(inner.map_global_names(f)?);
+                Type::DualBox(span, mapped_inner)
+            }
+            Self::Pair(span, left, right, vars) => {
+                let left = Box::new(left.map_global_names(f)?);
+                let right = Box::new(right.map_global_names(f)?);
+                Type::Pair(span, left, right, vars)
+            }
+            Self::Function(span, left, right, vars) => {
+                let left = Box::new(left.map_global_names(f)?);
+                let right = Box::new(right.map_global_names(f)?);
+                Type::Function(span, left, right, vars)
+            }
+            Self::Either(span, branches) => {
+                let mapped = branches
+                    .into_iter()
+                    .map(|(name, branch)| Ok((name, branch.map_global_names(f)?)))
+                    .collect::<Result<BTreeMap<_, _>, E>>()?;
+                Type::Either(span, mapped)
+            }
+            Self::Choice(span, branches) => {
+                let mapped = branches
+                    .into_iter()
+                    .map(|(name, branch)| Ok((name, branch.map_global_names(f)?)))
+                    .collect::<Result<BTreeMap<_, _>, E>>()?;
+                Type::Choice(span, mapped)
+            }
+            Self::Recursive {
+                span,
+                asc,
+                label,
+                body,
+            } => Type::Recursive {
+                span,
+                asc,
+                label,
+                body: Box::new(body.map_global_names(f)?),
+            },
+            Self::Iterative {
+                span,
+                asc,
+                label,
+                body,
+            } => Type::Iterative {
+                span,
+                asc,
+                label,
+                body: Box::new(body.map_global_names(f)?),
+            },
+            Self::Exists(span, name, body) => {
+                Type::Exists(span, name, Box::new(body.map_global_names(f)?))
+            }
+            Self::Forall(span, name, body) => {
+                Type::Forall(span, name, Box::new(body.map_global_names(f)?))
+            }
+            Self::Hole(span, name, hole) => Type::Hole(span, name, hole.map_global_names(f)?),
+            Self::DualHole(span, name, hole) => {
+                Type::DualHole(span, name, hole.map_global_names(f)?)
+            }
+        })
+    }
+}
+
+impl<S> Spanning for Type<S> {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
@@ -423,9 +529,13 @@ impl Spanning for Type {
     }
 }
 
-impl Type {
-    pub fn remove_asc(&mut self, defs: &TypeDefs) -> Result<(), TypeError> {
-        fn inner(typ: &mut Type, polarity: Polarity, defs: &TypeDefs) -> Result<(), TypeError> {
+impl<S: Clone + Eq + std::hash::Hash> Type<S> {
+    pub fn remove_asc(&mut self, defs: &TypeDefs<S>) -> Result<(), TypeError<S>> {
+        fn inner<S: Clone + Eq + std::hash::Hash>(
+            typ: &mut Type<S>,
+            polarity: Polarity,
+            defs: &TypeDefs<S>,
+        ) -> Result<(), TypeError<S>> {
             match (typ, polarity) {
                 (Type::Recursive { asc, body, .. }, Polarity::Positive | Polarity::Neither)
                 | (Type::Iterative { asc, body, .. }, Polarity::Negative | Polarity::Neither) => {
@@ -456,7 +566,7 @@ impl Type {
                     typ,
                     polarity,
                     defs,
-                    |child: &mut Type, polarity| inner(child, polarity, defs),
+                    |child: &mut Type<S>, polarity| inner(child, polarity, defs),
                 )?,
             }
             Ok(())

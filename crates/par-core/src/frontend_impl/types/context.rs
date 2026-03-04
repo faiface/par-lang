@@ -6,46 +6,47 @@ use indexmap::{IndexMap, IndexSet};
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug)]
-pub(crate) struct PollPointScope {
-    pub(crate) client_type: Type,
-    pub(crate) preserved: Arc<IndexMap<LocalName, Type>>,
+pub(crate) struct PollPointScope<S> {
+    pub(crate) client_type: Type<S>,
+    pub(crate) preserved: Arc<IndexMap<LocalName, Type<S>>>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PollScope {
+pub(crate) struct PollScope<S> {
     pub(crate) driver: LocalName,
-    pub(crate) pool_type: Type,
-    pub(crate) points: IndexMap<LocalName, PollPointScope>,
+    pub(crate) pool_type: Type<S>,
+    pub(crate) points: IndexMap<LocalName, PollPointScope<S>>,
     pub(crate) current_point: LocalName,
     pub(crate) token_span: Span,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Context {
-    pub(crate) type_defs: TypeDefs,
-    declarations: Arc<IndexMap<GlobalName, (Span, Type)>>,
-    unchecked_definitions: Arc<IndexMap<GlobalName, (Span, Arc<Expression<()>>)>>,
-    checked_definitions: Arc<RwLock<IndexMap<GlobalName, CheckedDef>>>,
-    current_deps: IndexSet<GlobalName>,
-    pub(crate) variables: IndexMap<LocalName, Type>,
-    pub(crate) loop_points: IndexMap<Option<LocalName>, (Type, Arc<IndexMap<LocalName, Type>>)>,
-    pub(crate) poll: Option<PollScope>,
-    pub(crate) poll_stash: Vec<Option<PollScope>>,
-    pub(crate) blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type>>>,
+pub(crate) struct Context<S> {
+    pub(crate) type_defs: TypeDefs<S>,
+    declarations: Arc<IndexMap<GlobalName<S>, (Span, Type<S>)>>,
+    unchecked_definitions: Arc<IndexMap<GlobalName<S>, (Span, Arc<Expression<(), S>>)>>,
+    checked_definitions: Arc<RwLock<IndexMap<GlobalName<S>, CheckedDef<S>>>>,
+    current_deps: IndexSet<GlobalName<S>>,
+    pub(crate) variables: IndexMap<LocalName, Type<S>>,
+    pub(crate) loop_points:
+        IndexMap<Option<LocalName>, (Type<S>, Arc<IndexMap<LocalName, Type<S>>>)>,
+    pub(crate) poll: Option<PollScope<S>>,
+    pub(crate) poll_stash: Vec<Option<PollScope<S>>>,
+    pub(crate) blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type<S>>>>,
 }
 
 #[derive(Clone, Debug)]
-struct CheckedDef {
+struct CheckedDef<S> {
     span: Span,
-    def: Arc<Expression<Type>>,
-    typ: Type,
+    def: Arc<Expression<Type<S>, S>>,
+    typ: Type<S>,
 }
 
-impl Context {
+impl<S: Clone + Eq + std::hash::Hash> Context<S> {
     pub(crate) fn new(
-        type_defs: TypeDefs,
-        declarations: IndexMap<GlobalName, (Span, Type)>,
-        unchecked_definitions: IndexMap<GlobalName, (Span, Arc<Expression<()>>)>,
+        type_defs: TypeDefs<S>,
+        declarations: IndexMap<GlobalName<S>, (Span, Type<S>)>,
+        unchecked_definitions: IndexMap<GlobalName<S>, (Span, Arc<Expression<(), S>>)>,
     ) -> Self {
         Self {
             type_defs,
@@ -64,8 +65,8 @@ impl Context {
     pub(crate) fn check_definition(
         &mut self,
         span: &Span,
-        name: &GlobalName,
-    ) -> Result<Type, TypeError> {
+        name: &GlobalName<S>,
+    ) -> Result<Type<S>, TypeError<S>> {
         if let Some(checked) = self.checked_definitions.read().unwrap().get(name) {
             return Ok(checked.typ.clone());
         }
@@ -127,7 +128,7 @@ impl Context {
 
     pub(crate) fn get_checked_definitions(
         &self,
-    ) -> IndexMap<GlobalName, (Span, Arc<Expression<Type>>, Type)> {
+    ) -> IndexMap<GlobalName<S>, (Span, Arc<Expression<Type<S>, S>>, Type<S>)> {
         self.checked_definitions
             .read()
             .unwrap()
@@ -145,11 +146,11 @@ impl Context {
             .collect()
     }
 
-    pub(crate) fn get_declarations(&self) -> IndexMap<GlobalName, (Span, Type)> {
+    pub(crate) fn get_declarations(&self) -> IndexMap<GlobalName<S>, (Span, Type<S>)> {
         (*self.declarations).clone()
     }
 
-    pub(crate) fn get_type_defs(&self) -> &TypeDefs {
+    pub(crate) fn get_type_defs(&self) -> &TypeDefs<S> {
         &self.type_defs
     }
 
@@ -168,11 +169,15 @@ impl Context {
         }
     }
 
-    pub(crate) fn get_global(&mut self, span: &Span, name: &GlobalName) -> Result<Type, TypeError> {
+    pub(crate) fn get_global(
+        &mut self,
+        span: &Span,
+        name: &GlobalName<S>,
+    ) -> Result<Type<S>, TypeError<S>> {
         self.check_definition(span, name)
     }
 
-    pub(crate) fn get_variable(&mut self, name: &LocalName) -> Option<Type> {
+    pub(crate) fn get_variable(&mut self, name: &LocalName) -> Option<Type<S>> {
         self.variables.shift_remove(name)
     }
 
@@ -180,14 +185,19 @@ impl Context {
         &mut self,
         span: &Span,
         name: &LocalName,
-    ) -> Result<Type, TypeError> {
+    ) -> Result<Type<S>, TypeError<S>> {
         match self.get_variable(name) {
             Some(typ) => Ok(typ),
             None => Err(TypeError::VariableDoesNotExist(span.clone(), name.clone())),
         }
     }
 
-    pub(crate) fn put(&mut self, span: &Span, name: LocalName, typ: Type) -> Result<(), TypeError> {
+    pub(crate) fn put(
+        &mut self,
+        span: &Span,
+        name: LocalName,
+        typ: Type<S>,
+    ) -> Result<(), TypeError<S>> {
         if let Some(typ) = self.variables.get(&name) {
             if typ.is_linear(&self.type_defs)? {
                 return Err(TypeError::ShadowedObligation(span.clone(), name));
@@ -203,7 +213,7 @@ impl Context {
         cap: &Captures,
         only_non_linear: bool,
         target: &mut Self,
-    ) -> Result<(), TypeError> {
+    ) -> Result<(), TypeError<S>> {
         for (name, (span, _usage)) in &cap.names {
             if Some(name) == inference_subject {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
@@ -235,7 +245,7 @@ impl Context {
             .map(|(name, _)| name)
     }
 
-    pub(crate) fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError> {
+    pub(crate) fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError<S>> {
         if let Some(poll) = &self.poll {
             if self.variables.contains_key(&poll.driver) {
                 return Err(TypeError::PollBranchMustSubmit(span.clone()));

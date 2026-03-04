@@ -4,8 +4,11 @@ use crate::frontend_impl::types::{LoopId, Type, TypeDefs, TypeError};
 use crate::location::Span;
 use im::HashSet;
 
-impl Type {
-    pub fn expand_definition(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
+impl<S: Clone> Type<S> {
+    pub fn expand_definition(&self, type_defs: &TypeDefs<S>) -> Result<Self, TypeError<S>>
+    where
+        S: Eq + std::hash::Hash,
+    {
         match self {
             Self::Name(span, name, args) => type_defs.get(span, name, args),
             Self::DualName(span, name, args) => type_defs.get_dual(span, name, args),
@@ -17,14 +20,14 @@ impl Type {
         asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
-    ) -> Result<Self, TypeError> {
+    ) -> Result<Self, TypeError<S>> {
         let mut typ = body.clone();
-        fn inner(
-            typ: &mut Type,
+        fn inner<S: Clone>(
+            typ: &mut Type<S>,
             target_label: &Option<LocalName>,
             asc: &HashSet<LoopId>,
-            body: &Type,
-        ) -> Result<(), TypeError> {
+            body: &Type<S>,
+        ) -> Result<(), TypeError<S>> {
             match typ {
                 Type::Self_(span, label) if label == target_label => {
                     *typ = Type::Recursive {
@@ -46,7 +49,7 @@ impl Type {
                 Type::Recursive { label, .. } | Type::Iterative { label, .. }
                     if label == target_label => {}
                 _ => {
-                    visit::continue_mut(typ, |child: &mut Type| {
+                    visit::continue_mut(typ, |child: &mut Type<S>| {
                         inner(child, target_label, asc, body)
                     })?;
                 }
@@ -63,7 +66,7 @@ impl Type {
         asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
-    ) -> Result<Self, TypeError> {
+    ) -> Result<Self, TypeError<S>> {
         if !asc.is_empty() {
             return Err(TypeError::CannotUnrollAscendantIterative(
                 span.clone(),
@@ -80,14 +83,14 @@ impl Type {
         asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
-    ) -> Result<Self, TypeError> {
+    ) -> Result<Self, TypeError<S>> {
         let mut typ = body.clone();
-        fn inner(
-            typ: &mut Type,
+        fn inner<S: Clone>(
+            typ: &mut Type<S>,
             target_label: &Option<LocalName>,
             asc: &HashSet<LoopId>,
-            body: &Type,
-        ) -> Result<(), TypeError> {
+            body: &Type<S>,
+        ) -> Result<(), TypeError<S>> {
             match typ {
                 Type::Self_(span, label) if label == target_label => {
                     *typ = Type::Iterative {
@@ -112,7 +115,7 @@ impl Type {
                     // label is shadowed
                 }
                 _ => {
-                    visit::continue_mut(typ, |child: &mut Type| {
+                    visit::continue_mut(typ, |child: &mut Type<S>| {
                         inner(child, target_label, asc, body)
                     })?;
                 }
@@ -125,7 +128,7 @@ impl Type {
     }
 
     #[allow(dead_code)]
-    pub fn expand_fixpoint(&self) -> Result<Self, TypeError> {
+    pub fn expand_fixpoint(&self) -> Result<Self, TypeError<S>> {
         match self {
             Type::Recursive {
                 asc, label, body, ..
@@ -141,7 +144,7 @@ impl Type {
     }
 
     // This variant does not make sure iterative's asc isn't empty
-    pub fn expand_fixpoint_unfounded(&self) -> Result<Self, TypeError> {
+    pub fn expand_fixpoint_unfounded(&self) -> Result<Self, TypeError<S>> {
         match self {
             Type::Recursive {
                 asc, label, body, ..

@@ -1,27 +1,33 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use lsp_types::{self as lsp, Uri};
-use par_builtin::import_builtins;
-use par_core::frontend::{
-    CheckedModule, ParseAndCompileError, TypeError, TypeOnHover, lower, parse, type_check,
+use crate::package_builder::{lower_parsed_package, PackageBuildError};
+use crate::package_loader::{
+    LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
+    parse_loaded_files,
 };
+use crate::package_utils::normalized_path;
+use lsp_types::{self as lsp, Uri};
+use par_core::frontend::language::Universal;
+use par_core::frontend::{CheckedModule, TypeError, TypeOnHover, type_check};
 use par_core::source::FileName;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
-    ParseAndCompile(ParseAndCompileError),
-    Type(TypeError),
+    PackageBuild(PackageBuildError),
+    Type(TypeError<Universal>),
 }
 
 pub struct Instance {
     uri: Uri,
     file: FileName,
     dirty: bool,
-    checked: Option<Arc<CheckedModule>>,
-    type_on_hover: Option<TypeOnHover>,
+    checked: Option<Arc<CheckedModule<Universal>>>,
+    type_on_hover: Option<TypeOnHover<Universal>>,
     error: Option<CompileError>,
     io: IO,
 }
@@ -29,7 +35,7 @@ pub struct Instance {
 impl Instance {
     pub fn new(uri: Uri, io: IO) -> Instance {
         Self {
-            file: uri.as_str().into(),
+            file: file_name_for_uri(&uri),
             uri,
             dirty: true,
             checked: None,
@@ -241,7 +247,7 @@ impl Instance {
         }
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: path.0.parse().ok()?,
+            uri: file_name_to_uri(&path)?,
             range: lsp::Range {
                 start: start.to_lsp_position(),
                 end: end.to_lsp_position(),
@@ -271,7 +277,7 @@ impl Instance {
         }
 
         Some(lsp::GotoDefinitionResponse::Scalar(lsp::Location {
-            uri: path.0.parse().ok()?,
+            uri: file_name_to_uri(&path)?,
             range: lsp::Range {
                 start: start.to_lsp_position(),
                 end: end.to_lsp_position(),
@@ -322,16 +328,23 @@ impl Instance {
         };
 
         let result = stacker::grow(32 * 1024 * 1024, || {
-            let parsed = parse(&code, self.file.clone()).map_err(|error| {
-                CompileError::ParseAndCompile(ParseAndCompileError::Parse(error))
-            })?;
-            let mut lowered = lower(parsed).map_err(|error| {
-                CompileError::ParseAndCompile(ParseAndCompileError::Compile(error))
-            })?;
-            import_builtins(&mut lowered);
-            let checked = Arc::new(type_check(&lowered).map_err(CompileError::Type)?);
-            let type_on_hover = TypeOnHover::new(&checked);
-            Ok::<_, CompileError>((checked, type_on_hover))
+            let package_result = uri_to_path(&self.uri)
+                .map(|path| self.compile_package_with_overlays(&path))
+                .unwrap_or_else(|| {
+                    Err(CompileError::PackageBuild(PackageBuildError::Load(
+                        PackageLoadError::PackageRootNotFound {
+                            start: PathBuf::from(self.uri.as_str()),
+                        },
+                    )))
+                });
+
+            match package_result {
+                Ok(result) => Ok(result),
+                Err(CompileError::PackageBuild(PackageBuildError::Load(
+                    PackageLoadError::PackageRootNotFound { .. },
+                ))) => self.compile_single_file(&code),
+                Err(error) => Err(error),
+            }
         });
 
         match result {
@@ -354,4 +367,84 @@ impl Instance {
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
+
+    fn compile_single_file(
+        &self,
+        code: &str,
+    ) -> Result<(Arc<CheckedModule<Universal>>, TypeOnHover<Universal>), CompileError> {
+        let absolute_path =
+            uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
+        let relative_path_from_src = absolute_path
+            .file_name()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
+        let parsed = parse_loaded_files(vec![LoadedPackageFile {
+            absolute_path,
+            relative_path_from_src,
+            source: code.to_owned(),
+        }])
+        .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
+        let lowered_package = lower_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
+
+        let checked = Arc::new(type_check(&lowered_package.lowered).map_err(CompileError::Type)?);
+        let type_on_hover = TypeOnHover::<Universal>::new(&checked);
+        Ok((checked, type_on_hover))
+    }
+
+    fn compile_package_with_overlays(
+        &self,
+        file_path: &Path,
+    ) -> Result<(Arc<CheckedModule<Universal>>, TypeOnHover<Universal>), CompileError> {
+        let layout = find_package_layout(file_path)
+            .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
+        let mut files = collect_source_files(&layout)
+            .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
+
+        let overlay_sources = self
+            .io
+            .snapshot()
+            .into_iter()
+            .filter_map(|(uri, source)| {
+                uri_to_path(&uri).map(|path| (normalized_path(&path), source))
+            })
+            .collect::<HashMap<_, _>>();
+
+        for file in &mut files {
+            if let Some(source) = overlay_sources.get(&normalized_path(&file.absolute_path)) {
+                file.source = source.clone();
+            }
+        }
+
+        let parsed = parse_loaded_files(files)
+            .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
+        let lowered_package = lower_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
+
+        let checked = Arc::new(type_check(&lowered_package.lowered).map_err(CompileError::Type)?);
+        let type_on_hover = TypeOnHover::<Universal>::new(&checked);
+        Ok((checked, type_on_hover))
+    }
+}
+
+fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
+    let url = Url::parse(uri.as_str()).ok()?;
+    if url.scheme() != "file" {
+        return None;
+    }
+    url.to_file_path().ok()
+}
+
+fn file_name_for_uri(uri: &Uri) -> FileName {
+    uri_to_path(uri)
+        .map(FileName::from)
+        .unwrap_or_else(|| uri.as_str().into())
+}
+
+fn file_name_to_uri(file: &FileName) -> Option<Uri> {
+    if let Ok(uri) = file.0.as_str().parse() {
+        return Some(uri);
+    }
+    let path = PathBuf::from(file.0.as_str());
+    Url::from_file_path(path)
+        .ok()
+        .and_then(|url| url.as_str().parse().ok())
 }

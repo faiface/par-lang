@@ -6,7 +6,7 @@ pub mod frontend {
     use std::sync::Arc;
 
     use crate::frontend_impl::language::{CompileError, Context};
-    use crate::frontend_impl::parse::parse_module;
+    use crate::frontend_impl::parse::{parse_module, parse_source_file as parse_source_file_impl};
     use crate::location::FileName;
     use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 
@@ -21,21 +21,33 @@ pub mod frontend {
     pub use crate::frontend_impl::parse::SyntaxError;
     pub use crate::frontend_impl::parse_bytes;
     pub use crate::frontend_impl::program::{
-        CheckedModule, Declaration, Definition, Module, ParseAndCompileError, TypeDef, TypeOnHover,
+        CheckedModule, Declaration, Definition, ImportDecl, ImportPath, Module, ModuleDecl,
+        ParseAndCompileError, SourceFile, TypeDef, TypeOnHover,
     };
     pub use crate::frontend_impl::set_miette_hook;
     pub use crate::frontend_impl::types::lattice::{intersect_types, union_types};
     pub use crate::frontend_impl::types::{Operation, PrimitiveType, Type, TypeDefs, TypeError};
     pub use par_runtime::primitive::{ParString, Primitive};
 
-    pub type HighLevelModule = Module<language::Expression>;
-    pub type LowLevelModule = Module<Arc<process::Expression<()>>>;
+    pub type HighLevelModule =
+        Module<language::Expression<language::Unresolved>, language::Unresolved>;
+    pub type LowLevelModule =
+        Module<Arc<process::Expression<(), language::Universal>>, language::Universal>;
+    pub type LowLevelUnresolvedModule =
+        Module<Arc<process::Expression<(), language::Unresolved>>, language::Unresolved>;
 
     pub fn parse(source: &str, file: FileName) -> Result<HighLevelModule, SyntaxError> {
         parse_module(source, file)
     }
 
-    pub fn lower(module: HighLevelModule) -> Result<LowLevelModule, CompileError> {
+    pub fn parse_source_file(
+        source: &str,
+        file: FileName,
+    ) -> Result<SourceFile<language::Expression<language::Unresolved>>, SyntaxError> {
+        parse_source_file_impl(source, file)
+    }
+
+    pub fn lower(module: HighLevelModule) -> Result<LowLevelUnresolvedModule, CompileError> {
         let compiled_definitions = module
             .definitions
             .into_iter()
@@ -63,12 +75,14 @@ pub mod frontend {
         })
     }
 
-    pub fn type_check(module: &LowLevelModule) -> Result<CheckedModule, TypeError> {
+    pub fn type_check(
+        module: &LowLevelModule,
+    ) -> Result<CheckedModule<language::Universal>, TypeError<language::Universal>> {
         module.type_check()
     }
 
     pub fn compile_runtime(
-        module: &CheckedModule,
+        module: &CheckedModule<language::Universal>,
         max_interactions: u32,
     ) -> Result<Compiled, RuntimeCompilerError> {
         Compiled::compile_file(module, max_interactions)

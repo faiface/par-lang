@@ -16,10 +16,11 @@ use crate::builtin::{
     list::readback_list,
     parser::{ReaderRemainder, provide_bytes_parser},
 };
+use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Definition, Module, Type, TypeDef, process};
 use par_runtime::readback::Handle;
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     Module {
         type_defs: vec![TypeDef::external("Bytes", &[], Type::bytes())],
         declarations: vec![],

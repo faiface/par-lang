@@ -6,17 +6,23 @@ use std::{
     time::SystemTime,
 };
 
+use crate::package_builder::{lower_parsed_package, PackageBuildError};
+use crate::package_loader::{
+    LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
+    parse_loaded_files,
+};
+use crate::package_utils::{format_with_source_span, normalized_path};
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use futures::task::{Spawn, SpawnExt};
 
 use crate::readback::{Element, RunStats};
 use core::time::Duration;
-use par_builtin::import_builtins;
 use par_core::{
     frontend::{
-        CheckedModule, Module, ParseAndCompileError, Type, TypeError, TypeOnHover, compile_runtime,
-        language::GlobalName, lower, parse, process, type_check,
+        CheckedModule, Module, Type, TypeError, TypeOnHover, compile_runtime,
+        language::{GlobalName, Universal},
+        process, type_check,
     },
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
@@ -25,7 +31,6 @@ use par_runtime::spawn::TokioSpawn;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::pin::Pin;
-use std::task::Poll;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -34,23 +39,41 @@ use crate::wasm_spawn::WasmSpawn;
 
 #[derive(Debug, Clone)]
 enum BuildError {
-    ParseAndCompile(ParseAndCompileError),
-    Type(TypeError),
+    PackageBuild(PackageBuildError),
+    Type(TypeError<Universal>),
     InetCompile(RuntimeCompilerError),
 }
 
 impl BuildError {
     fn display(&self, code: Arc<str>) -> String {
         match self {
-            Self::ParseAndCompile(ParseAndCompileError::Parse(error)) => {
-                format!(
-                    "{:?}",
-                    miette::Report::from(error.to_owned()).with_source_code(code)
-                )
+            Self::PackageBuild(PackageBuildError::Load(PackageLoadError::ParseError {
+                source,
+                error,
+                ..
+            })) => format!(
+                "{:?}",
+                miette::Report::from(error.to_owned()).with_source_code(source.clone())
+            ),
+            Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
+                format!("{:?}", error.to_report(source.clone()))
             }
-            Self::ParseAndCompile(ParseAndCompileError::Compile(error)) => {
-                format!("{:?}", error.to_report(code))
-            }
+            Self::PackageBuild(
+                error @ PackageBuildError::UnsupportedDependency { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::ImportedModuleNotFound { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::DuplicateImportAlias { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
+            )
+            | Self::PackageBuild(
+                error @ PackageBuildError::ResolvedModuleNotFound { source, span, .. },
+            ) => format_with_source_span(source.clone(), span, error.to_string()),
+            Self::PackageBuild(error) => error.to_string(),
             Self::Type(error) => format!("{:?}", error.to_report(code)),
             Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
         }
@@ -60,23 +83,23 @@ impl BuildError {
 #[derive(Clone)]
 enum BuildResult {
     None,
-    ParseAndCompileError {
-        error: ParseAndCompileError,
+    PackageBuildError {
+        error: PackageBuildError,
     },
     TypeError {
         pretty: String,
-        error: TypeError,
+        error: TypeError<Universal>,
     },
     InetError {
         pretty: String,
-        checked: Arc<CheckedModule>,
-        type_on_hover: TypeOnHover,
+        checked: Arc<CheckedModule<Universal>>,
+        type_on_hover: TypeOnHover<Universal>,
         error: RuntimeCompilerError,
     },
     Ok {
         pretty: String,
-        checked: Arc<CheckedModule>,
-        type_on_hover: TypeOnHover,
+        checked: Arc<CheckedModule<Universal>>,
+        type_on_hover: TypeOnHover<Universal>,
         rt_compiled: Compiled,
     },
 }
@@ -85,9 +108,7 @@ impl BuildResult {
     fn error(&self) -> Option<BuildError> {
         match self {
             Self::None => None,
-            Self::ParseAndCompileError { error } => {
-                Some(BuildError::ParseAndCompile(error.clone()))
-            }
+            Self::PackageBuildError { error } => Some(BuildError::PackageBuild(error.clone())),
             Self::TypeError { error, .. } => Some(BuildError::Type(error.clone())),
             Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
             Self::Ok { .. } => None,
@@ -99,23 +120,24 @@ impl BuildResult {
             Self::TypeError { pretty, .. }
             | Self::InetError { pretty, .. }
             | Self::Ok { pretty, .. } => Some(pretty),
-            Self::None | Self::ParseAndCompileError { .. } => None,
+            Self::None | Self::PackageBuildError { .. } => None,
         }
     }
 
-    fn checked(&self) -> Option<Arc<CheckedModule>> {
+    fn checked(&self) -> Option<Arc<CheckedModule<Universal>>> {
         match self {
             Self::InetError { checked, .. } | Self::Ok { checked, .. } => Some(Arc::clone(checked)),
-            Self::None | Self::ParseAndCompileError { .. } | Self::TypeError { .. } => None,
+            Self::None | Self::PackageBuildError { .. } | Self::TypeError { .. } => None,
         }
     }
 
-    fn type_on_hover(&self) -> Option<&TypeOnHover> {
+    fn type_on_hover(&self) -> Option<&TypeOnHover<Universal>> {
         match self {
             Self::InetError { type_on_hover, .. } | Self::Ok { type_on_hover, .. } => {
                 Some(type_on_hover)
             }
-            Self::None | Self::ParseAndCompileError { .. } | Self::TypeError { .. } => None,
+            Self::None | Self::TypeError { .. } => None,
+            Self::PackageBuildError { .. } => None,
         }
     }
 
@@ -123,40 +145,91 @@ impl BuildResult {
         match self {
             Self::Ok { rt_compiled, .. } => Some(rt_compiled),
             Self::None
-            | Self::ParseAndCompileError { .. }
+            | Self::PackageBuildError { .. }
             | Self::TypeError { .. }
             | Self::InetError { .. } => None,
         }
     }
 
-    fn from_source_with_imports(
-        source: &str,
-        file: FileName,
-        imports: impl FnOnce(&mut Module<Arc<process::Expression<()>>>),
-        max_interactions: u32,
-    ) -> Self {
-        let parsed = match parse(source, file) {
+    fn from_single_file_package(source: &str, file_path: PathBuf, max_interactions: u32) -> Self {
+        let relative_path_from_src = file_path
+            .file_name()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("Main.par"));
+        let parsed = match parse_loaded_files(vec![LoadedPackageFile {
+            absolute_path: file_path,
+            relative_path_from_src,
+            source: source.to_owned(),
+        }]) {
             Ok(parsed) => parsed,
             Err(error) => {
-                return Self::ParseAndCompileError {
-                    error: ParseAndCompileError::Parse(error),
+                return Self::PackageBuildError {
+                    error: PackageBuildError::Load(error),
                 };
             }
         };
-        let mut lowered = match lower(parsed) {
+
+        let lowered = match lower_parsed_package(parsed) {
             Ok(lowered) => lowered,
+            Err(error) => return Self::PackageBuildError { error },
+        };
+        Self::from_compiled(lowered.lowered, max_interactions)
+    }
+
+    fn from_package_active_file(
+        active_file_path: &Path,
+        active_source: &str,
+        max_interactions: u32,
+    ) -> Self {
+        let layout = match find_package_layout(active_file_path) {
+            Ok(layout) => layout,
+            Err(PackageLoadError::PackageRootNotFound { .. }) => {
+                return Self::from_single_file_package(
+                    active_source,
+                    active_file_path.to_path_buf(),
+                    max_interactions,
+                );
+            }
             Err(error) => {
-                return Self::ParseAndCompileError {
-                    error: ParseAndCompileError::Compile(error),
+                return Self::PackageBuildError {
+                    error: PackageBuildError::Load(error),
                 };
             }
         };
-        imports(&mut lowered);
-        Self::from_compiled(lowered, max_interactions)
+        let mut files = match collect_source_files(&layout) {
+            Ok(files) => files,
+            Err(error) => {
+                return Self::PackageBuildError {
+                    error: PackageBuildError::Load(error),
+                };
+            }
+        };
+        let active_key = normalized_path(active_file_path);
+        for file in &mut files {
+            if normalized_path(&file.absolute_path) == active_key {
+                file.source = active_source.to_owned();
+            }
+        }
+
+        let parsed = match parse_loaded_files(files) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                return Self::PackageBuildError {
+                    error: PackageBuildError::Load(error),
+                };
+            }
+        };
+
+        let lowered = match lower_parsed_package(parsed) {
+            Ok(lowered) => lowered,
+            Err(error) => return Self::PackageBuildError { error },
+        };
+
+        Self::from_compiled(lowered.lowered, max_interactions)
     }
 
     fn from_compiled(
-        compiled: Module<Arc<process::Expression<()>>>,
+        compiled: Module<Arc<process::Expression<(), Universal>>, Universal>,
         max_interactions: u32,
     ) -> Self {
         let pretty = compiled
@@ -184,8 +257,12 @@ impl BuildResult {
         Self::from_checked(pretty, checked, max_interactions)
     }
 
-    fn from_checked(pretty: String, checked: Arc<CheckedModule>, max_interactions: u32) -> Self {
-        let type_on_hover = TypeOnHover::new(&checked);
+    fn from_checked(
+        pretty: String,
+        checked: Arc<CheckedModule<Universal>>,
+        max_interactions: u32,
+    ) -> Self {
+        let type_on_hover = TypeOnHover::<Universal>::new(&checked);
         let rt_compiled = match compile_runtime(&checked, max_interactions) {
             Ok(rt_compiled) => rt_compiled,
             Err(error) => {
@@ -523,7 +600,7 @@ impl Playground {
             file.read_to_string(&mut buf)?;
             Ok(buf)
         }) {
-            self.file_path = Some(file_path);
+            self.file_path = Some(std::fs::canonicalize(&file_path).unwrap_or(file_path));
             self.code = file_content;
         }
     }
@@ -584,9 +661,9 @@ impl Playground {
         cancel_token: &mut Option<CancellationToken>,
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
-        program: Arc<CheckedModule>,
+        program: Arc<CheckedModule<Universal>>,
         compiled: &Compiled,
-        name_to_ty: &HashMap<GlobalName, Type>,
+        name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
     ) -> () {
         for (name, _) in &program.definitions {
             if ui.button(format!("{}", name)).clicked() {
@@ -616,7 +693,7 @@ impl Playground {
                 ));
                 let stats_clone = Arc::clone(&stats);
                 let ctx = ui.ctx().clone();
-                spawner.spawn(async move {
+                let _ = spawner.spawn(async move {
                     #[cfg(not(target_arch = "wasm32"))]
                     let start = Instant::now();
                     tokio::select! {
@@ -639,14 +716,28 @@ impl Playground {
 
     const FILE_NAME: FileName = FileName(arcstr::literal!("Playground.par"));
 
+    fn active_file_name(&self) -> FileName {
+        self.file_path
+            .as_ref()
+            .cloned()
+            .map(FileName::from)
+            .unwrap_or(Self::FILE_NAME)
+    }
+
     fn recompile(&mut self) {
         stacker::grow(32 * 1024 * 1024, || {
-            self.build = BuildResult::from_source_with_imports(
-                self.code.as_str(),
-                Self::FILE_NAME,
-                import_builtins,
-                self.max_interactions,
-            );
+            self.build = match self.file_path.as_ref() {
+                Some(file_path) => BuildResult::from_package_active_file(
+                    file_path,
+                    self.code.as_str(),
+                    self.max_interactions,
+                ),
+                None => BuildResult::from_single_file_package(
+                    self.code.as_str(),
+                    PathBuf::from("Playground.par"),
+                    self.max_interactions,
+                ),
+            };
         });
         self.built_code = Arc::from(self.code.as_str());
     }
@@ -709,8 +800,9 @@ impl Playground {
                     let theme = self.get_theme(ui);
 
                     if let Some(type_on_hover) = self.build.type_on_hover() {
+                        let hover_file_name = self.active_file_name();
                         if let Some(name_info) = type_on_hover.query(
-                            &Self::FILE_NAME,
+                            &hover_file_name,
                             self.cursor_pos.0,
                             self.cursor_pos.1,
                         ) {
@@ -780,7 +872,11 @@ fn par_syntax() -> Syntax {
             "begin",
             "unfounded",
             "loop",
+            "module",
             "telltypes",
+            "import",
+            "as",
+            "export",
             "either",
             "choice",
             "recursive",

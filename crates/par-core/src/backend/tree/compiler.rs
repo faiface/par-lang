@@ -8,7 +8,7 @@ use std::{
 use crate::frontend_impl::process::VariableUsage;
 use crate::frontend_impl::types::core::get_primitive_type;
 use crate::frontend_impl::{
-    language::{GlobalName, LocalName},
+    language::{GlobalName, LocalName, Universal},
     process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
 };
@@ -31,10 +31,10 @@ pub enum Error {
     UnboundVar(Span, #[allow(unused)] Var),
     /// Error that is emitted when it is unclear how a variable is used (move/copy)
     UnknownVariableUsage(Span),
-    GlobalNotFound(GlobalName),
+    GlobalNotFound(GlobalName<Universal>),
     DependencyCycle {
-        global: GlobalName,
-        dependents: IndexSet<GlobalName>,
+        global: GlobalName<Universal>,
+        dependents: IndexSet<GlobalName<Universal>>,
     },
     UnguardedLoop(Span, #[allow(unused)] Option<LocalName>),
 }
@@ -86,7 +86,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone)]
 pub(crate) struct TypedTree {
     pub tree: Tree,
-    pub ty: Type,
+    pub ty: Type<Universal>,
 }
 
 impl Default for TypedTree {
@@ -122,7 +122,7 @@ pub(crate) struct Context {
 
 pub(crate) struct PackData {
     names: Vec<Var>,
-    types: Vec<Type>,
+    types: Vec<Type<Universal>>,
     loop_points: BTreeMap<LoopLabel, BTreeSet<LoopLabel>>,
     unguarded_loop_labels: Vec<LoopLabel>,
 }
@@ -230,14 +230,20 @@ impl Context {
 pub(crate) struct Compiler {
     net: Net,
     context: Context,
-    type_defs: TypeDefs,
-    definitions: IndexMap<GlobalName, (Definition<Arc<Expression<Type>>>, Type)>,
-    global_name_to_id: IndexMap<GlobalName, usize>,
+    type_defs: TypeDefs<Universal>,
+    definitions: IndexMap<
+        GlobalName<Universal>,
+        (
+            Definition<Arc<Expression<Type<Universal>, Universal>>, Universal>,
+            Type<Universal>,
+        ),
+    >,
+    global_name_to_id: IndexMap<GlobalName<Universal>, usize>,
     id_to_package: Vec<Net>,
     lazy_redexes: Vec<(Tree, Tree)>,
-    compile_global_stack: IndexSet<GlobalName>,
+    compile_global_stack: IndexSet<GlobalName<Universal>>,
     package_is_case_branch: IndexMap<usize, ArcStr>,
-    blocks: IndexMap<usize, Arc<Process<Type>>>,
+    blocks: IndexMap<usize, Arc<Process<Type<Universal>, Universal>>>,
     poll_packages: IndexMap<LocalName, PollInfo>,
     max_interactions: u32,
 }
@@ -326,7 +332,7 @@ fn poll_token_tree() -> Tree {
 }
 
 impl Tree {
-    pub(crate) fn with_type(self, ty: Type) -> TypedTree {
+    pub(crate) fn with_type(self, ty: Type<Universal>) -> TypedTree {
         TypedTree { tree: self, ty }
     }
 }
@@ -370,7 +376,7 @@ impl Compiler {
         stream
     }
 
-    fn compile_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
+    fn compile_global(&mut self, name: &GlobalName<Universal>) -> Result<TypedTree> {
         if let Some(id) = self.global_name_to_id.get(name) {
             return Ok(TypedTree {
                 tree: Tree::Package(*id, Box::new(Tree::Break), FanBehavior::Expand),
@@ -455,7 +461,7 @@ impl Compiler {
         &mut self,
         debug_name: String,
         f: impl FnOnce(&mut Self, usize) -> Result<(TypedTree, TypedTree)>,
-    ) -> Result<(usize, Type)> {
+    ) -> Result<(usize, Type<Universal>)> {
         let id = self.id_to_package.len();
         let old_net = core::mem::take(&mut self.net);
         let old_lazy_redexes = core::mem::take(&mut self.lazy_redexes);
@@ -578,7 +584,7 @@ impl Compiler {
         }
     }
 
-    fn use_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
+    fn use_global(&mut self, name: &GlobalName<Universal>) -> Result<TypedTree> {
         match self.compile_global(name) {
             Ok(value) => Ok(value),
             Err(Error::GlobalNotFound(_)) => Err(Error::GlobalNotFound(name.clone())),
@@ -626,7 +632,10 @@ impl Compiler {
         Tree::Choice(Box::new(ctx_out), Arc::new(branches), else_branch)
     }
 
-    fn compile_expression(&mut self, expr: &Expression<Type>) -> Result<TypedTree> {
+    fn compile_expression(
+        &mut self,
+        expr: &Expression<Type<Universal>, Universal>,
+    ) -> Result<TypedTree> {
         match expr {
             Expression::Global(_, name, _) => self.use_global(name),
             Expression::Variable(_, name, _typ, usage) => {
@@ -676,7 +685,7 @@ impl Compiler {
         }
     }
 
-    fn compile_process(&mut self, proc: &Process<Type>) -> Result<()> {
+    fn compile_process(&mut self, proc: &Process<Type<Universal>, Universal>) -> Result<()> {
         match proc {
             Process::Let {
                 name, value, then, ..
@@ -943,8 +952,8 @@ impl Compiler {
         span: &Span,
         name: LocalName,
         usage: &VariableUsage,
-        _ty: Type,
-        cmd: &Command<Type>,
+        _ty: Type<Universal>,
+        cmd: &Command<Type<Universal>, Universal>,
     ) -> Result<()> {
         match cmd {
             Command::Link(expr) => {
@@ -1164,7 +1173,7 @@ impl Compiler {
 #[derive(Clone, Default)]
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
-    pub(crate) name_to_id: IndexMap<GlobalName, usize>,
+    pub(crate) name_to_id: IndexMap<GlobalName<Universal>, usize>,
     package_is_case_branch: IndexMap<usize, ArcStr>,
 }
 
@@ -1184,7 +1193,7 @@ impl Display for IcCompiled {
 }
 
 impl IcCompiled {
-    pub fn get_with_name(&self, name: &GlobalName) -> Option<Net> {
+    pub fn get_with_name(&self, name: &GlobalName<Universal>) -> Option<Net> {
         let id = self.name_to_id.get(name)?;
         self.id_to_package.get(id).cloned()
     }
@@ -1199,7 +1208,10 @@ impl IcCompiled {
         net
     }
 
-    pub fn compile_file(program: &CheckedModule, max_interactions: u32) -> Result<IcCompiled> {
+    pub fn compile_file(
+        program: &CheckedModule<Universal>,
+        max_interactions: u32,
+    ) -> Result<IcCompiled> {
         let mut compiler = Compiler {
             net: Net::default(),
             context: Context {

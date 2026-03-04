@@ -29,10 +29,11 @@ use tokio::{net::TcpListener, signal, sync::Notify};
 use url::Url as ParsedUrl;
 
 use crate::builtin::{list::readback_list, url::provide_url_value};
+use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Definition, Module, ParString, Type, process};
 use par_runtime::readback::Handle;
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<()>>> {
+pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     Module {
         type_defs: vec![],
         declarations: vec![],

@@ -6,14 +6,14 @@ use crate::location::Span;
 use im::HashMap;
 use std::collections::BTreeMap;
 
-fn solve_constraints(
-    hole: &Hole,
-    type_defs: &TypeDefs,
+fn solve_constraints<S: Clone + Eq + std::hash::Hash>(
+    hole: &Hole<S>,
+    type_defs: &TypeDefs<S>,
     span: &Span,
-) -> Result<Option<Type>, TypeError> {
+) -> Result<Option<Type<S>>, TypeError<S>> {
     let (lower_bounds, upper_bounds) = hole.get_constraints();
-    let mut lower = Type::either(vec![]);
-    let mut upper = Type::choice(vec![]);
+    let mut lower = Type::Either(Span::None, BTreeMap::new());
+    let mut upper = Type::Choice(Span::None, BTreeMap::new());
     for typ in lower_bounds {
         lower = union_types(type_defs, span, &lower, &typ)?;
     }
@@ -39,15 +39,15 @@ fn solve_constraints(
     Ok(Some(lower))
 }
 
-pub(crate) fn infer_holes(
+pub(crate) fn infer_holes<S: Clone + Eq + std::hash::Hash>(
     span: &Span,
-    typ: &Type,
-    pattern: &Type,
+    typ: &Type<S>,
+    pattern: &Type<S>,
     names: &Vec<LocalName>,
-    type_defs: &TypeDefs,
-) -> Result<BTreeMap<LocalName, Type>, TypeError> {
+    type_defs: &TypeDefs<S>,
+) -> Result<BTreeMap<LocalName, Type<S>>, TypeError<S>> {
     let mut holed_pattern = pattern.clone();
-    let mut holes_map: HashMap<LocalName, Hole> = HashMap::new();
+    let mut holes_map: HashMap<LocalName, Hole<S>> = HashMap::new();
     for name in names.iter() {
         let (hole_typ, hole) = Type::hole(name.clone());
         holes_map.insert(name.clone(), hole);
@@ -56,7 +56,7 @@ pub(crate) fn infer_holes(
             .substitute(BTreeMap::from([(name, &hole_typ)]))?;
     }
 
-    if !Type::is_assignable_to(&typ, &holed_pattern, type_defs)? {
+    if !Type::is_assignable_to(typ, &holed_pattern, type_defs)? {
         return Err(TypeError::CannotAssignFromTo(
             span.clone(),
             typ.clone(),
