@@ -1,12 +1,16 @@
 #[cfg(test)]
 mod tests {
+    use crate::frontend_impl::language::Universal;
     use crate::frontend_impl::types::{Type, TypeDefs};
 
     #[test]
     fn test_iterative_box_choice() {
-        let typ = Type::iterative_box_choice(
+        let typ: Type<Universal> = Type::iterative_box_choice(
             None,
-            vec![("method1", Type::string()), ("method2", Type::int())],
+            vec![
+                ("method1", Type::<Universal>::string()),
+                ("method2", Type::<Universal>::int()),
+            ],
         );
 
         match typ {
@@ -37,9 +41,12 @@ mod tests {
 
     #[test]
     fn test_iterative_box_choice_with_label() {
-        let typ = Type::iterative_box_choice(
+        let typ: Type<Universal> = Type::iterative_box_choice(
             Some("my_label"),
-            vec![("action", Type::function(Type::nat(), Type::break_()))],
+            vec![(
+                "action",
+                Type::function(Type::<Universal>::nat(), Type::<Universal>::break_()),
+            )],
         );
 
         match typ {
@@ -63,12 +70,13 @@ mod tests {
 
     #[test]
     fn test_iterative_box_choice_equivalent_to_manual() {
-        let manual = Type::iterative(
+        let manual: Type<Universal> = Type::iterative(
             None,
-            Type::box_(Type::choice(vec![("test", Type::string())])),
+            Type::box_(Type::choice(vec![("test", Type::<Universal>::string())])),
         );
 
-        let helper = Type::iterative_box_choice(None, vec![("test", Type::string())]);
+        let helper: Type<Universal> =
+            Type::iterative_box_choice(None, vec![("test", Type::<Universal>::string())]);
 
         match (manual, helper) {
             (Type::Iterative { body: body1, .. }, Type::Iterative { body: body2, .. }) => {
@@ -90,9 +98,9 @@ mod tests {
 
     #[test]
     fn test_empty_either_subtype_of_any() {
-        let type_defs = TypeDefs::default();
-        let empty_either = Type::either(vec![]);
-        let any_type = Type::string();
+        let type_defs: TypeDefs<Universal> = TypeDefs::default();
+        let empty_either: Type<Universal> = Type::either(vec![]);
+        let any_type: Type<Universal> = Type::string();
 
         assert!(
             empty_either
@@ -103,9 +111,9 @@ mod tests {
 
     #[test]
     fn test_any_subtype_of_empty_choice() {
-        let type_defs = TypeDefs::default();
-        let any_type = Type::int();
-        let empty_choice = Type::choice(vec![]);
+        let type_defs: TypeDefs<Universal> = TypeDefs::default();
+        let any_type: Type<Universal> = Type::int();
+        let empty_choice: Type<Universal> = Type::choice(vec![]);
 
         assert!(
             any_type
