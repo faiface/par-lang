@@ -1,0 +1,37 @@
+module Fibonacci
+
+import @core/Nat
+import @basic/Console
+
+type Sequence<a> = iterative choice {
+  .close => !
+  .next  => (a) self
+}
+
+dec Fibonacci : Sequence<Nat>
+def Fibonacci =
+  let (a) b = (0) 1
+  in begin case {
+    .close => !
+    .next =>
+      let (a) b = (b) a->Nat.Add(b)
+      in (a) loop
+  }
+
+def Main: ! = do {
+  let console = Console.Open
+  let fib = Fibonacci
+
+  Nat.Repeat(30).begin.case {
+    .end! => {}
+    .step remaining => {
+      fib.next[n]
+      console.print(n->Nat.ToString)
+      remaining.loop
+    }
+  }
+
+  fib.close
+  console.close
+} in !
+

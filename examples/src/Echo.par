@@ -1,0 +1,34 @@
+module Echo
+
+import @core/Bytes
+import @basic/Console
+import @basic/Os
+
+def Main: ! = chan exit {
+  let reader = Os.Stdin
+  let writer = Os.Stdout
+
+  catch e: Os.Error => {
+    let console = Console.Open
+    console.print(e)
+    console.close
+    exit!
+  }
+
+  // If writer fails, it's consumed; close reader and delegate
+  catch@w e => { reader.close; throw e }
+  // If reader fails, it's consumed; close writer and delegate
+  catch@r e => { writer.close; throw e }
+
+  reader.begin.read.try@r.case {
+    .end! => {
+      writer.close.try
+      exit!
+    }
+    .chunk(bytes) => {
+      writer.write(bytes).try@w
+      reader.loop
+    }
+  }
+}
+

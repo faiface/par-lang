@@ -1,0 +1,63 @@
+module StringManipulation
+
+import @core/Char
+import @core/List
+import @core/Result
+import @core/String
+
+def TestTrim  = Trim("  Hello, world!    ", .whitespace!)
+//            = "Hello, world!"
+
+def TestFind  = Find("This is a random sentence.", .str "random")
+//            = .some("This is a ", "random", " sentence.")!
+
+def TestSplit = Split("  Some   more words .", .whitespace!)
+//            = *("Some", "more", "words", ".")
+
+dec Trim : [String, Char.Class] String
+def Trim = [s: String, c: Char.Class] chan ret {
+  let r = String.Parser(s)
+  r.match(.empty!, .repeat.one c).case {
+    .end _ => { ret <> "" }
+    .fail => {}
+    .match(_, _) => {}
+  }
+  r.matchEnd(.repeat.one.any!, .repeat.one c).case {
+    .end _ => { ret <> "" }
+    .fail => {
+      r.close
+      ret <> ""
+    }
+    .match(trimmed, _)! => {
+      ret <> trimmed
+    }
+  }
+}
+
+dec Find : [String, String.Pattern] either {
+  .none!,
+  .some(String, String, String)!,
+}
+def Find = [s, p] String.Parser(s).match(.repeat.one.any!, p).case {
+  .end _ => .none!,
+  .fail r => do { r.close } in .none!,
+  .match(before, found) r =>
+    .some(before, found, Result.Always(r.remainder))!
+}
+
+dec Split : [String, Char.Class] List<String>
+def Split = [s, c] chan yield {
+  let r = String.Parser(s)
+  r.begin.match(.repeat.one c, .repeat1.non c).case {
+    .end _ => { yield.end! }
+    .fail => {
+       r.close
+       yield.end!
+    }
+    .match(_, part) => {
+      yield.item(part)
+      r.loop
+    }
+  }
+}
+

@@ -1,0 +1,251 @@
+module Downloader
+
+import @core/BoxMap
+import @core/Bytes
+import @core/Cell
+import @core/Int
+import @core/List
+import @core/Map
+import @core/Nat
+import @core/String
+import @core/Url
+import @basic/Debug
+import @basic/Http
+import @basic/Os
+import @basic/Time
+
+type Event = (Os.Path) either {  // destination
+  .started Nat,                  // expected size
+  .progressed Nat,               // chunk size
+  .failed String,                // error message
+  .finished!,
+}
+
+def Main =
+  let rootPath = Os.Path(".").append("Downloads") in
+  YieldDownloadRequests("127.0.0.1:3000", rootPath)  // : List<(Url, Os.Path)!>
+    ->List.Map(type List<Event>)(box DownloadFile)   // : List<List<Event>>
+    ->FanIn                                          // : List<Event>
+    ->ShowDownloadProgress(rootPath)                 // : !
+
+dec YieldDownloadRequests : [String, Os.Path] List<(Url, Os.Path)!>
+def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
+  Debug.Log(String.Concat(*("Listening on ", listenUrl, "...")))
+  catch e => {
+    Debug.Log(String.Concat(*("Listening error: ", e)))
+    yield.end!
+  }
+
+  Http.Listen(listenUrl).begin.case {
+    .shutdown try! => {
+      Debug.Log("Shutting down...")
+      yield.end!
+    }
+
+    .incoming(request, respond) next => {
+      let (method, url, headers) body = request
+      catch e => {
+        respond((400, *()) Bytes.Reader(e))
+        next.loop
+      }
+
+      if String.Equals(method, "POST") => {
+        let try sourceUrl = catch e => .err e in
+          String.ParserFromReader(body)
+            .remainder.try
+            ->Url.FromString
+
+        let destination = rootPath.append(url.path->TrimStart("/"))
+        yield.item((sourceUrl, destination)!)
+        respond((200, *()) Bytes.EmptyReader)
+        next.loop
+      }
+
+      body.close
+      throw "Wrong method"
+    }
+  }
+}
+
+dec DownloadFile : [(Url, Os.Path)!] List<Event>
+def DownloadFile = [(sourceUrl, dest)!] chan yield {
+  catch err => {
+    yield.item((dest) .failed err)
+    yield.end!
+  }
+
+  let try (status, headers) body = Http.Fetch(("GET", sourceUrl, *()) Bytes.EmptyReader)
+  let headers = BoxMap.String(type Bytes)(headers)
+  catch@clearResp err => { body.close; throw err }
+
+  if not status->Nat.Equals(200) => {
+    throw@clearResp "Bad server response"
+  }
+
+  let try@clearResp file = Os.CreateNewFile(dest)
+  catch@clearFile err => { file.close; throw err }
+
+  let default(0) totalSize = catch ! => .err! in
+    headers.get("content-length").try
+      ->String.FromBytes
+      ->Nat.FromString
+  yield.item((dest) .started totalSize)
+
+  let bytesSinceLastEvent = 0
+  let timeOfLastEvent = Time.Now(!)
+
+  body.begin.read.try@clearFile.case {
+    .chunk(bytes) => {
+      file.write(bytes).try@clearResp
+
+      bytesSinceLastEvent->Nat.Add(Bytes.Length(bytes))
+      if Time.Now(!)->Nat.Compare(timeOfLastEvent->Nat.Add(100)) is .greater! => {
+        yield.item((dest) .progressed bytesSinceLastEvent)
+        let bytesSinceLastEvent = 0
+        let timeOfLastEvent = Time.Now(!)
+      }
+
+      body.loop
+    }
+    .end! => {}
+  }
+
+  yield.item((dest) .progressed bytesSinceLastEvent)
+
+  file.close.try
+  yield.item((dest) .finished!)
+  yield.end!
+}
+
+dec ShowDownloadProgress : [List<Event>, Os.Path] !
+def ShowDownloadProgress = [events, rootPath] chan exit {
+  let getName = box [path: Os.Path]
+    path.absolute
+      ->TrimStart(rootPath.absolute)
+      ->String.FromBytes
+
+  catch e => {
+    Debug.Log(String.Concat(*("Stdout error: ", e)))
+    tracker.close
+    exit!
+  }
+
+  let stdout = Os.Stdout
+  let tracker = NewProgressTracker
+
+  events.begin.case {
+    .item((destination) event) => {
+      let name = getName(destination)
+
+      event.case {
+        .started expected => {
+          tracker.file(name).started(expected)
+          stdout.write(String.Concat(*("\nStarted downloading ", name, "\n"))).try
+        }
+
+        .progressed size => {
+          tracker.file(name).progressed(size)
+          tracker.stats[numFiles, sumDownloaded, sumExpected]
+          stdout.write(String.Concat(*(
+            "\r>> ", numFiles->Int.ToString, " file(s) in progress: ",
+            sumDownloaded->Int.ToString, " B / ", sumExpected->Int.ToString, " B",
+          ))).try
+        }
+
+        .finished! => {
+          tracker.file(name).ended[startTime, downloadedSize]
+          let duration = Time.Now(!)->Int.Sub(startTime)
+          let speed = downloadedSize->Int.Mul(1000)->Int.Div(duration)
+          stdout.write(String.Concat(*(
+            "\nFinished downloading ", name, "\n",
+            "    Size:  ", downloadedSize->Int.ToString, " B\n",
+            "    Time:  ", duration->Int.ToString, " ms\n",
+            "    Speed: ", speed->Int.ToString, " B/s\n",
+          ))).try
+        }
+
+        .failed msg => {
+          tracker.file(name).ended[_, _]
+          stdout.write(String.Concat(*("\nFailed to download ", name, ": ", msg, "\n"))).try
+        }
+      }
+      stdout.flush.try
+      events.loop
+    }
+    .end! => {}
+  }
+
+  tracker.close
+  stdout.close
+  exit!
+}
+
+type ProgressTracker = iterative choice {
+  .close => !,
+  .stats => (Nat, Int, Int) self,
+  .file(String) => choice {
+    .started(Nat) => self,
+    .ended => (Nat, Nat) self,
+    .progressed(Nat) => self,
+  }
+}
+
+def NewProgressTracker: ProgressTracker = do {
+  let filesInProgress = Map.String(type (Nat, Nat, Nat)!)(*())
+  let sumDownloaded: Int = 0
+  let sumExpected: Int = 0
+} in begin case {
+  .close => let _ = filesInProgress.list in !,
+
+  .stats => do {
+    filesInProgress.size[numFiles]
+  } in (numFiles, sumDownloaded, sumExpected) loop,
+
+  .file(name) => do {
+    filesInProgress.entry(name)[entry]
+    if not entry is .ok(startTime, expected, downloaded)! => {
+      let startTime = Time.Now(!)
+      let expected = 0
+      let downloaded = 0
+    }
+  } in case {
+    .started(newExpected) => do {
+      filesInProgress.put((startTime, newExpected, downloaded)!)
+      sumExpected->Int.Sub(expected)
+      sumExpected->Int.Add(newExpected)
+    } in loop,
+
+    .ended => do {
+      filesInProgress.delete
+      sumExpected->Int.Sub(expected)
+      sumDownloaded->Int.Sub(downloaded)
+    } in (startTime, downloaded) loop,
+
+    .progressed(size) => do {
+      filesInProgress.put((startTime, expected, downloaded->Nat.Add(size))!)
+      sumDownloaded->Int.Add(size)
+    } in loop,
+  }
+}
+
+// ---
+
+dec FanIn : <a>[List<List<a>>] List<a>
+def FanIn = <a>[lists] chan yield {
+  Cell.Share(yield, lists.begin.case {
+    .end! => .end!,
+    .item(list) lists => .split(list.begin.case {
+      .end! => .end!,
+      .item(value) list => .take[yield] .put(yield.item(value)) list.loop,
+    }) lists.loop
+  }).end!
+}
+
+dec TrimStart : [Bytes, Bytes] Bytes
+def TrimStart = [whole, start]
+  Bytes.Parser(whole).matchEnd(.bytes start, .repeat.one.any!).case {
+    .end _ => whole,
+    .fail p => do { p.close } in whole,
+    .match(_, trimmed)! => trimmed,
+  }
+

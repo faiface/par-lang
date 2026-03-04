@@ -1,0 +1,5 @@
+module Test0
+
+import @core/Test
+
+def Test0: [Test] ! = [test] test.done

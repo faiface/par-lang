@@ -1,6 +1,6 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use crate::package_builder::{lower_parsed_package, PackageBuildError};
+use crate::package_builder::{PackageBuildError, lower_parsed_package};
 use crate::package_loader::{
     LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
     parse_loaded_files,
