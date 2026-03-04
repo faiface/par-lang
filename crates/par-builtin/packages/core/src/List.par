@@ -1,11 +1,10 @@
 module List
 
 import Bool
-import Map
 import Nat
 import Option
 import Ordering
-import Result as CoreResult
+import Result
 
 type List<a> = recursive either {
   .end!,
@@ -17,8 +16,8 @@ type Builder<a> = iterative choice {
   .build => List<a>,
 }
 
-type Result<e, a> = recursive either {
-  .end CoreResult<e, !>,
+type Fallible<e, a> = recursive either {
+  .end Result<e, !>,
   .item(a) self,
 }
 

@@ -57,7 +57,7 @@ dec Parser  : [String] Parser<either {}>
 
 dec ParserFromReader : <e>[Bytes.Reader<e>] Parser<e>
 
-dec Lines : <e>[Parser<e>] List.Result<e, String>
+dec Lines : <e>[Parser<e>] List.Fallible<e, String>
 def Lines = <e>[parser]
   catch e => .end .err e in
   parser.begin.match(.repeat.one.any!, .str "\n").case {

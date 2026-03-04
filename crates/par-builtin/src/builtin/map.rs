@@ -13,9 +13,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
         type_defs: vec![],
         declarations: vec![],
         definitions: vec![
-            // Map.String : [type v] [List<(String) box v>] Map<String, v>
+            // Map.OfString : [type v] [List<(String) box v>] Map<String, v>
             Definition::external(
-                "String",
+                "OfString",
                 Type::forall(
                     "v",
                     Type::function(
@@ -29,9 +29,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
                 ),
                 |handle| Box::pin(map_new(handle, Handle::string, Handle::provide_string)),
             ),
-            // Map.Bytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
+            // Map.OfBytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
             Definition::external(
-                "Bytes",
+                "OfBytes",
                 Type::forall(
                     "v",
                     Type::function(
@@ -45,9 +45,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
                 ),
                 |handle| Box::pin(map_new(handle, Handle::bytes, Handle::provide_bytes)),
             ),
-            // Map.Int : [type v] [List<(Int) box v>] Map<Int, v>
+            // Map.OfInt : [type v] [List<(Int) box v>] Map<Int, v>
             Definition::external(
-                "Int",
+                "OfInt",
                 Type::forall(
                     "v",
                     Type::function(
@@ -61,9 +61,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
                 ),
                 |handle| Box::pin(map_new(handle, Handle::int, Handle::provide_int)),
             ),
-            // Map.Nat : [type v] [List<(Nat) box v>] Map<Nat, v>
+            // Map.OfNat : [type v] [List<(Nat) box v>] Map<Nat, v>
             Definition::external(
-                "Nat",
+                "OfNat",
                 Type::forall(
                     "v",
                     Type::function(

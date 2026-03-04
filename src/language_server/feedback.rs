@@ -108,6 +108,14 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             },
         )
         | CompileError::PackageBuild(
+            error
+            @ crate::package_builder::PackageBuildError::BindingNameConflictsWithImportAlias {
+                source,
+                span,
+                ..
+            },
+        )
+        | CompileError::PackageBuild(
             error @ crate::package_builder::PackageBuildError::UnknownModuleQualifier {
                 source,
                 span,

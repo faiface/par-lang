@@ -61,6 +61,11 @@ impl BuildError {
                 error @ PackageBuildError::DuplicateImportAlias { source, span, .. },
             )
             | Self::PackageBuild(
+                error @ PackageBuildError::BindingNameConflictsWithImportAlias {
+                    source, span, ..
+                },
+            )
+            | Self::PackageBuild(
                 error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
             )
             | Self::PackageBuild(

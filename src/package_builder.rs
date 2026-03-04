@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, btree_map::Entry};
+use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -64,6 +64,11 @@ pub enum PackageBuildError {
         span: Span,
         alias: String,
     },
+    BindingNameConflictsWithImportAlias {
+        source: Arc<str>,
+        span: Span,
+        name: String,
+    },
     UnknownModuleQualifier {
         source: Arc<str>,
         span: Span,
@@ -97,6 +102,13 @@ impl Display for PackageBuildError {
             }
             Self::DuplicateImportAlias { alias, .. } => {
                 write!(f, "Duplicate import alias `{}`", alias)
+            }
+            Self::BindingNameConflictsWithImportAlias { name, .. } => {
+                write!(
+                    f,
+                    "Top-level binding `{}` conflicts with an import alias",
+                    name
+                )
             }
             Self::UnknownModuleQualifier {
                 qualifier, name, ..
@@ -288,6 +300,7 @@ fn load_package_unit(
                 &dependencies,
                 module_lookup,
             )?;
+            let imported_aliases = imported_aliases(&imports, &current_module_path);
             let mut lowered_file = lower(file.source_file.body.clone()).map_err(|error| {
                 PackageBuildError::LowerError {
                     path: file.absolute_path.clone(),
@@ -300,6 +313,7 @@ fn load_package_unit(
                     merge_module(&mut lowered_file, external_module);
                 }
             }
+            validate_binding_names(&lowered_file, &imported_aliases, Arc::clone(&file.source))?;
             let resolved_file = resolve_module(
                 lowered_file,
                 imports,
@@ -332,68 +346,13 @@ fn resolve_module(
     current_module_path: &ResolvedModulePath,
     file_source: Arc<str>,
 ) -> Result<Module<Arc<process::Expression<(), Resolved>>, Resolved>, PackageBuildError> {
-    Ok(Module {
-        type_defs: module
-            .type_defs
-            .into_iter()
-            .map(|type_def| {
-                let mut map_name = |name| {
-                    resolve_reference_name_to_resolved(
-                        name,
-                        &imports,
-                        current_module_path,
-                        Arc::clone(&file_source),
-                    )
-                };
-                Ok(par_core::frontend::TypeDef {
-                    span: type_def.span,
-                    name: resolve_binding_name_to_resolved(type_def.name, current_module_path),
-                    params: type_def.params,
-                    typ: type_def.typ.map_global_names(&mut map_name)?,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        declarations: module
-            .declarations
-            .into_iter()
-            .map(|declaration| {
-                let mut map_name = |name| {
-                    resolve_reference_name_to_resolved(
-                        name,
-                        &imports,
-                        current_module_path,
-                        Arc::clone(&file_source),
-                    )
-                };
-                Ok(par_core::frontend::Declaration {
-                    span: declaration.span,
-                    name: resolve_binding_name_to_resolved(declaration.name, current_module_path),
-                    typ: declaration.typ.map_global_names(&mut map_name)?,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        definitions: module
-            .definitions
-            .into_iter()
-            .map(|definition| {
-                let mut map_name = |name| {
-                    resolve_reference_name_to_resolved(
-                        name,
-                        &imports,
-                        current_module_path,
-                        Arc::clone(&file_source),
-                    )
-                };
-                Ok(par_core::frontend::Definition {
-                    span: definition.span,
-                    name: resolve_binding_name_to_resolved(definition.name, current_module_path),
-                    expression: Arc::new(
-                        Arc::unwrap_or_clone(definition.expression)
-                            .map_global_names(&mut map_name)?,
-                    ),
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
+    module.map_global_names(|name| {
+        resolve_name_to_resolved(
+            name,
+            &imports,
+            current_module_path,
+            Arc::clone(&file_source),
+        )
     })
 }
 
@@ -454,6 +413,50 @@ fn build_file_import_aliases(
     }
 
     Ok(aliases)
+}
+
+fn imported_aliases(
+    aliases: &BTreeMap<String, ResolvedModulePath>,
+    current_module_path: &ResolvedModulePath,
+) -> BTreeSet<String> {
+    let mut imported = aliases.keys().cloned().collect::<BTreeSet<_>>();
+    imported.remove(&current_module_path.module);
+    imported
+}
+
+fn validate_binding_names(
+    module: &Module<Arc<process::Expression<(), Unresolved>>, Unresolved>,
+    imported_aliases: &BTreeSet<String>,
+    source: Arc<str>,
+) -> Result<(), PackageBuildError> {
+    for type_def in &module.type_defs {
+        if imported_aliases.contains(type_def.name.primary.as_str()) {
+            return Err(PackageBuildError::BindingNameConflictsWithImportAlias {
+                source,
+                span: type_def.name.span.clone(),
+                name: type_def.name.primary.clone(),
+            });
+        }
+    }
+    for declaration in &module.declarations {
+        if imported_aliases.contains(declaration.name.primary.as_str()) {
+            return Err(PackageBuildError::BindingNameConflictsWithImportAlias {
+                source,
+                span: declaration.name.span.clone(),
+                name: declaration.name.primary.clone(),
+            });
+        }
+    }
+    for definition in &module.definitions {
+        if imported_aliases.contains(definition.name.primary.as_str()) {
+            return Err(PackageBuildError::BindingNameConflictsWithImportAlias {
+                source,
+                span: definition.name.span.clone(),
+                name: definition.name.primary.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn resolve_imported_module(
@@ -518,14 +521,7 @@ fn format_import_path(path: &ImportPath) -> String {
     segments.join("/")
 }
 
-fn resolve_binding_name_to_resolved(
-    name: GlobalName<Unresolved>,
-    current_module_path: &ResolvedModulePath,
-) -> GlobalName<Resolved> {
-    GlobalName::new(name.span, current_module_path.clone(), name.primary)
-}
-
-fn resolve_reference_name_to_resolved(
+fn resolve_name_to_resolved(
     mut name: GlobalName<Unresolved>,
     imports: &BTreeMap<String, ResolvedModulePath>,
     current_module_path: &ResolvedModulePath,

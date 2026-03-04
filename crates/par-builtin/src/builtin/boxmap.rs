@@ -15,9 +15,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
         type_defs: vec![],
         declarations: vec![],
         definitions: vec![
-            // BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
+            // BoxMap.OfString : [type v] [List<(String) box v>] BoxMap<String, v>
             Definition::external(
-                "String",
+                "OfString",
                 Type::forall(
                     "v",
                     Type::function(
@@ -31,9 +31,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
                 ),
                 |handle| Box::pin(boxmap_new(handle, Handle::string, Handle::provide_string)),
             ),
-            // BoxMap.Bytes : [type v] [List<(Bytes) box v>] BoxMap<Bytes, v>
+            // BoxMap.OfBytes : [type v] [List<(Bytes) box v>] BoxMap<Bytes, v>
             Definition::external(
-                "Bytes",
+                "OfBytes",
                 Type::forall(
                     "v",
                     Type::function(
@@ -47,9 +47,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
                 ),
                 |handle| Box::pin(boxmap_new(handle, Handle::bytes, Handle::provide_bytes)),
             ),
-            // BoxMap.Int : [type v] [List<(Int) box v>] BoxMap<Int, v>
+            // BoxMap.OfInt : [type v] [List<(Int) box v>] BoxMap<Int, v>
             Definition::external(
-                "Int",
+                "OfInt",
                 Type::forall(
                     "v",
                     Type::function(
@@ -63,9 +63,9 @@ pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved
                 ),
                 |handle| Box::pin(boxmap_new(handle, Handle::int, Handle::provide_int)),
             ),
-            // BoxMap.Nat : [type v] [List<(Nat) box v>] BoxMap<Nat, v>
+            // BoxMap.OfNat : [type v] [List<(Nat) box v>] BoxMap<Nat, v>
             Definition::external(
-                "Nat",
+                "OfNat",
                 Type::forall(
                     "v",
                     Type::function(

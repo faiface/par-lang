@@ -17,7 +17,7 @@ type Map<k, v> = iterative choice {
   },
 }
 
-dec String : [type v] [List<(String) box v>] Map<String, v>
-dec Bytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>
-dec Int    : [type v] [List<(Int) box v>]    Map<Int, v>
-dec Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>
+dec OfString : [type v] [List<(String) box v>] Map<String, v>
+dec OfBytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>
+dec OfInt    : [type v] [List<(Int) box v>]    Map<Int, v>
+dec OfNat    : [type v] [List<(Nat) box v>]    Map<Nat, v>

@@ -105,7 +105,7 @@ def ServeChat = [api] do {
   // We initialize a map of pending message: sent but not received yet.
   // The key is the username, the value is a list builder of `(from) content` pairs.
   // If an entry is missing, it means the user is not logged in.
-  let messages = Map.String(type List.Builder<(String) String>)(*())
+  let messages = Map.OfString(type List.Builder<(String) String>)(*())
 } in poll(APIFan(api)) {  // We start polling on the fanned version of the API.
   // A client has started an interaction.
   client => client.case {
