@@ -193,6 +193,12 @@ fn global_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
         .parse_next(input)
 }
 
+fn global_binding_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
+    uppercase_identifier
+        .map(|(span, primary)| GlobalName::new(span, Unresolved { qualifier: None }, primary))
+        .parse_next(input)
+}
+
 fn module_decl(input: &mut Input) -> Result<ModuleDecl> {
     commit_after(t(TokenKind::Module), uppercase_identifier)
         .map(|(module_kw, (name_span, name))| ModuleDecl {
@@ -505,7 +511,7 @@ pub fn parse_bytes(input: &str, file: &FileName) -> Option<Vec<u8>> {
 fn type_def(input: &mut Input) -> Result<TypeDef<Unresolved>> {
     commit_after(
         t(TokenKind::Type),
-        (global_name, type_params, t(TokenKind::Eq), typ),
+        (global_binding_name, type_params, t(TokenKind::Eq), typ),
     )
     .map(|(pre, (name, type_params, _, typ))| TypeDef {
         span: pre.span.join(typ.span()),
@@ -518,14 +524,17 @@ fn type_def(input: &mut Input) -> Result<TypeDef<Unresolved>> {
 }
 
 fn declaration(input: &mut Input) -> Result<Declaration<Unresolved>> {
-    commit_after(t(TokenKind::Dec), (global_name, t(TokenKind::Colon), typ))
-        .map(|(pre, (name, _, typ))| Declaration {
-            span: pre.span.join(typ.span()),
-            name,
-            typ,
-        })
-        .context(StrContext::Label("declaration"))
-        .parse_next(input)
+    commit_after(
+        t(TokenKind::Dec),
+        (global_binding_name, t(TokenKind::Colon), typ),
+    )
+    .map(|(pre, (name, _, typ))| Declaration {
+        span: pre.span.join(typ.span()),
+        name,
+        typ,
+    })
+    .context(StrContext::Label("declaration"))
+    .parse_next(input)
 }
 
 fn definition(
@@ -536,7 +545,12 @@ fn definition(
 )> {
     commit_after(
         t(TokenKind::Def),
-        (global_name, annotation, t(TokenKind::Eq), expression),
+        (
+            global_binding_name,
+            annotation,
+            t(TokenKind::Eq),
+            expression,
+        ),
     )
     .map(|(pre, (name, annotation, _, expression))| {
         (

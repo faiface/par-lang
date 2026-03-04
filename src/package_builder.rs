@@ -70,6 +70,12 @@ pub enum PackageBuildError {
         qualifier: String,
         name: String,
     },
+    QualifiedCurrentModuleReference {
+        source: Arc<str>,
+        span: Span,
+        qualifier: String,
+        name: String,
+    },
     UnattachedExternalModule {
         package: PackageId,
         module_path: String,
@@ -98,6 +104,13 @@ impl Display for PackageBuildError {
                 f,
                 "Unknown module qualifier `{}` in reference `{}`",
                 qualifier, name
+            ),
+            Self::QualifiedCurrentModuleReference {
+                qualifier, name, ..
+            } => write!(
+                f,
+                "Reference `{}` uses qualifier `{}` for current module; use unqualified name",
+                name, qualifier
             ),
             Self::UnattachedExternalModule {
                 package,
@@ -319,13 +332,68 @@ fn resolve_module(
     current_module_path: &ResolvedModulePath,
     file_source: Arc<str>,
 ) -> Result<Module<Arc<process::Expression<(), Resolved>>, Resolved>, PackageBuildError> {
-    module.map_global_names(|name| {
-        resolve_name_to_resolved(
-            name,
-            &imports,
-            current_module_path,
-            Arc::clone(&file_source),
-        )
+    Ok(Module {
+        type_defs: module
+            .type_defs
+            .into_iter()
+            .map(|type_def| {
+                let mut map_name = |name| {
+                    resolve_reference_name_to_resolved(
+                        name,
+                        &imports,
+                        current_module_path,
+                        Arc::clone(&file_source),
+                    )
+                };
+                Ok(par_core::frontend::TypeDef {
+                    span: type_def.span,
+                    name: resolve_binding_name_to_resolved(type_def.name, current_module_path),
+                    params: type_def.params,
+                    typ: type_def.typ.map_global_names(&mut map_name)?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        declarations: module
+            .declarations
+            .into_iter()
+            .map(|declaration| {
+                let mut map_name = |name| {
+                    resolve_reference_name_to_resolved(
+                        name,
+                        &imports,
+                        current_module_path,
+                        Arc::clone(&file_source),
+                    )
+                };
+                Ok(par_core::frontend::Declaration {
+                    span: declaration.span,
+                    name: resolve_binding_name_to_resolved(declaration.name, current_module_path),
+                    typ: declaration.typ.map_global_names(&mut map_name)?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        definitions: module
+            .definitions
+            .into_iter()
+            .map(|definition| {
+                let mut map_name = |name| {
+                    resolve_reference_name_to_resolved(
+                        name,
+                        &imports,
+                        current_module_path,
+                        Arc::clone(&file_source),
+                    )
+                };
+                Ok(par_core::frontend::Definition {
+                    span: definition.span,
+                    name: resolve_binding_name_to_resolved(definition.name, current_module_path),
+                    expression: Arc::new(
+                        Arc::unwrap_or_clone(definition.expression)
+                            .map_global_names(&mut map_name)?,
+                    ),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
@@ -450,7 +518,14 @@ fn format_import_path(path: &ImportPath) -> String {
     segments.join("/")
 }
 
-fn resolve_name_to_resolved(
+fn resolve_binding_name_to_resolved(
+    name: GlobalName<Unresolved>,
+    current_module_path: &ResolvedModulePath,
+) -> GlobalName<Resolved> {
+    GlobalName::new(name.span, current_module_path.clone(), name.primary)
+}
+
+fn resolve_reference_name_to_resolved(
     mut name: GlobalName<Unresolved>,
     imports: &BTreeMap<String, ResolvedModulePath>,
     current_module_path: &ResolvedModulePath,
@@ -465,6 +540,15 @@ fn resolve_name_to_resolved(
                 name: format!("{}.{}", module_qualifier, name.primary),
             });
         };
+
+        if target_module == current_module_path {
+            return Err(PackageBuildError::QualifiedCurrentModuleReference {
+                source: file_source,
+                span: name.span.clone(),
+                qualifier: module_qualifier.clone(),
+                name: format!("{}.{}", module_qualifier, name.primary),
+            });
+        }
 
         return Ok(GlobalName::new(
             name.span,

@@ -7,11 +7,11 @@ import @core/Option
 import @core/Result
 import @core/String
 
-type Os.Error  = String
-type Os.Reader = Bytes.Reader<Os.Error>
-type Os.Writer = Bytes.Writer<Os.Error>
+type Error  = String
+type Reader = Bytes.Reader<Error>
+type Writer = Bytes.Writer<Error>
 
-type Os.Path = iterative@append recursive@parent box choice {
+type Path = iterative@append recursive@parent box choice {
   .name => Bytes,
   .absolute => Bytes,
   .parts => List<Bytes>,
@@ -20,24 +20,24 @@ type Os.Path = iterative@append recursive@parent box choice {
   .append(Bytes) => self@append,
 }
 
-dec Os.Path : [Bytes] Os.Path
+dec Path : [Bytes] Path
 
-dec Os.Stdin  : Os.Reader
-dec Os.Stdout : Os.Writer
-dec Os.Stderr : Os.Writer
+dec Stdin  : Reader
+dec Stdout : Writer
+dec Stderr : Writer
 
-dec Os.OpenFile             : [Os.Path] Result<Os.Error, Os.Reader>
-dec Os.CreateOrReplaceFile  : [Os.Path] Result<Os.Error, Os.Writer>
-dec Os.CreateNewFile        : [Os.Path] Result<Os.Error, Os.Writer>
-dec Os.AppendToFile         : [Os.Path] Result<Os.Error, Os.Writer>
-dec Os.CreateOrAppendToFile : [Os.Path] Result<Os.Error, Os.Writer>
+dec OpenFile             : [Path] Result<Error, Reader>
+dec CreateOrReplaceFile  : [Path] Result<Error, Writer>
+dec CreateNewFile        : [Path] Result<Error, Writer>
+dec AppendToFile         : [Path] Result<Error, Writer>
+dec CreateOrAppendToFile : [Path] Result<Error, Writer>
 
-dec Os.CreateDir   : [Os.Path] Result<Os.Error, !>
-dec Os.ListDir     : [Os.Path] Result<Os.Error, List<Os.Path>>
-dec Os.TraverseDir : [Os.Path] Result<Os.Error, recursive either {
+dec CreateDir   : [Path] Result<Error, !>
+dec ListDir     : [Path] Result<Error, List<Path>>
+dec TraverseDir : [Path] Result<Error, recursive either {
   .end!,
-  .file(Os.Path) self,
-  .dir(Os.Path, self) self,
+  .file(Path) self,
+  .dir(Path, self) self,
 }>
 
-dec Os.Env : BoxMap.Readonly<Bytes, Bytes>
+dec Env : BoxMap.Readonly<Bytes, Bytes>

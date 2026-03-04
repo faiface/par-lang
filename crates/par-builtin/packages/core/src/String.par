@@ -8,31 +8,31 @@ import Nat
 import Ordering
 import Result
 
-type String.Builder = iterative choice {
+type Builder = iterative choice {
   .add(String) => self,
   .build => String,
 }
 
-type String.Parser<e> = recursive iterative@attempt choice {
+type Parser<e> = recursive iterative@attempt choice {
   .close => Result<e, !>,
   .remainder => Result<e, String>,
   .char => either {
     .end Result<e, !>,
     .char(Char) self,
   },
-  .match(String.Pattern, String.Pattern) => either {
+  .match(Pattern, Pattern) => either {
     .end Result<e, !>,
     .fail self@attempt,
     .match(String, String) self,
   },
-  .matchEnd(String.Pattern, String.Pattern) => either {
+  .matchEnd(Pattern, Pattern) => either {
     .end Result<e, !>,
     .fail self@attempt,
     .match(String, String)!,
   },
 }
 
-type String.Pattern = recursive either {
+type Pattern = recursive either {
   .empty!,
   .str String,
   .one Char.Class,
@@ -46,19 +46,19 @@ type String.Pattern = recursive either {
   .or List<self>,
 }
 
-dec String.Quote     : [String] String
-dec String.FromBytes : [Bytes] String
+dec Quote     : [String] String
+dec FromBytes : [Bytes] String
 
-dec String.Equals    : [String, String] Bool
-dec String.Compare   : [String, String] Ordering
+dec Equals    : [String, String] Bool
+dec Compare   : [String, String] Ordering
 
-dec String.Builder : String.Builder
-dec String.Parser  : [String] String.Parser<either {}>
+dec Builder : Builder
+dec Parser  : [String] Parser<either {}>
 
-dec String.ParserFromReader : <e>[Bytes.Reader<e>] String.Parser<e>
+dec ParserFromReader : <e>[Bytes.Reader<e>] Parser<e>
 
-dec String.Lines : <e>[String.Parser<e>] List.Result<e, String>
-def String.Lines = <e>[parser]
+dec Lines : <e>[Parser<e>] List.Result<e, String>
+def Lines = <e>[parser]
   catch e => .end .err e in
   parser.begin.match(.repeat.one.any!, .str "\n").case {
     .end try ! => .end .ok!,
@@ -66,9 +66,9 @@ def String.Lines = <e>[parser]
     .match(line, _) parser => .item(line) parser.loop,
   }
 
-dec String.Join : [List<String>, String] String
-def String.Join = [list, sep]
-  let builder = String.Builder in
+dec Join : [List<String>, String] String
+def Join = [list, sep]
+  let builder = Builder in
   list.case {
     .end! => builder.build,
     .item(v) list => do {
@@ -81,9 +81,9 @@ def String.Join = [list, sep]
     },
   }
 
-dec String.Concat : [List<String>] String
-def String.Concat = [list]
-  let builder = String.Builder in
+dec Concat : [List<String>] String
+def Concat = [list]
+  let builder = Builder in
   list.begin.case {
     .end! => builder.build,
     .item(v) list => do {

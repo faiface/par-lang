@@ -77,6 +77,11 @@ impl BuildError {
             })
             | Self::PackageBuild(PackageBuildError::UnknownModuleQualifier {
                 source, span, ..
+            })
+            | Self::PackageBuild(PackageBuildError::QualifiedCurrentModuleReference {
+                source,
+                span,
+                ..
             }) => format_with_source_span(source.clone(), span, self.to_string()),
             Self::PackageBuild(error) => error.to_string(),
             Self::Type { error, sources } => {

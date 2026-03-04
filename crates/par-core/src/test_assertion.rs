@@ -27,7 +27,7 @@ fn test_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved>
     Module {
         type_defs: vec![TypeDef {
             span: Span::None,
-            name: GlobalName::external(Some("Test"), "Test"),
+            name: GlobalName::external(None, "Test"),
             params: vec![],
             typ: Type::iterative_box_choice(
                 None,

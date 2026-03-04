@@ -37,7 +37,8 @@ def TestFailingExample: [Test] ! = [test] do {
 
 def Program: ! = Console.Open
   .print("This is the main program")
-  .print("Run with: par-lang run TestExample.par")
-  .print("Test with: par-lang test TestExample.par")
+  .print("Run with: par-lang run par")
+  .print("Test with: par-lang test par")
   .close
+
 

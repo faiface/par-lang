@@ -3,7 +3,7 @@ module Char
 import Bool
 import Nat
 
-type Char.Class = either {
+type Class = either {
   .any!,
   .char Char,
   .whitespace!,
@@ -15,6 +15,6 @@ type Char.Class = either {
   },
 }
 
-dec Char.Equals : [Char, Char] Bool
-dec Char.Code   : [Char] Nat
-dec Char.Is     : [Char, Char.Class] Bool
+dec Equals : [Char, Char] Bool
+dec Code   : [Char] Nat
+dec Is     : [Char, Class] Bool

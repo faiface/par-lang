@@ -4,7 +4,7 @@ import List
 import Result
 import String
 
-type Url.Error = String
+type Error = String
 
 type Url = iterative box choice {
   .full => String,
@@ -16,4 +16,4 @@ type Url = iterative box choice {
   .addQuery(String, String) => self,
 }
 
-dec Url.FromString : [String] Result<Url.Error, Url>
+dec FromString : [String] Result<Error, Url>

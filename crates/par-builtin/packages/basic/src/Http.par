@@ -7,22 +7,22 @@ import @core/Result
 import @core/String
 import @core/Url
 
-type Http.Error  = String
+type Error  = String
 
-type Http.Request =
+type Request =
   (String)
   (Url)
   (List<(String) Bytes>)
-  Bytes.Reader<Http.Error>
+  Bytes.Reader<Error>
 
-type Http.Response =
+type Response =
   (Nat)
   (List<(String) Bytes>)
-  Bytes.Reader<Http.Error>
+  Bytes.Reader<Error>
 
-dec Http.Fetch : [Http.Request] Result<Http.Error, Http.Response>
+dec Fetch : [Request] Result<Error, Response>
 
-dec Http.Listen : [String] recursive either {
-  .shutdown Result<Http.Error, !>,
-  .incoming(Http.Request, [Http.Response] Result<Http.Error, !>) self,
+dec Listen : [String] recursive either {
+  .shutdown Result<Error, !>,
+  .incoming(Request, [Response] Result<Error, !>) self,
 }

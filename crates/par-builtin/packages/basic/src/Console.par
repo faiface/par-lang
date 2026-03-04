@@ -9,4 +9,4 @@ type Console = iterative choice {
   .prompt(String) => (Option<String>) self,
 }
 
-dec Console.Open : Console
+dec Open : Console

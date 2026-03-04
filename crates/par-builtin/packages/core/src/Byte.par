@@ -3,12 +3,12 @@ module Byte
 import Bool
 import Nat
 
-type Byte.Class = either {
+type Class = either {
   .any!,
   .byte Byte,
   .range(Byte, Byte)!,
 }
 
-dec Byte.Equals : [Byte, Byte] Bool
-dec Byte.Code   : [Byte] Nat
-dec Byte.Is     : [Byte, Byte.Class] Bool
+dec Equals : [Byte, Byte] Bool
+dec Code   : [Byte] Nat
+dec Is     : [Byte, Class] Bool

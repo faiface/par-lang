@@ -4,7 +4,7 @@ import @core/List
 import @core/String
 import @basic/Time
 
-def PlayWithQueue: Queue<String> = Queue.Empty(type String)
+def PlayWithQueue: Queue<String> = Empty(type String)
 
 type Queue<a> =
   iterative@push recursive@pop
@@ -46,4 +46,5 @@ def Empty = [type a] do {
     }
   }
 }
+
 

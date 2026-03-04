@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, btree_map::Entry};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use par_core::frontend::language::{GlobalName, Unresolved};
+use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Module, process};
 use par_core::testing::import_test_module;
 
@@ -120,7 +120,6 @@ fn builtin_package_root(package_name: &str) -> PathBuf {
 
 impl BuiltinPackage {
     fn append_external(&mut self, module_path: BuiltinModulePath, module: BuiltinModule) {
-        let module = module_with_name(&module_path.module, module);
         match self.externals.entry(module_path) {
             Entry::Vacant(vacant) => {
                 vacant.insert(module);
@@ -134,17 +133,6 @@ impl BuiltinPackage {
     fn append_root_external(&mut self, module_name: impl Into<String>, module: BuiltinModule) {
         self.append_external(BuiltinModulePath::root(module_name), module);
     }
-}
-
-fn module_with_name(module_name: &str, module: BuiltinModule) -> BuiltinModule {
-    module
-        .map_global_names(|mut name| {
-            if name.module.qualifier.is_none() {
-                name.module.qualifier = Some(module_name.to_string());
-            }
-            Ok::<GlobalName<Unresolved>, ()>(name)
-        })
-        .expect("builtin module naming should not fail")
 }
 
 fn append_module(target: &mut BuiltinModule, mut other: BuiltinModule) {

@@ -6,24 +6,24 @@ import Nat
 import Ordering
 import String
 
-dec Int.Add   : [Int, Int] Int
-dec Int.Sub   : [Int, Int] Int
-dec Int.Mul   : [Int, Int] Int
-dec Int.Div   : [Int, Int] Int
-dec Int.Mod   : [Int, Nat] Nat
-dec Int.Min   : [Int, Int] Int
-dec Int.Max   : [Int, Int] Int
-dec Int.Abs   : [Int] Nat
-dec Int.Clamp : [Int] [Int, Int] Int
+dec Add   : [Int, Int] Int
+dec Sub   : [Int, Int] Int
+dec Mul   : [Int, Int] Int
+dec Div   : [Int, Int] Int
+dec Mod   : [Int, Nat] Nat
+dec Min   : [Int, Int] Int
+dec Max   : [Int, Int] Int
+dec Abs   : [Int] Nat
+dec Clamp : [Int] [Int, Int] Int
 
-dec Int.Equals  : [Int, Int] Bool
-dec Int.Compare : [Int, Int] Ordering
+dec Equals  : [Int, Int] Bool
+dec Compare : [Int, Int] Ordering
 
-dec Int.Range : [Int, Int] List<Int>
+dec Range : [Int, Int] List<Int>
 
-dec Int.ToString : [Int] String
+dec ToString : [Int] String
 
-dec Int.FromString : [String] either {
+dec FromString : [String] either {
   .ok Int,
   .err!,
 }

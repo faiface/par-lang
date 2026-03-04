@@ -113,6 +113,13 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
                 span,
                 ..
             },
+        )
+        | CompileError::PackageBuild(
+            error @ crate::package_builder::PackageBuildError::QualifiedCurrentModuleReference {
+                source,
+                span,
+                ..
+            },
         ) => (
             span.clone(),
             format_with_source_span(source.clone(), span, error.to_string()),

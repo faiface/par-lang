@@ -2,4 +2,4 @@ module Time
 
 import @core/Nat
 
-dec Time.Now : [!] Nat
+dec Now : [!] Nat
