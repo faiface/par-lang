@@ -1,4 +1,4 @@
-use crate::package_builder::{PackageBuildError, load_lowered_package};
+use crate::package_builder::{PackageBuildError, parse_and_load_package};
 use crate::package_loader::{CanonicalModulePath, PackageLoadError};
 use crate::package_utils::{
     SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
@@ -68,9 +68,7 @@ impl BuildError {
             Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
-            Self::PackageBuild(PackageBuildError::UnsupportedDependency {
-                source, span, ..
-            })
+            Self::PackageBuild(PackageBuildError::UnknownDependency { source, span, .. })
             | Self::PackageBuild(PackageBuildError::ImportedModuleNotFound {
                 source, span, ..
             })
@@ -78,9 +76,6 @@ impl BuildError {
                 source, span, ..
             })
             | Self::PackageBuild(PackageBuildError::UnknownModuleQualifier {
-                source, span, ..
-            })
-            | Self::PackageBuild(PackageBuildError::ResolvedModuleNotFound {
                 source, span, ..
             }) => format_with_source_span(source.clone(), span, self.to_string()),
             Self::PackageBuild(error) => error.to_string(),
@@ -118,7 +113,7 @@ fn build_checked_package(
     ),
     BuildError,
 > {
-    let lowered_package = load_lowered_package(package_path).map_err(BuildError::PackageBuild)?;
+    let lowered_package = parse_and_load_package(package_path).map_err(BuildError::PackageBuild)?;
     let sources = lowered_package.sources;
     let checked = type_check(&lowered_package.lowered).map_err(|error| BuildError::Type {
         error,

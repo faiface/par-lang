@@ -1,0 +1,20 @@
+module Char
+
+import Bool
+import Nat
+
+type Char.Class = either {
+  .any!,
+  .char Char,
+  .whitespace!,
+  .ascii either {
+    .any!,
+    .alpha!,
+    .alphanum!,
+    .digit!,
+  },
+}
+
+dec Char.Equals : [Char, Char] Bool
+dec Char.Code   : [Char] Nat
+dec Char.Is     : [Char, Char.Class] Bool

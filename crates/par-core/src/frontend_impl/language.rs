@@ -31,20 +31,27 @@ pub struct Unresolved {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Resolved {
-    pub directories: Vec<String>,
-    pub module: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum UniversalPackage {
+pub enum ResolvedPackageRef {
     Local,
     Dependency(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Resolved {
+    pub package: ResolvedPackageRef,
+    pub directories: Vec<String>,
+    pub module: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PackageId {
+    Local,
+    Builtin(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Universal {
-    pub package: UniversalPackage,
+    pub package: PackageId,
     pub directories: Vec<String>,
     pub module: String,
 }
@@ -454,10 +461,22 @@ impl Display for LocalName {
 
 impl Display for Resolved {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.directories.is_empty() {
-            write!(f, "{}", self.module)
-        } else {
-            write!(f, "{}/{}", self.directories.join("/"), self.module)
+        let package = match &self.package {
+            ResolvedPackageRef::Local => None,
+            ResolvedPackageRef::Dependency(name) => Some(format!("@{name}")),
+        };
+        match (&package, self.directories.is_empty()) {
+            (None, true) => write!(f, "{}", self.module),
+            (None, false) => write!(f, "{}/{}", self.directories.join("/"), self.module),
+            (Some(package), true) => write!(f, "{package}/{}", self.module),
+            (Some(package), false) => {
+                write!(
+                    f,
+                    "{package}/{}/{}",
+                    self.directories.join("/"),
+                    self.module
+                )
+            }
         }
     }
 }
@@ -474,8 +493,8 @@ impl Display for Unresolved {
 impl Display for Universal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let package = match &self.package {
-            UniversalPackage::Local => None,
-            UniversalPackage::Dependency(name) => Some(format!("@{name}")),
+            PackageId::Local => None,
+            PackageId::Builtin(name) => Some(format!("@{name}")),
         };
         match (&package, self.directories.is_empty()) {
             (None, true) => write!(f, "{}", self.module),

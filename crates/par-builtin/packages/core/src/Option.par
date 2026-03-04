@@ -1,0 +1,5 @@
+module Option
+
+import Result
+
+type Option<a> = Result<!, a>

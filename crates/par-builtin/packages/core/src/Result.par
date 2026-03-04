@@ -1,0 +1,14 @@
+module Result
+
+type Result<e, a> = either {
+  .ok a,
+  .err e,
+}
+
+dec Result.Always : <a>[Result<either {}, a>] a
+def Result.Always = <a>[result] result.case {
+  .ok value => value,
+  .err impossible => impossible.case {},
+}
+
+type Option<a> = Result<!, a>

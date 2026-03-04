@@ -1,0 +1,72 @@
+module Bytes
+
+import Bool
+import Byte
+import List
+import Nat
+import Ordering
+import Result
+
+type Bytes.Builder = iterative choice {
+  .add(Bytes) => self,
+  .build => Bytes,
+}
+
+type Bytes.Reader<e> = recursive choice {
+  .close => Result<e, !>,
+  .read => Result<e, either {
+    .end!,
+    .chunk(Bytes) self,
+  }>,
+}
+
+type Bytes.Writer<e> = iterative choice {
+  .close => Result<e, !>,
+  .flush => Result<e, self>,
+  .write(Bytes) => Result<e, self>,
+}
+
+type Bytes.Parser<e> = recursive iterative@attempt choice {
+  .close => Result<e, !>,
+  .remainder => Result<e, Bytes>,
+  .byte => either {
+    .end Result<e, !>,
+    .byte(Byte) self,
+  },
+  .match(Bytes.Pattern, Bytes.Pattern) => either {
+    .end Result<e, !>,
+    .fail self@attempt,
+    .match(Bytes, Bytes) self,
+  },
+  .matchEnd(Bytes.Pattern, Bytes.Pattern) => either {
+    .end Result<e, !>,
+    .fail self@attempt,
+    .match(Bytes, Bytes)!,
+  },
+}
+
+type Bytes.Pattern = recursive either {
+  .empty!,
+  .bytes Bytes,
+  .one Byte.Class,
+  .non Byte.Class,
+  .min Nat,
+  .max Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List<self>,
+  .and List<self>,
+  .or List<self>,
+}
+
+dec Bytes.Equals  : [Bytes, Bytes] Bool
+dec Bytes.Compare : [Bytes, Bytes] Ordering
+dec Bytes.Length  : [Bytes] Nat
+dec Bytes.Builder : Bytes.Builder
+dec Bytes.Reader  : [Bytes] Bytes.Reader<either {}>
+dec Bytes.Parser  : [Bytes] Bytes.Parser<either {}>
+
+dec Bytes.EmptyReader      : Bytes.Reader<either {}>
+dec Bytes.ParserFromReader : <e>[Bytes.Reader<e>] Bytes.Parser<e>
+
+dec Bytes.PipeReader : [type e] [[Bytes.Writer<!>] Result<e, !>] Bytes.Reader<e>

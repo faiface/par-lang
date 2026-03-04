@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use par_core::frontend::TypeError;
-use par_core::frontend::language::{Universal, UniversalPackage};
+use par_core::frontend::language::{PackageId, Universal};
 use par_core::source::{FileName, Span};
 
 use crate::package_loader::CanonicalModulePath;
@@ -53,7 +53,7 @@ pub fn format_with_source_span(
 }
 
 pub fn local_module_slash_path(module: &Universal) -> Option<String> {
-    if module.package != UniversalPackage::Local {
+    if module.package != PackageId::Local {
         return None;
     }
     if module.directories.is_empty() {

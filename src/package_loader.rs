@@ -346,7 +346,7 @@ pub fn parse_loaded_files(
     Ok(ParsedPackage { modules })
 }
 
-pub fn load_package(start: impl AsRef<Path>) -> Result<ParsedPackage, PackageLoadError> {
+pub fn parse_package(start: impl AsRef<Path>) -> Result<ParsedPackage, PackageLoadError> {
     let layout = find_package_layout(start)?;
     let files = collect_source_files(&layout)?;
     parse_loaded_files(files)

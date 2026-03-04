@@ -1,0 +1,29 @@
+module BoxMap
+
+import Bytes
+import Int
+import List
+import Nat
+import Option
+import String
+
+type BoxMap<k, v> = iterative box choice {
+  .size => Nat,
+  .keys => List<k>,
+  .list => List<(k) box v>,
+  .get(k) => Option<box v>,
+  .put(k, box v) => self,
+  .delete(k) => self,
+}
+
+type BoxMap.Readonly<k, v> = box choice {
+  .size => Nat,
+  .keys => List<k>,
+  .list => List<(k) box v>,
+  .get(k) => Option<box v>,
+}
+
+dec BoxMap.String : [type v] [List<(String) box v>] BoxMap<String, v>
+dec BoxMap.Bytes  : [type v] [List<(Bytes) box v>]  BoxMap<Bytes, v>
+dec BoxMap.Int    : [type v] [List<(Int) box v>]    BoxMap<Int, v>
+dec BoxMap.Nat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v>

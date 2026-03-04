@@ -1,0 +1,40 @@
+module Nat
+
+import Bool
+import Int
+import List
+import Ordering
+import String
+
+dec Nat.Add   : [Nat, Nat] Nat
+dec Nat.Sub   : [Nat, Int] Nat
+dec Nat.Mul   : [Nat, Nat] Nat
+dec Nat.Div   : [Nat, Nat] Nat
+dec Nat.Mod   : [Nat, Nat] Nat
+dec Nat.Min   : [Nat, Nat] Nat
+dec Nat.Max   : [Nat, Int] Nat
+dec Nat.Clamp : [Int] [Nat, Nat] Nat
+
+dec Nat.Equals  : [Nat, Nat] Bool
+dec Nat.Compare : [Nat, Nat] Ordering
+
+dec Nat.Repeat : [Nat] recursive either {
+  .end!,
+  .step self,
+}
+
+dec Nat.RepeatLazy : [Nat] recursive either {
+  .end!,
+  .step box choice {
+    .next => self,
+  }
+}
+
+dec Nat.Range : [Nat, Nat] List<Nat>
+
+dec Nat.ToString : [Nat] String
+
+dec Nat.FromString : [String] either {
+  .ok Nat,
+  .err!,
+}

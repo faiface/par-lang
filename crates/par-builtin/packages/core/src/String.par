@@ -1,0 +1,92 @@
+module String
+
+import Bool
+import Bytes
+import Char
+import List
+import Nat
+import Ordering
+import Result
+
+type String.Builder = iterative choice {
+  .add(String) => self,
+  .build => String,
+}
+
+type String.Parser<e> = recursive iterative@attempt choice {
+  .close => Result<e, !>,
+  .remainder => Result<e, String>,
+  .char => either {
+    .end Result<e, !>,
+    .char(Char) self,
+  },
+  .match(String.Pattern, String.Pattern) => either {
+    .end Result<e, !>,
+    .fail self@attempt,
+    .match(String, String) self,
+  },
+  .matchEnd(String.Pattern, String.Pattern) => either {
+    .end Result<e, !>,
+    .fail self@attempt,
+    .match(String, String)!,
+  },
+}
+
+type String.Pattern = recursive either {
+  .empty!,
+  .str String,
+  .one Char.Class,
+  .non Char.Class,
+  .min Nat,
+  .max Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List<self>,
+  .and List<self>,
+  .or List<self>,
+}
+
+dec String.Quote     : [String] String
+dec String.FromBytes : [Bytes] String
+
+dec String.Equals    : [String, String] Bool
+dec String.Compare   : [String, String] Ordering
+
+dec String.Builder : String.Builder
+dec String.Parser  : [String] String.Parser<either {}>
+
+dec String.ParserFromReader : <e>[Bytes.Reader<e>] String.Parser<e>
+
+dec String.Lines : <e>[String.Parser<e>] List.Result<e, String>
+def String.Lines = <e>[parser]
+  catch e => .end .err e in
+  parser.begin.match(.repeat.one.any!, .str "\n").case {
+    .end try ! => .end .ok!,
+    .fail parser => let try r = parser.remainder in .item(r) .end .ok!,
+    .match(line, _) parser => .item(line) parser.loop,
+  }
+
+dec String.Join : [List<String>, String] String
+def String.Join = [list, sep]
+  let builder = String.Builder in
+  list.case {
+    .end! => builder.build,
+    .item(v) list => do {
+      builder.add(v)
+    } in list.begin.case {
+      .end! => builder.build,
+      .item(v) list => do {
+        builder.add(sep).add(v)
+      } in list.loop,
+    },
+  }
+
+dec String.Concat : [List<String>] String
+def String.Concat = [list]
+  let builder = String.Builder in
+  list.begin.case {
+    .end! => builder.build,
+    .item(v) list => do {
+      builder.add(v)
+    } in list.loop,
+  }

@@ -1,0 +1,21 @@
+module Cell
+
+type Cell<a> = iterative choice {
+  .end => ?,
+  .split(dual self) => self,
+  .take => (a) choice {
+    .put(a) => self,
+  }
+}
+
+dec Cell.Share : <a>[a] [dual Cell<a>] a
+def Cell.Share = <a>[value] [client] poll(client) {
+  session => session.case {
+    .end! => submit(),
+    .split(client1) client2 => submit(client1, client2),
+    .take session => session(value).case {
+      .put(value) client => submit(client),
+    }
+  }
+  else => value,
+}

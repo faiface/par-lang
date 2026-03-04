@@ -1,0 +1,19 @@
+module Url
+
+import List
+import Result
+import String
+
+type Url.Error = String
+
+type Url = iterative box choice {
+  .full => String,
+  .protocol => String,
+  .host => String,
+  .path => String,
+  .query => List<(String) String>,
+  .appendPath(String) => self,
+  .addQuery(String, String) => self,
+}
+
+dec Url.FromString : [String] Result<Url.Error, Url>

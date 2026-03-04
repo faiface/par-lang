@@ -1,0 +1,23 @@
+module Map
+
+import Bytes
+import Int
+import List
+import Nat
+import Option
+import String
+
+type Map<k, v> = iterative choice {
+  .size => (Nat) self,
+  .keys => (List<k>) self,
+  .list => List<(k) v>,
+  .entry(k) => (Option<v>) choice {
+    .put(v) => self,
+    .delete => self,
+  },
+}
+
+dec Map.String : [type v] [List<(String) box v>] Map<String, v>
+dec Map.Bytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>
+dec Map.Int    : [type v] [List<(Int) box v>]    Map<Int, v>
+dec Map.Nat    : [type v] [List<(Nat) box v>]    Map<Nat, v>

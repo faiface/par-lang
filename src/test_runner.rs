@@ -17,7 +17,7 @@ use par_core::{
 };
 use par_runtime::spawn::TokioSpawn;
 
-use crate::package_builder::{PackageBuildError, load_lowered_package};
+use crate::package_builder::{PackageBuildError, parse_and_load_package};
 use crate::package_loader::{CanonicalModulePath, PackageLoadError};
 use crate::package_utils::{
     SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
@@ -52,7 +52,7 @@ impl BuildError {
                 format!("{:?}", error.to_report(source.clone()))
             }
             Self::PackageBuild(
-                error @ PackageBuildError::UnsupportedDependency { source, span, .. },
+                error @ PackageBuildError::UnknownDependency { source, span, .. },
             )
             | Self::PackageBuild(
                 error @ PackageBuildError::ImportedModuleNotFound { source, span, .. },
@@ -62,9 +62,6 @@ impl BuildError {
             )
             | Self::PackageBuild(
                 error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
-            )
-            | Self::PackageBuild(
-                error @ PackageBuildError::ResolvedModuleNotFound { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::PackageBuild(error) => error.to_string(),
             Self::Type { error, sources } => {
@@ -85,7 +82,7 @@ fn build_for_run(
     package_path: &Path,
     max_interactions: u32,
 ) -> Result<(CheckedModule<Universal>, Compiled, Vec<CanonicalModulePath>), BuildError> {
-    let lowered_package = load_lowered_package(package_path).map_err(BuildError::PackageBuild)?;
+    let lowered_package = parse_and_load_package(package_path).map_err(BuildError::PackageBuild)?;
     let sources = lowered_package.sources;
     let checked = type_check(&lowered_package.lowered).map_err(|error| BuildError::Type {
         error,

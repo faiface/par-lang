@@ -1,0 +1,28 @@
+module Http
+
+import @core/Bytes
+import @core/List
+import @core/Nat
+import @core/Result
+import @core/String
+import @core/Url
+
+type Http.Error  = String
+
+type Http.Request =
+  (String)
+  (Url)
+  (List<(String) Bytes>)
+  Bytes.Reader<Http.Error>
+
+type Http.Response =
+  (Nat)
+  (List<(String) Bytes>)
+  Bytes.Reader<Http.Error>
+
+dec Http.Fetch : [Http.Request] Result<Http.Error, Http.Response>
+
+dec Http.Listen : [String] recursive either {
+  .shutdown Result<Http.Error, !>,
+  .incoming(Http.Request, [Http.Response] Result<Http.Error, !>) self,
+}

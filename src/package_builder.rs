@@ -3,36 +3,39 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use par_builtin::{BuiltinPackage, builtin_packages};
+use par_builtin::{BuiltinModule, BuiltinModulePath, BuiltinPackage, builtin_packages};
 use par_core::frontend::language::{
-    CompileError, GlobalName, Resolved, Universal, UniversalPackage, Unresolved,
+    CompileError, GlobalName, PackageId, Resolved, ResolvedPackageRef, Universal, Unresolved,
 };
 use par_core::frontend::process;
 use par_core::frontend::{ImportDecl, ImportPath, Module, lower};
 use par_core::source::{FileName, Span};
 
 use crate::package_loader::{
-    CanonicalModulePath, PackageLoadError, ParsedPackage, ParsedPackageFile, load_package,
+    CanonicalModulePath, PackageLoadError, ParsedPackage, ParsedPackageFile, parse_package,
 };
 
 type ResolvedModulePath = Resolved;
 type UniversalModulePath = Universal;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ModuleLookupKey {
-    package: UniversalPackage,
-    directories: Vec<String>,
-    module_lower: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ResolvedLookupKey {
+struct AbsoluteModuleLookupKey {
+    package: PackageId,
     directories: Vec<String>,
     module_lower: String,
 }
 
 #[derive(Debug, Clone)]
-pub struct LoweredPackage {
+struct PackageUnit {
+    id: PackageId,
+    parsed: ParsedPackage,
+    dependencies: BTreeMap<String, PackageId>,
+    externals: BTreeMap<CanonicalModulePath, BuiltinModule>,
+    collect_sources: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageUniverse {
     pub lowered: Module<Arc<process::Expression<(), Universal>>, Universal>,
     pub local_modules: Vec<CanonicalModulePath>,
     pub sources: HashMap<FileName, Arc<str>>,
@@ -46,7 +49,7 @@ pub enum PackageBuildError {
         source: Arc<str>,
         error: CompileError,
     },
-    UnsupportedDependency {
+    UnknownDependency {
         source: Arc<str>,
         span: Span,
         dependency: String,
@@ -67,15 +70,9 @@ pub enum PackageBuildError {
         qualifier: String,
         name: String,
     },
-    ResolvedModuleNotFound {
-        source: Arc<str>,
-        span: Span,
+    UnattachedExternalModule {
+        package: PackageId,
         module_path: String,
-    },
-    AmbiguousResolvedModule {
-        module_path: String,
-        first: String,
-        second: String,
     },
 }
 
@@ -86,8 +83,8 @@ impl Display for PackageBuildError {
             Self::LowerError { path, .. } => {
                 write!(f, "Failed to lower source file {}", path.display())
             }
-            Self::UnsupportedDependency { dependency, .. } => {
-                write!(f, "Unsupported dependency `@{}`", dependency)
+            Self::UnknownDependency { dependency, .. } => {
+                write!(f, "Unknown dependency alias `@{dependency}`")
             }
             Self::ImportedModuleNotFound { import_path, .. } => {
                 write!(f, "Imported module `{}` was not found", import_path)
@@ -102,17 +99,13 @@ impl Display for PackageBuildError {
                 "Unknown module qualifier `{}` in reference `{}`",
                 qualifier, name
             ),
-            Self::ResolvedModuleNotFound { module_path, .. } => {
-                write!(f, "Resolved module `{}` was not found", module_path)
-            }
-            Self::AmbiguousResolvedModule {
+            Self::UnattachedExternalModule {
+                package,
                 module_path,
-                first,
-                second,
             } => write!(
                 f,
-                "Resolved module `{}` is ambiguous between `{}` and `{}`",
-                module_path, first, second
+                "External module `{}` was not attached to any parsed module in package `{:?}`",
+                module_path, package
             ),
         }
     }
@@ -120,70 +113,207 @@ impl Display for PackageBuildError {
 
 impl std::error::Error for PackageBuildError {}
 
-pub fn load_lowered_package(start: impl AsRef<Path>) -> Result<LoweredPackage, PackageBuildError> {
-    let parsed = load_package(start).map_err(PackageBuildError::Load)?;
-    lower_parsed_package(parsed)
+pub fn parse_and_load_package(
+    start: impl AsRef<Path>,
+) -> Result<PackageUniverse, PackageBuildError> {
+    let parsed = parse_package(start).map_err(PackageBuildError::Load)?;
+    load_parsed_package(parsed)
 }
 
-pub fn lower_parsed_package(parsed: ParsedPackage) -> Result<LoweredPackage, PackageBuildError> {
-    let local_module_lookup = build_local_module_lookup(&parsed);
-    let (builtin_module_lookup, builtin_universal_lookup, builtin_module) = build_builtin_context();
-    let universal_lookup = build_resolved_to_universal_lookup(&parsed, builtin_universal_lookup)?;
+pub fn load_parsed_package(
+    local_parsed: ParsedPackage,
+) -> Result<PackageUniverse, PackageBuildError> {
+    let package_units = build_package_units(local_parsed)?;
+    let module_lookup = build_module_lookup(&package_units);
+    let local_modules = local_module_paths(&package_units);
 
     let mut lowered = Module::default();
-    append_module(&mut lowered, builtin_module);
     let mut sources = HashMap::<FileName, Arc<str>>::new();
 
-    for parsed_module in &parsed.modules {
-        let current_module_path = resolved_from_local(&parsed_module.path);
-
-        for file in &parsed_module.files {
-            sources.insert(file.absolute_path.clone().into(), Arc::clone(&file.source));
-            let imports = build_file_import_aliases(
-                file,
-                &current_module_path,
-                &local_module_lookup,
-                &builtin_module_lookup,
-            )?;
-            let lowered_file =
-                lower_file_to_universal(file, &current_module_path, imports, &universal_lookup)?;
-            append_module(&mut lowered, lowered_file);
-        }
+    for package_unit in package_units {
+        load_package_unit(&mut lowered, &mut sources, &module_lookup, package_unit)?;
     }
 
-    Ok(LoweredPackage {
+    Ok(PackageUniverse {
         lowered,
-        local_modules: parsed
-            .modules
-            .into_iter()
-            .map(|module| module.path)
-            .collect(),
+        local_modules,
         sources,
     })
 }
 
-fn lower_file_to_universal(
-    file: &ParsedPackageFile,
-    current_module_path: &ResolvedModulePath,
-    imports: BTreeMap<String, ResolvedModulePath>,
-    universal_lookup: &BTreeMap<ResolvedLookupKey, UniversalModulePath>,
-) -> Result<Module<Arc<process::Expression<(), Universal>>, Universal>, PackageBuildError> {
-    let lowered_file =
-        lower(file.source_file.body.clone()).map_err(|error| PackageBuildError::LowerError {
-            path: file.absolute_path.clone(),
-            source: Arc::clone(&file.source),
-            error,
-        })?;
-    let resolved_file = resolve_file_names(
-        lowered_file,
-        imports,
-        current_module_path,
-        Arc::clone(&file.source),
-    )?;
-    universalize_file_names(resolved_file, universal_lookup, Arc::clone(&file.source))
+fn build_package_units(local_parsed: ParsedPackage) -> Result<Vec<PackageUnit>, PackageBuildError> {
+    let builtin_packages = builtin_packages().packages;
+    let core_package = builtin_packages
+        .get("core")
+        .cloned()
+        .expect("core builtins package should always exist");
+    let basic_package = builtin_packages.get("basic").cloned();
+
+    let mut units = Vec::new();
+    units.push(builtin_package_unit("core", core_package, BTreeMap::new())?);
+
+    if let Some(basic_package) = basic_package {
+        let mut deps = BTreeMap::new();
+        deps.insert("core".to_string(), PackageId::Builtin("core".to_string()));
+        units.push(builtin_package_unit("basic", basic_package, deps)?);
+    }
+
+    let mut local_dependencies = BTreeMap::new();
+    local_dependencies.insert("core".to_string(), PackageId::Builtin("core".to_string()));
+    if builtin_packages.contains_key("basic") {
+        local_dependencies.insert("basic".to_string(), PackageId::Builtin("basic".to_string()));
+    }
+
+    units.push(PackageUnit {
+        id: PackageId::Local,
+        parsed: local_parsed,
+        dependencies: local_dependencies,
+        externals: BTreeMap::new(),
+        collect_sources: true,
+    });
+
+    Ok(units)
 }
 
-fn resolve_file_names(
+fn builtin_package_unit(
+    package_name: &str,
+    package: BuiltinPackage,
+    dependencies: BTreeMap<String, PackageId>,
+) -> Result<PackageUnit, PackageBuildError> {
+    let parsed = parse_package(&package.root).map_err(PackageBuildError::Load)?;
+    Ok(PackageUnit {
+        id: PackageId::Builtin(package_name.to_string()),
+        parsed,
+        dependencies,
+        externals: package
+            .externals
+            .into_iter()
+            .map(|(module_path, module)| (canonical_path_from_builtin(module_path), module))
+            .collect(),
+        collect_sources: false,
+    })
+}
+
+fn canonical_path_from_builtin(path: BuiltinModulePath) -> CanonicalModulePath {
+    CanonicalModulePath {
+        directories: path
+            .directories
+            .into_iter()
+            .map(|directory| directory.to_lowercase())
+            .collect(),
+        module: path.module,
+    }
+}
+
+fn local_module_paths(package_units: &[PackageUnit]) -> Vec<CanonicalModulePath> {
+    package_units
+        .iter()
+        .find(|unit| unit.id == PackageId::Local)
+        .map(|unit| {
+            unit.parsed
+                .modules
+                .iter()
+                .map(|module| module.path.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn build_module_lookup(
+    package_units: &[PackageUnit],
+) -> BTreeMap<AbsoluteModuleLookupKey, CanonicalModulePath> {
+    let mut lookup = BTreeMap::new();
+    for package_unit in package_units {
+        add_package_modules_to_lookup(&mut lookup, package_unit);
+    }
+    lookup
+}
+
+fn add_package_modules_to_lookup(
+    lookup: &mut BTreeMap<AbsoluteModuleLookupKey, CanonicalModulePath>,
+    package_unit: &PackageUnit,
+) {
+    for module in &package_unit.parsed.modules {
+        lookup.insert(
+            module_lookup_key(
+                &package_unit.id,
+                &module.path.directories,
+                &module.path.module,
+            ),
+            module.path.clone(),
+        );
+    }
+}
+
+fn load_package_unit(
+    lowered: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
+    sources: &mut HashMap<FileName, Arc<str>>,
+    module_lookup: &BTreeMap<AbsoluteModuleLookupKey, CanonicalModulePath>,
+    package_unit: PackageUnit,
+) -> Result<(), PackageBuildError> {
+    let PackageUnit {
+        id,
+        parsed,
+        dependencies,
+        mut externals,
+        collect_sources,
+    } = package_unit;
+
+    for parsed_module in &parsed.modules {
+        let current_module_path =
+            resolved_module_path(&parsed_module.path, ResolvedPackageRef::Local);
+
+        for file in &parsed_module.files {
+            if collect_sources {
+                sources.insert(file.absolute_path.clone().into(), Arc::clone(&file.source));
+            }
+
+            let imports = build_file_import_aliases(
+                file,
+                &current_module_path,
+                &id,
+                &dependencies,
+                module_lookup,
+            )?;
+            let mut lowered_file = lower(file.source_file.body.clone()).map_err(|error| {
+                PackageBuildError::LowerError {
+                    path: file.absolute_path.clone(),
+                    source: Arc::clone(&file.source),
+                    error,
+                }
+            })?;
+            if file.module_part_suffix.is_none() {
+                if let Some(external_module) = externals.remove(&parsed_module.path) {
+                    merge_module(&mut lowered_file, external_module);
+                }
+            }
+            let resolved_file = resolve_module(
+                lowered_file,
+                imports,
+                &current_module_path,
+                Arc::clone(&file.source),
+            )?;
+            let universal_file = resolve_module_to_universal(
+                resolved_file,
+                &id,
+                &dependencies,
+                Arc::clone(&file.source),
+            )?;
+            merge_module(lowered, universal_file);
+        }
+    }
+
+    if let Some((module_path, _)) = externals.into_iter().next() {
+        return Err(PackageBuildError::UnattachedExternalModule {
+            package: id,
+            module_path: module_path.to_slash_path(),
+        });
+    }
+
+    Ok(())
+}
+
+fn resolve_module(
     module: Module<Arc<process::Expression<(), Unresolved>>, Unresolved>,
     imports: BTreeMap<String, ResolvedModulePath>,
     current_module_path: &ResolvedModulePath,
@@ -199,133 +329,28 @@ fn resolve_file_names(
     })
 }
 
-fn universalize_file_names(
+fn resolve_module_to_universal(
     module: Module<Arc<process::Expression<(), Resolved>>, Resolved>,
-    universal_lookup: &BTreeMap<ResolvedLookupKey, UniversalModulePath>,
+    current_package: &PackageId,
+    dependencies: &BTreeMap<String, PackageId>,
     file_source: Arc<str>,
 ) -> Result<Module<Arc<process::Expression<(), Universal>>, Universal>, PackageBuildError> {
     module.map_global_names(|name| {
-        resolve_name_to_universal(name, universal_lookup, Arc::clone(&file_source))
+        resolve_name_to_universal(
+            name,
+            current_package,
+            dependencies,
+            Arc::clone(&file_source),
+        )
     })
-}
-
-fn build_local_module_lookup(
-    parsed: &ParsedPackage,
-) -> BTreeMap<ModuleLookupKey, ResolvedModulePath> {
-    let mut map = BTreeMap::new();
-    for module in &parsed.modules {
-        let path = resolved_from_local(&module.path);
-        map.insert(module_lookup_key(UniversalPackage::Local, &path), path);
-    }
-    map
-}
-
-fn build_builtin_context() -> (
-    BTreeMap<ModuleLookupKey, ResolvedModulePath>,
-    BTreeMap<ResolvedLookupKey, UniversalModulePath>,
-    Module<Arc<process::Expression<(), Universal>>, Universal>,
-) {
-    let packages = builtin_packages();
-    let mut builtin_packages = vec![(
-        UniversalPackage::Dependency("core".to_string()),
-        packages.core,
-    )];
-    if let Some(basic) = packages.basic {
-        builtin_packages.push((UniversalPackage::Dependency("basic".to_string()), basic));
-    }
-
-    let mut root_packages = BTreeMap::<String, UniversalPackage>::new();
-    for (package_ref, package) in &builtin_packages {
-        for module_name in package.modules.keys() {
-            if let Some(previous) = root_packages.insert(module_name.clone(), package_ref.clone()) {
-                panic!(
-                    "builtin module root `{}` appears in both {:?} and {:?}",
-                    module_name, previous, package_ref
-                );
-            }
-        }
-    }
-
-    let mut lookup = BTreeMap::new();
-    let mut universal_lookup = BTreeMap::new();
-    for (root, package) in &root_packages {
-        let resolved = ResolvedModulePath {
-            directories: Vec::new(),
-            module: root.clone(),
-        };
-        let universal = UniversalModulePath {
-            package: package.clone(),
-            directories: Vec::new(),
-            module: root.clone(),
-        };
-        lookup.insert(
-            module_lookup_key(package.clone(), &resolved),
-            resolved.clone(),
-        );
-        universal_lookup.insert(resolved_lookup_key(&resolved), universal);
-    }
-
-    let mut lowered = Module::default();
-    for (_package_ref, package) in builtin_packages {
-        append_builtin_package(&mut lowered, package, &universal_lookup);
-    }
-
-    (lookup, universal_lookup, lowered)
-}
-
-fn root_builtin_module_name(name: &GlobalName<Unresolved>) -> String {
-    name.module
-        .qualifier
-        .clone()
-        .unwrap_or_else(|| name.primary.clone())
-}
-
-fn append_builtin_package(
-    lowered: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
-    package: BuiltinPackage,
-    universal_lookup: &BTreeMap<ResolvedLookupKey, UniversalModulePath>,
-) {
-    for (_, module) in package.modules {
-        let resolved_module = module
-            .map_global_names(|name| {
-                let root = root_builtin_module_name(&name);
-                Ok::<GlobalName<Resolved>, ()>(GlobalName::new(
-                    name.span,
-                    ResolvedModulePath {
-                        directories: Vec::new(),
-                        module: root,
-                    },
-                    name.primary,
-                ))
-            })
-            .expect("builtin name rewriting should not fail");
-        let universal_module = resolved_module
-            .map_global_names(|name| {
-                let module_path = universal_lookup
-                    .get(&resolved_lookup_key(&name.module))
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "builtin name `{}` references unknown resolved module `{}`",
-                            name, name.module
-                        )
-                    });
-                Ok::<GlobalName<Universal>, ()>(GlobalName::new(
-                    name.span,
-                    module_path,
-                    name.primary,
-                ))
-            })
-            .expect("builtin universal rewrite should not fail");
-        append_module(lowered, universal_module);
-    }
 }
 
 fn build_file_import_aliases(
     file: &ParsedPackageFile,
     current_module_path: &ResolvedModulePath,
-    local_lookup: &BTreeMap<ModuleLookupKey, ResolvedModulePath>,
-    builtin_lookup: &BTreeMap<ModuleLookupKey, ResolvedModulePath>,
+    current_package: &PackageId,
+    current_dependencies: &BTreeMap<String, PackageId>,
+    module_lookup: &BTreeMap<AbsoluteModuleLookupKey, CanonicalModulePath>,
 ) -> Result<BTreeMap<String, ResolvedModulePath>, PackageBuildError> {
     let mut aliases = BTreeMap::new();
     aliases.insert(
@@ -334,7 +359,13 @@ fn build_file_import_aliases(
     );
 
     for import in &file.source_file.imports {
-        let imported_module = resolve_imported_module(import, file, local_lookup, builtin_lookup)?;
+        let imported_module = resolve_imported_module(
+            import,
+            file,
+            current_package,
+            current_dependencies,
+            module_lookup,
+        )?;
         let alias = import
             .alias
             .clone()
@@ -360,46 +391,51 @@ fn build_file_import_aliases(
 fn resolve_imported_module(
     import: &ImportDecl,
     file: &ParsedPackageFile,
-    local_lookup: &BTreeMap<ModuleLookupKey, ResolvedModulePath>,
-    builtin_lookup: &BTreeMap<ModuleLookupKey, ResolvedModulePath>,
+    current_package: &PackageId,
+    current_dependencies: &BTreeMap<String, PackageId>,
+    module_lookup: &BTreeMap<AbsoluteModuleLookupKey, CanonicalModulePath>,
 ) -> Result<ResolvedModulePath, PackageBuildError> {
-    let dependency = match import.path.dependency.as_deref() {
-        None => UniversalPackage::Local,
-        Some("core") => UniversalPackage::Dependency("core".to_string()),
-        Some("basic") => UniversalPackage::Dependency("basic".to_string()),
-        Some(other) => {
-            return Err(PackageBuildError::UnsupportedDependency {
-                source: Arc::clone(&file.source),
-                span: import.span.clone(),
-                dependency: other.to_string(),
-            });
+    let (resolved_package, absolute_package) = match import.path.dependency.as_deref() {
+        None => (ResolvedPackageRef::Local, current_package.clone()),
+        Some(alias) => {
+            let Some(package_id) = current_dependencies.get(alias).cloned() else {
+                return Err(PackageBuildError::UnknownDependency {
+                    source: Arc::clone(&file.source),
+                    span: import.span.clone(),
+                    dependency: alias.to_string(),
+                });
+            };
+            (
+                ResolvedPackageRef::Dependency(alias.to_string()),
+                package_id,
+            )
         }
     };
 
-    let lookup_key = ModuleLookupKey {
-        package: dependency.clone(),
-        directories: import
+    let lookup_key = module_lookup_key(
+        &absolute_package,
+        &import
             .path
             .directories
             .iter()
             .map(|segment| segment.to_lowercase())
-            .collect(),
-        module_lower: import.path.module.to_lowercase(),
-    };
+            .collect::<Vec<_>>(),
+        &import.path.module,
+    );
 
-    let lookup = match dependency {
-        UniversalPackage::Local => local_lookup,
-        UniversalPackage::Dependency(_) => builtin_lookup,
-    };
-
-    lookup
-        .get(&lookup_key)
-        .cloned()
-        .ok_or_else(|| PackageBuildError::ImportedModuleNotFound {
+    let canonical = module_lookup.get(&lookup_key).ok_or_else(|| {
+        PackageBuildError::ImportedModuleNotFound {
             source: Arc::clone(&file.source),
             span: import.span.clone(),
             import_path: format_import_path(&import.path),
-        })
+        }
+    })?;
+
+    Ok(ResolvedModulePath {
+        package: resolved_package,
+        directories: canonical.directories.clone(),
+        module: canonical.module.clone(),
+    })
 }
 
 fn format_import_path(path: &ImportPath) -> String {
@@ -447,88 +483,59 @@ fn resolve_name_to_resolved(
 
 fn resolve_name_to_universal(
     name: GlobalName<Resolved>,
-    universal_lookup: &BTreeMap<ResolvedLookupKey, UniversalModulePath>,
+    current_package: &PackageId,
+    dependencies: &BTreeMap<String, PackageId>,
     file_source: Arc<str>,
 ) -> Result<GlobalName<Universal>, PackageBuildError> {
-    let module = universal_lookup
-        .get(&resolved_lookup_key(&name.module))
-        .cloned()
-        .ok_or_else(|| PackageBuildError::ResolvedModuleNotFound {
-            source: file_source,
-            span: name.span.clone(),
-            module_path: name.module.to_string(),
-        })?;
-
-    Ok(GlobalName::new(name.span, module, name.primary))
-}
-
-fn build_resolved_to_universal_lookup(
-    parsed: &ParsedPackage,
-    builtin_lookup: BTreeMap<ResolvedLookupKey, UniversalModulePath>,
-) -> Result<BTreeMap<ResolvedLookupKey, UniversalModulePath>, PackageBuildError> {
-    let mut lookup = builtin_lookup;
-    for module in &parsed.modules {
-        let resolved = resolved_from_local(&module.path);
-        let universal = universal_from_local(&module.path);
-        insert_universal_lookup(&mut lookup, &resolved, universal)?;
-    }
-    Ok(lookup)
-}
-
-fn universal_from_local(local: &CanonicalModulePath) -> UniversalModulePath {
-    UniversalModulePath {
-        package: UniversalPackage::Local,
-        directories: local.directories.clone(),
-        module: local.module.clone(),
-    }
-}
-
-fn resolved_from_local(local: &CanonicalModulePath) -> ResolvedModulePath {
-    ResolvedModulePath {
-        directories: local.directories.clone(),
-        module: local.module.clone(),
-    }
-}
-
-fn insert_universal_lookup(
-    lookup: &mut BTreeMap<ResolvedLookupKey, UniversalModulePath>,
-    resolved: &ResolvedModulePath,
-    universal: UniversalModulePath,
-) -> Result<(), PackageBuildError> {
-    let key = resolved_lookup_key(resolved);
-    if let Some(existing) = lookup.get(&key) {
-        if existing != &universal {
-            return Err(PackageBuildError::AmbiguousResolvedModule {
-                module_path: resolved.to_string(),
-                first: existing.to_string(),
-                second: universal.to_string(),
-            });
+    let package = match &name.module.package {
+        ResolvedPackageRef::Local => current_package.clone(),
+        ResolvedPackageRef::Dependency(alias) => {
+            let Some(package_id) = dependencies.get(alias).cloned() else {
+                return Err(PackageBuildError::UnknownDependency {
+                    source: file_source,
+                    span: name.span.clone(),
+                    dependency: alias.clone(),
+                });
+            };
+            package_id
         }
-        return Ok(());
-    }
-    lookup.insert(key, universal);
-    Ok(())
+    };
+
+    Ok(GlobalName::new(
+        name.span,
+        UniversalModulePath {
+            package,
+            directories: name.module.directories,
+            module: name.module.module,
+        },
+        name.primary,
+    ))
 }
 
-fn module_lookup_key(package: UniversalPackage, path: &ResolvedModulePath) -> ModuleLookupKey {
-    ModuleLookupKey {
+fn module_lookup_key(
+    package: &PackageId,
+    directories: &[String],
+    module: &str,
+) -> AbsoluteModuleLookupKey {
+    AbsoluteModuleLookupKey {
+        package: package.clone(),
+        directories: directories.to_vec(),
+        module_lower: module.to_lowercase(),
+    }
+}
+
+fn resolved_module_path(
+    local: &CanonicalModulePath,
+    package: ResolvedPackageRef,
+) -> ResolvedModulePath {
+    ResolvedModulePath {
         package,
-        directories: path.directories.clone(),
-        module_lower: path.module.to_lowercase(),
+        directories: local.directories.clone(),
+        module: local.module.clone(),
     }
 }
 
-fn resolved_lookup_key(path: &ResolvedModulePath) -> ResolvedLookupKey {
-    ResolvedLookupKey {
-        directories: path.directories.clone(),
-        module_lower: path.module.to_lowercase(),
-    }
-}
-
-fn append_module(
-    target: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
-    mut other: Module<Arc<process::Expression<(), Universal>>, Universal>,
-) {
+fn merge_module<Expr, S>(target: &mut Module<Expr, S>, mut other: Module<Expr, S>) {
     target.type_defs.append(&mut other.type_defs);
     target.declarations.append(&mut other.declarations);
     target.definitions.append(&mut other.definitions);

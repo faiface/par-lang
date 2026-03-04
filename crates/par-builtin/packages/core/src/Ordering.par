@@ -1,0 +1,7 @@
+module Ordering
+
+type Ordering = either {
+  .less!,
+  .equal!,
+  .greater!,
+}

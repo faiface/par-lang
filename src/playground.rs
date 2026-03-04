@@ -6,7 +6,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::package_builder::{PackageBuildError, lower_parsed_package};
+use crate::package_builder::{PackageBuildError, load_parsed_package};
 use crate::package_loader::{
     LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
     parse_loaded_files,
@@ -59,7 +59,7 @@ impl BuildError {
                 format!("{:?}", error.to_report(source.clone()))
             }
             Self::PackageBuild(
-                error @ PackageBuildError::UnsupportedDependency { source, span, .. },
+                error @ PackageBuildError::UnknownDependency { source, span, .. },
             )
             | Self::PackageBuild(
                 error @ PackageBuildError::ImportedModuleNotFound { source, span, .. },
@@ -69,9 +69,6 @@ impl BuildError {
             )
             | Self::PackageBuild(
                 error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
-            )
-            | Self::PackageBuild(
-                error @ PackageBuildError::ResolvedModuleNotFound { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::PackageBuild(error) => error.to_string(),
             Self::Type(error) => format!("{:?}", error.to_report(code)),
@@ -169,7 +166,7 @@ impl BuildResult {
             }
         };
 
-        let lowered = match lower_parsed_package(parsed) {
+        let lowered = match load_parsed_package(parsed) {
             Ok(lowered) => lowered,
             Err(error) => return Self::PackageBuildError { error },
         };
@@ -220,7 +217,7 @@ impl BuildResult {
             }
         };
 
-        let lowered = match lower_parsed_package(parsed) {
+        let lowered = match load_parsed_package(parsed) {
             Ok(lowered) => lowered,
             Err(error) => return Self::PackageBuildError { error },
         };

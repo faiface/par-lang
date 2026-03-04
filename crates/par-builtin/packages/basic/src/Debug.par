@@ -1,0 +1,5 @@
+module Debug
+
+import @core/String
+
+dec Debug.Log : [String] !

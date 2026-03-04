@@ -1,6 +1,6 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use crate::package_builder::{PackageBuildError, lower_parsed_package};
+use crate::package_builder::{PackageBuildError, load_parsed_package};
 use crate::package_loader::{
     LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
     parse_loaded_files,
@@ -384,7 +384,7 @@ impl Instance {
             source: code.to_owned(),
         }])
         .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
-        let lowered_package = lower_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
+        let lowered_package = load_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
 
         let checked = Arc::new(type_check(&lowered_package.lowered).map_err(CompileError::Type)?);
         let type_on_hover = TypeOnHover::<Universal>::new(&checked);
@@ -417,7 +417,7 @@ impl Instance {
 
         let parsed = parse_loaded_files(files)
             .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
-        let lowered_package = lower_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
+        let lowered_package = load_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
 
         let checked = Arc::new(type_check(&lowered_package.lowered).map_err(CompileError::Type)?);
         let type_on_hover = TypeOnHover::<Universal>::new(&checked);

@@ -87,7 +87,7 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             (span, format!("{report:?}"), None, vec![])
         }
         CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::UnsupportedDependency {
+            error @ crate::package_builder::PackageBuildError::UnknownDependency {
                 source,
                 span,
                 ..
@@ -109,13 +109,6 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
         )
         | CompileError::PackageBuild(
             error @ crate::package_builder::PackageBuildError::UnknownModuleQualifier {
-                source,
-                span,
-                ..
-            },
-        )
-        | CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::ResolvedModuleNotFound {
                 source,
                 span,
                 ..

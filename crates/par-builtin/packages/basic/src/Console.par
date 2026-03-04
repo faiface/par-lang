@@ -1,0 +1,12 @@
+module Console
+
+import @core/Option
+import @core/String
+
+type Console = iterative choice {
+  .close => !,
+  .print(String) => self,
+  .prompt(String) => (Option<String>) self,
+}
+
+dec Console.Open : Console

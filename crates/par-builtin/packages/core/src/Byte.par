@@ -1,0 +1,14 @@
+module Byte
+
+import Bool
+import Nat
+
+type Byte.Class = either {
+  .any!,
+  .byte Byte,
+  .range(Byte, Byte)!,
+}
+
+dec Byte.Equals : [Byte, Byte] Bool
+dec Byte.Code   : [Byte] Nat
+dec Byte.Is     : [Byte, Byte.Class] Bool

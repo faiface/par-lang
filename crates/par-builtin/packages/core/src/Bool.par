@@ -1,0 +1,6 @@
+module Bool
+
+type Bool = either {
+  .false!,
+  .true!,
+}

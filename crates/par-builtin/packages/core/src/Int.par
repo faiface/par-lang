@@ -1,0 +1,29 @@
+module Int
+
+import Bool
+import List
+import Nat
+import Ordering
+import String
+
+dec Int.Add   : [Int, Int] Int
+dec Int.Sub   : [Int, Int] Int
+dec Int.Mul   : [Int, Int] Int
+dec Int.Div   : [Int, Int] Int
+dec Int.Mod   : [Int, Nat] Nat
+dec Int.Min   : [Int, Int] Int
+dec Int.Max   : [Int, Int] Int
+dec Int.Abs   : [Int] Nat
+dec Int.Clamp : [Int] [Int, Int] Int
+
+dec Int.Equals  : [Int, Int] Bool
+dec Int.Compare : [Int, Int] Ordering
+
+dec Int.Range : [Int, Int] List<Int>
+
+dec Int.ToString : [Int] String
+
+dec Int.FromString : [String] either {
+  .ok Int,
+  .err!,
+}
