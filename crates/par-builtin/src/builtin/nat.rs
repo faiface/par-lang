@@ -1,133 +1,173 @@
+//package: core
 use arcstr::literal;
 use num_bigint::BigInt;
-use std::{cmp::Ordering, sync::Arc};
+use std::cmp::Ordering;
 
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, TypeDef, process};
+use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
+use par_core::source::Span;
+use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![TypeDef::external("Nat", &[], Type::nat())],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external(
-                "Add",
-                Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                |handle| Box::pin(nat_add(handle)),
-            ),
-            Definition::external(
-                "Sub",
-                Type::function(Type::nat(), Type::function(Type::int(), Type::nat())),
-                |handle| Box::pin(nat_sub(handle)),
-            ),
-            Definition::external(
-                "Mul",
-                Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                |handle| Box::pin(nat_mul(handle)),
-            ),
-            Definition::external(
-                "Div",
-                Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                |handle| Box::pin(nat_div(handle)),
-            ),
-            Definition::external(
-                "Mod",
-                Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                |handle| Box::pin(nat_mod(handle)),
-            ),
-            Definition::external(
-                "Min",
-                Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                |handle| Box::pin(nat_min(handle)),
-            ),
-            Definition::external(
-                "Max",
-                Type::function(Type::nat(), Type::function(Type::int(), Type::nat())),
-                |handle| Box::pin(nat_max(handle)),
-            ),
-            Definition::external(
-                "Clamp",
-                Type::function(
-                    Type::int(),
-                    Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                ),
-                |handle| Box::pin(nat_clamp(handle)),
-            ),
-            Definition::external(
-                "Equals",
-                Type::function(
-                    Type::nat(),
-                    Type::function(Type::nat(), Type::name(Some("Bool"), "Bool", vec![])),
-                ),
-                |handle| Box::pin(nat_equals(handle)),
-            ),
-            Definition::external(
-                "Compare",
-                Type::function(
-                    Type::nat(),
-                    Type::function(
-                        Type::nat(),
-                        Type::name(Some("Ordering"), "Ordering", vec![]),
-                    ),
-                ),
-                |handle| Box::pin(nat_compare(handle)),
-            ),
-            Definition::external(
-                "Repeat",
-                Type::function(
-                    Type::nat(),
-                    Type::recursive(
-                        None,
-                        Type::either(vec![("end", Type::break_()), ("step", Type::self_(None))]),
-                    ),
-                ),
-                |handle| Box::pin(nat_repeat(handle)),
-            ),
-            Definition::external(
-                "RepeatLazy",
-                Type::function(
-                    Type::nat(),
-                    Type::recursive(
-                        None,
-                        Type::either(vec![
-                            ("end", Type::break_()),
-                            (
-                                "step",
-                                Type::box_(Type::choice(vec![("next", Type::self_(None))])),
-                            ),
-                        ]),
-                    ),
-                ),
-                |handle| Box::pin(nat_repeat_lazy(handle)),
-            ),
-            Definition::external(
-                "Range",
-                Type::function(
-                    Type::nat(),
-                    Type::function(
-                        Type::nat(),
-                        Type::name(Some("List"), "List", vec![Type::nat()]),
-                    ),
-                ),
-                |handle| Box::pin(nat_range(handle)),
-            ),
-            Definition::external(
-                "ToString",
-                Type::function(Type::nat(), Type::string()),
-                |handle| Box::pin(nat_to_string(handle)),
-            ),
-            Definition::external(
-                "FromString",
-                Type::function(
-                    Type::string(),
-                    Type::either(vec![("ok", Type::nat()), ("err", Type::break_())]),
-                ),
-                |handle| Box::pin(nat_from_string(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalTypeDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Nat"
+    },
+    typ: Type::Primitive(Span::None, PrimitiveType::Nat)
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Add"
+    },
+    f: |handle| Box::pin(nat_add(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Sub"
+    },
+    f: |handle| Box::pin(nat_sub(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Mul"
+    },
+    f: |handle| Box::pin(nat_mul(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Div"
+    },
+    f: |handle| Box::pin(nat_div(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Mod"
+    },
+    f: |handle| Box::pin(nat_mod(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Min"
+    },
+    f: |handle| Box::pin(nat_min(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Max"
+    },
+    f: |handle| Box::pin(nat_max(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Clamp"
+    },
+    f: |handle| Box::pin(nat_clamp(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Equals"
+    },
+    f: |handle| Box::pin(nat_equals(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Compare"
+    },
+    f: |handle| Box::pin(nat_compare(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Repeat"
+    },
+    f: |handle| Box::pin(nat_repeat(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "RepeatLazy"
+    },
+    f: |handle| Box::pin(nat_repeat_lazy(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "Range"
+    },
+    f: |handle| Box::pin(nat_range(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "ToString"
+    },
+    f: |handle| Box::pin(nat_to_string(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Nat",
+        name: "FromString"
+    },
+    f: |handle| Box::pin(nat_from_string(handle)),
+});
 
 async fn nat_add(mut handle: Handle) {
     let x = handle.receive().nat().await;

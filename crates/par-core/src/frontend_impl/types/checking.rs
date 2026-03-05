@@ -1748,16 +1748,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 )))
             }
 
-            Expression::External(claimed_type, f, ()) => {
-                // Validate external claimed type before using it
-                self.type_defs.validate_type(claimed_type)?;
-                let typ = claimed_type.clone();
-                typ.check_assignable(&Span::None, target_type, &self.type_defs)?;
-                Ok(Arc::new(Expression::External(
-                    claimed_type.clone(),
-                    *f,
-                    typ,
-                )))
+            Expression::External(f, ()) => {
+                Ok(Arc::new(Expression::External(*f, target_type.clone())))
             }
         }
     }
@@ -1868,15 +1860,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 ))
             }
 
-            Expression::External(claimed_type, f, ()) => {
-                // Validate external claimed type before using it
-                self.type_defs.validate_type(claimed_type)?;
-                let typ = claimed_type.clone();
-                Ok((
-                    Arc::new(Expression::External(claimed_type.clone(), *f, typ.clone())),
-                    typ,
-                ))
-            }
+            Expression::External(_f, ()) => Err(TypeError::TypeMustBeKnownAtThisPoint(
+                Span::None,
+                LocalName::error(),
+            )),
         }
     }
 }

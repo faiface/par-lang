@@ -1,3 +1,4 @@
+//package: basic
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -7,163 +8,143 @@ use arcstr::literal;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use num_bigint::BigInt;
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, process};
+use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 
-pub(super) fn external_module()
--> Module<std::sync::Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external(
-                "Path",
-                Type::function(Type::bytes(), Type::name(None, "Path", vec![])),
-                |handle| Box::pin(path_from_bytes(handle)),
-            ),
-            Definition::external("Stdin", Type::name(None, "Reader", vec![]), |handle| {
-                Box::pin(os_stdin(handle))
-            }),
-            Definition::external("Stdout", Type::name(None, "Writer", vec![]), |handle| {
-                Box::pin(os_stdout(handle))
-            }),
-            Definition::external("Stderr", Type::name(None, "Writer", vec![]), |handle| {
-                Box::pin(os_stderr(handle))
-            }),
-            Definition::external(
-                "OpenFile",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::name(None, "Reader", vec![])),
-                    ]),
-                ),
-                |handle| Box::pin(os_open_file(handle)),
-            ),
-            Definition::external(
-                "CreateOrReplaceFile",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::name(None, "Writer", vec![])),
-                    ]),
-                ),
-                |handle| Box::pin(os_create_or_replace_file(handle)),
-            ),
-            Definition::external(
-                "CreateNewFile",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::name(None, "Writer", vec![])),
-                    ]),
-                ),
-                |handle| Box::pin(os_create_new_file(handle)),
-            ),
-            Definition::external(
-                "AppendToFile",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::name(None, "Writer", vec![])),
-                    ]),
-                ),
-                |handle| Box::pin(os_append_to_file(handle)),
-            ),
-            Definition::external(
-                "CreateOrAppendToFile",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::name(None, "Writer", vec![])),
-                    ]),
-                ),
-                |handle| Box::pin(os_create_or_append_to_file(handle)),
-            ),
-            Definition::external(
-                "CreateDir",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::break_()),
-                    ]),
-                ),
-                |handle| Box::pin(os_create_dir(handle)),
-            ),
-            Definition::external(
-                "ListDir",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        (
-                            "ok",
-                            Type::name(
-                                Some("List"),
-                                "List",
-                                vec![Type::name(None, "Path", vec![])],
-                            ),
-                        ),
-                    ]),
-                ),
-                |handle| Box::pin(os_list_dir(handle)),
-            ),
-            Definition::external(
-                "TraverseDir",
-                Type::function(
-                    Type::name(None, "Path", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        (
-                            "ok",
-                            Type::recursive(
-                                None,
-                                Type::either(vec![
-                                    ("end", Type::break_()),
-                                    (
-                                        "file",
-                                        Type::pair(
-                                            Type::name(None, "Path", vec![]),
-                                            Type::self_(None),
-                                        ),
-                                    ),
-                                    (
-                                        "dir",
-                                        Type::pair(
-                                            Type::name(None, "Path", vec![]),
-                                            Type::pair(Type::self_(None), Type::self_(None)),
-                                        ),
-                                    ),
-                                ]),
-                            ),
-                        ),
-                    ]),
-                ),
-                |handle| Box::pin(os_traverse_dir(handle)),
-            ),
-            Definition::external(
-                "Env",
-                Type::name(
-                    Some("BoxMap"),
-                    "Readonly",
-                    vec![Type::bytes(), Type::bytes()],
-                ),
-                |handle| Box::pin(envmap_new(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "Path"
+    },
+    f: |handle| Box::pin(path_from_bytes(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "Stdin"
+    },
+    f: |handle| Box::pin(os_stdin(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "Stdout"
+    },
+    f: |handle| Box::pin(os_stdout(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "Stderr"
+    },
+    f: |handle| Box::pin(os_stderr(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "OpenFile"
+    },
+    f: |handle| Box::pin(os_open_file(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "CreateOrReplaceFile"
+    },
+    f: |handle| Box::pin(os_create_or_replace_file(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "CreateNewFile"
+    },
+    f: |handle| Box::pin(os_create_new_file(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "AppendToFile"
+    },
+    f: |handle| Box::pin(os_append_to_file(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "CreateOrAppendToFile"
+    },
+    f: |handle| Box::pin(os_create_or_append_to_file(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "CreateDir"
+    },
+    f: |handle| Box::pin(os_create_dir(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "ListDir"
+    },
+    f: |handle| Box::pin(os_list_dir(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "TraverseDir"
+    },
+    f: |handle| Box::pin(os_traverse_dir(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Os",
+        name: "Env"
+    },
+    f: |handle| Box::pin(envmap_new(handle)),
+});
 
 async fn path_from_bytes(mut handle: Handle) {
     let b = handle.receive().bytes().await;

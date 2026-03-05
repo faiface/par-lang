@@ -1,24 +1,19 @@
-use std::sync::Arc;
-
 use futures::FutureExt;
 
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, Type, process};
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![Definition::external(
-            "BlackBox",
-            Type::forall("a", Type::function(Type::var("a"), Type::var("a"))),
-            |mut handle| {
-                async move {
-                    let x = handle.receive();
-                    handle.link(x);
-                }
-                .boxed()
-            },
-        )],
-    }
-}
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bench",
+        name: "BlackBox"
+    },
+    f: |mut handle| {
+        async move {
+            let x = handle.receive();
+            handle.link(x);
+        }
+        .boxed()
+    },
+});

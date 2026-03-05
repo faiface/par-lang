@@ -1,3 +1,4 @@
+//package: core
 use arcstr::literal;
 use bytes::Bytes;
 use futures::{StreamExt, channel::mpsc};
@@ -16,89 +17,110 @@ use crate::builtin::{
     list::readback_list,
     parser::{ReaderRemainder, provide_bytes_parser},
 };
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, Type, TypeDef, process};
+use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
+use par_core::source::Span;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![TypeDef::external("Bytes", &[], Type::bytes())],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external("Builder", Type::name(None, "Builder", vec![]), |handle| {
-                Box::pin(bytes_builder(handle))
-            }),
-            Definition::external(
-                "Parser",
-                Type::function(
-                    Type::bytes(),
-                    Type::name(None, "Parser", vec![Type::either(vec![])]),
-                ),
-                |handle| Box::pin(bytes_parser(handle)),
-            ),
-            Definition::external(
-                "ParserFromReader",
-                Type::generic_function(
-                    vec!["e"],
-                    Type::name(None, "Reader", vec![Type::var("e")]),
-                    Type::name(None, "Parser", vec![Type::var("e")]),
-                ),
-                |handle| Box::pin(bytes_parser_from_reader(handle)),
-            ),
-            Definition::external(
-                "Reader",
-                Type::function(
-                    Type::bytes(),
-                    Type::name(None, "Reader", vec![Type::either(vec![])]),
-                ),
-                |handle| Box::pin(bytes_reader(handle)),
-            ),
-            Definition::external(
-                "EmptyReader",
-                Type::name(None, "Reader", vec![Type::either(vec![])]),
-                |handle| Box::pin(bytes_empty_reader(handle)),
-            ),
-            Definition::external(
-                "PipeReader",
-                Type::forall(
-                    "e",
-                    Type::function(
-                        Type::function(
-                            Type::name(None, "Writer", vec![Type::break_()]),
-                            Type::either(vec![("ok", Type::break_()), ("err", Type::var("e"))]),
-                        ),
-                        Type::name(None, "Reader", vec![Type::var("e")]),
-                    ),
-                ),
-                |handle| Box::pin(bytes_pipe_reader(handle)),
-            ),
-            Definition::external(
-                "Length",
-                Type::function(Type::bytes(), Type::nat()),
-                |handle| Box::pin(bytes_length(handle)),
-            ),
-            Definition::external(
-                "Equals",
-                Type::function(
-                    Type::bytes(),
-                    Type::function(Type::bytes(), Type::name(Some("Bool"), "Bool", vec![])),
-                ),
-                |handle| Box::pin(bytes_equals(handle)),
-            ),
-            Definition::external(
-                "Compare",
-                Type::function(
-                    Type::bytes(),
-                    Type::function(
-                        Type::bytes(),
-                        Type::name(Some("Ordering"), "Ordering", vec![]),
-                    ),
-                ),
-                |handle| Box::pin(bytes_compare(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalTypeDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Bytes"
+    },
+    typ: Type::Primitive(Span::None, PrimitiveType::Bytes)
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Builder"
+    },
+    f: |handle| Box::pin(bytes_builder(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Parser"
+    },
+    f: |handle| Box::pin(bytes_parser(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "ParserFromReader"
+    },
+    f: |handle| Box::pin(bytes_parser_from_reader(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Reader"
+    },
+    f: |handle| Box::pin(bytes_reader(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "EmptyReader"
+    },
+    f: |handle| Box::pin(bytes_empty_reader(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "PipeReader"
+    },
+    f: |handle| Box::pin(bytes_pipe_reader(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Length"
+    },
+    f: |handle| Box::pin(bytes_length(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Equals"
+    },
+    f: |handle| Box::pin(bytes_equals(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Bytes",
+        name: "Compare"
+    },
+    f: |handle| Box::pin(bytes_compare(handle)),
+});
 
 async fn bytes_builder(mut handle: Handle) {
     let mut buf = Vec::<u8>::new();

@@ -1,3 +1,4 @@
+//package: core
 use crate::builtin::{
     bytes::{BytesMachine, BytesPattern},
     string::{StringMachine, StringPattern},

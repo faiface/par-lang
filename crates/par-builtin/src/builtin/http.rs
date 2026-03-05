@@ -1,3 +1,4 @@
+//package: basic
 use std::{
     io,
     net::SocketAddr,
@@ -29,64 +30,29 @@ use tokio::{net::TcpListener, signal, sync::Notify};
 use url::Url as ParsedUrl;
 
 use crate::builtin::{list::readback_list, url::provide_url_value};
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, process};
+use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external(
-                "Fetch",
-                Type::function(
-                    Type::name(None, "Request", vec![]),
-                    Type::either(vec![
-                        ("err", Type::name(None, "Error", vec![])),
-                        ("ok", Type::name(None, "Response", vec![])),
-                    ]),
-                ),
-                |handle| Box::pin(http_fetch(handle)),
-            ),
-            Definition::external(
-                "Listen",
-                Type::function(
-                    Type::string(),
-                    Type::recursive(
-                        None,
-                        Type::either(vec![
-                            (
-                                "shutdown",
-                                Type::either(vec![
-                                    ("ok", Type::break_()),
-                                    ("err", Type::name(None, "Error", vec![])),
-                                ]),
-                            ),
-                            (
-                                "incoming",
-                                Type::pair(
-                                    Type::name(None, "Request", vec![]),
-                                    Type::pair(
-                                        Type::function(
-                                            Type::name(None, "Response", vec![]),
-                                            Type::either(vec![
-                                                ("ok", Type::break_()),
-                                                ("err", Type::name(None, "Error", vec![])),
-                                            ]),
-                                        ),
-                                        Type::self_(None),
-                                    ),
-                                ),
-                            ),
-                        ]),
-                    ),
-                ),
-                |handle| Box::pin(http_listen(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Http",
+        name: "Fetch"
+    },
+    f: |handle| Box::pin(http_fetch(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Http",
+        name: "Listen"
+    },
+    f: |handle| Box::pin(http_listen(handle)),
+});
 
 // ----------
 

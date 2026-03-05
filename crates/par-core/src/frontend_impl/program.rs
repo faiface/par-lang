@@ -102,13 +102,12 @@ impl TypeDef<Unresolved> {
 impl Definition<Arc<process::Expression<(), Unresolved>>, Unresolved> {
     pub fn external(
         name: &'static str,
-        typ: Type<Unresolved>,
         f: fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
     ) -> Self {
         Self {
             span: Default::default(),
             name: GlobalName::<Unresolved>::external(None, name),
-            expression: Arc::new(process::Expression::External(typ, f, ())),
+            expression: Arc::new(process::Expression::External(f, ())),
         }
     }
 }

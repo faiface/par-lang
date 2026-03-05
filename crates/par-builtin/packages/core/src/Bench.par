@@ -1,1 +1,3 @@
 module Bench
+
+dec BlackBox: [type a][a]a

@@ -110,11 +110,7 @@ pub enum Expression<Typ, S> {
         process: Arc<Process<Typ, S>>,
     },
     Primitive(Span, Primitive, Typ),
-    External(
-        Type<S>,
-        fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
-        Typ,
-    ),
+    External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>, Typ),
 }
 
 impl<Typ, S> Spanning for Process<Typ, S> {
@@ -706,9 +702,7 @@ impl<S: Clone> Expression<(), S> {
             Self::Primitive(span, value, typ) => {
                 Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone()))
             }
-            Self::External(claimed_type, f, typ) => {
-                Arc::new(Self::External(claimed_type.clone(), *f, typ.clone()))
-            }
+            Self::External(f, typ) => Arc::new(Self::External(*f, typ.clone())),
         }
     }
 
@@ -749,9 +743,7 @@ impl<S: Clone> Expression<(), S> {
             Self::Primitive(span, value, typ) => {
                 Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone()))
             }
-            Self::External(claimed_type, f, typ) => {
-                Arc::new(Self::External(claimed_type.clone(), *f, typ.clone()))
-            }
+            Self::External(f, typ) => Arc::new(Self::External(*f, typ.clone())),
         }
     }
 }
@@ -841,7 +833,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S>
                 process.types_at_spans(program, consume);
             }
             Self::Primitive(_, _, _) => {}
-            Self::External(_, _, _) => {}
+            Self::External(_, _) => {}
         }
     }
 }
@@ -854,7 +846,7 @@ impl<Typ: Clone, S> Expression<Typ, S> {
             Self::Box(_, _, _, typ) => typ.clone(),
             Self::Chan { expr_type, .. } => expr_type.clone(),
             Self::Primitive(_, _, typ) => typ.clone(),
-            Self::External(_, _, typ) => typ.clone(),
+            Self::External(_, typ) => typ.clone(),
         }
     }
 }
@@ -1069,9 +1061,7 @@ impl<S: Clone> Expression<(), S> {
             Expression::Primitive(span, primitive, ()) => {
                 Expression::Primitive(span, primitive, ())
             }
-            Expression::External(claimed_type, external, ()) => {
-                Expression::External(claimed_type.map_global_names(f)?, external, ())
-            }
+            Expression::External(external, ()) => Expression::External(external, ()),
         })
     }
 }
@@ -1363,7 +1353,7 @@ impl<Typ, S> Expression<Typ, S> {
             Expression::Box(_, _, expression, _) => expression.free_variables(),
             Expression::Chan { captures, .. } => captures.names.keys().cloned().collect(),
             Expression::Primitive(_, _, _) => IndexSet::new(),
-            Expression::External(_, _, _) => IndexSet::new(),
+            Expression::External(_, _) => IndexSet::new(),
         }
     }
 }
@@ -1397,7 +1387,7 @@ impl<Typ, S: Clone + std::fmt::Display> Expression<Typ, S> {
 
             Self::Primitive(_, value, _) => value.pretty(f, indent),
 
-            Self::External(_, _, _) => {
+            Self::External(_, _) => {
                 write!(f, "<external>")
             }
         }

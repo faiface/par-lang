@@ -1,30 +1,20 @@
-use std::sync::Arc;
-
 use arcstr::literal;
 use percent_encoding::percent_decode_str;
 use url::Url as ParsedUrl;
 
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, process};
+use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![Definition::external(
-            "FromString",
-            Type::function(
-                Type::string(),
-                Type::either(vec![
-                    ("ok", Type::name(None, "Url", vec![])),
-                    ("err", Type::name(None, "Error", vec![])),
-                ]),
-            ),
-            |handle| Box::pin(url_from_string(handle)),
-        )],
-    }
-}
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Url",
+        name: "FromString"
+    },
+    f: |handle| Box::pin(url_from_string(handle)),
+});
 
 async fn url_from_string(mut handle: Handle) {
     let input = handle.receive().string().await;

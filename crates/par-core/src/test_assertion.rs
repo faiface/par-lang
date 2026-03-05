@@ -1,71 +1,11 @@
-use std::sync::Arc;
 use std::sync::mpsc;
 
-use crate::frontend_impl::language::{GlobalName, Unresolved};
-use crate::frontend_impl::process;
-use crate::frontend_impl::program::{Module, TypeDef};
-use crate::frontend_impl::types::Type;
-use crate::location::Span;
 use par_runtime::readback::Handle;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssertionResult {
     pub description: String,
     pub passed: bool,
-}
-
-pub fn import_test_module(
-    module: &mut Module<Arc<process::Expression<(), Unresolved>>, Unresolved>,
-) {
-    let mut test = test_module();
-    module.type_defs.append(&mut test.type_defs);
-    module.declarations.append(&mut test.declarations);
-    module.definitions.append(&mut test.definitions);
-}
-
-fn test_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![TypeDef {
-            span: Span::None,
-            name: GlobalName::external(None, "Test"),
-            params: vec![],
-            typ: Type::iterative_box_choice(
-                None,
-                vec![
-                    (
-                        "assert",
-                        Type::function(
-                            Type::string(),
-                            Type::function(
-                                Type::either(vec![
-                                    ("true", Type::break_()),
-                                    ("false", Type::break_()),
-                                ]),
-                                Type::self_(None),
-                            ),
-                        ),
-                    ),
-                    (
-                        "id",
-                        Type::pair(
-                            Type::forall("a", Type::function(Type::var("a"), Type::var("a"))),
-                            Type::self_(None),
-                        ),
-                    ),
-                    (
-                        "leak",
-                        Type::pair(
-                            Type::forall("a", Type::function(Type::var("a"), Type::break_())),
-                            Type::self_(None),
-                        ),
-                    ),
-                    ("done", Type::break_()),
-                ],
-            ),
-        }],
-        declarations: vec![],
-        definitions: vec![],
-    }
 }
 
 pub async fn provide_test(handle: Handle, sender: mpsc::Sender<AssertionResult>) {

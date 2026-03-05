@@ -1,25 +1,11 @@
-use std::{
-    io::{Write, stdin, stdout},
-    sync::Arc,
-};
+//package: basic
+use std::io::{Write, stdin, stdout};
 
 use arcstr::literal;
-
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, process};
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![Definition::external(
-            "Open",
-            Type::name(None, "Console", vec![]),
-            |handle| Box::pin(console_open(handle)),
-        )],
-    }
-}
+use par_core::frontend::ParString;
 
 async fn console_open(mut handle: Handle) {
     loop {
@@ -60,3 +46,13 @@ async fn console_open(mut handle: Handle) {
         }
     }
 }
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Console",
+        name: "Open"
+    },
+    f: |handle| Box::pin(console_open(handle)),
+});

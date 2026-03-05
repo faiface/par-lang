@@ -1,3 +1,4 @@
+//package: core
 use par_runtime::readback::Handle;
 use std::future::Future;
 

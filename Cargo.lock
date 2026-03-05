@@ -2040,6 +2040,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009ae045c87e7082cb72dab0ccd01ae075dd00141ddc108f43a0ea150a9e7227"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2911,6 +2920,7 @@ dependencies = [
  "hyper-util",
  "im",
  "indexmap",
+ "inventory",
  "num-bigint",
  "num-traits",
  "par-core",
@@ -2934,6 +2944,7 @@ dependencies = [
  "futures",
  "im",
  "indexmap",
+ "inventory",
  "miette",
  "num-bigint",
  "par-runtime",
@@ -2993,6 +3004,7 @@ dependencies = [
  "arcstr",
  "bytes",
  "futures",
+ "inventory",
  "num-bigint",
  "stacker",
  "tokio",

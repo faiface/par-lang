@@ -1,6 +1,5 @@
 use super::readback::Handle;
 use crate::flat::runtime::{Linear, Node, Runtime, UserData};
-use crate::spawn::TokioSpawn;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
 use std::sync::Arc;

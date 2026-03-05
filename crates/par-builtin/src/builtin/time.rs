@@ -1,20 +1,6 @@
 use num_bigint::BigInt;
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, Type, process};
 use par_runtime::readback::Handle;
-use std::sync::Arc;
-
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![Definition::external(
-            "Now",
-            Type::function(Type::break_(), Type::nat()),
-            |handle| Box::pin(time_now(handle)),
-        )],
-    }
-}
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
 async fn time_now(mut handle: Handle) {
     // return current time in milliseconds since epoch
@@ -25,3 +11,13 @@ async fn time_now(mut handle: Handle) {
         .as_millis();
     handle.provide_nat(BigInt::from(now));
 }
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "basic",
+        path: &[],
+        module: "Time",
+        name: "Now"
+    },
+    f: |handle| Box::pin(time_now(handle)),
+});

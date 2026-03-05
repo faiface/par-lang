@@ -1,44 +1,50 @@
-use std::sync::Arc;
-
 use arcstr::literal;
 use num_bigint::BigInt;
 
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, Type, TypeDef, process};
+use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
+use par_core::source::Span;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![TypeDef::external("Char", &[], Type::char())],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external(
-                "Equals",
-                Type::function(
-                    Type::char(),
-                    Type::function(Type::char(), Type::name(Some("Bool"), "Bool", vec![])),
-                ),
-                |handle| Box::pin(char_equals(handle)),
-            ),
-            Definition::external(
-                "Code",
-                Type::function(Type::char(), Type::nat()),
-                |handle| Box::pin(char_code(handle)),
-            ),
-            Definition::external(
-                "Is",
-                Type::function(
-                    Type::char(),
-                    Type::function(
-                        Type::name(None, "Class", vec![]),
-                        Type::name(Some("Bool"), "Bool", vec![]),
-                    ),
-                ),
-                |handle| Box::pin(char_is(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalTypeDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Char",
+        name: "Char"
+    },
+    typ: Type::Primitive(Span::None, PrimitiveType::Char)
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Char",
+        name: "Equals"
+    },
+    f: |handle| Box::pin(char_equals(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Char",
+        name: "Code"
+    },
+    f: |handle| Box::pin(char_code(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Char",
+        name: "Is"
+    },
+    f: |handle| Box::pin(char_is(handle)),
+});
 
 async fn char_equals(mut handle: Handle) {
     let x = handle.receive().char().await;

@@ -1,107 +1,162 @@
+//package: core
 use arcstr::literal;
 use num_bigint::BigInt;
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, TypeDef, process};
+use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
+use par_core::source::Span;
+use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
-use std::{cmp::Ordering, sync::Arc};
+use par_runtime::registry::{DefinitionRef, ExternalDef};
+use std::cmp::Ordering;
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![TypeDef::external("Int", &[], Type::int())],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external(
-                "Add",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| Box::pin(int_add(handle)),
-            ),
-            Definition::external(
-                "Sub",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| Box::pin(int_sub(handle)),
-            ),
-            Definition::external(
-                "Mul",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| Box::pin(int_mul(handle)),
-            ),
-            Definition::external(
-                "Div",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| Box::pin(int_div(handle)),
-            ),
-            Definition::external(
-                "Mod",
-                Type::function(Type::int(), Type::function(Type::nat(), Type::nat())),
-                |handle| Box::pin(int_mod(handle)),
-            ),
-            Definition::external(
-                "Min",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| Box::pin(int_min(handle)),
-            ),
-            Definition::external(
-                "Max",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| Box::pin(int_max(handle)),
-            ),
-            Definition::external("Abs", Type::function(Type::int(), Type::nat()), |handle| {
-                Box::pin(int_abs(handle))
-            }),
-            Definition::external(
-                "Clamp",
-                Type::function(
-                    Type::int(),
-                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                ),
-                |handle| Box::pin(int_clamp(handle)),
-            ),
-            Definition::external(
-                "Equals",
-                Type::function(
-                    Type::int(),
-                    Type::function(Type::int(), Type::name(Some("Bool"), "Bool", vec![])),
-                ),
-                |handle| Box::pin(int_equals(handle)),
-            ),
-            Definition::external(
-                "Compare",
-                Type::function(
-                    Type::int(),
-                    Type::function(
-                        Type::int(),
-                        Type::name(Some("Ordering"), "Ordering", vec![]),
-                    ),
-                ),
-                |handle| Box::pin(int_compare(handle)),
-            ),
-            Definition::external(
-                "Range",
-                Type::function(
-                    Type::int(),
-                    Type::function(
-                        Type::int(),
-                        Type::name(Some("List"), "List", vec![Type::int()]),
-                    ),
-                ),
-                |handle| Box::pin(int_range(handle)),
-            ),
-            Definition::external(
-                "ToString",
-                Type::function(Type::int(), Type::string()),
-                |handle| Box::pin(int_to_string(handle)),
-            ),
-            Definition::external(
-                "FromString",
-                Type::function(
-                    Type::string(),
-                    Type::either(vec![("ok", Type::int()), ("err", Type::break_())]),
-                ),
-                |handle| Box::pin(int_from_string(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalTypeDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Int"
+    },
+    typ: Type::Primitive(Span::None, PrimitiveType::Int)
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Add"
+    },
+    f: |handle| Box::pin(int_add(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Sub"
+    },
+    f: |handle| Box::pin(int_sub(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Mul"
+    },
+    f: |handle| Box::pin(int_mul(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Div"
+    },
+    f: |handle| Box::pin(int_div(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Mod"
+    },
+    f: |handle| Box::pin(int_mod(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Min"
+    },
+    f: |handle| Box::pin(int_min(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Max"
+    },
+    f: |handle| Box::pin(int_max(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Abs"
+    },
+    f: |handle| Box::pin(int_abs(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Clamp"
+    },
+    f: |handle| Box::pin(int_clamp(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Equals"
+    },
+    f: |handle| Box::pin(int_equals(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Compare"
+    },
+    f: |handle| Box::pin(int_compare(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "Range"
+    },
+    f: |handle| Box::pin(int_range(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "ToString"
+    },
+    f: |handle| Box::pin(int_to_string(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Int",
+        name: "FromString"
+    },
+    f: |handle| Box::pin(int_from_string(handle)),
+});
 
 async fn int_add(mut handle: Handle) {
     let x = handle.receive().int().await;

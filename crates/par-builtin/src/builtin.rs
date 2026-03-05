@@ -23,8 +23,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Module, process};
-use par_core::testing::import_test_module;
+use par_core::frontend::{Definition, Module, TypeDef, get_external_type_defs, process};
+use par_runtime::registry::get_external_defs;
 
 pub type BuiltinModule = Module<Arc<process::Expression<(), Unresolved>>, Unresolved>;
 
@@ -77,21 +77,8 @@ fn core_builtin_package() -> BuiltinPackage {
         externals: BTreeMap::new(),
     };
 
-    package.append_root_external("Nat", nat::external_module());
-    package.append_root_external("Int", int::external_module());
-    package.append_root_external("Bench", bench::external_module());
-    package.append_root_external("Char", char_::external_module());
-    package.append_root_external("String", string::external_module());
-    package.append_root_external("Byte", byte::external_module());
-    package.append_root_external("Bytes", bytes::external_module());
-    package.append_root_external("Map", map::external_module());
-    package.append_root_external("BoxMap", boxmap::external_module());
-    package.append_root_external("Url", url::external_module());
-
-    let mut test = BuiltinModule::default();
-    import_test_module(&mut test);
-    package.append_root_external("Test", test);
-
+    package.load_external_type_defs("core");
+    package.load_external_defs("core");
     package
 }
 
@@ -102,12 +89,8 @@ fn basic_builtin_package() -> BuiltinPackage {
         externals: BTreeMap::new(),
     };
 
-    package.append_root_external("Debug", debug::external_module());
-    package.append_root_external("Console", console::external_module());
-    package.append_root_external("Time", time::external_module());
-
-    package.append_root_external("Os", os::external_module());
-    package.append_root_external("Http", http::external_module());
+    package.load_external_type_defs("basic");
+    package.load_external_defs("basic");
 
     package
 }
@@ -130,8 +113,42 @@ impl BuiltinPackage {
         }
     }
 
-    fn append_root_external(&mut self, module_name: impl Into<String>, module: BuiltinModule) {
-        self.append_external(BuiltinModulePath::root(module_name), module);
+    fn load_external_type_defs(&mut self, name: &str) {
+        for type_def in get_external_type_defs(name) {
+            let builtin_path = BuiltinModulePath {
+                directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
+                module: type_def.path.module.into(),
+            };
+            if !self.externals.contains_key(&builtin_path) {
+                self.append_external(builtin_path.clone(), BuiltinModule::default());
+            }
+            self.externals
+                .get_mut(&builtin_path)
+                .unwrap()
+                .type_defs
+                .push(TypeDef::external(
+                    type_def.path.name,
+                    &[],
+                    type_def.typ.clone(),
+                ));
+        }
+    }
+
+    fn load_external_defs(&mut self, name: &str) {
+        for type_def in get_external_defs(name) {
+            let builtin_path = BuiltinModulePath {
+                directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
+                module: type_def.path.module.into(),
+            };
+            if !self.externals.contains_key(&builtin_path) {
+                self.append_external(builtin_path.clone(), BuiltinModule::default());
+            }
+            self.externals
+                .get_mut(&builtin_path)
+                .unwrap()
+                .definitions
+                .push(Definition::external(type_def.path.name, type_def.f.clone()));
+        }
     }
 }
 

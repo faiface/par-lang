@@ -492,8 +492,8 @@ impl CaptureAnalysis {
                 )),
                 Captures::new(),
             ),
-            Expression::External(claimed_type, f, typ) => (
-                Arc::new(Expression::External(claimed_type.clone(), *f, typ.clone())),
+            Expression::External(f, typ) => (
+                Arc::new(Expression::External(*f, typ.clone())),
                 Captures::new(),
             ),
         }
@@ -548,7 +548,7 @@ impl BlockEnvAnalyzer {
             Expression::Global(_, _, _)
             | Expression::Variable(_, _, _, _)
             | Expression::Primitive(_, _, _)
-            | Expression::External(_, _, _) => {}
+            | Expression::External(_, _) => {}
         }
     }
 
@@ -766,7 +766,7 @@ impl<'a> CaptureCollector<'a> {
                 caps
             }
             Expression::Primitive(_, _, _) => Captures::new(),
-            Expression::External(_, _, _) => Captures::new(),
+            Expression::External(_, _) => Captures::new(),
         }
     }
 

@@ -1,1 +1,10 @@
 module Test
+import String
+import Bool
+
+type Test = iterative box choice {
+              .assert => [String, Bool] self,
+              .done => !,
+              .id => ([type a] [a] a) self,
+              .leak => ([type a] [a] !) self,
+            }

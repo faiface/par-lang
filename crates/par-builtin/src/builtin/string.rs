@@ -1,4 +1,5 @@
-use std::{cmp::Ordering, sync::Arc};
+//package: core
+use std::cmp::Ordering;
 
 use arcstr::literal;
 use num_bigint::BigInt;
@@ -8,67 +9,91 @@ use crate::builtin::{
     list::readback_list,
     parser::{ReaderRemainder, provide_string_parser},
 };
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, ParString, Type, TypeDef, process};
+use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
+use par_core::source::Span;
+use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![TypeDef::external("String", &[], Type::string())],
-        declarations: vec![],
-        definitions: vec![
-            Definition::external("Builder", Type::name(None, "Builder", vec![]), |handle| {
-                Box::pin(string_builder(handle))
-            }),
-            Definition::external(
-                "Parser",
-                Type::function(
-                    Type::string(),
-                    Type::name(None, "Parser", vec![Type::either(vec![])]),
-                ),
-                |handle| Box::pin(string_parser(handle)),
-            ),
-            Definition::external(
-                "ParserFromReader",
-                Type::generic_function(
-                    vec!["e"],
-                    Type::name(Some("Bytes"), "Reader", vec![Type::var("e")]),
-                    Type::name(None, "Parser", vec![Type::var("e")]),
-                ),
-                |handle| Box::pin(string_parser_from_reader(handle)),
-            ),
-            Definition::external(
-                "Quote",
-                Type::function(Type::string(), Type::string()),
-                |handle| Box::pin(string_quote(handle)),
-            ),
-            Definition::external(
-                "FromBytes",
-                Type::function(Type::bytes(), Type::string()),
-                |handle| Box::pin(string_from_bytes(handle)),
-            ),
-            Definition::external(
-                "Equals",
-                Type::function(
-                    Type::string(),
-                    Type::function(Type::string(), Type::name(Some("Bool"), "Bool", vec![])),
-                ),
-                |handle| Box::pin(string_equals(handle)),
-            ),
-            Definition::external(
-                "Compare",
-                Type::function(
-                    Type::string(),
-                    Type::function(
-                        Type::string(),
-                        Type::name(Some("Ordering"), "Ordering", vec![]),
-                    ),
-                ),
-                |handle| Box::pin(string_compare(handle)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalTypeDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "String"
+    },
+    typ: Type::Primitive(Span::None, PrimitiveType::String)
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "Builder"
+    },
+    f: |handle| Box::pin(string_builder(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "Parser"
+    },
+    f: |handle| Box::pin(string_parser(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "ParserFromReader"
+    },
+    f: |handle| Box::pin(string_parser_from_reader(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "Quote"
+    },
+    f: |handle| Box::pin(string_quote(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "FromBytes"
+    },
+    f: |handle| Box::pin(string_from_bytes(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "Equals"
+    },
+    f: |handle| Box::pin(string_equals(handle)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "String",
+        name: "Compare"
+    },
+    f: |handle| Box::pin(string_compare(handle)),
+});
 
 async fn string_builder(mut handle: Handle) {
     let mut buf = String::new();

@@ -17,6 +17,7 @@ pub(crate) mod duality;
 pub(crate) mod expansion;
 mod implicit;
 pub(crate) mod lattice;
+pub(crate) mod registry;
 pub(crate) mod substitution;
 pub(crate) mod tests;
 pub(crate) mod validation;

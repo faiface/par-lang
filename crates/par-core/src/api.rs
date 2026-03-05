@@ -26,6 +26,7 @@ pub mod frontend {
     };
     pub use crate::frontend_impl::set_miette_hook;
     pub use crate::frontend_impl::types::lattice::{intersect_types, union_types};
+    pub use crate::frontend_impl::types::registry::{ExternalTypeDef, get_external_type_defs};
     pub use crate::frontend_impl::types::{Operation, PrimitiveType, Type, TypeDefs, TypeError};
     pub use par_runtime::primitive::{ParString, Primitive};
 
@@ -99,5 +100,5 @@ pub mod execution {
 }
 
 pub mod testing {
-    pub use crate::test_assertion::{AssertionResult, import_test_module, provide_test};
+    pub use crate::test_assertion::{AssertionResult, provide_test};
 }

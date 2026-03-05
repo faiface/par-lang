@@ -678,7 +678,7 @@ impl Compiler {
                 ty: get_primitive_type(value),
             }),
 
-            Expression::External(_, f, typ) => Ok(TypedTree {
+            Expression::External(f, typ) => Ok(TypedTree {
                 tree: Tree::External(*f),
                 ty: typ.clone(),
             }),

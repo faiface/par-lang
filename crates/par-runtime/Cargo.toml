@@ -12,6 +12,7 @@ futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
 stacker = "0.1.19"
 num-bigint = "0.4.6"
 bytes = "1.6.1"
+inventory = "0.3.22"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }

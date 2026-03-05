@@ -1,85 +1,51 @@
+//package: core
 use std::{collections::BTreeMap, future::Future};
 
 use crate::builtin::list::readback_list;
 use arcstr::literal;
 use num_bigint::BigInt;
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, Type, process};
 use par_runtime::readback::Handle;
-use std::sync::Arc;
+use par_runtime::registry::{DefinitionRef, ExternalDef};
 
-pub(super) fn external_module() -> Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    Module {
-        type_defs: vec![],
-        declarations: vec![],
-        definitions: vec![
-            // Map.OfString : [type v] [List<(String) box v>] Map<String, v>
-            Definition::external(
-                "OfString",
-                Type::forall(
-                    "v",
-                    Type::function(
-                        Type::name(
-                            Some("List"),
-                            "List",
-                            vec![Type::pair(Type::string(), Type::box_(Type::var("v")))],
-                        ),
-                        Type::name(None, "Map", vec![Type::string(), Type::var("v")]),
-                    ),
-                ),
-                |handle| Box::pin(map_new(handle, Handle::string, Handle::provide_string)),
-            ),
-            // Map.OfBytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
-            Definition::external(
-                "OfBytes",
-                Type::forall(
-                    "v",
-                    Type::function(
-                        Type::name(
-                            Some("List"),
-                            "List",
-                            vec![Type::pair(Type::bytes(), Type::box_(Type::var("v")))],
-                        ),
-                        Type::name(None, "Map", vec![Type::bytes(), Type::var("v")]),
-                    ),
-                ),
-                |handle| Box::pin(map_new(handle, Handle::bytes, Handle::provide_bytes)),
-            ),
-            // Map.OfInt : [type v] [List<(Int) box v>] Map<Int, v>
-            Definition::external(
-                "OfInt",
-                Type::forall(
-                    "v",
-                    Type::function(
-                        Type::name(
-                            Some("List"),
-                            "List",
-                            vec![Type::pair(Type::int(), Type::box_(Type::var("v")))],
-                        ),
-                        Type::name(None, "Map", vec![Type::int(), Type::var("v")]),
-                    ),
-                ),
-                |handle| Box::pin(map_new(handle, Handle::int, Handle::provide_int)),
-            ),
-            // Map.OfNat : [type v] [List<(Nat) box v>] Map<Nat, v>
-            Definition::external(
-                "OfNat",
-                Type::forall(
-                    "v",
-                    Type::function(
-                        Type::name(
-                            Some("List"),
-                            "List",
-                            vec![Type::pair(Type::nat(), Type::box_(Type::var("v")))],
-                        ),
-                        Type::name(None, "Map", vec![Type::nat(), Type::var("v")]),
-                    ),
-                ),
-                |handle| Box::pin(map_new(handle, Handle::nat, Handle::provide_nat)),
-            ),
-        ],
-    }
-}
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Map",
+        name: "OfString"
+    },
+    f: |handle| Box::pin(map_new(handle, Handle::string, Handle::provide_string)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Map",
+        name: "OfBytes"
+    },
+    f: |handle| Box::pin(map_new(handle, Handle::bytes, Handle::provide_bytes)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Map",
+        name: "OfInt"
+    },
+    f: |handle| Box::pin(map_new(handle, Handle::int, Handle::provide_int)),
+});
+
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: "core",
+        path: &[],
+        module: "Map",
+        name: "OfNat"
+    },
+    f: |handle| Box::pin(map_new(handle, Handle::nat, Handle::provide_nat)),
+});
 
 async fn map_new<K: Clone + Ord, F: Future<Output = K>>(
     mut handle: Handle,
