@@ -46,16 +46,16 @@ type Pattern = recursive either {
   .or List<self>,
 }
 
-dec Quote     : [String] String
-dec FromBytes : [Bytes] String
+def Quote     : [String] String = external
+def FromBytes : [Bytes] String = external
 
-dec Equals    : [String, String] Bool
-dec Compare   : [String, String] Ordering
+def Equals    : [String, String] Bool = external
+def Compare   : [String, String] Ordering = external
 
-dec Builder : Builder
-dec Parser  : [String] Parser<either {}>
+def Builder : Builder = external
+def Parser  : [String] Parser<either {}> = external
 
-dec ParserFromReader : <e>[Bytes.Reader<e>] Parser<e>
+def ParserFromReader : <e>[Bytes.Reader<e>] Parser<e> = external
 
 dec Lines : <e>[Parser<e>] List.Fallible<e, String>
 def Lines = <e>[parser]

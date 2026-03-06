@@ -20,24 +20,24 @@ type Path = iterative@append recursive@parent box choice {
   .append(Bytes) => self@append,
 }
 
-dec Path : [Bytes] Path
+def Path : [Bytes] Path = external
 
-dec Stdin  : Reader
-dec Stdout : Writer
-dec Stderr : Writer
+def Stdin  : Reader = external
+def Stdout : Writer = external
+def Stderr : Writer = external
 
-dec OpenFile             : [Path] Result<Error, Reader>
-dec CreateOrReplaceFile  : [Path] Result<Error, Writer>
-dec CreateNewFile        : [Path] Result<Error, Writer>
-dec AppendToFile         : [Path] Result<Error, Writer>
-dec CreateOrAppendToFile : [Path] Result<Error, Writer>
+def OpenFile             : [Path] Result<Error, Reader> = external
+def CreateOrReplaceFile  : [Path] Result<Error, Writer> = external
+def CreateNewFile        : [Path] Result<Error, Writer> = external
+def AppendToFile         : [Path] Result<Error, Writer> = external
+def CreateOrAppendToFile : [Path] Result<Error, Writer> = external
 
-dec CreateDir   : [Path] Result<Error, !>
-dec ListDir     : [Path] Result<Error, List<Path>>
-dec TraverseDir : [Path] Result<Error, recursive either {
+def CreateDir   : [Path] Result<Error, !> = external
+def ListDir     : [Path] Result<Error, List<Path>> = external
+def TraverseDir : [Path] Result<Error, recursive either {
   .end!,
   .file(Path) self,
   .dir(Path, self) self,
-}>
+}> = external
 
-dec Env : BoxMap.Readonly<Bytes, Bytes>
+def Env : BoxMap.Readonly<Bytes, Bytes> = external

@@ -23,7 +23,7 @@ type Readonly<k, v> = box choice {
   .get(k) => Option<box v>,
 }
 
-dec OfString : [type v] [List<(String) box v>] BoxMap<String, v>
-dec OfBytes  : [type v] [List<(Bytes) box v>]  BoxMap<Bytes, v>
-dec OfInt    : [type v] [List<(Int) box v>]    BoxMap<Int, v>
-dec OfNat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v>
+def OfString : [type v] [List<(String) box v>] BoxMap<String, v> = external
+def OfBytes  : [type v] [List<(Bytes) box v>]  BoxMap<Bytes, v> = external
+def OfInt    : [type v] [List<(Int) box v>]    BoxMap<Int, v> = external
+def OfNat    : [type v] [List<(Nat) box v>]    BoxMap<Nat, v> = external

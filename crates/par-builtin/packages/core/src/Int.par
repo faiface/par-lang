@@ -6,24 +6,24 @@ import Nat
 import Ordering
 import String
 
-dec Add   : [Int, Int] Int
-dec Sub   : [Int, Int] Int
-dec Mul   : [Int, Int] Int
-dec Div   : [Int, Int] Int
-dec Mod   : [Int, Nat] Nat
-dec Min   : [Int, Int] Int
-dec Max   : [Int, Int] Int
-dec Abs   : [Int] Nat
-dec Clamp : [Int] [Int, Int] Int
+def Add   : [Int, Int] Int = external
+def Sub   : [Int, Int] Int = external
+def Mul   : [Int, Int] Int = external
+def Div   : [Int, Int] Int = external
+def Mod   : [Int, Nat] Nat = external
+def Min   : [Int, Int] Int = external
+def Max   : [Int, Int] Int = external
+def Abs   : [Int] Nat = external
+def Clamp : [Int] [Int, Int] Int = external
 
-dec Equals  : [Int, Int] Bool
-dec Compare : [Int, Int] Ordering
+def Equals  : [Int, Int] Bool = external
+def Compare : [Int, Int] Ordering = external
 
-dec Range : [Int, Int] List<Int>
+def Range : [Int, Int] List<Int> = external
 
-dec ToString : [Int] String
+def ToString : [Int] String = external
 
-dec FromString : [String] either {
+def FromString : [String] either {
   .ok Int,
   .err!,
-}
+} = external

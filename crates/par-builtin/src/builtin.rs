@@ -78,7 +78,7 @@ fn core_builtin_package() -> BuiltinPackage {
     };
 
     package.load_external_type_defs("core");
-    package.load_external_defs("core");
+    // package.load_external_defs("core");
     package
 }
 
@@ -90,7 +90,7 @@ fn basic_builtin_package() -> BuiltinPackage {
     };
 
     package.load_external_type_defs("basic");
-    package.load_external_defs("basic");
+    // package.load_external_defs("basic");
 
     package
 }

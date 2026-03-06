@@ -9,6 +9,6 @@ type Class = either {
   .range(Byte, Byte)!,
 }
 
-dec Equals : [Byte, Byte] Bool
-dec Code   : [Byte] Nat
-dec Is     : [Byte, Class] Bool
+def Equals : [Byte, Byte] Bool = external
+def Code   : [Byte] Nat = external
+def Is     : [Byte, Class] Bool = external

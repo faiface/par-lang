@@ -2,4 +2,4 @@ module Debug
 
 import @core/String
 
-dec Log : [String] !
+def Log : [String] ! = external

@@ -16,4 +16,4 @@ type Url = iterative box choice {
   .addQuery(String, String) => self,
 }
 
-dec FromString : [String] Result<Error, Url>
+def FromString : [String] Result<Error, Url> = external

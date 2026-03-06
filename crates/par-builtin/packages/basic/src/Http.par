@@ -20,9 +20,9 @@ type Response =
   (List<(String) Bytes>)
   Bytes.Reader<Error>
 
-dec Fetch : [Request] Result<Error, Response>
+def Fetch : [Request] Result<Error, Response>  = external
 
-dec Listen : [String] recursive either {
+def Listen : [String] recursive either {
   .shutdown Result<Error, !>,
   .incoming(Request, [Response] Result<Error, !>) self,
-}
+} = external

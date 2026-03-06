@@ -6,35 +6,35 @@ import List
 import Ordering
 import String
 
-dec Add   : [Nat, Nat] Nat
-dec Sub   : [Nat, Int] Nat
-dec Mul   : [Nat, Nat] Nat
-dec Div   : [Nat, Nat] Nat
-dec Mod   : [Nat, Nat] Nat
-dec Min   : [Nat, Nat] Nat
-dec Max   : [Nat, Int] Nat
-dec Clamp : [Int] [Nat, Nat] Nat
+def Add   : [Nat, Nat] Nat = external
+def Sub   : [Nat, Int] Nat = external
+def Mul   : [Nat, Nat] Nat = external
+def Div   : [Nat, Nat] Nat = external
+def Mod   : [Nat, Nat] Nat = external
+def Min   : [Nat, Nat] Nat = external
+def Max   : [Nat, Int] Nat = external
+def Clamp : [Int] [Nat, Nat] Nat = external
 
-dec Equals  : [Nat, Nat] Bool
-dec Compare : [Nat, Nat] Ordering
+def Equals  : [Nat, Nat] Bool = external
+def Compare : [Nat, Nat] Ordering = external
 
-dec Repeat : [Nat] recursive either {
+def Repeat : [Nat] recursive either {
   .end!,
   .step self,
-}
+} = external
 
-dec RepeatLazy : [Nat] recursive either {
+def RepeatLazy : [Nat] recursive either {
   .end!,
   .step box choice {
     .next => self,
   }
-}
+} = external
 
-dec Range : [Nat, Nat] List<Nat>
+def Range : [Nat, Nat] List<Nat> = external
 
-dec ToString : [Nat] String
+def ToString : [Nat] String = external
 
-dec FromString : [String] either {
+def FromString : [String] either {
   .ok Nat,
   .err!,
-}
+} = external

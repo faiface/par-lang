@@ -2,4 +2,4 @@ module Time
 
 import @core/Nat
 
-dec Now : [!] Nat
+def Now : [!] Nat = external

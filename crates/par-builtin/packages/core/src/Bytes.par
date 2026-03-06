@@ -59,14 +59,14 @@ type Pattern = recursive either {
   .or List<self>,
 }
 
-dec Equals  : [Bytes, Bytes] Bool
-dec Compare : [Bytes, Bytes] Ordering
-dec Length  : [Bytes] Nat
-dec Builder : Builder
-dec Reader  : [Bytes] Reader<either {}>
-dec Parser  : [Bytes] Parser<either {}>
+def Equals  : [Bytes, Bytes] Bool = external
+def Compare : [Bytes, Bytes] Ordering = external
+def Length  : [Bytes] Nat = external
+def Builder : Builder = external
+def Reader  : [Bytes] Reader<either {}> = external
+def Parser  : [Bytes] Parser<either {}> = external
 
-dec EmptyReader      : Reader<either {}>
-dec ParserFromReader : <e>[Reader<e>] Parser<e>
+def EmptyReader      : Reader<either {}> = external
+def ParserFromReader : <e>[Reader<e>] Parser<e> = external
 
-dec PipeReader : [type e] [[Writer<!>] Result<e, !>] Reader<e>
+def PipeReader : [type e] [[Writer<!>] Result<e, !>] Reader<e> = external
