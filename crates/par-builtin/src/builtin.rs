@@ -78,7 +78,6 @@ fn core_builtin_package() -> BuiltinPackage {
     };
 
     package.load_external_type_defs("core");
-    // package.load_external_defs("core");
     package
 }
 
@@ -90,7 +89,6 @@ fn basic_builtin_package() -> BuiltinPackage {
     };
 
     package.load_external_type_defs("basic");
-    // package.load_external_defs("basic");
 
     package
 }
@@ -131,23 +129,6 @@ impl BuiltinPackage {
                     &[],
                     type_def.typ.clone(),
                 ));
-        }
-    }
-
-    fn load_external_defs(&mut self, name: &str) {
-        for type_def in get_external_defs(&PackageRef::Package(name)) {
-            let builtin_path = BuiltinModulePath {
-                directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
-                module: type_def.path.module.into(),
-            };
-            if !self.externals.contains_key(&builtin_path) {
-                self.append_external(builtin_path.clone(), BuiltinModule::default());
-            }
-            self.externals
-                .get_mut(&builtin_path)
-                .unwrap()
-                .definitions
-                .push(Definition::external(type_def.path.name, type_def.f.clone()));
         }
     }
 }
