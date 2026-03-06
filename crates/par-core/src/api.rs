@@ -21,8 +21,8 @@ pub mod frontend {
     pub use crate::frontend_impl::parse::SyntaxError;
     pub use crate::frontend_impl::parse_bytes;
     pub use crate::frontend_impl::program::{
-        CheckedModule, Declaration, Definition, ImportDecl, ImportPath, Module, ModuleDecl,
-        ParseAndCompileError, SourceFile, TypeDef, TypeOnHover,
+        CheckedModule, Declaration, Definition, DefinitionBody, ImportDecl, ImportPath, Module,
+        ModuleDecl, ParseAndCompileError, SourceFile, TypeDef, TypeOnHover,
     };
     pub use crate::frontend_impl::set_miette_hook;
     pub use crate::frontend_impl::types::lattice::{intersect_types, union_types};
@@ -52,21 +52,21 @@ pub mod frontend {
         let compiled_definitions = module
             .definitions
             .into_iter()
-            .map(
-                |Definition {
-                     span,
-                     name,
-                     expression,
-                 }| {
-                    Context::new()
-                        .compile_expression(&expression)
-                        .map(|compiled| Definition {
-                            span,
-                            name,
-                            expression: compiled.optimize().fix_captures().0.optimize_subject(None),
-                        })
-                },
-            )
+            .map(|Definition { span, name, body }| {
+                Ok(Definition {
+                    span,
+                    name,
+                    body: match body {
+                        DefinitionBody::Par(expr) => {
+                            let compiled = Context::new().compile_expression(&expr)?;
+                            let compiled =
+                                compiled.optimize().fix_captures().0.optimize_subject(None);
+                            DefinitionBody::Par(compiled)
+                        }
+                        DefinitionBody::External(span) => DefinitionBody::External(span),
+                    },
+                })
+            })
             .collect::<Result<_, _>>()?;
 
         Ok(Module {

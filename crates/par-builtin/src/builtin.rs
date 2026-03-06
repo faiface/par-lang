@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Definition, Module, TypeDef, get_external_type_defs, process};
-use par_runtime::registry::get_external_defs;
+use par_runtime::registry::{PackageRef, get_external_defs};
 
 pub type BuiltinModule = Module<Arc<process::Expression<(), Unresolved>>, Unresolved>;
 
@@ -114,7 +114,7 @@ impl BuiltinPackage {
     }
 
     fn load_external_type_defs(&mut self, name: &str) {
-        for type_def in get_external_type_defs(name) {
+        for type_def in get_external_type_defs(&PackageRef::Package(name)) {
             let builtin_path = BuiltinModulePath {
                 directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
                 module: type_def.path.module.into(),
@@ -135,7 +135,7 @@ impl BuiltinPackage {
     }
 
     fn load_external_defs(&mut self, name: &str) {
-        for type_def in get_external_defs(name) {
+        for type_def in get_external_defs(&PackageRef::Package(name)) {
             let builtin_path = BuiltinModulePath {
                 directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
                 module: type_def.path.module.into(),

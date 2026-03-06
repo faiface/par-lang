@@ -10,7 +10,7 @@ use futures::future::BoxFuture;
 use num_bigint::BigInt;
 use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 use tokio::{
     fs::{self, DirEntry, File, OpenOptions, ReadDir},
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -18,7 +18,7 @@ use tokio::{
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "Path"
@@ -28,7 +28,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "Stdin"
@@ -38,7 +38,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "Stdout"
@@ -48,7 +48,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "Stderr"
@@ -58,7 +58,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "OpenFile"
@@ -68,7 +68,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "CreateOrReplaceFile"
@@ -78,7 +78,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "CreateNewFile"
@@ -88,7 +88,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "AppendToFile"
@@ -98,7 +98,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "CreateOrAppendToFile"
@@ -108,7 +108,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "CreateDir"
@@ -118,7 +118,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "ListDir"
@@ -128,7 +128,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "TraverseDir"
@@ -138,7 +138,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Os",
         name: "Env"

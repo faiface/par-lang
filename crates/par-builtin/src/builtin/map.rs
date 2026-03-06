@@ -5,11 +5,11 @@ use crate::builtin::list::readback_list;
 use arcstr::literal;
 use num_bigint::BigInt;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Map",
         name: "OfString"
@@ -19,7 +19,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Map",
         name: "OfBytes"
@@ -29,7 +29,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Map",
         name: "OfInt"
@@ -39,7 +39,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Map",
         name: "OfNat"

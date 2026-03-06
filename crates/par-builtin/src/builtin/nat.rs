@@ -7,11 +7,11 @@ use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
 use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalTypeDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Nat"
@@ -21,7 +21,7 @@ inventory::submit!(ExternalTypeDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Add"
@@ -31,7 +31,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Sub"
@@ -41,7 +41,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Mul"
@@ -51,7 +51,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Div"
@@ -61,7 +61,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Mod"
@@ -71,7 +71,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Min"
@@ -81,7 +81,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Max"
@@ -91,7 +91,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Clamp"
@@ -101,7 +101,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Equals"
@@ -111,7 +111,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Compare"
@@ -121,7 +121,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Repeat"
@@ -131,7 +131,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "RepeatLazy"
@@ -141,7 +141,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "Range"
@@ -151,7 +151,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "ToString"
@@ -161,7 +161,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Nat",
         name: "FromString"

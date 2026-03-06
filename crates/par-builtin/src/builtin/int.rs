@@ -5,12 +5,12 @@ use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
 use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 use std::cmp::Ordering;
 
 inventory::submit!(ExternalTypeDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Int"
@@ -20,7 +20,7 @@ inventory::submit!(ExternalTypeDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Add"
@@ -30,7 +30,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Sub"
@@ -40,7 +40,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Mul"
@@ -50,7 +50,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Div"
@@ -60,7 +60,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Mod"
@@ -70,7 +70,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Min"
@@ -80,7 +80,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Max"
@@ -90,7 +90,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Abs"
@@ -100,7 +100,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Clamp"
@@ -110,7 +110,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Equals"
@@ -120,7 +120,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Compare"
@@ -130,7 +130,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "Range"
@@ -140,7 +140,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "ToString"
@@ -150,7 +150,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Int",
         name: "FromString"

@@ -4,11 +4,11 @@ use url::Url as ParsedUrl;
 
 use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "core",
+        package: PackageRef::Package("core"),
         path: &[],
         module: "Url",
         name: "FromString"

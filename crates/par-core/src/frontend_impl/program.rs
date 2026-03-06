@@ -3,20 +3,17 @@ use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
 
-use crate::{
-    frontend_impl::parse::parse_module,
-    location::{FileName, Point, Span, Spanning},
-};
+use crate::location::{FileName, Point, Span, Spanning};
 
-use par_runtime::readback::Handle;
-
-use super::language;
 use super::{
     language::{CompileError, GlobalName, LocalName, Unresolved},
     parse::SyntaxError,
     process::{self, NameWithType},
     types::{Context, Type, TypeDefs, TypeError},
 };
+
+use crate::frontend::language::Expression;
+use par_runtime::readback::Handle;
 
 #[derive(Clone, Debug)]
 pub struct Module<Expr, S> {
@@ -76,10 +73,24 @@ pub struct Declaration<S> {
 }
 
 #[derive(Clone, Debug)]
+pub enum DefinitionBody<Expr> {
+    Par(Expr),
+    External(Span),
+}
+
+impl<S> DefinitionBody<Expression<S>> {
+    pub fn span(&self) -> Span {
+        match self {
+            DefinitionBody::Par(expr) => expr.span(),
+            DefinitionBody::External(span) => span.clone(),
+        }
+    }
+}
+#[derive(Clone, Debug)]
 pub struct Definition<Expr, S> {
     pub span: Span,
     pub name: GlobalName<S>,
-    pub expression: Expr,
+    pub body: DefinitionBody<Expr>,
 }
 
 impl TypeDef<Unresolved> {
@@ -100,6 +111,7 @@ impl TypeDef<Unresolved> {
 }
 
 impl Definition<Arc<process::Expression<(), Unresolved>>, Unresolved> {
+    //TODO: remove this
     pub fn external(
         name: &'static str,
         f: fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
@@ -107,7 +119,7 @@ impl Definition<Arc<process::Expression<(), Unresolved>>, Unresolved> {
         Self {
             span: Default::default(),
             name: GlobalName::<Unresolved>::external(None, name),
-            expression: Arc::new(process::Expression::External(f, ())),
+            body: DefinitionBody::Par(Arc::new(process::Expression::External(f, ()))),
         }
     }
 }
@@ -130,37 +142,38 @@ impl From<CompileError> for ParseAndCompileError {
     }
 }
 
-impl Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    pub fn parse_and_compile(source: &str, file: FileName) -> Result<Self, ParseAndCompileError> {
-        let parsed = parse_module(source, file)?;
-
-        let compiled_definitions = parsed
-            .definitions
-            .into_iter()
-            .map(
-                |Definition {
-                     span,
-                     name,
-                     expression,
-                 }| {
-                    language::Context::new()
-                        .compile_expression(&expression)
-                        .map(|compiled| Definition {
-                            span,
-                            name,
-                            expression: compiled.optimize().fix_captures().0.optimize_subject(None),
-                        })
-                },
-            )
-            .collect::<Result<_, _>>()?;
-
-        Ok(Module {
-            type_defs: parsed.type_defs,
-            declarations: parsed.declarations,
-            definitions: compiled_definitions,
-        })
-    }
-}
+// TODO: remove this
+// impl Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
+//     pub fn parse_and_compile(source: &str, file: FileName) -> Result<Self, ParseAndCompileError> {
+//         let parsed = parse_module(source, file)?;
+//
+//         let compiled_definitions = parsed
+//             .definitions
+//             .into_iter()
+//             .map(
+//                 |Definition {
+//                      span,
+//                      name,
+//                      body,
+//                  }| {
+//                     language::Context::new()
+//                         .compile_expression(&expression)
+//                         .map(|compiled| Definition {
+//                             span,
+//                             name,
+//                             expression: compiled.optimize().fix_captures().0.optimize_subject(None),
+//                         })
+//                 },
+//             )
+//             .collect::<Result<_, _>>()?;
+//
+//         Ok(Module {
+//             type_defs: parsed.type_defs,
+//             declarations: parsed.declarations,
+//             definitions: compiled_definitions,
+//         })
+//     }
+// }
 
 impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
     pub fn map_global_names<T, E>(
@@ -201,21 +214,18 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
             definitions: self
                 .definitions
                 .into_iter()
-                .map(
-                    |Definition {
-                         span,
-                         name,
-                         expression,
-                     }| {
-                        Ok(Definition {
-                            span,
-                            name: map_name(name)?,
-                            expression: Arc::new(
-                                Arc::unwrap_or_clone(expression).map_global_names(&mut map_name)?,
-                            ),
-                        })
-                    },
-                )
+                .map(|Definition { span, name, body }| {
+                    Ok(Definition {
+                        span,
+                        name: map_name(name)?,
+                        body: match body {
+                            DefinitionBody::Par(expr) => DefinitionBody::Par(Arc::new(
+                                Arc::unwrap_or_clone(expr).map_global_names(&mut map_name)?,
+                            )),
+                            DefinitionBody::External(span) => DefinitionBody::External(span),
+                        },
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?,
         })
     }
@@ -231,14 +241,9 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
         )?;
 
         let mut unchecked_definitions = IndexMap::new();
-        for Definition {
-            span,
-            name,
-            expression,
-        } in &self.definitions
-        {
+        for Definition { span, name, body } in &self.definitions {
             if let Some((span1, _)) =
-                unchecked_definitions.insert(name.clone(), (span.clone(), expression.clone()))
+                unchecked_definitions.insert(name.clone(), (span.clone(), body.clone()))
             {
                 return Err(TypeError::NameAlreadyDefined(
                     span.clone(),
@@ -283,18 +288,8 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
             definitions: context
                 .get_checked_definitions()
                 .into_iter()
-                .map(|(name, (span, expression, typ))| {
-                    (
-                        name.clone(),
-                        (
-                            Definition {
-                                span,
-                                name,
-                                expression,
-                            },
-                            typ,
-                        ),
-                    )
+                .map(|(name, (span, body, typ))| {
+                    (name.clone(), (Definition { span, name, body }, typ))
                 })
                 .collect(),
         })
@@ -365,7 +360,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
                 });
         }
 
-        for (name, (definition, _typ)) in &program.definitions {
+        for (name, (definition, typ)) in &program.definitions {
             let Some(file) = definition.span.file() else {
                 continue;
             };
@@ -378,16 +373,16 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
                 NameWithType {
                     name: Some(name.to_string()),
                     global_name: Some(name.clone()),
-                    typ: definition.expression.get_type(),
+                    typ: typ.clone(),
                     def_span: Span::None,
                     decl_span,
                 },
             );
-            definition
-                .expression
-                .types_at_spans(program, &mut |span, name_info| {
+            if let DefinitionBody::Par(expr) = &definition.body {
+                expr.types_at_spans(program, &mut |span, name_info| {
                     file_hovers.push(span, name_info)
                 });
+            }
         }
 
         for file_hovers in files.values_mut() {

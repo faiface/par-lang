@@ -2,9 +2,14 @@ use crate::flat::runtime::ExternalFn;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PackageRef<'a> {
+    Local,
+    Package(&'a str),
+}
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct DefinitionRef<'a> {
-    pub package: &'a str,
+    pub package: PackageRef<'a>,
     pub path: &'a [&'a str],
     pub module: &'a str,
     pub name: &'a str,
@@ -16,21 +21,21 @@ pub struct ExternalDef {
 
 inventory::collect!(ExternalDef);
 
-static REGISTRY: LazyLock<HashMap<&'static str, HashMap<DefinitionRef, ExternalFn>>> =
+static REGISTRY: LazyLock<HashMap<PackageRef, HashMap<DefinitionRef, ExternalFn>>> =
     LazyLock::new(|| {
         let mut map = HashMap::new();
         for def in inventory::iter::<ExternalDef> {
-            if !map.contains_key(def.path.package) {
-                map.insert(def.path.package, HashMap::new());
+            if !map.contains_key(&def.path.package) {
+                map.insert(def.path.package.clone(), HashMap::new());
             }
-            map.get_mut(def.path.package)
+            map.get_mut(&def.path.package)
                 .unwrap()
                 .insert(def.path.clone(), def.f);
         }
         map
     });
 
-pub fn get_external_defs(package: &str) -> Vec<ExternalDef> {
+pub fn get_external_defs(package: &PackageRef) -> Vec<ExternalDef> {
     if let Some(map) = REGISTRY.get(package) {
         map.iter()
             .map(|(path, f)| ExternalDef {
@@ -40,5 +45,13 @@ pub fn get_external_defs(package: &str) -> Vec<ExternalDef> {
             .collect()
     } else {
         Vec::new()
+    }
+}
+
+pub fn get_external_fn(path: &DefinitionRef) -> Option<ExternalFn> {
+    if let Some(map) = REGISTRY.get(&path.package) {
+        map.get(path).copied()
+    } else {
+        None
     }
 }

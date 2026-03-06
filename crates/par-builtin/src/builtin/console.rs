@@ -3,7 +3,7 @@ use std::io::{Write, stdin, stdout};
 
 use arcstr::literal;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 use par_core::frontend::ParString;
 
@@ -49,7 +49,7 @@ async fn console_open(mut handle: Handle) {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Console",
         name: "Open"

@@ -152,7 +152,7 @@ impl Instance {
             }
         }
 
-        for (name, (definition, _typ)) in &checked_module.definitions {
+        for (name, (definition, typ)) in &checked_module.definitions {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), definition.span.points())
             {
@@ -171,7 +171,6 @@ impl Instance {
                         symbol.selection_range = selection_range;
                     })
                     .or_insert({
-                        let typ = definition.expression.get_type();
                         let detail = checked.render_type_in_file(&self.file, &typ);
 
                         lsp::DocumentSymbol {
@@ -209,7 +208,6 @@ impl Instance {
             symbols.into_iter().map(|(_, v)| v).collect(),
         ))
     }
-
     pub fn handle_goto_declaration(
         &self,
         params: &lsp::GotoDefinitionParams,

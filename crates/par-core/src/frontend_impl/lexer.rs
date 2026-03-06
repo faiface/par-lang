@@ -77,6 +77,7 @@ pub enum TokenKind {
     Default,
     Type,
     Unfounded,
+    External,
 
     Unknown,
 }
@@ -176,6 +177,7 @@ impl TokenKind {
             TokenKind::Default => "default",
             TokenKind::Type => "type",
             TokenKind::Unfounded => "unfounded",
+            TokenKind::External => "external",
 
             TokenKind::Unknown => "???",
         }
@@ -325,6 +327,7 @@ pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                         "default" => TokenKind::Default,
                         "type" => TokenKind::Type,
                         "unfounded" => TokenKind::Unfounded,
+                        "external" => TokenKind::External,
                         raw => {
                             if raw.starts_with(char::is_uppercase) {
                                 TokenKind::UppercaseIdentifier

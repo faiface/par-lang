@@ -32,11 +32,11 @@ use url::Url as ParsedUrl;
 use crate::builtin::{list::readback_list, url::provide_url_value};
 use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Http",
         name: "Fetch"
@@ -46,7 +46,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Http",
         name: "Listen"

@@ -1,5 +1,6 @@
 use crate::frontend_impl::language::{GlobalName, LocalName};
 use crate::frontend_impl::process::{Captures, Expression};
+use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError};
 use crate::location::Span;
 use indexmap::{IndexMap, IndexSet};
@@ -24,7 +25,8 @@ pub(crate) struct PollScope<S> {
 pub(crate) struct Context<S> {
     pub(crate) type_defs: TypeDefs<S>,
     declarations: Arc<IndexMap<GlobalName<S>, (Span, Type<S>)>>,
-    unchecked_definitions: Arc<IndexMap<GlobalName<S>, (Span, Arc<Expression<(), S>>)>>,
+    unchecked_definitions:
+        Arc<IndexMap<GlobalName<S>, (Span, DefinitionBody<Arc<Expression<(), S>>>)>>,
     checked_definitions: Arc<RwLock<IndexMap<GlobalName<S>, CheckedDef<S>>>>,
     current_deps: IndexSet<GlobalName<S>>,
     pub(crate) variables: IndexMap<LocalName, Type<S>>,
@@ -38,7 +40,7 @@ pub(crate) struct Context<S> {
 #[derive(Clone, Debug)]
 struct CheckedDef<S> {
     span: Span,
-    def: Arc<Expression<Type<S>, S>>,
+    def: DefinitionBody<Arc<Expression<Type<S>, S>>>,
     typ: Type<S>,
 }
 
@@ -46,7 +48,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
     pub(crate) fn new(
         type_defs: TypeDefs<S>,
         declarations: IndexMap<GlobalName<S>, (Span, Type<S>)>,
-        unchecked_definitions: IndexMap<GlobalName<S>, (Span, Arc<Expression<(), S>>)>,
+        unchecked_definitions: IndexMap<
+            GlobalName<S>,
+            (Span, DefinitionBody<Arc<Expression<(), S>>>),
+        >,
     ) -> Self {
         Self {
             type_defs,
@@ -97,15 +102,31 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
             Some((_, declared_type)) => {
                 self.type_defs.validate_type(&declared_type)?;
-                let checked_def = self.check_expression(None, &unchecked_def, &declared_type)?;
-                (checked_def, declared_type)
+                match unchecked_def {
+                    DefinitionBody::Par(expression) => {
+                        let checked_def =
+                            self.check_expression(None, &expression, &declared_type)?;
+                        (DefinitionBody::Par(checked_def), declared_type)
+                    }
+                    DefinitionBody::External(span) => {
+                        (DefinitionBody::External(span), declared_type)
+                    }
+                }
             }
-            None => {
-                let (expr, mut typ) = self.infer_expression(None, &unchecked_def)?;
-                self.type_defs.validate_type(&typ)?;
-                typ.remove_asc(&self.type_defs)?;
-                (expr, typ)
-            }
+            None => match unchecked_def {
+                DefinitionBody::Par(expr) => {
+                    let (expr, mut typ) = self.infer_expression(None, &expr)?;
+                    self.type_defs.validate_type(&typ)?;
+                    typ.remove_asc(&self.type_defs)?;
+                    (DefinitionBody::Par(expr), typ)
+                }
+                DefinitionBody::External(span) => {
+                    return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                        span.clone(),
+                        LocalName::result(),
+                    ));
+                }
+            },
         };
 
         self.variables = original_variables;
@@ -128,7 +149,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
 
     pub(crate) fn get_checked_definitions(
         &self,
-    ) -> IndexMap<GlobalName<S>, (Span, Arc<Expression<Type<S>, S>>, Type<S>)> {
+    ) -> IndexMap<GlobalName<S>, (Span, DefinitionBody<Arc<Expression<Type<S>, S>>>, Type<S>)> {
         self.checked_definitions
             .read()
             .unwrap()

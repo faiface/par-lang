@@ -1,6 +1,6 @@
 use crate::frontend::Type;
 use crate::frontend::language::Unresolved;
-use par_runtime::registry::DefinitionRef;
+use par_runtime::registry::{DefinitionRef, PackageRef};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 pub struct ExternalTypeDef {
@@ -10,21 +10,21 @@ pub struct ExternalTypeDef {
 
 inventory::collect!(ExternalTypeDef);
 
-static REGISTRY: LazyLock<HashMap<&'static str, HashMap<DefinitionRef, Type<Unresolved>>>> =
+static REGISTRY: LazyLock<HashMap<PackageRef, HashMap<DefinitionRef, Type<Unresolved>>>> =
     LazyLock::new(|| {
         let mut map = HashMap::new();
         for def in inventory::iter::<ExternalTypeDef> {
-            if !map.contains_key(def.path.package) {
-                map.insert(def.path.package, HashMap::new());
+            if !map.contains_key(&def.path.package) {
+                map.insert(def.path.package.clone(), HashMap::new());
             }
-            map.get_mut(def.path.package)
+            map.get_mut(&def.path.package)
                 .unwrap()
                 .insert(def.path.clone(), def.typ.clone());
         }
         map
     });
 
-pub fn get_external_type_defs(package: &str) -> Vec<ExternalTypeDef> {
+pub fn get_external_type_defs(package: &PackageRef) -> Vec<ExternalTypeDef> {
     if let Some(map) = REGISTRY.get(package) {
         map.iter()
             .map(|(path, typ)| ExternalTypeDef {

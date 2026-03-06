@@ -6,6 +6,7 @@ use super::{
     },
     lexer::{Input, Token, TokenKind, lex},
 };
+use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::{
     language::LocalName,
     program::{
@@ -349,14 +350,7 @@ fn source_file(
             Item::Declaration(dec) => {
                 acc.declarations.push(dec);
             }
-            Item::Definition(
-                Definition {
-                    span,
-                    name,
-                    expression,
-                },
-                annotation,
-            ) => {
+            Item::Definition(Definition { span, name, body }, annotation) => {
                 if let Some(typ) = annotation {
                     acc.declarations.push(Declaration {
                         span: span.clone(),
@@ -364,11 +358,7 @@ fn source_file(
                         typ,
                     });
                 }
-                acc.definitions.push(Definition {
-                    span,
-                    name,
-                    expression,
-                });
+                acc.definitions.push(Definition { span, name, body });
             }
         };
         acc
@@ -549,15 +539,18 @@ fn definition(
             global_binding_name,
             annotation,
             t(TokenKind::Eq),
-            expression,
+            alt((
+                t(TokenKind::External).map(|t| DefinitionBody::External(t.span.clone())),
+                expression.map(|expr| DefinitionBody::Par(expr)),
+            )),
         ),
     )
-    .map(|(pre, (name, annotation, _, expression))| {
+    .map(|(pre, (name, annotation, _, body))| {
         (
             Definition {
-                span: pre.span.join(expression.span()),
+                span: pre.span.join(body.span()),
                 name,
-                expression,
+                body,
             },
             annotation,
         )

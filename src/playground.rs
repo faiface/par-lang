@@ -14,6 +14,7 @@ use futures::task::{Spawn, SpawnExt};
 
 use crate::readback::{Element, RunStats};
 use core::time::Duration;
+use par_core::frontend::DefinitionBody;
 use par_core::{
     frontend::{
         Type, TypeError,
@@ -223,11 +224,18 @@ impl BuildResult {
                 |par_core::frontend::Definition {
                      span: _,
                      name,
-                     expression,
+                     body,
                  }| {
                     let mut buf = String::new();
                     write!(&mut buf, "def {} = ", name).expect("write failed");
-                    expression.pretty(&mut buf, 0).expect("write failed");
+                    match body {
+                        DefinitionBody::Par(expr) => {
+                            expr.pretty(&mut buf, 0).expect("write failed");
+                        }
+                        DefinitionBody::External(_) => {
+                            write!(&mut buf, "<external>").expect("write failed");
+                        }
+                    }
                     write!(&mut buf, "\n\n").expect("write failed");
                     buf
                 },

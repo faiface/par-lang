@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use par_runtime::readback::Handle;
-use par_runtime::registry::{DefinitionRef, ExternalDef};
+use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 async fn time_now(mut handle: Handle) {
     // return current time in milliseconds since epoch
@@ -14,7 +14,7 @@ async fn time_now(mut handle: Handle) {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: "basic",
+        package: PackageRef::Package("basic"),
         path: &[],
         module: "Time",
         name: "Now"

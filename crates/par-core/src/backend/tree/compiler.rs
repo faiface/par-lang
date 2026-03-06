@@ -5,7 +5,9 @@ use std::{
     sync::Arc,
 };
 
+use crate::frontend::language::PackageId;
 use crate::frontend_impl::process::VariableUsage;
+use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::types::core::get_primitive_type;
 use crate::frontend_impl::{
     language::{GlobalName, LocalName, Universal},
@@ -23,6 +25,7 @@ use crate::{
 use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
 use par_runtime::fan_behavior::FanBehavior;
+use par_runtime::registry::{DefinitionRef, PackageRef, get_external_fn};
 use std::hash::Hash;
 
 #[derive(Clone, Debug)]
@@ -390,7 +393,33 @@ impl Compiler {
             });
         }
         let global = match self.definitions.get(name).cloned() {
-            Some((def, _typ)) => def.expression,
+            Some((def, _typ)) => {
+                match def.body {
+                    DefinitionBody::Par(expr) => expr,
+                    DefinitionBody::External(_) => {
+                        let def_ref = DefinitionRef {
+                            package: match &name.module.package {
+                                PackageId::Local => PackageRef::Local,
+                                PackageId::Package(name) => PackageRef::Package(name.as_str()),
+                            },
+                            path: &name
+                                .module
+                                .directories
+                                .iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>(),
+                            module: &name.module.module,
+                            name: &name.primary,
+                        };
+                        if let Some(f) = get_external_fn(&def_ref) {
+                            Arc::new(Expression::External(f, Type::Break(Span::None)))
+                        } else {
+                            //TODO: this is not an Err, because linking should be moved to the runtime
+                            panic!("External function not found: {:?}", name);
+                        }
+                    }
+                }
+            }
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
 
