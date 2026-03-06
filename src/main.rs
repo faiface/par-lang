@@ -1,19 +1,19 @@
-use crate::package_builder::{PackageBuildError, parse_and_load_package};
-use crate::package_loader::{CanonicalModulePath, PackageLoadError};
 use crate::package_utils::{
     SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
     parse_target, source_for_fallback, source_for_type_error,
 };
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
+use crate::workspace_support::default_workspace_from_path;
 use clap::{Command, arg, command, value_parser};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
 use par_core::frontend::language::Universal;
 use par_core::{
-    frontend::{Type, TypeError, compile_runtime, set_miette_hook, type_check},
+    frontend::{Type, TypeError, set_miette_hook},
     runtime::RuntimeCompilerError,
+    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
 };
 use tokio::time::Instant;
 
@@ -26,8 +26,6 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 mod language_server;
-mod package_builder;
-mod package_loader;
 mod package_utils;
 #[cfg(feature = "playground")]
 mod playground;
@@ -38,12 +36,13 @@ mod test_runner;
 mod tokio_factory;
 #[cfg(target_arch = "wasm32")]
 mod wasm_spawn;
+mod workspace_support;
 
 const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
 #[derive(Debug, Clone)]
 enum BuildError {
-    PackageBuild(PackageBuildError),
+    Workspace(WorkspaceError),
     Type {
         error: TypeError<Universal>,
         sources: SourceLookup,
@@ -57,7 +56,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self) -> String {
         match self {
-            Self::PackageBuild(PackageBuildError::Load(PackageLoadError::ParseError {
+            Self::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
                 source,
                 error,
                 ..
@@ -65,30 +64,24 @@ impl BuildError {
                 "{:?}",
                 miette::Report::from(error.to_owned()).with_source_code(source.clone())
             ),
-            Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
+            Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
-            Self::PackageBuild(PackageBuildError::UnknownDependency { source, span, .. })
-            | Self::PackageBuild(PackageBuildError::ImportedModuleNotFound {
-                source, span, ..
-            })
-            | Self::PackageBuild(PackageBuildError::DuplicateImportAlias {
-                source, span, ..
-            })
-            | Self::PackageBuild(PackageBuildError::BindingNameConflictsWithImportAlias {
+            Self::Workspace(WorkspaceError::UnknownDependency { source, span, .. })
+            | Self::Workspace(WorkspaceError::ImportedModuleNotFound { source, span, .. })
+            | Self::Workspace(WorkspaceError::DuplicateImportAlias { source, span, .. })
+            | Self::Workspace(WorkspaceError::BindingNameConflictsWithImportAlias {
                 source,
                 span,
                 ..
             })
-            | Self::PackageBuild(PackageBuildError::UnknownModuleQualifier {
-                source, span, ..
-            })
-            | Self::PackageBuild(PackageBuildError::QualifiedCurrentModuleReference {
+            | Self::Workspace(WorkspaceError::UnknownModuleQualifier { source, span, .. })
+            | Self::Workspace(WorkspaceError::QualifiedCurrentModuleReference {
                 source,
                 span,
                 ..
             }) => format_with_source_span(source.clone(), span, self.to_string()),
-            Self::PackageBuild(error) => error.to_string(),
+            Self::Workspace(error) => error.to_string(),
             Self::Type { error, sources } => {
                 format!(
                     "{:?}",
@@ -106,7 +99,7 @@ impl BuildError {
 impl Display for BuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PackageBuild(error) => write!(f, "{error}"),
+            Self::Workspace(error) => write!(f, "{error}"),
             Self::Type { error, .. } => write!(f, "{error:?}"),
             Self::InetCompile { error, .. } => write!(f, "{error:?}"),
         }
@@ -115,21 +108,15 @@ impl Display for BuildError {
 
 fn build_checked_package(
     package_path: &PathBuf,
-) -> Result<
-    (
-        par_core::frontend::CheckedModule<Universal>,
-        Vec<CanonicalModulePath>,
-        SourceLookup,
-    ),
-    BuildError,
-> {
-    let lowered_package = parse_and_load_package(package_path).map_err(BuildError::PackageBuild)?;
-    let sources = lowered_package.sources;
-    let checked = type_check(&lowered_package.lowered).map_err(|error| BuildError::Type {
+) -> Result<(CheckedWorkspace, Vec<ModulePath>, SourceLookup), BuildError> {
+    let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
+    let sources = workspace.sources.clone();
+    let checked = workspace.type_check().map_err(|error| BuildError::Type {
         error,
         sources: sources.clone(),
     })?;
-    Ok((checked, lowered_package.local_modules, sources))
+    let root_modules = checked.root_modules();
+    Ok((checked, root_modules, sources))
 }
 
 fn build_runtime_package(
@@ -137,18 +124,20 @@ fn build_runtime_package(
     max_interactions: u32,
 ) -> Result<
     (
-        par_core::frontend::CheckedModule<Universal>,
+        CheckedWorkspace,
         par_core::runtime::Compiled,
-        Vec<CanonicalModulePath>,
+        Vec<ModulePath>,
     ),
     BuildError,
 > {
     let (checked, local_modules, sources) = build_checked_package(package_path)?;
     let rt_compiled =
-        compile_runtime(&checked, max_interactions).map_err(|error| BuildError::InetCompile {
-            error,
-            sources: sources.clone(),
-        })?;
+        checked
+            .compile_runtime(max_interactions)
+            .map_err(|error| BuildError::InetCompile {
+                error,
+                sources: sources.clone(),
+            })?;
     Ok((checked, rt_compiled, local_modules))
 }
 
@@ -405,8 +394,8 @@ fn run_definition(
 
 fn resolve_target_definition<'a>(
     target: Option<&str>,
-    checked: &'a par_core::frontend::CheckedModule<Universal>,
-    local_modules: &[CanonicalModulePath],
+    checked: &'a CheckedWorkspace,
+    local_modules: &[ModulePath],
 ) -> Option<&'a par_core::frontend::language::GlobalName<par_core::frontend::language::Universal>> {
     let target = target.unwrap_or("Main.Main");
     let parsed_target = parse_target(target);
@@ -418,6 +407,7 @@ fn resolve_target_definition<'a>(
     let module_name = canonical_module.to_slash_path();
 
     checked
+        .checked_module()
         .definitions
         .iter()
         .find(|(name, _)| {

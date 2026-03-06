@@ -9,5 +9,6 @@ pub(crate) mod location;
 pub(crate) mod runtime_impl;
 pub(crate) mod test_assertion;
 mod typed_readback;
+pub mod workspace;
 
 pub use facade::{execution, frontend, runtime, source, testing};

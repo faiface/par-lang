@@ -46,7 +46,7 @@ pub struct Resolved {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PackageId {
     Local,
-    Builtin(String),
+    Package(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -494,7 +494,7 @@ impl Display for Universal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let package = match &self.package {
             PackageId::Local => None,
-            PackageId::Builtin(name) => Some(format!("@{name}")),
+            PackageId::Package(name) => Some(format!("@{name}")),
         };
         match (&package, self.directories.is_empty()) {
             (None, true) => write!(f, "{}", self.module),

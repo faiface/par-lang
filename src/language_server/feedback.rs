@@ -66,8 +66,8 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
                 related_span.into_iter().collect(),
             )
         }
-        CompileError::PackageBuild(crate::package_builder::PackageBuildError::Load(
-            crate::package_loader::PackageLoadError::ParseError { source, error, .. },
+        CompileError::Workspace(par_core::workspace::WorkspaceError::Load(
+            par_core::workspace::PackageLoadError::ParseError { source, error, .. },
         )) => (
             error.span(),
             format!(
@@ -77,7 +77,7 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             error.help().map(|s| s.to_string()),
             vec![],
         ),
-        CompileError::PackageBuild(crate::package_builder::PackageBuildError::LowerError {
+        CompileError::Workspace(par_core::workspace::WorkspaceError::LowerError {
             source,
             error,
             ..
@@ -86,44 +86,33 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             let report = error.to_report(source.clone());
             (span, format!("{report:?}"), None, vec![])
         }
-        CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::UnknownDependency {
+        CompileError::Workspace(
+            error @ par_core::workspace::WorkspaceError::UnknownDependency { source, span, .. },
+        )
+        | CompileError::Workspace(
+            error @ par_core::workspace::WorkspaceError::ImportedModuleNotFound {
+                source, span, ..
+            },
+        )
+        | CompileError::Workspace(
+            error @ par_core::workspace::WorkspaceError::DuplicateImportAlias {
+                source, span, ..
+            },
+        )
+        | CompileError::Workspace(
+            error @ par_core::workspace::WorkspaceError::BindingNameConflictsWithImportAlias {
                 source,
                 span,
                 ..
             },
         )
-        | CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::ImportedModuleNotFound {
-                source,
-                span,
-                ..
+        | CompileError::Workspace(
+            error @ par_core::workspace::WorkspaceError::UnknownModuleQualifier {
+                source, span, ..
             },
         )
-        | CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::DuplicateImportAlias {
-                source,
-                span,
-                ..
-            },
-        )
-        | CompileError::PackageBuild(
-            error
-            @ crate::package_builder::PackageBuildError::BindingNameConflictsWithImportAlias {
-                source,
-                span,
-                ..
-            },
-        )
-        | CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::UnknownModuleQualifier {
-                source,
-                span,
-                ..
-            },
-        )
-        | CompileError::PackageBuild(
-            error @ crate::package_builder::PackageBuildError::QualifiedCurrentModuleReference {
+        | CompileError::Workspace(
+            error @ par_core::workspace::WorkspaceError::QualifiedCurrentModuleReference {
                 source,
                 span,
                 ..
@@ -134,7 +123,7 @@ pub fn diagnostic_for_error(err: &CompileError, code: Arc<str>) -> lsp::Diagnost
             None,
             vec![],
         ),
-        CompileError::PackageBuild(error) => (Span::None, error.to_string(), None, vec![]),
+        CompileError::Workspace(error) => (Span::None, error.to_string(), None, vec![]),
     };
     let message = match help {
         Some(help) => format!("{}\n{}", message, help),

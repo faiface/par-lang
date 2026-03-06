@@ -6,12 +6,8 @@ use std::{
     time::SystemTime,
 };
 
-use crate::package_builder::{PackageBuildError, load_parsed_package};
-use crate::package_loader::{
-    LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
-    parse_loaded_files,
-};
 use crate::package_utils::{format_with_source_span, normalized_path};
+use crate::workspace_support::default_workspace_from_parsed;
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use futures::task::{Spawn, SpawnExt};
@@ -20,12 +16,15 @@ use crate::readback::{Element, RunStats};
 use core::time::Duration;
 use par_core::{
     frontend::{
-        CheckedModule, Module, Type, TypeError, TypeOnHover, compile_runtime,
+        Type, TypeError,
         language::{GlobalName, Universal},
-        process, type_check,
     },
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
+    workspace::{
+        CheckedWorkspace, LoadedPackageFile, PackageLoadError, WorkspaceError,
+        collect_source_files, find_package_layout, parse_loaded_files,
+    },
 };
 use par_runtime::spawn::TokioSpawn;
 use std::collections::HashMap;
@@ -39,7 +38,7 @@ use crate::wasm_spawn::WasmSpawn;
 
 #[derive(Debug, Clone)]
 enum BuildError {
-    PackageBuild(PackageBuildError),
+    Workspace(WorkspaceError),
     Type(TypeError<Universal>),
     InetCompile(RuntimeCompilerError),
 }
@@ -47,7 +46,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self, code: Arc<str>) -> String {
         match self {
-            Self::PackageBuild(PackageBuildError::Load(PackageLoadError::ParseError {
+            Self::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
                 source,
                 error,
                 ..
@@ -55,30 +54,24 @@ impl BuildError {
                 "{:?}",
                 miette::Report::from(error.to_owned()).with_source_code(source.clone())
             ),
-            Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
+            Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
-            Self::PackageBuild(
-                error @ PackageBuildError::UnknownDependency { source, span, .. },
+            Self::Workspace(error @ WorkspaceError::UnknownDependency { source, span, .. })
+            | Self::Workspace(
+                error @ WorkspaceError::ImportedModuleNotFound { source, span, .. },
             )
-            | Self::PackageBuild(
-                error @ PackageBuildError::ImportedModuleNotFound { source, span, .. },
+            | Self::Workspace(error @ WorkspaceError::DuplicateImportAlias { source, span, .. })
+            | Self::Workspace(
+                error @ WorkspaceError::BindingNameConflictsWithImportAlias { source, span, .. },
             )
-            | Self::PackageBuild(
-                error @ PackageBuildError::DuplicateImportAlias { source, span, .. },
+            | Self::Workspace(
+                error @ WorkspaceError::UnknownModuleQualifier { source, span, .. },
             )
-            | Self::PackageBuild(
-                error @ PackageBuildError::BindingNameConflictsWithImportAlias {
-                    source, span, ..
-                },
-            )
-            | Self::PackageBuild(
-                error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
-            )
-            | Self::PackageBuild(
-                error @ PackageBuildError::QualifiedCurrentModuleReference { source, span, .. },
+            | Self::Workspace(
+                error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
-            Self::PackageBuild(error) => error.to_string(),
+            Self::Workspace(error) => error.to_string(),
             Self::Type(error) => format!("{:?}", error.to_report(code)),
             Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
         }
@@ -88,8 +81,8 @@ impl BuildError {
 #[derive(Clone)]
 enum BuildResult {
     None,
-    PackageBuildError {
-        error: PackageBuildError,
+    WorkspaceError {
+        error: WorkspaceError,
     },
     TypeError {
         pretty: String,
@@ -97,14 +90,12 @@ enum BuildResult {
     },
     InetError {
         pretty: String,
-        checked: Arc<CheckedModule<Universal>>,
-        type_on_hover: TypeOnHover<Universal>,
+        checked: Arc<CheckedWorkspace>,
         error: RuntimeCompilerError,
     },
     Ok {
         pretty: String,
-        checked: Arc<CheckedModule<Universal>>,
-        type_on_hover: TypeOnHover<Universal>,
+        checked: Arc<CheckedWorkspace>,
         rt_compiled: Compiled,
     },
 }
@@ -113,7 +104,7 @@ impl BuildResult {
     fn error(&self) -> Option<BuildError> {
         match self {
             Self::None => None,
-            Self::PackageBuildError { error } => Some(BuildError::PackageBuild(error.clone())),
+            Self::WorkspaceError { error } => Some(BuildError::Workspace(error.clone())),
             Self::TypeError { error, .. } => Some(BuildError::Type(error.clone())),
             Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
             Self::Ok { .. } => None,
@@ -125,24 +116,14 @@ impl BuildResult {
             Self::TypeError { pretty, .. }
             | Self::InetError { pretty, .. }
             | Self::Ok { pretty, .. } => Some(pretty),
-            Self::None | Self::PackageBuildError { .. } => None,
+            Self::None | Self::WorkspaceError { .. } => None,
         }
     }
 
-    fn checked(&self) -> Option<Arc<CheckedModule<Universal>>> {
+    fn checked(&self) -> Option<Arc<CheckedWorkspace>> {
         match self {
             Self::InetError { checked, .. } | Self::Ok { checked, .. } => Some(Arc::clone(checked)),
-            Self::None | Self::PackageBuildError { .. } | Self::TypeError { .. } => None,
-        }
-    }
-
-    fn type_on_hover(&self) -> Option<&TypeOnHover<Universal>> {
-        match self {
-            Self::InetError { type_on_hover, .. } | Self::Ok { type_on_hover, .. } => {
-                Some(type_on_hover)
-            }
-            Self::None | Self::TypeError { .. } => None,
-            Self::PackageBuildError { .. } => None,
+            Self::None | Self::WorkspaceError { .. } | Self::TypeError { .. } => None,
         }
     }
 
@@ -150,7 +131,7 @@ impl BuildResult {
         match self {
             Self::Ok { rt_compiled, .. } => Some(rt_compiled),
             Self::None
-            | Self::PackageBuildError { .. }
+            | Self::WorkspaceError { .. }
             | Self::TypeError { .. }
             | Self::InetError { .. } => None,
         }
@@ -168,17 +149,17 @@ impl BuildResult {
         }]) {
             Ok(parsed) => parsed,
             Err(error) => {
-                return Self::PackageBuildError {
-                    error: PackageBuildError::Load(error),
+                return Self::WorkspaceError {
+                    error: WorkspaceError::Load(error),
                 };
             }
         };
 
-        let lowered = match load_parsed_package(parsed) {
-            Ok(lowered) => lowered,
-            Err(error) => return Self::PackageBuildError { error },
+        let workspace = match default_workspace_from_parsed(parsed) {
+            Ok(workspace) => workspace,
+            Err(error) => return Self::WorkspaceError { error },
         };
-        Self::from_compiled(lowered.lowered, max_interactions)
+        Self::from_workspace(workspace, max_interactions)
     }
 
     fn from_package_active_file(
@@ -196,16 +177,16 @@ impl BuildResult {
                 );
             }
             Err(error) => {
-                return Self::PackageBuildError {
-                    error: PackageBuildError::Load(error),
+                return Self::WorkspaceError {
+                    error: WorkspaceError::Load(error),
                 };
             }
         };
         let mut files = match collect_source_files(&layout) {
             Ok(files) => files,
             Err(error) => {
-                return Self::PackageBuildError {
-                    error: PackageBuildError::Load(error),
+                return Self::WorkspaceError {
+                    error: WorkspaceError::Load(error),
                 };
             }
         };
@@ -219,25 +200,23 @@ impl BuildResult {
         let parsed = match parse_loaded_files(files) {
             Ok(parsed) => parsed,
             Err(error) => {
-                return Self::PackageBuildError {
-                    error: PackageBuildError::Load(error),
+                return Self::WorkspaceError {
+                    error: WorkspaceError::Load(error),
                 };
             }
         };
 
-        let lowered = match load_parsed_package(parsed) {
-            Ok(lowered) => lowered,
-            Err(error) => return Self::PackageBuildError { error },
+        let workspace = match default_workspace_from_parsed(parsed) {
+            Ok(workspace) => workspace,
+            Err(error) => return Self::WorkspaceError { error },
         };
 
-        Self::from_compiled(lowered.lowered, max_interactions)
+        Self::from_workspace(workspace, max_interactions)
     }
 
-    fn from_compiled(
-        compiled: Module<Arc<process::Expression<(), Universal>>, Universal>,
-        max_interactions: u32,
-    ) -> Self {
-        let pretty = compiled
+    fn from_workspace(workspace: par_core::workspace::Workspace, max_interactions: u32) -> Self {
+        let pretty = workspace
+            .lowered_module()
             .definitions
             .iter()
             .map(
@@ -255,26 +234,20 @@ impl BuildResult {
             )
             .collect();
 
-        let checked = match type_check(&compiled) {
+        let checked = match workspace.type_check() {
             Ok(checked) => Arc::new(checked),
             Err(error) => return Self::TypeError { pretty, error },
         };
         Self::from_checked(pretty, checked, max_interactions)
     }
 
-    fn from_checked(
-        pretty: String,
-        checked: Arc<CheckedModule<Universal>>,
-        max_interactions: u32,
-    ) -> Self {
-        let type_on_hover = TypeOnHover::<Universal>::new(&checked);
-        let rt_compiled = match compile_runtime(&checked, max_interactions) {
+    fn from_checked(pretty: String, checked: Arc<CheckedWorkspace>, max_interactions: u32) -> Self {
+        let rt_compiled = match checked.compile_runtime(max_interactions) {
             Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
                     pretty,
                     checked,
-                    type_on_hover,
                     error,
                 };
             }
@@ -282,7 +255,6 @@ impl BuildResult {
         Self::Ok {
             pretty,
             checked,
-            type_on_hover,
             rt_compiled,
         }
     }
@@ -666,11 +638,11 @@ impl Playground {
         cancel_token: &mut Option<CancellationToken>,
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
-        program: Arc<CheckedModule<Universal>>,
+        program: Arc<CheckedWorkspace>,
         compiled: &Compiled,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
     ) -> () {
-        for (name, _) in &program.definitions {
+        for (name, _) in &program.checked_module().definitions {
             if ui.button(format!("{}", name)).clicked() {
                 if let Some(cancel_token) = cancel_token {
                     cancel_token.cancel();
@@ -693,7 +665,11 @@ impl Playground {
                         ctx.request_repaint();
                     }),
                     spawner.clone(),
-                    TypedHandle::new(program.type_defs.clone(), ty.clone(), handle),
+                    TypedHandle::new(
+                        program.checked_module().type_defs.clone(),
+                        ty.clone(),
+                        handle,
+                    ),
                     Arc::clone(&stats),
                 ));
                 let stats_clone = Arc::clone(&stats);
@@ -804,16 +780,14 @@ impl Playground {
 
                     let theme = self.get_theme(ui);
 
-                    if let Some(type_on_hover) = self.build.type_on_hover() {
+                    if let Some(checked) = self.build.checked() {
                         let hover_file_name = self.active_file_name();
-                        if let Some(name_info) = type_on_hover.query(
-                            &hover_file_name,
-                            self.cursor_pos.0,
-                            self.cursor_pos.1,
-                        ) {
+                        if let Some(name_info) =
+                            checked.hover_at(&hover_file_name, self.cursor_pos.0, self.cursor_pos.1)
+                        {
                             ui.horizontal(|ui| {
-                                let mut buf = String::new();
-                                name_info.typ.pretty(&mut buf, 0).unwrap();
+                                let buf =
+                                    checked.render_hover_in_file(&hover_file_name, &name_info);
                                 ui.label(RichText::new(buf).code().color(green()));
                             });
                         }

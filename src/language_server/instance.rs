@@ -1,24 +1,23 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use crate::package_builder::{PackageBuildError, load_parsed_package};
-use crate::package_loader::{
-    LoadedPackageFile, PackageLoadError, collect_source_files, find_package_layout,
-    parse_loaded_files,
-};
 use crate::package_utils::normalized_path;
+use crate::workspace_support::default_workspace_from_parsed;
 use lsp_types::{self as lsp, Uri};
+use par_core::frontend::TypeError;
 use par_core::frontend::language::Universal;
-use par_core::frontend::{CheckedModule, TypeError, TypeOnHover, type_check};
 use par_core::source::FileName;
+use par_core::workspace::{
+    CheckedWorkspace, LoadedPackageFile, PackageLoadError, WorkspaceError, collect_source_files,
+    find_package_layout, parse_loaded_files,
+};
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
-    PackageBuild(PackageBuildError),
+    Workspace(WorkspaceError),
     Type(TypeError<Universal>),
 }
 
@@ -26,8 +25,7 @@ pub struct Instance {
     uri: Uri,
     file: FileName,
     dirty: bool,
-    checked: Option<Arc<CheckedModule<Universal>>>,
-    type_on_hover: Option<TypeOnHover<Universal>>,
+    checked: Option<Arc<CheckedWorkspace>>,
     error: Option<CompileError>,
     io: IO,
 }
@@ -39,7 +37,6 @@ impl Instance {
             uri,
             dirty: true,
             checked: None,
-            type_on_hover: None,
             error: None,
             io,
         }
@@ -50,22 +47,13 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let payload = match self.type_on_hover.as_ref() {
-            Some(type_on_hover) => match type_on_hover.query(&self.file, pos.line, pos.character) {
-                Some(name_info) => {
-                    let mut buf = String::new();
-                    if let Some(name) = name_info.name {
-                        write!(&mut buf, "{}: ", name).unwrap();
-                    }
-                    name_info.typ.pretty(&mut buf, 0).unwrap();
-                    lsp::MarkedString::LanguageString(lsp::LanguageString {
-                        language: "par".to_owned(),
-                        value: buf,
-                    })
-                }
-                _ => {
-                    return None;
-                }
+        let payload = match self.checked.as_ref() {
+            Some(checked) => match checked.hover_at(&self.file, pos.line, pos.character) {
+                Some(name_info) => lsp::MarkedString::LanguageString(lsp::LanguageString {
+                    language: "par".to_owned(),
+                    value: checked.render_hover_in_file(&self.file, &name_info),
+                }),
+                _ => return None,
             },
             None => lsp::MarkedString::String("Not compiled".to_string()),
         };
@@ -91,6 +79,7 @@ impl Instance {
         let Some(checked) = self.checked.as_ref() else {
             return None;
         };
+        let checked_module = checked.checked_module();
 
         let mut symbols = HashMap::new();
 
@@ -108,7 +97,7 @@ impl Instance {
         TYPE_PARAMETER: type alias
          */
 
-        for (name, (span, _, _)) in checked.type_defs.globals.as_ref() {
+        for (name, (span, _, _)) in checked_module.type_defs.globals.as_ref() {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), span.points())
             {
@@ -134,7 +123,7 @@ impl Instance {
             }
         }
 
-        for (name, declaration) in &checked.declarations {
+        for (name, declaration) in &checked_module.declarations {
             let mut detail = String::new();
             declaration.typ.pretty_compact(&mut detail).unwrap();
 
@@ -163,7 +152,7 @@ impl Instance {
             }
         }
 
-        for (name, (definition, _typ)) in &checked.definitions {
+        for (name, (definition, _typ)) in &checked_module.definitions {
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), definition.span.points())
             {
@@ -183,8 +172,7 @@ impl Instance {
                     })
                     .or_insert({
                         let typ = definition.expression.get_type();
-                        let mut detail = String::new();
-                        typ.pretty_compact(&mut detail).unwrap();
+                        let detail = checked.render_type_in_file(&self.file, &typ);
 
                         lsp::DocumentSymbol {
                             name: name.to_string(),
@@ -232,13 +220,13 @@ impl Instance {
             "Handling goto declaration request with params: {:?}",
             params
         );
-        let Some(type_on_hover) = self.type_on_hover.as_ref() else {
+        let Some(checked) = self.checked.as_ref() else {
             return None;
         };
 
         let pos = params.text_document_position_params.position;
 
-        let name_info = type_on_hover.query(&self.file, pos.line, pos.character)?;
+        let name_info = checked.hover_at(&self.file, pos.line, pos.character)?;
 
         let (start, end) = name_info.decl_span.points()?;
         let path = name_info.decl_span.file()?;
@@ -262,13 +250,13 @@ impl Instance {
         // todo: locals
 
         tracing::debug!("Handling goto definition request with params: {:?}", params);
-        let Some(type_on_hover) = self.type_on_hover.as_ref() else {
+        let Some(checked) = self.checked.as_ref() else {
             return None;
         };
 
         let pos = params.text_document_position_params.position;
 
-        let name_info = type_on_hover.query(&self.file, pos.line, pos.character)?;
+        let name_info = checked.hover_at(&self.file, pos.line, pos.character)?;
 
         let (start, end) = name_info.def_span.points()?;
         let path = name_info.def_span.file()?;
@@ -298,6 +286,7 @@ impl Instance {
 
         //TODO: use map indexing
         let Some(_definition) = checked
+            .checked_module()
             .definitions
             .iter()
             .find(|(name, _)| name.to_string().as_str() == def_name)
@@ -321,7 +310,6 @@ impl Instance {
         }
         let Some(code) = self.io.read(&self.uri) else {
             self.checked = None;
-            self.type_on_hover = None;
             self.error = None;
             self.dirty = false;
             return;
@@ -331,7 +319,7 @@ impl Instance {
             let package_result = uri_to_path(&self.uri)
                 .map(|path| self.compile_package_with_overlays(&path))
                 .unwrap_or_else(|| {
-                    Err(CompileError::PackageBuild(PackageBuildError::Load(
+                    Err(CompileError::Workspace(WorkspaceError::Load(
                         PackageLoadError::PackageRootNotFound {
                             start: PathBuf::from(self.uri.as_str()),
                         },
@@ -340,7 +328,7 @@ impl Instance {
 
             match package_result {
                 Ok(result) => Ok(result),
-                Err(CompileError::PackageBuild(PackageBuildError::Load(
+                Err(CompileError::Workspace(WorkspaceError::Load(
                     PackageLoadError::PackageRootNotFound { .. },
                 ))) => self.compile_single_file(&code),
                 Err(error) => Err(error),
@@ -348,14 +336,12 @@ impl Instance {
         });
 
         match result {
-            Ok((checked, type_on_hover)) => {
+            Ok(checked) => {
                 self.checked = Some(checked);
-                self.type_on_hover = Some(type_on_hover);
                 self.error = None;
             }
             Err(error) => {
                 self.checked = None;
-                self.type_on_hover = None;
                 self.error = Some(error);
             }
         }
@@ -368,10 +354,7 @@ impl Instance {
         self.dirty = true;
     }
 
-    fn compile_single_file(
-        &self,
-        code: &str,
-    ) -> Result<(Arc<CheckedModule<Universal>>, TypeOnHover<Universal>), CompileError> {
+    fn compile_single_file(&self, code: &str) -> Result<Arc<CheckedWorkspace>, CompileError> {
         let absolute_path =
             uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
         let relative_path_from_src = absolute_path
@@ -383,22 +366,20 @@ impl Instance {
             relative_path_from_src,
             source: code.to_owned(),
         }])
-        .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
-        let lowered_package = load_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
-
-        let checked = Arc::new(type_check(&lowered_package.lowered).map_err(CompileError::Type)?);
-        let type_on_hover = TypeOnHover::<Universal>::new(&checked);
-        Ok((checked, type_on_hover))
+        .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
+        let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
+        let checked = Arc::new(workspace.type_check().map_err(CompileError::Type)?);
+        Ok(checked)
     }
 
     fn compile_package_with_overlays(
         &self,
         file_path: &Path,
-    ) -> Result<(Arc<CheckedModule<Universal>>, TypeOnHover<Universal>), CompileError> {
+    ) -> Result<Arc<CheckedWorkspace>, CompileError> {
         let layout = find_package_layout(file_path)
-            .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
+            .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let mut files = collect_source_files(&layout)
-            .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
+            .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
 
         let overlay_sources = self
             .io
@@ -416,12 +397,10 @@ impl Instance {
         }
 
         let parsed = parse_loaded_files(files)
-            .map_err(|error| CompileError::PackageBuild(PackageBuildError::Load(error)))?;
-        let lowered_package = load_parsed_package(parsed).map_err(CompileError::PackageBuild)?;
-
-        let checked = Arc::new(type_check(&lowered_package.lowered).map_err(CompileError::Type)?);
-        let type_on_hover = TypeOnHover::<Universal>::new(&checked);
-        Ok((checked, type_on_hover))
+            .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
+        let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
+        let checked = Arc::new(workspace.type_check().map_err(CompileError::Type)?);
+        Ok(checked)
     }
 }
 

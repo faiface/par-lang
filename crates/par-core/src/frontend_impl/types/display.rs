@@ -157,7 +157,7 @@ where
             Self::Recursive { label, body, .. } => {
                 write!(f, "recursive")?;
                 if let Some(label) = label {
-                    write!(f, "/{}", label)?;
+                    write!(f, "@{}", label)?;
                 }
                 write!(f, " ")?;
                 body.pretty(f, indent)
@@ -166,7 +166,7 @@ where
             Self::Iterative { label, body, .. } => {
                 write!(f, "iterative")?;
                 if let Some(label) = label {
-                    write!(f, "/{}", label)?;
+                    write!(f, "@{}", label)?;
                 }
                 write!(f, " ")?;
                 body.pretty(f, indent)
@@ -175,14 +175,14 @@ where
             Self::Self_(_, label) => {
                 write!(f, "self")?;
                 if let Some(label) = label {
-                    write!(f, "/{}", label)?;
+                    write!(f, "@{}", label)?;
                 }
                 Ok(())
             }
             Self::DualSelf(_, label) => {
                 write!(f, "dual self")?;
                 if let Some(label) = label {
-                    write!(f, "/{}", label)?;
+                    write!(f, "@{}", label)?;
                 }
                 Ok(())
             }
@@ -358,7 +358,7 @@ where
                 write!(f, "recursive")?;
                 if !matches!(body.as_ref(), Self::Either(..)) {
                     if let Some(label) = label {
-                        write!(f, "/{}", label)?;
+                        write!(f, "@{}", label)?;
                     }
                 }
                 write!(f, " ")?;
@@ -369,7 +369,7 @@ where
                 write!(f, "iterative")?;
                 if !matches!(body.as_ref(), Self::Choice(..)) {
                     if let Some(label) = label {
-                        write!(f, "/{}", label)?;
+                        write!(f, "@{}", label)?;
                     }
                 }
                 write!(f, " ")?;
@@ -379,14 +379,14 @@ where
             Self::Self_(_, label) => {
                 write!(f, "self")?;
                 if let Some(label) = label {
-                    write!(f, "/{}", label)?;
+                    write!(f, "@{}", label)?;
                 }
                 Ok(())
             }
             Self::DualSelf(_, label) => {
                 write!(f, "dual self")?;
                 if let Some(label) = label {
-                    write!(f, "/{}", label)?;
+                    write!(f, "@{}", label)?;
                 }
                 Ok(())
             }
@@ -437,6 +437,7 @@ where
                     span.clone(),
                     NameWithType {
                         name: None,
+                        global_name: None,
                         typ,
                         def_span: def_span.clone(),
                         decl_span: def_span.clone(),

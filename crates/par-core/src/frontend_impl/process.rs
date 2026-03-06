@@ -759,6 +759,7 @@ impl<S: Clone> Expression<(), S> {
 #[derive(Clone, Debug)]
 pub struct NameWithType<S> {
     pub name: Option<String>,
+    pub global_name: Option<GlobalName<S>>,
     pub typ: Type<S>,
     pub def_span: Span,
     pub decl_span: Span,
@@ -768,6 +769,16 @@ impl<S> NameWithType<S> {
     pub fn new(name: Option<String>, typ: Type<S>) -> Self {
         NameWithType {
             name,
+            global_name: None,
+            typ,
+            def_span: Span::None,
+            decl_span: Span::None,
+        }
+    }
+    pub fn global(name: GlobalName<S>, typ: Type<S>) -> Self {
+        NameWithType {
+            name: Some(name.primary.clone()),
+            global_name: Some(name),
             typ,
             def_span: Span::None,
             decl_span: Span::None,
@@ -799,6 +810,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S>
                     name.span(),
                     NameWithType {
                         name: Some(name.to_string()),
+                        global_name: Some(name.clone()),
                         typ: typ.clone(),
                         def_span,
                         decl_span,
@@ -1284,7 +1296,7 @@ impl<Typ, S: Clone + std::fmt::Display> Process<Typ, S> {
                             write!(f, ".begin")?;
                         }
                         if let Some(label) = label {
-                            write!(f, "/{}", label)?;
+                            write!(f, "@{}", label)?;
                         }
                         process.pretty(f, indent)
                     }
@@ -1292,7 +1304,7 @@ impl<Typ, S: Clone + std::fmt::Display> Process<Typ, S> {
                     Command::Loop(label, driver, caps) => {
                         write!(f, ".loop")?;
                         if let Some(label) = label {
-                            write!(f, "/{} ", label)?;
+                            write!(f, "@{} ", label)?;
                         }
                         write!(f, "{{{} |", driver)?;
                         for var in caps.names.keys() {

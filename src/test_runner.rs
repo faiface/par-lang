@@ -8,25 +8,25 @@ use std::time::{Duration, Instant};
 use colored::Colorize;
 use par_core::{
     frontend::{
-        CheckedModule, Type, TypeError, compile_runtime,
+        Type, TypeError,
         language::{GlobalName, Universal},
-        set_miette_hook, type_check,
+        set_miette_hook,
     },
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
+    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
 };
 use par_runtime::spawn::TokioSpawn;
 
-use crate::package_builder::{PackageBuildError, parse_and_load_package};
-use crate::package_loader::{CanonicalModulePath, PackageLoadError};
 use crate::package_utils::{
     SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
     parse_target, source_for_fallback, source_for_type_error,
 };
+use crate::workspace_support::default_workspace_from_path;
 
 #[derive(Debug, Clone)]
 enum BuildError {
-    PackageBuild(PackageBuildError),
+    Workspace(WorkspaceError),
     Type {
         error: TypeError<Universal>,
         sources: SourceLookup,
@@ -40,7 +40,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self) -> String {
         match self {
-            Self::PackageBuild(PackageBuildError::Load(PackageLoadError::ParseError {
+            Self::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
                 source,
                 error,
                 ..
@@ -48,30 +48,24 @@ impl BuildError {
                 "{:?}",
                 miette::Report::from(error.to_owned()).with_source_code(source.clone())
             ),
-            Self::PackageBuild(PackageBuildError::LowerError { source, error, .. }) => {
+            Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
-            Self::PackageBuild(
-                error @ PackageBuildError::UnknownDependency { source, span, .. },
+            Self::Workspace(error @ WorkspaceError::UnknownDependency { source, span, .. })
+            | Self::Workspace(
+                error @ WorkspaceError::ImportedModuleNotFound { source, span, .. },
             )
-            | Self::PackageBuild(
-                error @ PackageBuildError::ImportedModuleNotFound { source, span, .. },
+            | Self::Workspace(error @ WorkspaceError::DuplicateImportAlias { source, span, .. })
+            | Self::Workspace(
+                error @ WorkspaceError::BindingNameConflictsWithImportAlias { source, span, .. },
             )
-            | Self::PackageBuild(
-                error @ PackageBuildError::DuplicateImportAlias { source, span, .. },
+            | Self::Workspace(
+                error @ WorkspaceError::UnknownModuleQualifier { source, span, .. },
             )
-            | Self::PackageBuild(
-                error @ PackageBuildError::BindingNameConflictsWithImportAlias {
-                    source, span, ..
-                },
-            )
-            | Self::PackageBuild(
-                error @ PackageBuildError::UnknownModuleQualifier { source, span, .. },
-            )
-            | Self::PackageBuild(
-                error @ PackageBuildError::QualifiedCurrentModuleReference { source, span, .. },
+            | Self::Workspace(
+                error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
-            Self::PackageBuild(error) => error.to_string(),
+            Self::Workspace(error) => error.to_string(),
             Self::Type { error, sources } => {
                 format!(
                     "{:?}",
@@ -89,19 +83,21 @@ impl BuildError {
 fn build_for_run(
     package_path: &Path,
     max_interactions: u32,
-) -> Result<(CheckedModule<Universal>, Compiled, Vec<CanonicalModulePath>), BuildError> {
-    let lowered_package = parse_and_load_package(package_path).map_err(BuildError::PackageBuild)?;
-    let sources = lowered_package.sources;
-    let checked = type_check(&lowered_package.lowered).map_err(|error| BuildError::Type {
+) -> Result<(CheckedWorkspace, Compiled, Vec<ModulePath>), BuildError> {
+    let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
+    let sources = workspace.sources.clone();
+    let checked = workspace.type_check().map_err(|error| BuildError::Type {
         error,
         sources: sources.clone(),
     })?;
     let compiled =
-        compile_runtime(&checked, max_interactions).map_err(|error| BuildError::InetCompile {
-            error,
-            sources: sources.clone(),
-        })?;
-    Ok((checked, compiled, lowered_package.local_modules))
+        checked
+            .compile_runtime(max_interactions)
+            .map_err(|error| BuildError::InetCompile {
+                error,
+                sources: sources.clone(),
+            })?;
+    Ok((checked.clone(), compiled, checked.root_modules()))
 }
 
 #[derive(Debug)]
@@ -173,7 +169,7 @@ pub fn run_tests(
         .as_ref()
         .and_then(|parsed| parsed.definition_name.as_deref());
     let selected_module = module_selector.as_deref().and_then(|selector| {
-        find_local_module(selector, &local_modules).map(CanonicalModulePath::to_slash_path)
+        find_local_module(selector, &local_modules).map(ModulePath::to_slash_path)
     });
 
     if module_selector.is_some() && selected_module.is_none() {
@@ -237,13 +233,14 @@ enum DefinitionKind {
 }
 
 fn collect_test_definitions(
-    checked: &CheckedModule<Universal>,
-    local_modules: &[CanonicalModulePath],
+    checked: &CheckedWorkspace,
+    local_modules: &[ModulePath],
     selected_module: Option<&str>,
     selected_name: Option<&str>,
     filter: Option<&str>,
 ) -> Vec<(GlobalName<Universal>, DefinitionKind)> {
     checked
+        .checked_module()
         .definitions
         .iter()
         .filter_map(|(name, _)| {
@@ -279,14 +276,14 @@ fn collect_test_definitions(
         .collect()
 }
 
-fn is_local_module(module: &str, local_modules: &[CanonicalModulePath]) -> bool {
+fn is_local_module(module: &str, local_modules: &[ModulePath]) -> bool {
     local_modules
         .iter()
         .any(|candidate| candidate.to_slash_path() == module)
 }
 
 fn test_single_definition(
-    program: &CheckedModule<Universal>,
+    _program: &CheckedWorkspace,
     rt_compiled: &Compiled,
     test_name: &GlobalName<Universal>,
 ) -> TestResult {
@@ -307,7 +304,7 @@ fn test_single_definition(
         let ty = rt_compiled
             .get_type_of(test_name)
             .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
-        run_test_with_test_type(program, rt_compiled, test_name, &ty).await
+        run_test_with_test_type(rt_compiled, test_name, &ty).await
     });
 
     let duration = start.elapsed();
@@ -324,7 +321,7 @@ fn test_single_definition(
 }
 
 fn run_single_definition(
-    _program: &CheckedModule<Universal>,
+    _program: &CheckedWorkspace,
     rt_compiled: &Compiled,
     run_name: &GlobalName<Universal>,
 ) -> TestResult {
@@ -371,7 +368,6 @@ fn run_single_definition(
 }
 
 async fn run_test_with_test_type(
-    _program: &CheckedModule<Universal>,
     rt_compiled: &Compiled,
     name: &GlobalName<Universal>,
     _ty: &Type<Universal>,

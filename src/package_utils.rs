@@ -6,8 +6,7 @@ use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use par_core::frontend::TypeError;
 use par_core::frontend::language::{PackageId, Universal};
 use par_core::source::{FileName, Span};
-
-use crate::package_loader::CanonicalModulePath;
+use par_core::workspace::ModulePath;
 
 pub type SourceLookup = HashMap<FileName, Arc<str>>;
 
@@ -118,8 +117,8 @@ pub fn parse_target(target: &str) -> ParsedTarget {
 
 pub fn find_local_module<'a>(
     module_target: &str,
-    local_modules: &'a [CanonicalModulePath],
-) -> Option<&'a CanonicalModulePath> {
+    local_modules: &'a [ModulePath],
+) -> Option<&'a ModulePath> {
     let module_target = module_target.trim_matches('/');
     if module_target.is_empty() {
         return None;
