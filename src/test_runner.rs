@@ -16,6 +16,7 @@ use par_core::{
     testing::{AssertionResult, provide_test},
     workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
 };
+use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
 
 use crate::package_utils::{
@@ -83,7 +84,7 @@ impl BuildError {
 fn build_for_run(
     package_path: &Path,
     max_interactions: u32,
-) -> Result<(CheckedWorkspace, Compiled, Vec<ModulePath>), BuildError> {
+) -> Result<(CheckedWorkspace, Compiled<Linked>, Vec<ModulePath>), BuildError> {
     let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
     let sources = workspace.sources.clone();
     let checked = workspace.type_check().map_err(|error| BuildError::Type {
@@ -97,7 +98,7 @@ fn build_for_run(
                 error,
                 sources: sources.clone(),
             })?;
-    Ok((checked.clone(), compiled, checked.root_modules()))
+    Ok((checked.clone(), compiled.link(), checked.root_modules()))
 }
 
 #[derive(Debug)]
@@ -284,7 +285,7 @@ fn is_local_module(module: &str, local_modules: &[ModulePath]) -> bool {
 
 fn test_single_definition(
     _program: &CheckedWorkspace,
-    rt_compiled: &Compiled,
+    rt_compiled: &Compiled<Linked>,
     test_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
@@ -322,7 +323,7 @@ fn test_single_definition(
 
 fn run_single_definition(
     _program: &CheckedWorkspace,
-    rt_compiled: &Compiled,
+    rt_compiled: &Compiled<Linked>,
     run_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
@@ -368,7 +369,7 @@ fn run_single_definition(
 }
 
 async fn run_test_with_test_type(
-    rt_compiled: &Compiled,
+    rt_compiled: &Compiled<Linked>,
     name: &GlobalName<Universal>,
     _ty: &Type<Universal>,
 ) -> Result<TestStatus, String> {

@@ -2,48 +2,59 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::OnceLock;
 
+use super::runtime::{Global, Package};
 use crate::flat::{
     runtime::PackageBody,
     show::{Showable, Shower},
 };
 
-use super::runtime::{Global, Package};
-
-#[derive(Default)]
 /// The `Arena` is a store for values from a finite set of types,
 /// and returns indices into the arena. Allocation is done using [`Arena::alloc`],
 /// and values can be accessed later with [`Arena::get`]
-pub struct Arena {
-    nodes: Vec<Global>,
-    strings: String,
-    string_to_location: BTreeMap<String, Index<str>>,
-    case_branches: Vec<(Index<str>, PackageBody)>,
-    packages: Vec<OnceLock<Package>>,
-    redexes: Vec<(Index<Global>, Index<Global>)>,
+pub struct Arena<Ext: Clone> {
+    pub(crate) nodes: Vec<Global<Ext>>,
+    pub(crate) strings: String,
+    pub(crate) string_to_location: BTreeMap<String, Index<Ext, str>>,
+    pub(crate) case_branches: Vec<(Index<Ext, str>, PackageBody<Ext>)>,
+    pub(crate) packages: Vec<OnceLock<Package<Ext>>>,
+    pub(crate) redexes: Vec<(Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>)>,
 }
 
-impl Arena {
+impl<Ext: Clone> Default for Arena<Ext> {
+    fn default() -> Self {
+        Self {
+            nodes: vec![],
+            strings: String::new(),
+            string_to_location: BTreeMap::new(),
+            case_branches: vec![],
+            packages: vec![],
+            redexes: vec![],
+        }
+    }
+}
+
+impl<Ext: Clone> Arena<Ext> {
     /// Get a reference
-    pub fn get<T: Indexable + ?Sized>(&self, index: Index<T>) -> &T {
+    pub fn get<T: Indexable<Ext> + ?Sized>(&self, index: Index<Ext, T>) -> &T {
         T::get(self, index)
     }
-    pub fn alloc<T: Indexable>(&mut self, data: T) -> Index<T> {
+    pub fn alloc<T: Indexable<Ext>>(&mut self, data: T) -> Index<Ext, T> {
         T::alloc(self, data)
     }
-    pub fn alloc_clone<T: Indexable + ?Sized>(&mut self, data: &T) -> Index<T> {
+    pub fn alloc_clone<T: Indexable<Ext> + ?Sized>(&mut self, data: &T) -> Index<Ext, T> {
         T::alloc_clone(self, data)
     }
     pub fn memory_size(&self) -> usize {
-        self.nodes.len() * size_of::<Global>()
+        self.nodes.len() * size_of::<Global<Ext>>()
             + self.strings.len()
-            + self.packages.len() * size_of::<OnceLock<Package>>()
-            + self.redexes.len() * size_of::<(Global, Global)>()
-            + self.case_branches.len() * size_of::<(Index<str>, PackageBody)>()
+            + self.packages.len() * size_of::<OnceLock<Package<Ext>>>()
+            + self.redexes.len() * size_of::<(Global<Ext>, Global<Ext>)>()
+            + self.case_branches.len() * size_of::<(Index<Ext, str>, PackageBody<Ext>)>()
     }
-    pub fn empty_string(&self) -> Index<str> {
+    pub fn empty_string(&self) -> Index<Ext, str> {
         Index((0, 0))
     }
-    pub fn intern(&mut self, s: &str) -> Index<str> {
+    pub fn intern(&mut self, s: &str) -> Index<Ext, str> {
         if s.is_empty() {
             self.empty_string()
         } else if let Some(s) = self.string_to_location.get(s) {
@@ -54,7 +65,7 @@ impl Arena {
             i
         }
     }
-    pub fn interned(&self, s: &str) -> Option<Index<str>> {
+    pub fn interned(&self, s: &str) -> Option<Index<Ext, str>> {
         if s.is_empty() {
             Some(self.empty_string())
         } else {
@@ -63,7 +74,7 @@ impl Arena {
     }
 }
 
-impl std::fmt::Display for Arena {
+impl<Ext: Clone> std::fmt::Display for Arena<Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let shower = Shower::from_arena(self);
         for (idx, package) in self.packages.iter().enumerate() {
@@ -91,42 +102,42 @@ impl std::fmt::Display for Arena {
     }
 }
 
-pub struct Index<T: Indexable + ?Sized>(pub T::Store);
+pub struct Index<Ext: Clone, T: Indexable<Ext> + ?Sized>(pub T::Store);
 
-impl<T: Indexable + ?Sized> Copy for Index<T> {}
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Copy for Index<Ext, T> {}
 
 /// The `Indexable` trait is implemented by all types that are contained by an `Arena`.
 /// It defines a [`Indexable::Store`] associated type, which determines what is needed to
 /// index into a value of this type. For example, sized values usually require a `usize` to index them,
 /// which represents the offset into the array that contains it
 /// but a slice type requires a pair of offset and length.
-pub trait Indexable {
+pub trait Indexable<Ext: Clone> {
     type Store: Copy + PartialEq + Eq + PartialOrd + Ord;
-    fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self;
-    fn alloc<'s>(store: &'s mut Arena, data: Self) -> Index<Self>
+    fn get<'s>(store: &'s Arena<Ext>, index: Index<Ext, Self>) -> &'s Self;
+    fn alloc<'s>(store: &'s mut Arena<Ext>, data: Self) -> Index<Ext, Self>
     where
         Self: Sized;
-    fn alloc_clone<'s>(_store: &'s mut Arena, _data: &Self) -> Index<Self> {
+    fn alloc_clone<'s>(_store: &'s mut Arena<Ext>, _data: &Self) -> Index<Ext, Self> {
         todo!()
     }
 }
 
 macro_rules! slice_indexable {
     ($field:ident, $element:ty) => {
-        impl Indexable for [$element] {
+        impl<Ext: Clone> Indexable<Ext> for [$element] {
             type Store = (usize, usize);
-            fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
+            fn get<'s>(store: &'s Arena<Ext>, index: Index<Ext, Self>) -> &'s Self {
                 &store.$field[index.0.0..index.0.0 + index.0.1]
             }
-            fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
+            fn alloc_clone<'s>(store: &'s mut Arena<Ext>, data: &Self) -> Index<Ext, Self> {
                 let start = store.$field.len();
                 store.$field.extend_from_slice(data);
                 Index((start, data.len()))
             }
         }
-        impl Iterator for Index<[$element]> {
-            type Item = Index<$element>;
-            fn next(&mut self) -> Option<Index<$element>> {
+        impl<Ext: Clone> Iterator for Index<Ext, [$element]> {
+            type Item = Index<Ext, $element>;
+            fn next(&mut self) -> Option<Index<Ext, $element>> {
                 if self.0.1 == 0 {
                     None
                 } else {
@@ -141,12 +152,12 @@ macro_rules! slice_indexable {
 }
 macro_rules! sized_indexable {
     ($field:ident, $element:ty) => {
-        impl Indexable for $element {
+        impl<Ext: Clone> Indexable<Ext> for $element {
             type Store = usize;
-            fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
+            fn get<'s>(store: &'s Arena<Ext>, index: Index<Ext, Self>) -> &'s Self {
                 &store.$field[index.0]
             }
-            fn alloc<'s>(store: &'s mut Arena, data: Self) -> Index<Self> {
+            fn alloc<'s>(store: &'s mut Arena<Ext>, data: Self) -> Index<Ext, Self> {
                 let start = store.$field.len();
                 store.$field.push(data);
                 Index(start)
@@ -154,27 +165,27 @@ macro_rules! sized_indexable {
         }
     };
 }
-slice_indexable!(case_branches, (Index<str>, PackageBody));
-slice_indexable!(nodes, Global);
-slice_indexable!(redexes, (Index<Global>, Index<Global>));
-sized_indexable!(redexes, (Index<Global>, Index<Global>));
-sized_indexable!(case_branches, (Index<str>, PackageBody));
-sized_indexable!(packages, OnceLock<Package>);
-sized_indexable!(nodes, Global);
+slice_indexable!(case_branches, (Index<Ext, str>, PackageBody<Ext>));
+slice_indexable!(nodes, Global<Ext>);
+slice_indexable!(redexes, (Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>));
+sized_indexable!(redexes, (Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>));
+sized_indexable!(case_branches, (Index<Ext, str>, PackageBody<Ext>));
+sized_indexable!(packages, OnceLock<Package<Ext>>);
+sized_indexable!(nodes, Global<Ext>);
 
-impl Indexable for str {
+impl<Ext: Clone> Indexable<Ext> for str {
     type Store = (usize, usize);
-    fn get<'s>(store: &'s Arena, index: Index<Self>) -> &'s Self {
+    fn get<'s>(store: &'s Arena<Ext>, index: Index<Ext, Self>) -> &'s Self {
         &store.strings[index.0.0..index.0.0 + index.0.1]
     }
-    fn alloc_clone<'s>(store: &'s mut Arena, data: &Self) -> Index<Self> {
+    fn alloc_clone<'s>(store: &'s mut Arena<Ext>, data: &Self) -> Index<Ext, Self> {
         let start = store.strings.len();
         store.strings.push_str(data);
         Index((start, data.len()))
     }
 }
 
-impl<T: Indexable + ?Sized> Clone for Index<T>
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Clone for Index<Ext, T>
 where
     T::Store: Clone,
 {
@@ -182,7 +193,7 @@ where
         Self(self.0.clone())
     }
 }
-impl<T: Indexable + ?Sized> Debug for Index<T>
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Debug for Index<Ext, T>
 where
     T::Store: Debug,
 {
@@ -191,7 +202,7 @@ where
     }
 }
 
-impl<T: Indexable + ?Sized> PartialEq for Index<T>
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> PartialEq for Index<Ext, T>
 where
     T::Store: PartialEq,
 {
@@ -202,9 +213,9 @@ where
         self.0.ne(&other.0)
     }
 }
-impl<T: Indexable + ?Sized> Eq for Index<T> where T::Store: Eq {}
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Eq for Index<Ext, T> where T::Store: Eq {}
 
-impl<T: Indexable + ?Sized> PartialOrd for Index<T>
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> PartialOrd for Index<Ext, T>
 where
     T::Store: PartialOrd,
 {
@@ -212,7 +223,7 @@ where
         self.0.partial_cmp(&other.0)
     }
 }
-impl<T: Indexable + ?Sized> Ord for Index<T>
+impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Ord for Index<Ext, T>
 where
     T::Store: Ord,
 {

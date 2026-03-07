@@ -15,11 +15,11 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LoopId(u64);
 
-static NEXT_LOOP_ID: AtomicU64 = AtomicU64::new(0);
+static NExt_LOOP_ID: AtomicU64 = AtomicU64::new(0);
 
 impl LoopId {
     pub fn new() -> Self {
-        let id = NEXT_LOOP_ID.fetch_add(1, Ordering::SeqCst);
+        let id = NExt_LOOP_ID.fetch_add(1, Ordering::SeqCst);
         Self(id)
     }
 }

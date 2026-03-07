@@ -23,8 +23,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Definition, Module, TypeDef, get_external_type_defs, process};
-use par_runtime::registry::{PackageRef, get_external_defs};
+use par_core::frontend::{Module, TypeDef, get_external_type_defs, process};
+use par_runtime::registry::PackageRef;
 
 pub type BuiltinModule = Module<Arc<process::Expression<(), Unresolved>>, Unresolved>;
 

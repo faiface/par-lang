@@ -1,9 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
-use std::fmt::{self, Display, Formatter, Write};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
 use crate::frontend::lower;
 use crate::frontend::parse_source_file;
 use crate::frontend_impl::language::{
@@ -17,6 +11,12 @@ use crate::frontend_impl::program::{
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeError};
 use crate::location::{FileName, Span};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
+use par_runtime::linker::Unlinked;
+use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
+use std::fmt::{self, Display, Formatter, Write};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub type ExternalModule = Module<Arc<process::Expression<(), Unresolved>>, Unresolved>;
 
@@ -550,7 +550,10 @@ impl CheckedWorkspace {
         self.type_on_hover.query(file, row, column)
     }
 
-    pub fn compile_runtime(&self, max_interactions: u32) -> Result<Compiled, RuntimeCompilerError> {
+    pub fn compile_runtime(
+        &self,
+        max_interactions: u32,
+    ) -> Result<Compiled<Unlinked>, RuntimeCompilerError> {
         Compiled::compile_file(&self.checked, max_interactions)
     }
 

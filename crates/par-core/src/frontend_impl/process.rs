@@ -8,12 +8,10 @@ use crate::{
     location::{Span, Spanning},
 };
 use indexmap::IndexSet;
+use par_runtime::linker::Unlinked;
 use par_runtime::primitive::Primitive;
-use par_runtime::readback::Handle;
 use std::{
     fmt::{self, Write},
-    future::Future,
-    pin::Pin,
     sync::Arc,
 };
 
@@ -110,7 +108,7 @@ pub enum Expression<Typ, S> {
         process: Arc<Process<Typ, S>>,
     },
     Primitive(Span, Primitive, Typ),
-    External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>, Typ),
+    External(Unlinked, Typ),
 }
 
 impl<Typ, S> Spanning for Process<Typ, S> {
@@ -702,7 +700,7 @@ impl<S: Clone> Expression<(), S> {
             Self::Primitive(span, value, typ) => {
                 Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone()))
             }
-            Self::External(f, typ) => Arc::new(Self::External(*f, typ.clone())),
+            Self::External(f, typ) => Arc::new(Self::External(f.clone(), typ.clone())),
         }
     }
 
@@ -743,7 +741,7 @@ impl<S: Clone> Expression<(), S> {
             Self::Primitive(span, value, typ) => {
                 Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone()))
             }
-            Self::External(f, typ) => Arc::new(Self::External(*f, typ.clone())),
+            Self::External(f, typ) => Arc::new(Self::External(f.clone(), typ.clone())),
         }
     }
 }

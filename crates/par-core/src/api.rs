@@ -3,12 +3,12 @@ pub mod source {
 }
 
 pub mod frontend {
-    use std::sync::Arc;
-
     use crate::frontend_impl::language::{CompileError, Context};
     use crate::frontend_impl::parse::{parse_module, parse_source_file as parse_source_file_impl};
     use crate::location::FileName;
     use crate::runtime_impl::{Compiled, RuntimeCompilerError};
+    use par_runtime::linker::Unlinked;
+    use std::sync::Arc;
 
     pub mod language {
         pub use crate::frontend_impl::language::*;
@@ -85,7 +85,7 @@ pub mod frontend {
     pub fn compile_runtime(
         module: &CheckedModule<language::Universal>,
         max_interactions: u32,
-    ) -> Result<Compiled, RuntimeCompilerError> {
+    ) -> Result<Compiled<Unlinked>, RuntimeCompilerError> {
         Compiled::compile_file(module, max_interactions)
     }
 }

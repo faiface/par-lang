@@ -1,11 +1,8 @@
-use par_runtime::flat::runtime::Runtime;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError, visit};
-use par_runtime::flat::readback::Handle;
-use par_runtime::flat::reducer::NetHandle;
 
 use std::sync::OnceLock;
 
@@ -21,10 +18,11 @@ use par_runtime::flat::runtime::{
 
 use crate::runtime_impl::tree::Net;
 use par_runtime::flat::runtime::Global;
+use par_runtime::linker::{Linked, Unlinked, link_arena, link_package_ptr};
 
 #[derive(Default)]
 pub(crate) struct NetTranspiler {
-    source: tree::net::Net,
+    source: tree::net::Net<Unlinked>,
     num_vars: usize,
     variable_map: HashMap<usize, usize>,
 }
@@ -32,25 +30,25 @@ pub(crate) struct NetTranspiler {
 #[derive(Default)]
 pub(crate) struct ProgramTranspiler {
     stack: Vec<NetTranspiler>,
-    dest: Arena,
-    packages_in_nodes: HashMap<usize, Index<OnceLock<Package>>>,
-    id_to_package: Arc<IndexMap<usize, Net>>,
+    dest: Arena<Unlinked>,
+    packages_in_nodes: HashMap<usize, Index<Unlinked, OnceLock<Package<Unlinked>>>>,
+    id_to_package: Arc<IndexMap<usize, Net<Unlinked>>>,
 }
 
 #[derive(Clone)]
-pub struct Transpiled {
-    pub arena: Arc<Arena>,
-    pub name_to_package: HashMap<GlobalName<Universal>, PackagePtr>,
+pub struct Transpiled<Ext: Clone> {
+    pub arena: Arc<Arena<Ext>>,
+    pub name_to_package: HashMap<GlobalName<Universal>, PackagePtr<Ext>>,
     pub type_defs: TypeDefs<Universal>,
 }
 
-impl Display for Transpiled {
+impl<Ext: Clone> Display for Transpiled<Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.arena)
     }
 }
 
-impl Transpiled {
+impl Transpiled<Unlinked> {
     pub fn transpile(ic_compiled: IcCompiled, type_defs: TypeDefs<Universal>) -> Self {
         let this: ProgramTranspiler = ProgramTranspiler::transpile_program(&ic_compiled);
         let mut arena = this.dest;
@@ -58,7 +56,7 @@ impl Transpiled {
             fn helper(
                 ty: &Type<Universal>,
                 defs: &TypeDefs<Universal>,
-                arena: &mut Arena,
+                arena: &mut Arena<Unlinked>,
             ) -> Result<(), TypeError<Universal>> {
                 match ty {
                     Type::Either(_, variants) | Type::Choice(_, variants) => {
@@ -97,20 +95,25 @@ impl Transpiled {
         let transpiled = Self::transpile(ic_compiled, type_defs);
         Ok(transpiled)
     }
+}
 
-    pub fn get_with_name(&self, name: &GlobalName<Universal>) -> Option<PackagePtr> {
+impl<Ext: Clone> Transpiled<Ext> {
+    pub fn get_with_name(&self, name: &GlobalName<Universal>) -> Option<PackagePtr<Ext>> {
         Some(self.name_to_package.get(name).cloned()?)
-    }
-
-    pub fn new_runtime(&self) -> Runtime {
-        Runtime::from(self.arena.clone())
-    }
-    pub fn instantiate(&self, handle: NetHandle, name: &GlobalName<Universal>) -> Option<Handle> {
-        let package = self.get_with_name(name)?;
-        Handle::from_package(self.arena.clone(), handle, package).ok()
     }
 }
 
+pub(crate) fn link_transpiled(transpiled: Transpiled<Unlinked>) -> Transpiled<Linked> {
+    Transpiled {
+        type_defs: transpiled.type_defs,
+        arena: Arc::new(link_arena(transpiled.arena.as_ref())),
+        name_to_package: transpiled
+            .name_to_package
+            .iter()
+            .map(|(k, v)| (k.clone(), link_package_ptr(v)))
+            .collect(),
+    }
+}
 impl NetTranspiler {
     fn map_variable(&mut self, id: usize) -> usize {
         match self.variable_map.entry(id) {
@@ -126,7 +129,10 @@ impl NetTranspiler {
 }
 
 impl ProgramTranspiler {
-    fn transpile_tree_and_alloc(&mut self, source: tree::net::Tree) -> Index<Global> {
+    fn transpile_tree_and_alloc(
+        &mut self,
+        source: tree::net::Tree<Unlinked>,
+    ) -> Index<Unlinked, Global<Unlinked>> {
         let tree = self.transpile_tree(source);
         self.dest.alloc(tree)
     }
@@ -136,7 +142,7 @@ impl ProgramTranspiler {
     fn current_net_mut(&mut self) -> &mut NetTranspiler {
         self.stack.last_mut().unwrap()
     }
-    fn transpile_package_body(&mut self) -> PackageBody {
+    fn transpile_package_body(&mut self) -> PackageBody<Unlinked> {
         let body = &mut self.current_net_mut().source;
         assert!(body.ports.len() == 2);
         let captures = body.ports.pop_back().unwrap();
@@ -156,7 +162,7 @@ impl ProgramTranspiler {
                 )
             })
             .collect();
-        let redexes: Index<_> = self.dest.alloc_clone(redexes.as_ref());
+        let redexes: Index<Unlinked, _> = self.dest.alloc_clone(redexes.as_ref());
         PackageBody {
             root: root,
             captures: captures,
@@ -164,7 +170,7 @@ impl ProgramTranspiler {
             redexes,
         }
     }
-    fn transpile_package_go(&mut self, body: Net) -> Package {
+    fn transpile_package_go(&mut self, body: Net<Unlinked>) -> Package<Unlinked> {
         let mut current_net = NetTranspiler::default();
         current_net.source = body;
         self.stack.push(current_net);
@@ -176,14 +182,21 @@ impl ProgramTranspiler {
         self.stack.pop();
         package
     }
-    fn transpile_definition_package(&mut self, id: usize, body: Net) -> Index<OnceLock<Package>> {
+    fn transpile_definition_package(
+        &mut self,
+        id: usize,
+        body: Net<Unlinked>,
+    ) -> Index<Unlinked, OnceLock<Package<Unlinked>>> {
         let package_index = self.dest.alloc(OnceLock::new());
         self.packages_in_nodes.insert(id, package_index.clone());
         let package = self.transpile_package_go(body);
         self.dest.get(package_index.clone()).set(package).unwrap();
         package_index
     }
-    fn transpile_casebranch_package(&mut self, body: Net) -> (PackageBody, usize) {
+    fn transpile_casebranch_package(
+        &mut self,
+        body: Net<Unlinked>,
+    ) -> (PackageBody<Unlinked>, usize) {
         let mut current_net = NetTranspiler::default();
         current_net.source = body;
         current_net.num_vars = self.current_net().num_vars;
@@ -204,14 +217,14 @@ impl ProgramTranspiler {
         }
         this
     }
-    fn map_package(&mut self, id: usize) -> PackagePtr {
+    fn map_package(&mut self, id: usize) -> PackagePtr<Unlinked> {
         if let Some(p) = self.packages_in_nodes.get(&id) {
             return p.clone();
         }
         let net = self.id_to_package.get(&id).unwrap().clone();
         self.transpile_definition_package(id, net)
     }
-    fn transpile_tree(&mut self, source: tree::net::Tree) -> Global {
+    fn transpile_tree(&mut self, source: tree::net::Tree<Unlinked>) -> Global<Unlinked> {
         use tree::net::Tree;
         match source {
             Tree::Var(id) => match self.current_net_mut().source.variables.remove_linked(id) {
@@ -225,13 +238,13 @@ impl ProgramTranspiler {
             Tree::Continue => Global::Destruct(GlobalCont::Continue),
             Tree::Era => Global::Fanout(self.dest.alloc_clone(&[])),
             Tree::Par(a, b) => {
-                let a: Index<Global> = self.transpile_tree_and_alloc(*a);
-                let b: Index<Global> = self.transpile_tree_and_alloc(*b);
+                let a: Index<Unlinked, Global<Unlinked>> = self.transpile_tree_and_alloc(*a);
+                let b: Index<Unlinked, Global<Unlinked>> = self.transpile_tree_and_alloc(*b);
                 Global::Destruct(GlobalCont::Par(a, b))
             }
             Tree::Times(a, b) => {
-                let a: Index<Global> = self.transpile_tree_and_alloc(*a);
-                let b: Index<Global> = self.transpile_tree_and_alloc(*b);
+                let a: Index<Unlinked, Global<Unlinked>> = self.transpile_tree_and_alloc(*a);
+                let b: Index<Unlinked, Global<Unlinked>> = self.transpile_tree_and_alloc(*b);
                 Global::Value(GlobalValue::Pair(a, b))
             }
             Tree::Dup(a, b) => {

@@ -5,13 +5,13 @@ use crate::flat::runtime::{
     Global, GlobalPtr, Linear, Node, PackageBody, Shared, SyncShared, Value,
 };
 
-pub(crate) struct Shower<'a> {
-    pub arena: &'a Arena,
+pub(crate) struct Shower<'a, Ext: Clone> {
+    pub arena: &'a Arena<Ext>,
     pub deref_globals: bool,
 }
 
-impl<'a> Shower<'a> {
-    pub(crate) fn from_arena(arena: &'a Arena) -> Self {
+impl<'a, Ext: Clone> Shower<'a, Ext> {
+    pub(crate) fn from_arena(arena: &'a Arena<Ext>) -> Self {
         Self {
             arena,
             deref_globals: true,
@@ -19,10 +19,10 @@ impl<'a> Shower<'a> {
     }
 }
 
-pub(crate) struct Showable<'a, 'b, P>(pub P, pub &'b Shower<'a>);
+pub(crate) struct Showable<'a, 'b, P, Ext: Clone>(pub P, pub &'b Shower<'a, Ext>);
 //pub struct ShowableGlobal<'a, 'b>(&'a Instance, &'a Global, &'b mut Shower<'a>);
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Node> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Node<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Node::Linear(linear) => write!(f, "-{}", Showable(linear, self.1)),
@@ -32,13 +32,13 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Node> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Box<Node>> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Box<Node<Ext>>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Showable(self.0.as_ref(), self.1).fmt(f)
     }
 }
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Linear> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Linear<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Linear::Value(value) => {
@@ -65,7 +65,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Linear> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Shared> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Shared<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Shared::Async(mutex) => match mutex.try_lock() {
@@ -88,7 +88,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Shared> {
         Ok(())
     }
 }
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a SyncShared> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a SyncShared<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             SyncShared::Package(index, shared) => {
@@ -102,7 +102,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a SyncShared> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Global> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Global<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Global::Variable(id) => {
@@ -147,7 +147,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a Global> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a GlobalPtr> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a GlobalPtr<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.1.deref_globals {
             write!(f, "{}", Showable(self.1.arena.get(self.0.clone()), self.1))?;
@@ -158,9 +158,9 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a GlobalPtr> {
     }
 }
 
-impl<'a, 'b, P> std::fmt::Display for Showable<'a, 'b, &'a Value<P>>
+impl<'a, 'b, P, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Value<P, Ext>, Ext>
 where
-    Showable<'a, 'b, &'a P>: Display,
+    Showable<'a, 'b, &'a P, Ext>: Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use crate::flat::runtime::Value::*;
@@ -194,7 +194,7 @@ where
 use super::runtime::Package;
 use std::sync::OnceLock;
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a OnceLock<Package>> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a OnceLock<Package<Ext>>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let package = self.0;
 
@@ -207,7 +207,7 @@ impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a OnceLock<Package>> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for Showable<'a, 'b, &'a PackageBody> {
+impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a PackageBody<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let package = self.0;
         if package.debug_name.len() > 0 {

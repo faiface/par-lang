@@ -493,7 +493,7 @@ impl CaptureAnalysis {
                 Captures::new(),
             ),
             Expression::External(f, typ) => (
-                Arc::new(Expression::External(*f, typ.clone())),
+                Arc::new(Expression::External(f.clone(), typ.clone())),
                 Captures::new(),
             ),
         }

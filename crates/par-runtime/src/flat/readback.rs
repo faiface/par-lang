@@ -10,12 +10,13 @@ use futures::task::FutureObj;
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::linker::Linked;
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
 pub enum Error {
-    InvalidNode(Node),
-    InvalidValue(Value<Node>),
+    InvalidNode(Node<Linked>),
+    InvalidValue(Value<Node<Linked>, Linked>),
     Panicked,
 }
 
@@ -23,17 +24,17 @@ pub(crate) type Result<T> = core::result::Result<T, Error>;
 
 pub(crate) enum HandleNode {
     Empty,
-    Present(Node),
-    Waiting(oneshot::Receiver<Node>),
+    Present(Node<Linked>),
+    Waiting(oneshot::Receiver<Node<Linked>>),
 }
 
 impl HandleNode {
-    fn linked_pair() -> (Node, Self) {
+    fn linked_pair() -> (Node<Linked>, Self) {
         let (tx, rx) = oneshot::channel();
         (Node::Linear(Linear::Request(tx)), HandleNode::Waiting(rx))
     }
 
-    async fn take(&mut self) -> Node {
+    async fn take(&mut self) -> Node<Linked> {
         match core::mem::replace(self, HandleNode::Empty) {
             HandleNode::Empty => panic!("Tried to take out empty node!"),
             HandleNode::Present(node) => node,
@@ -42,20 +43,20 @@ impl HandleNode {
     }
 }
 
-impl From<Node> for HandleNode {
-    fn from(value: Node) -> Self {
+impl From<Node<Linked>> for HandleNode {
+    fn from(value: Node<Linked>) -> Self {
         Self::Present(value)
     }
 }
-impl From<oneshot::Receiver<Node>> for HandleNode {
-    fn from(value: oneshot::Receiver<Node>) -> Self {
+impl From<oneshot::Receiver<Node<Linked>>> for HandleNode {
+    fn from(value: oneshot::Receiver<Node<Linked>>) -> Self {
         Self::Waiting(value)
     }
 }
 
 pub struct Handle {
     net: NetHandle,
-    arena: Arc<Arena>,
+    arena: Arc<Arena<Linked>>,
     node: HandleNode,
 }
 
@@ -68,7 +69,7 @@ impl Handle {
         }
     }
 
-    pub fn from_node(arena: Arc<Arena>, net: NetHandle, node: Node) -> Self {
+    pub fn from_node(arena: Arc<Arena<Linked>>, net: NetHandle, node: Node<Linked>) -> Self {
         Self {
             arena,
             net,
@@ -76,7 +77,11 @@ impl Handle {
         }
     }
 
-    pub fn from_package(arena: Arc<Arena>, net: NetHandle, package: PackagePtr) -> Result<Handle> {
+    pub fn from_package(
+        arena: Arc<Arena<Linked>>,
+        net: NetHandle,
+        package: PackagePtr<Linked>,
+    ) -> Result<Handle> {
         let (node, handle) = HandleNode::linked_pair();
         let mut handle = Handle {
             net: net,
@@ -120,7 +125,7 @@ impl Handle {
             .unwrap();
     }
 
-    fn is_ready_node(&self, node: &Node) -> bool {
+    fn is_ready_node(&self, node: &Node<Linked>) -> bool {
         match node {
             Node::Linear(Linear::ShareHole(..)) => false,
             Node::Linear(..) => true,
@@ -283,13 +288,13 @@ impl Handle {
     }
 
     async fn retry(&mut self) {
-        let (tx, rx) = oneshot::channel::<Node>();
+        let (tx, rx) = oneshot::channel::<Node<Linked>>();
         let mut old_node = core::mem::replace(&mut self.node, rx.into());
         let old_node = old_node.take().await;
         self.link(old_node, Node::Linear(Linear::Request(tx)));
     }
 
-    async fn try_destruct(&mut self) -> Value<Node> {
+    async fn try_destruct(&mut self) -> Value<Node<Linked>, Linked> {
         loop {
             let node = self.node.take().await;
             match self.destruct(node) {
@@ -306,11 +311,11 @@ impl Handle {
 }
 
 impl Linker for Handle {
-    fn arena(&self) -> Arc<Arena> {
+    fn arena(&self) -> Arc<Arena<Linked>> {
         self.arena.clone()
     }
 
-    fn link(&mut self, a: Node, b: Node) {
+    fn link(&mut self, a: Node<Linked>, b: Node<Linked>) {
         self.net.0.send(ReducerMessage::Redex(a, b)).unwrap()
     }
 }

@@ -1,5 +1,6 @@
 use super::readback::Handle;
 use crate::flat::runtime::{Linear, Node, Runtime, UserData};
+use crate::linker::Linked;
 use futures::future::RemoteHandle;
 use futures::task::{FutureObj, Spawn, SpawnExt};
 use std::sync::Arc;
@@ -8,7 +9,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 pub enum ReducerMessage {
-    Redex(Node, Node),
+    Redex(Node<Linked>, Node<Linked>),
     Spawn(FutureObj<'static, ()>),
     Dropped(usize),
     Created(usize),

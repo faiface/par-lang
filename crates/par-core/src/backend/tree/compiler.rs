@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
-    pin::Pin,
     sync::Arc,
 };
 
@@ -25,7 +24,8 @@ use crate::{
 use arcstr::ArcStr;
 use indexmap::{IndexMap, IndexSet};
 use par_runtime::fan_behavior::FanBehavior;
-use par_runtime::registry::{DefinitionRef, PackageRef, get_external_fn};
+use par_runtime::linker::{PackageID, Unlinked};
+use par_runtime::poll::POLL_TOKEN;
 use std::hash::Hash;
 
 #[derive(Clone, Debug)]
@@ -88,7 +88,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TypedTree {
-    pub tree: Tree,
+    pub tree: Tree<Unlinked>,
     pub ty: Type<Universal>,
 }
 
@@ -171,8 +171,8 @@ impl Context {
         driver: Option<&LocalName>,
         captures: Option<&Captures>,
         labels_in_scope: Option<&BTreeSet<LoopLabel>>,
-        net: &mut Net,
-    ) -> (Tree, PackData) {
+        net: &mut Net<Unlinked>,
+    ) -> (Tree<Unlinked>, PackData) {
         let mut m_trees = vec![];
         let mut m_tys = vec![];
         let mut m_vars = vec![];
@@ -209,7 +209,7 @@ impl Context {
         )
     }
 
-    pub(crate) fn unpack(&mut self, packed: &PackData, net: &mut Net) -> Tree {
+    pub(crate) fn unpack(&mut self, packed: &PackData, net: &mut Net<Unlinked>) -> Tree<Unlinked> {
         let mut m_trees = vec![];
         for (name, ty) in packed.names.iter().zip(packed.types.iter()) {
             let (v0, v1) = net.create_wire();
@@ -231,7 +231,7 @@ impl Context {
 }
 
 pub(crate) struct Compiler {
-    net: Net,
+    net: Net<Unlinked>,
     context: Context,
     type_defs: TypeDefs<Universal>,
     definitions: IndexMap<
@@ -242,85 +242,13 @@ pub(crate) struct Compiler {
         ),
     >,
     global_name_to_id: IndexMap<GlobalName<Universal>, usize>,
-    id_to_package: Vec<Net>,
-    lazy_redexes: Vec<(Tree, Tree)>,
+    id_to_package: Vec<Net<Unlinked>>,
+    lazy_redexes: Vec<(Tree<Unlinked>, Tree<Unlinked>)>,
     compile_global_stack: IndexSet<GlobalName<Universal>>,
     package_is_case_branch: IndexMap<usize, ArcStr>,
     blocks: IndexMap<usize, Arc<Process<Type<Universal>, Universal>>>,
     poll_packages: IndexMap<LocalName, PollInfo>,
     max_interactions: u32,
-}
-
-fn poll_token(
-    handle: par_runtime::readback::Handle,
-) -> Pin<Box<dyn Send + core::future::Future<Output = ()>>> {
-    Box::pin(poll_token_server(handle))
-}
-
-async fn poll_token_server(mut handle: par_runtime::readback::Handle) {
-    use futures::future::BoxFuture;
-    use futures::stream::FuturesUnordered;
-    use futures::stream::StreamExt as _;
-
-    let mut clients: FuturesUnordered<BoxFuture<'static, par_runtime::flat::readback::Handle>> =
-        FuturesUnordered::new();
-
-    loop {
-        let op = handle.case().await;
-        match op.as_str() {
-            "#poll" => {
-                // payload: (result_slot) next_slot
-                // implemented as a Pair(left = next_slot, right = result_slot)
-                let mut result_slot = handle.receive();
-
-                if clients.is_empty() {
-                    result_slot.signal(ArcStr::from("#empty"));
-                    result_slot.break_();
-                    continue;
-                }
-
-                let client = clients
-                    .next()
-                    .await
-                    .expect("poll clients stream unexpectedly empty");
-
-                result_slot.signal(ArcStr::from("#client"));
-                result_slot.link(par_runtime::readback::Handle::from(client));
-            }
-
-            "#submit" => {
-                // payload: (stream) next_slot
-                // implemented as a Pair(left = next_slot, right = stream)
-                let mut stream = handle.receive();
-
-                loop {
-                    let tag = stream.case().await;
-                    match tag.as_str() {
-                        "#end" => {
-                            stream.continue_();
-                            break;
-                        }
-                        "#item" => {
-                            // payload: (client) tail
-                            // implemented as a Pair(left = tail, right = client)
-                            let client = stream.receive();
-                            let client = client.handle;
-                            clients.push(Box::pin(async move { client.await_ready().await }));
-                        }
-                        other => panic!("Invalid submit stream item: {other}"),
-                    }
-                }
-            }
-
-            "#close" => {
-                // payload: !
-                handle.erase();
-                break;
-            }
-
-            other => panic!("Invalid poll token operation: {other}"),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -330,17 +258,17 @@ struct PollInfo {
     driver: LocalName,
 }
 
-fn poll_token_tree() -> Tree {
-    Tree::External(poll_token)
+fn poll_token_tree() -> Tree<Unlinked> {
+    Tree::External(POLL_TOKEN.clone().into())
 }
 
-impl Tree {
+impl Tree<Unlinked> {
     pub(crate) fn with_type(self, ty: Type<Universal>) -> TypedTree {
         TypedTree { tree: self, ty }
     }
 }
 
-pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
+pub(crate) fn multiplex_trees(mut trees: Vec<Tree<Unlinked>>) -> Tree<Unlinked> {
     if trees.len() == 0 {
         Tree::Break
     } else if trees.len() == 1 {
@@ -353,7 +281,7 @@ pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
         )
     }
 }
-pub(crate) fn demultiplex_trees(mut trees: Vec<Tree>) -> Tree {
+pub(crate) fn demultiplex_trees(mut trees: Vec<Tree<Unlinked>>) -> Tree<Unlinked> {
     if trees.len() == 0 {
         Tree::Continue
     } else if trees.len() == 1 {
@@ -368,7 +296,7 @@ pub(crate) fn demultiplex_trees(mut trees: Vec<Tree>) -> Tree {
 }
 
 impl Compiler {
-    fn build_submit_stream(&mut self, items: Vec<TypedTree>) -> Tree {
+    fn build_submit_stream(&mut self, items: Vec<TypedTree>) -> Tree<Unlinked> {
         let mut stream = Tree::Signal(ArcStr::from("#end"), Box::new(Tree::Break));
         for item in items.into_iter().rev() {
             stream = Tree::Signal(
@@ -393,33 +321,21 @@ impl Compiler {
             });
         }
         let global = match self.definitions.get(name).cloned() {
-            Some((def, _typ)) => {
-                match def.body {
-                    DefinitionBody::Par(expr) => expr,
-                    DefinitionBody::External(_) => {
-                        let def_ref = DefinitionRef {
-                            package: match &name.module.package {
-                                PackageId::Local => PackageRef::Local,
-                                PackageId::Package(name) => PackageRef::Package(name.as_str()),
-                            },
-                            path: &name
-                                .module
-                                .directories
-                                .iter()
-                                .map(|s| s.as_str())
-                                .collect::<Vec<_>>(),
-                            module: &name.module.module,
-                            name: &name.primary,
-                        };
-                        if let Some(f) = get_external_fn(&def_ref) {
-                            Arc::new(Expression::External(f, Type::Break(Span::None)))
-                        } else {
-                            //TODO: this is not an Err, because linking should be moved to the runtime
-                            panic!("External function not found: {:?}", name);
-                        }
-                    }
+            Some((def, _typ)) => match def.body {
+                DefinitionBody::Par(expr) => expr,
+                DefinitionBody::External(_) => {
+                    let def_ref = Unlinked {
+                        package: match &name.module.package {
+                            PackageId::Local => PackageID::Local,
+                            PackageId::Package(name) => PackageID::Package(name.clone()),
+                        },
+                        path: name.module.directories.clone(),
+                        module: name.module.module.clone(),
+                        name: name.primary.clone(),
+                    };
+                    Arc::new(Expression::External(def_ref, Type::Break(Span::None)))
                 }
-            }
+            },
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
 
@@ -439,7 +355,7 @@ impl Compiler {
     /// Optimize away erasure underneath auxiliary ports of DUP and CON nodes where it is safe to do so.
     ///
     /// Expects vars to be already have been substituted.
-    fn apply_safe_rules(&mut self, tree: Tree) -> Tree {
+    fn apply_safe_rules(&mut self, tree: Tree<Unlinked>) -> Tree<Unlinked> {
         match tree {
             Tree::Dup(a, b) => {
                 let a = self.apply_safe_rules(*a);
@@ -481,7 +397,7 @@ impl Compiler {
     }
 
     /// Reduces the tree in ways that aren't regular interactions. This might be invalid after the net has been reduced with regular interactions such as after calling [`Self::normal()`].
-    fn non_principal_interactions(&mut self, mut tree: Tree) -> Tree {
+    fn non_principal_interactions(&mut self, mut tree: Tree<Unlinked>) -> Tree<Unlinked> {
         self.net.substitute_tree(&mut tree);
         self.apply_safe_rules(tree)
     }
@@ -648,16 +564,16 @@ impl Compiler {
         self.net.link(a.tree, b.tree);
     }
 
-    fn either_instance(&mut self, signal: ArcStr, tree: Tree) -> Tree {
+    fn either_instance(&mut self, signal: ArcStr, tree: Tree<Unlinked>) -> Tree<Unlinked> {
         Tree::Signal(signal, Box::new(tree))
     }
 
     fn choice_instance(
         &mut self,
-        ctx_out: Tree,
+        ctx_out: Tree<Unlinked>,
         branches: HashMap<ArcStr, usize>,
         else_branch: Option<usize>,
-    ) -> Tree {
+    ) -> Tree<Unlinked> {
         Tree::Choice(Box::new(ctx_out), Arc::new(branches), else_branch)
     }
 
@@ -708,7 +624,7 @@ impl Compiler {
             }),
 
             Expression::External(f, typ) => Ok(TypedTree {
-                tree: Tree::External(*f),
+                tree: Tree::External(f.clone()),
                 ty: typ.clone(),
             }),
         }
@@ -1201,7 +1117,7 @@ impl Compiler {
 
 #[derive(Clone, Default)]
 pub struct IcCompiled {
-    pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
+    pub(crate) id_to_package: Arc<IndexMap<usize, Net<Unlinked>>>,
     pub(crate) name_to_id: IndexMap<GlobalName<Universal>, usize>,
     package_is_case_branch: IndexMap<usize, ArcStr>,
 }
@@ -1222,7 +1138,7 @@ impl Display for IcCompiled {
 }
 
 impl IcCompiled {
-    pub fn get_with_name(&self, name: &GlobalName<Universal>) -> Option<Net> {
+    pub fn get_with_name(&self, name: &GlobalName<Universal>) -> Option<Net<Unlinked>> {
         let id = self.name_to_id.get(name)?;
         self.id_to_package.get(id).cloned()
     }
@@ -1231,7 +1147,7 @@ impl IcCompiled {
         self.package_is_case_branch.get(&id).cloned()
     }
 
-    pub fn create_net(&self) -> Net {
+    pub fn create_net(&self) -> Net<Unlinked> {
         let mut net = Net::default();
         net.packages = self.id_to_package.clone();
         net

@@ -39,14 +39,15 @@ use crate::fan_behavior::FanBehavior;
 use crate::flat::stats::Rewrites;
 use std::sync::{Arc, Mutex};
 
+use crate::linker::Linked;
 use tokio::sync::oneshot;
 
-pub type PackagePtr = Index<OnceLock<Package>>;
-pub(crate) type GlobalPtr = Index<Global>;
-type Str = Index<str>;
+pub type PackagePtr<Ext> = Index<Ext, OnceLock<Package<Ext>>>;
+pub(crate) type GlobalPtr<Ext> = Index<Ext, Global<Ext>>;
+type Str<Ext> = Index<Ext, str>;
 
 #[derive(Debug)]
-struct InstanceInner(Mutex<Box<[Option<Node>]>>);
+struct InstanceInner(Mutex<Box<[Option<Node<Linked>>]>>);
 
 #[derive(Clone, Debug)]
 /// An `Instance` stores the state associated to an instance of a Global node.
@@ -101,7 +102,7 @@ pub enum UserData {
     /// An external function with shared captured. This is created externally
     ExternalArc(ExternalArc),
     /// A one-timer request for a value. The value it interacts with will be send through the sender.
-    Request(oneshot::Sender<Node>),
+    Request(oneshot::Sender<Node<Linked>>),
 }
 
 pub(crate) type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
@@ -120,59 +121,59 @@ impl Debug for ExternalArc {
 /// A PackageBody is the inner body of a package.
 /// The difference with `Package` is that `PackageBody` does not contain `num_vars`
 /// (because a package inside a PackageBody might not require a new instance)
-pub struct PackageBody {
-    pub root: Index<Global>,
-    pub captures: Index<Global>,
+pub struct PackageBody<Ext: Clone> {
+    pub root: Index<Ext, Global<Ext>>,
+    pub captures: Index<Ext, Global<Ext>>,
 
     pub debug_name: String,
     // TODO: Store this inline in the arena.
-    pub redexes: Index<[(Index<Global>, Index<Global>)]>,
+    pub redexes: Index<Ext, [(Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>)]>,
 }
 
 #[derive(Clone, Debug)]
 /// A package is a `Global` subgraph that is isolated from the rest of the program
 /// It does not use the same Instance as its environment, and so it requires a
 /// separate Instance to be created when it is expanded.
-pub struct Package {
-    pub body: PackageBody,
+pub struct Package<Ext: Clone> {
+    pub body: PackageBody<Ext>,
     /// How large the Instance must be.
     pub num_vars: usize,
 }
 
 #[derive(Clone, Debug)]
-pub enum Global {
+pub enum Global<Ext: Clone> {
     Variable(usize),
-    Package(PackagePtr, GlobalPtr, FanBehavior),
+    Package(PackagePtr<Ext>, GlobalPtr<Ext>, FanBehavior),
     /// Destruct attempts to convert the interacting node into a value,
     /// and then carries out a negative operation on it according to its variant
     /// This node is created from the Continue, Case, and Receive commands.
-    Destruct(GlobalCont),
+    Destruct(GlobalCont<Ext>),
     /// Value carries out a positive operation.
     /// This node is created from the Break, Signal, and Send commands.
-    Value(GlobalValue),
+    Value(GlobalValue<Ext>),
     /// Fanout; turn the value it interacts with into a nonlinear value.
     /// This node is created whenever a Par variable is used
     /// nonlinearly. Fanout subsumes both erasure and duplication.
-    Fanout(Index<[Global]>),
+    Fanout(Index<Ext, [Global<Ext>]>),
 }
 
 #[derive(Debug)]
-pub enum Node {
-    Linear(Linear),
-    Shared(Shared),
-    Global(Instance, Index<Global>),
+pub enum Node<Ext: Clone> {
+    Linear(Linear<Ext>),
+    Shared(Shared<Ext>),
+    Global(Instance, Index<Ext, Global<Ext>>),
 }
 
 #[derive(Clone, Debug)]
 /// Shared nodes are created by Fanout to make duplication fast.
 /// They are reference-counted internally and can be cheaply cloned.
-pub enum Shared {
+pub enum Shared<Ext: Clone> {
     /// Async values are created when sharing
     /// something that is not yet ready; a variable or a request.
-    Async(Arc<Mutex<SharedHole>>),
+    Async(Arc<Mutex<SharedHole<Ext>>>),
     /// Sync values are created when sharing
     /// a value or a package.
-    Sync(Arc<SyncShared>),
+    Sync(Arc<SyncShared<Ext>>),
 }
 
 /// A "Value" parametrized by a "pointer type P". This is used to avoid code duplication between
@@ -184,15 +185,15 @@ pub enum Shared {
 ///
 /// There are [`Linear`] values, [`Shared`] values, and [`Global`] values.
 #[derive(Clone, Debug)]
-pub enum Value<P> {
+pub enum Value<P, Ext: Clone> {
     /// The break node; created in break commands (`value!`)
     Break,
     /// The pair node; created in send commands (`value(a)`)
     Pair(P, P),
     /// The either node; created in signal commands (`value.name`)
-    Either(Str, P),
+    Either(Str<Ext>, P),
     /// ExternalFns contain `fn` nodes which are called with a handle to value they interact with
-    ExternalFn(ExternalFn),
+    ExternalFn(Ext),
     /// ExternalFns contain `fn` nodes which are called with a handle to value they interact with
     /// They internally contain a `Fn` dyn object which allows this type of functions to have captures.
     ExternalArc(ExternalArc),
@@ -200,8 +201,8 @@ pub enum Value<P> {
     Primitive(Primitive),
 }
 
-impl<P> Value<P> {
-    pub fn map_leaves<Q>(self, mut f: impl FnMut(P) -> Option<Q>) -> Option<Value<Q>> {
+impl<P, Ext: Clone> Value<P, Ext> {
+    pub fn map_leaves<Q>(self, mut f: impl FnMut(P) -> Option<Q>) -> Option<Value<Q, Ext>> {
         Some(match self {
             Value::Break => Value::Break,
             Value::Pair(a, b) => Value::Pair(f(a)?, f(b)?),
@@ -212,12 +213,12 @@ impl<P> Value<P> {
         })
     }
 
-    pub fn map_ref_leaves<Q>(&self, mut f: impl FnMut(&P) -> Option<Q>) -> Option<Value<Q>> {
+    pub fn map_ref_leaves<Q>(&self, mut f: impl FnMut(&P) -> Option<Q>) -> Option<Value<Q, Ext>> {
         Some(match self {
             Value::Break => Value::Break,
             Value::Pair(a, b) => Value::Pair(f(a)?, f(b)?),
             Value::Either(s, v) => Value::Either(*s, f(v)?),
-            Value::ExternalFn(e) => Value::ExternalFn(*e),
+            Value::ExternalFn(e) => Value::ExternalFn(e.clone()),
             Value::ExternalArc(e) => Value::ExternalArc(e.clone()),
             Value::Primitive(primitive) => Value::Primitive(primitive.clone()),
         })
@@ -225,22 +226,22 @@ impl<P> Value<P> {
 }
 
 #[derive(Clone, Debug)]
-pub enum SyncShared {
-    Package(PackagePtr, Shared),
-    Value(Value<Shared>),
+pub enum SyncShared<Ext: Clone> {
+    Package(PackagePtr<Ext>, Shared<Ext>),
+    Value(Value<Shared<Ext>, Ext>),
 }
 
-pub type GlobalValue = Value<GlobalPtr>;
+pub type GlobalValue<Ext> = Value<GlobalPtr<Ext>, Ext>;
 #[derive(Debug)]
 /// Linear nodes are not stored in the global arena; instead, they
 /// are created by the runtime and by the external dynamically, as needed
-pub enum Linear {
-    Value(Box<Value<Node>>),
+pub enum Linear<Ext: Clone> {
+    Value(Box<Value<Node<Ext>, Ext>>),
     /// This variant is created by external
     /// tasks. Whatever node it interacts with will get sent to `Node`
     /// This is not true for variable, package, or fanout nodes, which
     /// are of a higher priority than Request nodes.
-    Request(oneshot::Sender<Node>),
+    Request(oneshot::Sender<Node<Ext>>),
     /// This variant is created on `Fanout` ~ `Variable` interactions
     /// and is substituted into the variable's slot
     /// It is a "hole" that will get filled with whatever
@@ -249,11 +250,11 @@ pub enum Linear {
     /// until we know what to duplicate.
     ///
     /// This is also created in Fanout ~ Request interactions
-    ShareHole(Arc<Mutex<SharedHole>>),
+    ShareHole(Arc<Mutex<SharedHole<Linked>>>),
 }
 
-impl From<UserData> for Linear {
-    fn from(this: UserData) -> Linear {
+impl From<UserData> for Linear<Linked> {
+    fn from(this: UserData) -> Linear<Linked> {
         match this {
             UserData::ExternalFn(p) => Linear::Value(Box::new(Value::ExternalFn(p))),
             UserData::ExternalArc(p) => Linear::Value(Box::new(Value::ExternalArc(p))),
@@ -265,23 +266,23 @@ impl From<UserData> for Linear {
 #[derive(Clone, Debug)]
 /// A "global continuation"; a negative node stored in the global array
 /// When it interacts with a value, it attempts to destructure it.
-pub enum GlobalCont {
+pub enum GlobalCont<Ext: Clone> {
     /// The continue node; created in continue commands (`value?`)
     Continue,
     /// The par node; created in receive commands (`value[a]`)
-    Par(GlobalPtr, GlobalPtr),
+    Par(GlobalPtr<Ext>, GlobalPtr<Ext>),
     /// The choice node; created in case commands (`value.case { ... }`)
-    Choice(GlobalPtr, Index<[(Str, PackageBody)]>),
+    Choice(GlobalPtr<Ext>, Index<Ext, [(Str<Ext>, PackageBody<Ext>)]>),
 }
 
 #[derive(Debug)]
-pub enum SharedHole {
-    Filled(SyncShared),
-    Unfilled(Vec<Node>),
+pub enum SharedHole<Ext: Clone> {
+    Filled(SyncShared<Ext>),
+    Unfilled(Vec<Node<Ext>>),
 }
 pub struct Runtime {
-    pub arena: Arc<Arena>,
-    pub redexes: Vec<(Node, Node)>,
+    pub arena: Arc<Arena<Linked>>,
+    pub redexes: Vec<(Node<Linked>, Node<Linked>)>,
     pub rewrites: Rewrites,
 }
 
@@ -289,14 +290,17 @@ pub struct Runtime {
 /// and that holds a pointer to the arena. This prevents duplication between [`Runtime`] and
 /// [`Handle`], which are the two implementors of this trait.
 pub(crate) trait Linker {
-    fn link(&mut self, a: Node, b: Node);
-    fn arena(&self) -> Arc<Arena>;
+    fn link(&mut self, a: Node<Linked>, b: Node<Linked>);
+    fn arena(&self) -> Arc<Arena<Linked>>;
 
-    fn show<'a, 'b>(&'b self, node: &'a Node) -> String {
+    fn show<'a, 'b>(&'b self, node: &'a Node<Linked>) -> String {
         let arena_ref = self.arena();
         format!("{}", Showable(node, &mut Shower::from_arena(&arena_ref)))
     }
-    fn destruct(&mut self, node: Node) -> Result<Value<Node>, Node> {
+    fn destruct(
+        &mut self,
+        node: Node<Linked>,
+    ) -> Result<Value<Node<Linked>, Linked>, Node<Linked>> {
         match node {
             Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(x)).unwrap()),
             Node::Shared(Shared::Sync(shared)) => match &*shared {
@@ -321,7 +325,7 @@ pub(crate) trait Linker {
     }
 
     // Package-related methods
-    fn create_package_instance(&mut self, package: &Package) -> Instance {
+    fn create_package_instance(&mut self, package: &Package<Linked>) -> Instance {
         let num_vars = package.num_vars;
         let mut vars = Vec::with_capacity(num_vars);
         for _ in 0..num_vars {
@@ -332,7 +336,11 @@ pub(crate) trait Linker {
         }
     }
 
-    fn instatiate_package_body(&mut self, instance: Instance, body: &PackageBody) -> (Node, Node) {
+    fn instatiate_package_body(
+        &mut self,
+        instance: Instance,
+        body: &PackageBody<Linked>,
+    ) -> (Node<Linked>, Node<Linked>) {
         self.arena().get(body.redexes).iter().for_each(|(a, b)| {
             self.link(
                 Node::Global(instance.clone(), *a),
@@ -344,15 +352,19 @@ pub(crate) trait Linker {
             Node::Global(instance.clone(), body.captures),
         )
     }
-    fn instantiate_package_captures_direct(&mut self, package: &Package, captures: Node) -> Node {
+    fn instantiate_package_captures_direct(
+        &mut self,
+        package: &Package<Linked>,
+        captures: Node<Linked>,
+    ) -> Node<Linked> {
         let instance = self.create_package_instance(package);
         self.instantiate_package_body_captures(instance, &package.body, captures)
     }
     fn instantiate_package_captures(
         &mut self,
-        package: Index<OnceLock<Package>>,
-        captures: Node,
-    ) -> Node {
+        package: Index<Linked, OnceLock<Package<Linked>>>,
+        captures: Node<Linked>,
+    ) -> Node<Linked> {
         let arena = self.arena();
         let package = arena.get(package).get().unwrap();
         self.instantiate_package_captures_direct(package, captures)
@@ -360,16 +372,16 @@ pub(crate) trait Linker {
     fn instantiate_package_body_captures(
         &mut self,
         instance: Instance,
-        package: &PackageBody,
-        captures: Node,
-    ) -> Node {
+        package: &PackageBody<Linked>,
+        captures: Node<Linked>,
+    ) -> Node<Linked> {
         let (root, captures_in) = self.instatiate_package_body(instance, package);
         self.link(captures_in, captures);
         root
     }
 
     // Share-related methods
-    fn enqueue_to_hole(&mut self, hole: &mut SharedHole, cont: Node) {
+    fn enqueue_to_hole(&mut self, hole: &mut SharedHole<Linked>, cont: Node<Linked>) {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
                 self.link(
@@ -380,15 +392,15 @@ pub(crate) trait Linker {
             SharedHole::Unfilled(values) => values.push(cont),
         }
     }
-    fn create_share_hole(&self) -> (Node, Shared) {
+    fn create_share_hole(&self) -> (Node<Linked>, Shared<Linked>) {
         let state = Arc::new(Mutex::new(SharedHole::Unfilled(vec![])));
         let hole = Node::Linear(Linear::ShareHole(state.clone()));
         (hole, Shared::Async(state))
     }
 }
 
-impl From<Arc<Arena>> for Runtime {
-    fn from(arena: Arc<Arena>) -> Self {
+impl From<Arc<Arena<Linked>>> for Runtime {
+    fn from(arena: Arc<Arena<Linked>>) -> Self {
         Self {
             arena,
             redexes: vec![],
@@ -404,17 +416,17 @@ macro_rules! sym {
 }
 
 impl Linker for Runtime {
-    fn link(&mut self, a: Node, b: Node) {
+    fn link(&mut self, a: Node<Linked>, b: Node<Linked>) {
         self.redexes.push((a, b));
     }
-    fn arena(&self) -> Arc<Arena> {
+    fn arena(&self) -> Arc<Arena<Linked>> {
         self.arena.clone()
     }
 }
 
 impl Runtime {
     // Misc methods.
-    fn set_var(&mut self, instance: Instance, index: usize, value: Node) {
+    fn set_var(&mut self, instance: Instance, index: usize, value: Node<Linked>) {
         let mut lock = instance.vars.0.lock().unwrap();
         let slot = lock.get_mut(index).expect("Invalid index in variable!");
         match slot {
@@ -437,7 +449,7 @@ impl Runtime {
     /// external action is needed and the net is in normal form.
     ///
     /// This function is analogous to a "VM enter"
-    pub fn reduce(&mut self) -> Option<(UserData, Node)> {
+    pub fn reduce(&mut self) -> Option<(UserData, Node<Linked>)> {
         while let Some((a, b)) = self.redexes.pop() {
             if let Some(v) = self.interact(a, b) {
                 return Some(v);
@@ -451,10 +463,10 @@ impl Runtime {
     /// Recusrively turn a node into a `Shared` node which allows duplication
     /// This is done whenever a node needs to be duplicated. This function may return None if the node can't be duplicated.
     /// This is the case for linear nodes and negative types.
-    fn share(&mut self, node: Node) -> Option<Shared> {
+    fn share(&mut self, node: Node<Linked>) -> Option<Shared<Linked>> {
         self.share_inner(node)
     }
-    fn share_inner(&mut self, node: Node) -> Option<Shared> {
+    fn share_inner(&mut self, node: Node<Linked>) -> Option<Shared<Linked>> {
         stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
             Node::Shared(shared) => Some(shared),
             Node::Global(instance, global_index) => match self.arena().get(global_index) {
@@ -516,7 +528,7 @@ impl Runtime {
         })
     }
 
-    fn fill_hole(&mut self, hole: Arc<Mutex<SharedHole>>, value: Node) {
+    fn fill_hole(&mut self, hole: Arc<Mutex<SharedHole<Linked>>>, value: Node<Linked>) {
         let value = self.share(value).unwrap();
         match value {
             Shared::Async(value) => self.enqueue_to_hole(
@@ -538,7 +550,12 @@ impl Runtime {
     }
 
     // Interact-related methods
-    fn interact_fanout(&mut self, instance: Instance, destinations: Index<[Global]>, other: Node) {
+    fn interact_fanout(
+        &mut self,
+        instance: Instance,
+        destinations: Index<Linked, [Global<Linked>]>,
+        other: Node<Linked>,
+    ) {
         self.rewrites.fanout += 1;
         let other = self.share(other).unwrap();
         for dest in destinations {
@@ -548,16 +565,21 @@ impl Runtime {
             ));
         }
     }
-    fn interact_instantiate(&mut self, package: PackagePtr, captures_in: Node, other: Node) {
+    fn interact_instantiate(
+        &mut self,
+        package: PackagePtr<Linked>,
+        captures_in: Node<Linked>,
+        other: Node<Linked>,
+    ) {
         self.rewrites.instantiate += 1;
         let root = self.instantiate_package_captures(package, captures_in);
         self.link(root, other);
     }
     fn lookup_case_branch(
         &mut self,
-        options: Index<[(Str, PackageBody)]>,
-        variant: Str,
-    ) -> Option<PackageBody> {
+        options: Index<Linked, [(Str<Linked>, PackageBody<Linked>)]>,
+        variant: Str<Linked>,
+    ) -> Option<PackageBody<Linked>> {
         self.arena
             .get(options)
             .iter()
@@ -567,17 +589,17 @@ impl Runtime {
     /// Carry out an interaction between two nodes.
     /// Returns Some if an external operation with `UserData` was attempted.
     /// and None otherwise
-    fn interact(&mut self, a: Node, b: Node) -> Option<(UserData, Node)> {
+    fn interact(&mut self, a: Node<Linked>, b: Node<Linked>) -> Option<(UserData, Node<Linked>)> {
         /// NodeRef is an internal structure to make matching on Nodes easier.
         /// It is like a Node but includes a reference to the Global in the Global branch
         /// to allow matching on it
         enum NodeRef<'a> {
-            Linear(Linear),
-            Shared(Shared),
-            Global(Instance, Index<Global>, &'a Global),
+            Linear(Linear<Linked>),
+            Shared(Shared<Linked>),
+            Global(Instance, Index<Linked, Global<Linked>>, &'a Global<Linked>),
         }
         impl<'a> NodeRef<'a> {
-            fn from_node(arena: &'a Arena, node: Node) -> NodeRef<'a> {
+            fn from_node(arena: &'a Arena<Linked>, node: Node<Linked>) -> NodeRef<'a> {
                 match node {
                     Node::Linear(linear) => NodeRef::Linear(linear),
                     Node::Shared(shared) => NodeRef::Shared(shared),
@@ -586,7 +608,7 @@ impl Runtime {
                     }
                 }
             }
-            fn into_node(self) -> Node {
+            fn into_node(self) -> Node<Linked> {
                 match self {
                     NodeRef::Linear(linear) => Node::Linear(linear),
                     NodeRef::Shared(shared) => Node::Shared(shared),
@@ -820,7 +842,7 @@ impl Runtime {
     }
 }
 
-impl Node {
+impl Node<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Node::Linear(l) => format!("Linear.{}", l.variant_name()),
@@ -835,7 +857,7 @@ impl Node {
     }
 }
 
-impl Linear {
+impl Linear<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Linear::Value(v) => format!("Value({})", v.variant_name()),
@@ -845,7 +867,7 @@ impl Linear {
     }
 }
 
-impl Shared {
+impl Shared<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Shared::Async(_) => "Async".to_owned(),
@@ -854,7 +876,7 @@ impl Shared {
     }
 }
 
-impl SyncShared {
+impl SyncShared<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             SyncShared::Package(_, inner) => format!("Package({})", inner.variant_name()),
@@ -863,7 +885,7 @@ impl SyncShared {
     }
 }
 
-impl Global {
+impl Global<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Global::Variable(_) => "Variable".into(),
@@ -879,7 +901,7 @@ impl Global {
     }
 }
 
-impl GlobalCont {
+impl<Ext: Clone> GlobalCont<Ext> {
     pub fn variant_name(&self) -> String {
         match self {
             GlobalCont::Continue => "Continue".into(),
@@ -891,7 +913,7 @@ impl GlobalCont {
     }
 }
 
-impl<P> Value<P> {
+impl<P> Value<P, Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Value::Break => "Break".into(),

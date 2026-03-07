@@ -2,6 +2,7 @@ use crate::flat::arena::Arena;
 use crate::flat::reducer::Reducer;
 use crate::flat::runtime::{PackagePtr, Runtime};
 use crate::flat::stats::Rewrites;
+use crate::linker::Linked;
 use crate::readback::Handle;
 use futures::future::RemoteHandle;
 use futures::task::{Spawn, SpawnExt};
@@ -9,8 +10,8 @@ use std::sync::Arc;
 
 pub fn start_and_instantiate(
     spawner: Arc<dyn Spawn + Send + Sync + 'static>,
-    arena: Arc<Arena>,
-    package: PackagePtr,
+    arena: Arc<Arena<Linked>>,
+    package: PackagePtr<Linked>,
 ) -> (Handle, RemoteHandle<Rewrites>) {
     let (reducer, net_handle) = Reducer::from(Runtime::from(arena.clone()), spawner.clone());
     let reducer_future = reducer.spawn_reducer();

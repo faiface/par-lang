@@ -13,6 +13,8 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use futures::task::{Spawn, SpawnExt};
 
 use crate::readback::{Element, RunStats};
+#[cfg(target_arch = "wasm32")]
+use crate::wasm_spawn::WasmSpawn;
 use core::time::Duration;
 use par_core::frontend::DefinitionBody;
 use par_core::{
@@ -27,15 +29,13 @@ use par_core::{
         collect_source_files, find_package_layout, parse_loaded_files,
     },
 };
+use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::pin::Pin;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
-
-#[cfg(target_arch = "wasm32")]
-use crate::wasm_spawn::WasmSpawn;
 
 #[derive(Debug, Clone)]
 enum BuildError {
@@ -97,7 +97,7 @@ enum BuildResult {
     Ok {
         pretty: String,
         checked: Arc<CheckedWorkspace>,
-        rt_compiled: Compiled,
+        rt_compiled: Compiled<Linked>,
     },
 }
 
@@ -128,7 +128,7 @@ impl BuildResult {
         }
     }
 
-    fn rt_compiled(&self) -> Option<&Compiled> {
+    fn rt_compiled(&self) -> Option<&Compiled<Linked>> {
         match self {
             Self::Ok { rt_compiled, .. } => Some(rt_compiled),
             Self::None
@@ -251,7 +251,7 @@ impl BuildResult {
 
     fn from_checked(pretty: String, checked: Arc<CheckedWorkspace>, max_interactions: u32) -> Self {
         let rt_compiled = match checked.compile_runtime(max_interactions) {
-            Ok(rt_compiled) => rt_compiled,
+            Ok(rt_compiled) => rt_compiled.link(),
             Err(error) => {
                 return Self::InetError {
                     pretty,
@@ -647,7 +647,7 @@ impl Playground {
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedWorkspace>,
-        compiled: &Compiled,
+        compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
     ) -> () {
         for (name, _) in &program.checked_module().definitions {

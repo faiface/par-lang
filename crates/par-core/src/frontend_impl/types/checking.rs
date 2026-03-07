@@ -1748,9 +1748,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 )))
             }
 
-            Expression::External(f, ()) => {
-                Ok(Arc::new(Expression::External(*f, target_type.clone())))
-            }
+            Expression::External(f, ()) => Ok(Arc::new(Expression::External(
+                f.clone(),
+                target_type.clone(),
+            ))),
         }
     }
 

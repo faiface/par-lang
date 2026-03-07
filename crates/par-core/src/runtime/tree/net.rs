@@ -33,26 +33,26 @@ pub(crate) fn number_to_string(mut number: usize) -> String {
 /// A `Tree` corresponds to a port that is the root of a tree of interaction combinators.
 /// The `Tree` enum itself contains the whole tree, although it some parts of it might be inside
 /// half-linked `Tree::Var`s
-pub enum Tree {
+pub enum Tree<Ext> {
     Break,
     Continue,
     Era,
-    Par(Box<Tree>, Box<Tree>),
-    Times(Box<Tree>, Box<Tree>),
-    Dup(Box<Tree>, Box<Tree>),
-    Signal(ArcStr, Box<Tree>),
-    Choice(Box<Tree>, Arc<HashMap<ArcStr, usize>>, Option<usize>),
+    Par(Box<Tree<Ext>>, Box<Tree<Ext>>),
+    Times(Box<Tree<Ext>>, Box<Tree<Ext>>),
+    Dup(Box<Tree<Ext>>, Box<Tree<Ext>>),
+    Signal(ArcStr, Box<Tree<Ext>>),
+    Choice(Box<Tree<Ext>>, Arc<HashMap<ArcStr, usize>>, Option<usize>),
     Var(usize),
-    Package(usize, Box<Tree>, FanBehavior),
+    Package(usize, Box<Tree<Ext>>, FanBehavior),
 
-    SignalRequest(oneshot::Sender<(ArcStr, Box<Tree>)>),
+    SignalRequest(oneshot::Sender<(ArcStr, Box<Tree<Ext>>)>),
 
     Primitive(Primitive),
     IntRequest(oneshot::Sender<BigInt>),
     StringRequest(oneshot::Sender<ParString>),
     BytesRequest(oneshot::Sender<Bytes>),
 
-    External(fn(par_runtime::readback::Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
+    External(Ext),
     ExternalBox(
         Arc<
             dyn Send
@@ -62,7 +62,7 @@ pub enum Tree {
     ),
 }
 
-impl Tree {
+impl<Ext> Tree<Ext> {
     pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
         match self {
             Self::Var(x) => *x = m(*x),
@@ -97,7 +97,7 @@ impl Tree {
     }
 }
 
-impl core::fmt::Debug for Tree {
+impl<Ext> core::fmt::Debug for Tree<Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Era => f.debug_tuple("Era").finish(),
@@ -135,7 +135,7 @@ impl core::fmt::Debug for Tree {
     }
 }
 
-impl Clone for Tree {
+impl<Ext: Clone> Clone for Tree<Ext> {
     fn clone(&self) -> Self {
         match self {
             Self::Era => Self::Era,
@@ -157,7 +157,7 @@ impl Clone for Tree {
             Self::IntRequest(_) => panic!("cannot clone Tree::IntRequest"),
             Self::StringRequest(_) => panic!("cannot clone Tree::StringRequest"),
             Self::BytesRequest(_) => panic!("cannot clone Tree::BytesRequest"),
-            Self::External(f) => Self::External(*f),
+            Self::External(f) => Self::External(f.clone()),
             Self::ExternalBox(f) => Self::ExternalBox(Arc::clone(f)),
         }
     }
@@ -213,38 +213,61 @@ impl Rewrites {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 /// A Net represents the current state of the runtime
 /// It contains a list of active pairs, as well as a list of free ports.
 /// It also stores a map of variables, which records whether variables were linked by either of their sides
-pub struct Net {
-    pub ports: VecDeque<Tree>,
-    pub redexes: VecDeque<(Tree, Tree)>,
-    pub variables: Variables,
-    pub packages: Arc<IndexMap<usize, Net>>,
+pub struct Net<Ext> {
+    pub ports: VecDeque<Tree<Ext>>,
+    pub redexes: VecDeque<(Tree<Ext>, Tree<Ext>)>,
+    pub variables: Variables<Ext>,
+    pub packages: Arc<IndexMap<usize, Net<Ext>>>,
     pub rewrites: Rewrites,
-    pub waiting_for_reducer: Vec<(Tree, Tree)>,
+    pub waiting_for_reducer: Vec<(Tree<Ext>, Tree<Ext>)>,
     pub debug_name: String,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct Variables {
-    vars: Vec<VarState>,
-    free: Vec<VarId>,
+impl<Ext> Default for Net<Ext> {
+    fn default() -> Self {
+        Self {
+            ports: VecDeque::new(),
+            redexes: VecDeque::new(),
+            variables: Variables::default(),
+            packages: Arc::new(IndexMap::new()),
+            rewrites: Rewrites::default(),
+            waiting_for_reducer: Vec::new(),
+            debug_name: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub enum VarState {
-    Free,
-    Linked(Tree),
+pub struct Variables<Ext> {
+    vars: Vec<VarState<Ext>>,
+    free: Vec<VarId>,
 }
 
-impl Variables {
-    pub fn get(&self, id: VarId) -> Option<&VarState> {
+impl<Ext> Default for Variables<Ext> {
+    fn default() -> Self {
+        Self {
+            vars: Vec::new(),
+            free: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum VarState<Ext> {
+    Free,
+    Linked(Tree<Ext>),
+}
+
+impl<Ext> Variables<Ext> {
+    pub fn get(&self, id: VarId) -> Option<&VarState<Ext>> {
         self.vars.get(id)
     }
 
-    pub fn remove_linked(&mut self, id: VarId) -> Result<Tree, &mut VarState> {
+    pub fn remove_linked(&mut self, id: VarId) -> Result<Tree<Ext>, &mut VarState<Ext>> {
         while self.vars.len() <= id {
             self.vars.push(VarState::Free);
         }
@@ -274,8 +297,8 @@ impl Variables {
     }
 }
 
-impl Net {
-    fn interact(&mut self, a: Tree, b: Tree) {
+impl<Ext: Clone> Net<Ext> {
+    fn interact(&mut self, a: Tree<Ext>, b: Tree<Ext>) {
         macro_rules! sym {
             ($a: pat, $b: pat) => {
                 ($a, $b) | ($b, $a)
@@ -404,7 +427,7 @@ impl Net {
         }
     }
 
-    fn primitive_interact(&mut self, p: Primitive, tree: Tree) {
+    fn primitive_interact(&mut self, p: Primitive, tree: Tree<Ext>) {
         match (p, tree) {
             (Primitive::Int(i), Tree::IntRequest(resp)) => {
                 resp.send(i).expect("receiver dropped");
@@ -436,7 +459,7 @@ impl Net {
         }
     }
 
-    fn dereference_package(&mut self, package: usize, cx: Tree) -> Tree {
+    fn dereference_package(&mut self, package: usize, cx: Tree<Ext>) -> Tree<Ext> {
         let mut net = self
             .packages
             .get(&package)
@@ -449,7 +472,7 @@ impl Net {
         root
     }
 
-    pub fn alter_net(&mut self, net: &mut Net) {
+    pub fn alter_net(&mut self, net: &mut Net<Ext>) {
         // Now, we have to freshen all variables in the tree
         let mut allocated = HashMap::new();
         net.map_vars(&mut |id| {
@@ -468,7 +491,7 @@ impl Net {
         self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites.clone();
     }
 
-    pub fn inject_net(&mut self, mut net: Net) -> Tree {
+    pub fn inject_net(&mut self, mut net: Net<Ext>) -> Tree<Ext> {
         assert!(net.ports.len() == 2);
         self.alter_net(&mut net);
         let cx = net.ports.pop_back().unwrap();
@@ -502,7 +525,7 @@ impl Net {
     }
 
     /// Where vars occur in the given tree which already have been linked from the other side, finish linking them.
-    pub fn substitute_tree(&mut self, tree: &mut Tree) {
+    pub fn substitute_tree(&mut self, tree: &mut Tree<Ext>) {
         match tree {
             Tree::Times(a, b) | Tree::Par(a, b) | Tree::Dup(a, b) => {
                 self.substitute_tree(a);
@@ -544,7 +567,7 @@ impl Net {
         self.ports = ports;
     }
 
-    pub fn link(&mut self, a: Tree, b: Tree) {
+    pub fn link(&mut self, a: Tree<Ext>, b: Tree<Ext>) {
         match (a, b) {
             (Tree::Var(mut id), y) | (y, Tree::Var(mut id)) => loop {
                 match self.variables.remove_linked(id) {
@@ -566,7 +589,7 @@ impl Net {
         }
     }
 
-    pub fn create_wire(&mut self) -> (Tree, Tree) {
+    pub fn create_wire(&mut self) -> (Tree<Ext>, Tree<Ext>) {
         let id = self.variables.alloc();
         (Tree::Var(id), Tree::Var(id))
     }
@@ -617,7 +640,7 @@ impl Net {
         s
     }
 
-    pub fn show_tree(&self, t: &Tree) -> String {
+    pub fn show_tree(&self, t: &Tree<Ext>) -> String {
         match t {
             Tree::Var(id) => {
                 if let Some(VarState::Linked(b)) = self.variables.get(*id) {
@@ -668,7 +691,7 @@ impl Net {
         }
     }
 
-    fn assert_tree_not_contains(&self, tree: &Tree, idx: &usize) {
+    fn assert_tree_not_contains(&self, tree: &Tree<Ext>, idx: &usize) {
         match tree {
             Tree::Par(a, b) | Tree::Times(a, b) | Tree::Dup(a, b) => {
                 self.assert_tree_not_contains(a, idx);
@@ -704,7 +727,10 @@ impl Net {
         }
     }
 
-    pub fn assert_valid_with<'a>(&self, iter: impl Iterator<Item = &'a Tree>) {
+    pub fn assert_valid_with<'a>(&self, iter: impl Iterator<Item = &'a Tree<Ext>>)
+    where
+        Ext: 'a,
+    {
         self.assert_no_vicious();
 
         let mut vars = vec![];
@@ -745,7 +771,7 @@ impl Net {
         self.assert_valid_with(std::iter::empty());
     }
 
-    fn assert_tree_valid(&self, tree: &Tree) -> Vec<usize> {
+    fn assert_tree_valid(&self, tree: &Tree<Ext>) -> Vec<usize> {
         match tree {
             Tree::Times(a, b) | Tree::Par(a, b) | Tree::Dup(a, b) => {
                 let mut a = self.assert_tree_valid(a.as_ref());

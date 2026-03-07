@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -13,7 +13,6 @@ use super::{
 };
 
 use crate::frontend::language::Expression;
-use par_runtime::readback::Handle;
 
 #[derive(Clone, Debug)]
 pub struct Module<Expr, S> {
@@ -110,20 +109,6 @@ impl TypeDef<Unresolved> {
     }
 }
 
-impl Definition<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-    //TODO: remove this
-    pub fn external(
-        name: &'static str,
-        f: fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
-    ) -> Self {
-        Self {
-            span: Default::default(),
-            name: GlobalName::<Unresolved>::external(None, name),
-            body: DefinitionBody::Par(Arc::new(process::Expression::External(f, ()))),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum ParseAndCompileError {
     Parse(SyntaxError),
@@ -141,39 +126,6 @@ impl From<CompileError> for ParseAndCompileError {
         Self::Compile(value)
     }
 }
-
-// TODO: remove this
-// impl Module<Arc<process::Expression<(), Unresolved>>, Unresolved> {
-//     pub fn parse_and_compile(source: &str, file: FileName) -> Result<Self, ParseAndCompileError> {
-//         let parsed = parse_module(source, file)?;
-//
-//         let compiled_definitions = parsed
-//             .definitions
-//             .into_iter()
-//             .map(
-//                 |Definition {
-//                      span,
-//                      name,
-//                      body,
-//                  }| {
-//                     language::Context::new()
-//                         .compile_expression(&expression)
-//                         .map(|compiled| Definition {
-//                             span,
-//                             name,
-//                             expression: compiled.optimize().fix_captures().0.optimize_subject(None),
-//                         })
-//                 },
-//             )
-//             .collect::<Result<_, _>>()?;
-//
-//         Ok(Module {
-//             type_defs: parsed.type_defs,
-//             declarations: parsed.declarations,
-//             definitions: compiled_definitions,
-//         })
-//     }
-// }
 
 impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
     pub fn map_global_names<T, E>(
