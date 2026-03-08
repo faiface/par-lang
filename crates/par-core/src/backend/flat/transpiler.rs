@@ -18,7 +18,7 @@ use par_runtime::flat::runtime::{
 
 use crate::runtime_impl::tree::Net;
 use par_runtime::flat::runtime::Global;
-use par_runtime::linker::{LinkError, Linked, Unlinked, link_arena, link_package_ptr};
+use par_runtime::linker::{Artifact, LinkError, Linked, Unlinked, link_arena, link_package_ptr};
 
 #[derive(Default)]
 pub(crate) struct NetTranspiler {
@@ -40,6 +40,19 @@ pub struct Transpiled<Ext: Clone> {
     pub arena: Arc<Arena<Ext>>,
     pub name_to_package: HashMap<GlobalName<Universal>, PackagePtr<Ext>>,
     pub type_defs: TypeDefs<Universal>,
+}
+
+impl Into<Artifact<Unlinked>> for Transpiled<Unlinked> {
+    fn into(self) -> Artifact<Unlinked> {
+        Artifact {
+            arena: self.arena.clone(),
+            definition_to_package: self
+                .name_to_package
+                .iter()
+                .map(|(k, v)| (format!("{}", k), v.clone()))
+                .collect(),
+        }
+    }
 }
 
 impl<Ext: Clone> Display for Transpiled<Ext> {

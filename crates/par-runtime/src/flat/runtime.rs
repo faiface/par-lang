@@ -37,9 +37,9 @@ use crate::primitive::Primitive;
 use super::arena::*;
 use crate::fan_behavior::FanBehavior;
 use crate::flat::stats::Rewrites;
-use std::sync::{Arc, Mutex};
-
 use crate::linker::Linked;
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 pub type PackagePtr<Ext> = Index<Ext, OnceLock<Package<Ext>>>;
@@ -111,13 +111,35 @@ pub(crate) type ExternalFn = fn(crate::readback::Handle) -> ExternalFnRet;
 #[derive(Clone)]
 pub struct ExternalArc(pub Arc<dyn Send + Sync + Fn(crate::readback::Handle) -> ExternalFnRet>);
 
+impl Serialize for ExternalArc {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        unreachable!(
+            "ExternalArc should never be serialized, are you trying to serialize after reduction?"
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for ExternalArc {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        unreachable!(
+            "ExternalArc should never be deserialized, are you trying to deserialize after reduction?"
+        )
+    }
+}
+
 impl Debug for ExternalArc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalArc").finish_non_exhaustive()
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// A PackageBody is the inner body of a package.
 /// The difference with `Package` is that `PackageBody` does not contain `num_vars`
 /// (because a package inside a PackageBody might not require a new instance)
@@ -130,7 +152,7 @@ pub struct PackageBody<Ext: Clone> {
     pub redexes: Index<Ext, [(Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>)]>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// A package is a `Global` subgraph that is isolated from the rest of the program
 /// It does not use the same Instance as its environment, and so it requires a
 /// separate Instance to be created when it is expanded.
@@ -140,7 +162,7 @@ pub struct Package<Ext: Clone> {
     pub num_vars: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Global<Ext: Clone> {
     Variable(usize),
     Package(PackagePtr<Ext>, GlobalPtr<Ext>, FanBehavior),
@@ -184,7 +206,7 @@ pub enum Shared<Ext: Clone> {
 /// P is the type of children. Usually, this will be `GlobalPtr`, `Shared`, or `Node`
 ///
 /// There are [`Linear`] values, [`Shared`] values, and [`Global`] values.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Value<P, Ext: Clone> {
     /// The break node; created in break commands (`value!`)
     Break,
@@ -263,7 +285,7 @@ impl From<UserData> for Linear<Linked> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// A "global continuation"; a negative node stored in the global array
 /// When it interacts with a value, it attempts to destructure it.
 pub enum GlobalCont<Ext: Clone> {

@@ -9,9 +9,10 @@ playground=[]
 [dependencies]
 arcstr = "1.2.0"
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-num-bigint = "0.4.6"
-bytes = "1.6.1"
+num-bigint = { version = "0.4.6", features = ["serde"] }
+bytes = { version = "1.6.1", features = ["serde"] }
 inventory = "0.3.22"
+serde = { version = "1.0.228", features = ["derive", "rc"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal", "sync"] }
