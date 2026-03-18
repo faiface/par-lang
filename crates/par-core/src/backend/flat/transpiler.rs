@@ -18,7 +18,7 @@ use par_runtime::flat::runtime::{
 
 use crate::runtime_impl::tree::Net;
 use par_runtime::flat::runtime::Global;
-use par_runtime::linker::{Linked, Unlinked, link_arena, link_package_ptr};
+use par_runtime::linker::{LinkError, Linked, Unlinked, link_arena, link_package_ptr};
 
 #[derive(Default)]
 pub(crate) struct NetTranspiler {
@@ -103,16 +103,18 @@ impl<Ext: Clone> Transpiled<Ext> {
     }
 }
 
-pub(crate) fn link_transpiled(transpiled: Transpiled<Unlinked>) -> Transpiled<Linked> {
-    Transpiled {
+pub(crate) fn link_transpiled(
+    transpiled: Transpiled<Unlinked>,
+) -> Result<Transpiled<Linked>, LinkError> {
+    Ok(Transpiled {
         type_defs: transpiled.type_defs,
-        arena: Arc::new(link_arena(transpiled.arena.as_ref())),
+        arena: Arc::new(link_arena(transpiled.arena.as_ref())?),
         name_to_package: transpiled
             .name_to_package
             .iter()
             .map(|(k, v)| (k.clone(), link_package_ptr(v)))
             .collect(),
-    }
+    })
 }
 impl NetTranspiler {
     fn map_variable(&mut self, id: usize) -> usize {

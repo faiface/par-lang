@@ -250,8 +250,11 @@ impl BuildResult {
     }
 
     fn from_checked(pretty: String, checked: Arc<CheckedWorkspace>, max_interactions: u32) -> Self {
-        let rt_compiled = match checked.compile_runtime(max_interactions) {
-            Ok(rt_compiled) => rt_compiled.link(),
+        let rt_compiled = match checked
+            .compile_runtime(max_interactions)
+            .and_then(|compiled| compiled.link())
+        {
+            Ok(rt_compiled) => rt_compiled,
             Err(error) => {
                 return Self::InetError {
                     pretty,

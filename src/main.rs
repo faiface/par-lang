@@ -134,11 +134,11 @@ fn build_runtime_package(
     let (checked, local_modules, sources) = build_checked_package(package_path)?;
     let rt_compiled = checked
         .compile_runtime(max_interactions)
+        .and_then(|compiled| compiled.link())
         .map_err(|error| BuildError::InetCompile {
             error,
             sources: sources.clone(),
-        })?
-        .link();
+        })?;
     Ok((checked, rt_compiled, local_modules))
 }
 
@@ -421,9 +421,7 @@ fn resolve_target_definition<'a>(
 fn check(package_path: PathBuf) -> Result<(), String> {
     println!("Checking package: {}", package_path.display());
 
-    let checked_result = stacker::grow(32 * 1024 * 1024, || {
-        build_runtime_package(&package_path, MAX_INTERACTIONS_DEFAULT)
-    });
+    let checked_result = stacker::grow(32 * 1024 * 1024, || build_checked_package(&package_path));
     if let Err(error) = checked_result {
         let error_string = error.display();
         eprintln!("{}", error_string.bright_red());
