@@ -421,8 +421,10 @@ fn resolve_target_definition<'a>(
 fn check(package_path: PathBuf) -> Result<(), String> {
     println!("Checking package: {}", package_path.display());
 
-    let checked_result = stacker::grow(32 * 1024 * 1024, || build_checked_package(&package_path));
-    if let Err(error) = checked_result {
+    let build_result = stacker::grow(32 * 1024 * 1024, || {
+        build_runtime_package(&package_path, MAX_INTERACTIONS_DEFAULT)
+    });
+    if let Err(error) = build_result {
         let error_string = error.display();
         eprintln!("{}", error_string.bright_red());
         return Err(error_string);

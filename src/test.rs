@@ -40,22 +40,30 @@ fn temp_package(name: &str, source: &str) -> PathBuf {
     root
 }
 
+fn missing_external_error(package: &PathBuf) -> String {
+    let error = match stacker::grow(32 * 1024 * 1024, || {
+        crate::build_runtime_package(package, 10_000)
+    }) {
+        Ok(_) => panic!("link should fail"),
+        Err(error) => error,
+    };
+    error.display()
+}
+
 #[test]
-fn check_allows_unresolved_external_definitions() -> Result<(), String> {
+fn check_reports_missing_external_registration() {
     let package = temp_package("check-external", "module Main\n\ndef Main : ! = external\n");
-    check(package)
+    let error = check(package).expect_err("check should fail");
+    assert!(
+        error.contains("Missing external registration for"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
 fn runtime_link_reports_missing_external_registration() {
     let package = temp_package("link-external", "module Main\n\ndef Main : ! = external\n");
-    let error = match stacker::grow(32 * 1024 * 1024, || {
-        crate::build_runtime_package(&package, 10_000)
-    }) {
-        Ok(_) => panic!("link should fail"),
-        Err(error) => error,
-    };
-    let display = error.display();
+    let display = missing_external_error(&package);
     assert!(
         display.contains("Missing external registration for"),
         "unexpected error: {display}"
