@@ -683,7 +683,7 @@ fn typ_box(input: &mut Input) -> Result<Type<Unresolved>> {
         t(TokenKind::Box),
         typ.context(StrContext::Label("box type")),
     )
-    .map(|(pre, typ)| Type::Box(pre.span(), Box::new(typ)))
+    .map(|(pre, typ)| Type::Box(pre.span.join(typ.span()), Box::new(typ)))
     .parse_next(input)
 }
 
@@ -1585,7 +1585,9 @@ fn expr_do(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn expr_box(input: &mut Input) -> Result<Expression<Unresolved>> {
     commit_after(t(TokenKind::Box), expression)
-        .map(|(pre, expression)| Expression::Box(pre.span(), Box::new(expression)))
+        .map(|(pre, expression)| {
+            Expression::Box(pre.span.join(expression.span()), Box::new(expression))
+        })
         .parse_next(input)
 }
 
@@ -1712,8 +1714,12 @@ fn cons_signal(input: &mut Input) -> Result<Construct<Unresolved>> {
 
 fn cons_case(input: &mut Input) -> Result<Construct<Unresolved>> {
     commit_after(t(TokenKind::Case), branches_body(cons_branch))
-        .map(|(pre, (_branches_span, branches, else_branch))| {
-            Construct::Case(pre.span(), ConstructBranches(branches), else_branch)
+        .map(|(pre, (branches_span, branches, else_branch))| {
+            Construct::Case(
+                pre.span.join(branches_span),
+                ConstructBranches(branches),
+                else_branch,
+            )
         })
         .parse_next(input)
 }
@@ -1925,8 +1931,12 @@ fn apply_case(input: &mut Input) -> Result<Apply<Unresolved>> {
         (t(TokenKind::Dot), t(TokenKind::Case)),
         branches_body(apply_branch),
     )
-    .map(|((pre, _), (_branches_span, branches, else_branch))| {
-        Apply::Case(pre.span(), ApplyBranches(branches), else_branch)
+    .map(|((pre, _), (branches_span, branches, else_branch))| {
+        Apply::Case(
+            pre.span.join(branches_span),
+            ApplyBranches(branches),
+            else_branch,
+        )
     })
     .parse_next(input)
 }
@@ -2049,7 +2059,7 @@ fn apply_pipe(input: &mut Input) -> Result<Apply<Unresolved>> {
             None => Apply::Noop(function.span().only_end()),
         };
         Apply::Pipe(
-            pre.span.join(function.span()),
+            pre.span.join(then.span()),
             Box::new(function),
             Box::new(then),
         )
@@ -2618,9 +2628,9 @@ fn cmd_case(input: &mut Input) -> Result<Command<Unresolved>> {
         (branches_body(cmd_branch), opt(pass_process)),
     )
     .map(
-        |((pre, _), ((_branches_span, branches, else_branch), pass_process))| {
+        |((pre, _), ((branches_span, branches, else_branch), pass_process))| {
             Command::Case(
-                pre.span(),
+                pre.span.join(branches_span),
                 CommandBranches(branches),
                 else_branch,
                 pass_process.map(Box::new),
@@ -2738,7 +2748,7 @@ fn cmd_try(input: &mut Input) -> Result<Command<Unresolved>> {
                 Some(cmd) => cmd,
                 None => noop_cmd(try_kw.span.only_end()),
             };
-            Command::Try(try_kw.span.clone(), label, Box::new(cmd))
+            Command::Try(try_kw.span.join(cmd.span()), label, Box::new(cmd))
         })
         .parse_next(input)
 }
@@ -2781,11 +2791,7 @@ fn cmd_pipe(input: &mut Input) -> Result<Command<Unresolved>> {
             Some(cmd) => cmd,
             None => noop_cmd(function.span().only_end()),
         };
-        Command::Pipe(
-            pre.span.join(function.span()),
-            Box::new(function),
-            Box::new(cmd),
-        )
+        Command::Pipe(pre.span.join(cmd.span()), Box::new(function), Box::new(cmd))
     })
     .parse_next(input)
 }
