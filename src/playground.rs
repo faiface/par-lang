@@ -535,18 +535,32 @@ impl eframe::App for Playground {
 
                         ui.separator();
 
-                        let cursor = CodeEditor::default()
+                        let editor = CodeEditor::default()
                             .id_source("code")
                             .with_syntax(par_syntax())
                             .with_rows(32)
                             .with_fontsize(self.editor_font_size)
                             .with_theme(self.get_theme(ui))
                             .with_numlines(true)
-                            .show(ui, &mut self.code)
-                            .cursor_range;
+                            .show(ui, &mut self.code);
 
-                        if let Some(cursor) = cursor {
+                        if let Some(cursor) = editor.cursor_range {
                             self.cursor_pos = row_and_column(&self.code, cursor.primary.index);
+                        }
+
+                        if let (Some(checked), Some(hover_pos)) =
+                            (self.build.checked(), editor_hover_pos(&editor))
+                        {
+                            let hover_file_name = self.active_file_name();
+                            if let Some(name_info) =
+                                checked.hover_at(&hover_file_name, hover_pos.0, hover_pos.1)
+                            {
+                                let buf =
+                                    checked.render_hover_in_file(&hover_file_name, &name_info);
+                                editor.response.on_hover_ui_at_pointer(|ui| {
+                                    ui.label(RichText::new(buf).code());
+                                });
+                            }
                         }
                     });
                 });
@@ -568,6 +582,17 @@ fn row_and_column(source: &str, index: usize) -> (u32, u32) {
         }
     }
     (row, col)
+}
+
+fn editor_hover_pos(output: &egui::text_edit::TextEditOutput) -> Option<(u32, u32)> {
+    let hover_pos = output.response.hover_pos()?;
+    let galley_rect = egui::Rect::from_min_size(output.galley_pos, output.galley.size());
+    if !galley_rect.contains(hover_pos) {
+        return None;
+    }
+
+    let hover_cursor = output.galley.cursor_from_pos(hover_pos - output.galley_pos);
+    Some(row_and_column(&output.galley.job.text, hover_cursor.index))
 }
 
 impl Playground {
@@ -790,19 +815,6 @@ impl Playground {
                     }
 
                     let theme = self.get_theme(ui);
-
-                    if let Some(checked) = self.build.checked() {
-                        let hover_file_name = self.active_file_name();
-                        if let Some(name_info) =
-                            checked.hover_at(&hover_file_name, self.cursor_pos.0, self.cursor_pos.1)
-                        {
-                            ui.horizontal(|ui| {
-                                let buf =
-                                    checked.render_hover_in_file(&hover_file_name, &name_info);
-                                ui.label(RichText::new(buf).code().color(green()));
-                            });
-                        }
-                    }
 
                     if self.show_compiled {
                         if let Some(pretty) = self.build.pretty() {
