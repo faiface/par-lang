@@ -91,14 +91,14 @@ fn build_for_run(
         error,
         sources: sources.clone(),
     })?;
-    let compiled =
-        checked
-            .compile_runtime(max_interactions)
-            .map_err(|error| BuildError::InetCompile {
-                error,
-                sources: sources.clone(),
-            })?;
-    Ok((checked.clone(), compiled.link(), checked.root_modules()))
+    let compiled = checked
+        .compile_runtime(max_interactions)
+        .and_then(|compiled| compiled.link())
+        .map_err(|error| BuildError::InetCompile {
+            error,
+            sources: sources.clone(),
+        })?;
+    Ok((checked.clone(), compiled, checked.root_modules()))
 }
 
 #[derive(Debug)]

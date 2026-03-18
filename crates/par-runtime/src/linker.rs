@@ -1,8 +1,9 @@
-use crate::flat::arena::{Arena, Index, Indexable};
+use crate::flat::arena::{Arena, Index};
 use crate::flat::runtime::{
     ExternalFn, Global, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
 };
 use crate::registry::{DefinitionRef, PackageRef, get_external_fn};
+use std::fmt::{self, Display};
 use std::sync::OnceLock;
 
 pub type Linked = ExternalFn;
@@ -19,6 +20,11 @@ pub struct Unlinked {
     pub path: Vec<String>,
     pub module: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkError {
+    pub missing: Unlinked,
 }
 
 impl<'a> From<PackageRef<'a>> for PackageID {
@@ -41,9 +47,49 @@ impl<'a> From<DefinitionRef<'a>> for Unlinked {
     }
 }
 
-pub fn link_arena(arena: &Arena<Unlinked>) -> Arena<Linked> {
-    Arena {
-        nodes: arena.nodes.iter().map(link_global).collect(),
+impl Display for PackageID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local => write!(f, "<local>"),
+            Self::Package(name) => write!(f, "@{name}"),
+        }
+    }
+}
+
+impl Display for Unlinked {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let package_prefix = match &self.package {
+            PackageID::Local => String::new(),
+            PackageID::Package(name) => format!("@{name}/"),
+        };
+        let path_prefix = if self.path.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.path.join("/"))
+        };
+        write!(
+            f,
+            "{}{}{}.{}",
+            package_prefix, path_prefix, self.module, self.name
+        )
+    }
+}
+
+impl Display for LinkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Missing external registration for `{}`", self.missing)
+    }
+}
+
+impl std::error::Error for LinkError {}
+
+pub fn link_arena(arena: &Arena<Unlinked>) -> Result<Arena<Linked>, LinkError> {
+    Ok(Arena {
+        nodes: arena
+            .nodes
+            .iter()
+            .map(link_global)
+            .collect::<Result<_, _>>()?,
         strings: arena.strings.clone(),
         string_to_location: arena
             .string_to_location
@@ -53,77 +99,78 @@ pub fn link_arena(arena: &Arena<Unlinked>) -> Arena<Linked> {
         case_branches: arena
             .case_branches
             .iter()
-            .map(|(index, package)| (Index(index.0.clone()), link_package_body(package)))
-            .collect(),
+            .map(|(index, package)| Ok((Index(index.0.clone()), link_package_body(package)?)))
+            .collect::<Result<_, _>>()?,
         packages: arena
             .packages
             .iter()
-            .map(|package| link_package(package))
-            .collect(),
+            .map(link_package)
+            .collect::<Result<_, _>>()?,
         redexes: arena
             .redexes
             .iter()
             .map(|(a, b)| (Index(a.0.clone()), Index(b.0.clone())))
             .collect(),
-    }
+    })
 }
 
-fn link_package(package: &OnceLock<Package<Unlinked>>) -> OnceLock<Package<Linked>> {
+fn link_package(
+    package: &OnceLock<Package<Unlinked>>,
+) -> Result<OnceLock<Package<Linked>>, LinkError> {
     let package = package.get().unwrap();
     let lock = OnceLock::new();
     lock.set(Package {
-        body: link_package_body(&package.body),
+        body: link_package_body(&package.body)?,
         num_vars: package.num_vars,
     })
     .unwrap();
-    lock
+    Ok(lock)
 }
 
-fn link_package_body(body: &PackageBody<Unlinked>) -> PackageBody<Linked> {
-    PackageBody {
+fn link_package_body(body: &PackageBody<Unlinked>) -> Result<PackageBody<Linked>, LinkError> {
+    Ok(PackageBody {
         root: Index(body.root.0.clone()),
         captures: Index(body.captures.0.clone()),
         debug_name: body.debug_name.clone(),
         redexes: Index(body.redexes.0.clone()),
-    }
+    })
 }
 
-fn link_global(node: &Global<Unlinked>) -> Global<Linked> {
-    match node {
-        Global::Variable(id) => Global::Variable(id.clone()),
+fn link_global(node: &Global<Unlinked>) -> Result<Global<Linked>, LinkError> {
+    Ok(match node {
+        Global::Variable(id) => Global::Variable(*id),
         Global::Package(package_ptr, global_ptr, fab_behavior) => Global::Package(
             Index(package_ptr.0.clone()),
             Index(global_ptr.0.clone()),
             fab_behavior.clone(),
         ),
-        Global::Destruct(cont) => Global::Destruct(link_global_cont(cont)),
-        Global::Value(value) => Global::Value(link_global_value(value)),
+        Global::Destruct(cont) => Global::Destruct(link_global_cont(cont)?),
+        Global::Value(value) => Global::Value(link_global_value(value)?),
         Global::Fanout(fanout) => Global::Fanout(Index(fanout.0.clone())),
-    }
+    })
 }
 
-fn link_global_value(p0: &GlobalValue<Unlinked>) -> GlobalValue<Linked> {
-    match p0 {
+fn link_global_value(p0: &GlobalValue<Unlinked>) -> Result<GlobalValue<Linked>, LinkError> {
+    Ok(match p0 {
         GlobalValue::Break => GlobalValue::Break,
         GlobalValue::Pair(a, b) => GlobalValue::Pair(Index(a.0.clone()), Index(b.0.clone())),
         GlobalValue::Either(s, v) => GlobalValue::Either(Index(s.0.clone()), Index(v.0.clone())),
         GlobalValue::ExternalFn(unlinked) => {
-            //TODO: make it an error
-            GlobalValue::ExternalFn(
-                get_external_fn(unlinked).expect("missing external {unlinked:?}"),
-            )
+            GlobalValue::ExternalFn(get_external_fn(unlinked).ok_or_else(|| LinkError {
+                missing: unlinked.clone(),
+            })?)
         }
         GlobalValue::ExternalArc(e) => GlobalValue::ExternalArc(e.clone()),
         GlobalValue::Primitive(p) => GlobalValue::Primitive(p.clone()),
-    }
+    })
 }
 
-fn link_global_cont(cont: &GlobalCont<Unlinked>) -> GlobalCont<Linked> {
-    match cont {
+fn link_global_cont(cont: &GlobalCont<Unlinked>) -> Result<GlobalCont<Linked>, LinkError> {
+    Ok(match cont {
         GlobalCont::Continue => GlobalCont::Continue,
         GlobalCont::Par(a, b) => GlobalCont::Par(Index(a.0.clone()), Index(b.0.clone())),
         GlobalCont::Choice(a, b) => GlobalCont::Choice(Index(a.0.clone()), Index(b.0.clone())),
-    }
+    })
 }
 
 pub fn link_package_ptr(package: &PackagePtr<Unlinked>) -> PackagePtr<Linked> {
