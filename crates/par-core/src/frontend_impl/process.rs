@@ -791,10 +791,10 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S>
         match self {
             Self::Global(_, name, typ) => {
                 let def_span = (program.definitions.get(name))
-                    .map(|(def, _typ)| def.name.span())
+                    .map(|(def, _typ)| def.span.clone())
                     .unwrap_or_default();
                 let decl_span = (program.declarations.get(name))
-                    .map(|decl| decl.name.span())
+                    .map(|decl| decl.span.clone())
                     .unwrap_or_else(|| def_span.clone());
                 consume(
                     name.span(),

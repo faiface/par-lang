@@ -13,7 +13,7 @@ use par_core::frontend::language::Universal;
 use par_core::{
     frontend::{Type, TypeError, set_miette_hook},
     runtime::RuntimeCompilerError,
-    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
+    workspace::{CheckedWorkspace, FileImportScope, ModulePath, PackageLoadError, WorkspaceError},
 };
 use tokio::time::Instant;
 
@@ -46,6 +46,7 @@ enum BuildError {
     Workspace(WorkspaceError),
     Type {
         error: TypeError<Universal>,
+        file_scope: Option<FileImportScope<Universal>>,
         sources: SourceLookup,
     },
     InetCompile {
@@ -83,10 +84,17 @@ impl BuildError {
                 ..
             }) => format_with_source_span(source.clone(), span, self.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type { error, sources } => {
+            Self::Type {
+                error,
+                file_scope,
+                sources,
+            } => {
                 format!(
                     "{:?}",
-                    error.to_report(source_for_type_error(error, sources))
+                    error.to_report_in_scope(
+                        source_for_type_error(error, sources),
+                        file_scope.as_ref()
+                    )
                 )
             }
             Self::InetCompile { error, sources } => format!(
@@ -113,6 +121,11 @@ fn build_checked_package(
     let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
     let sources = workspace.sources.clone();
     let checked = workspace.type_check().map_err(|error| BuildError::Type {
+        file_scope: error
+            .spans()
+            .0
+            .file()
+            .and_then(|file| workspace.import_scope(&file).cloned()),
         error,
         sources: sources.clone(),
     })?;

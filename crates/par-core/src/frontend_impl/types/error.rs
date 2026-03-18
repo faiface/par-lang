@@ -1,6 +1,9 @@
-use crate::frontend_impl::language::{GlobalName, LocalName};
+use crate::frontend_impl::language::{GlobalName, LocalName, Universal};
 use crate::frontend_impl::types::{LoopId, Operation, Type};
 use crate::location::{Span, Spanning};
+use crate::workspace::{
+    FileImportScope, render_global_name_in_scope, render_type_in_scope_with_indent,
+};
 use indexmap::IndexMap;
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;
@@ -89,15 +92,34 @@ fn two_labels_from_two_spans(
 
 impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
     pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
+        self.to_report_with(
+            source_code,
+            |name| name.to_string(),
+            |typ, indent| {
+                let mut buf = String::new();
+                typ.pretty(&mut buf, indent).unwrap();
+                buf
+            },
+        )
+    }
+
+    fn to_report_with(
+        &self,
+        source_code: Arc<str>,
+        render_name: impl Fn(&GlobalName<S>) -> String,
+        render_type: impl Fn(&Type<S>, usize) -> String,
+    ) -> miette::Report {
         let code = &source_code;
         match self {
             Self::TypeNameAlreadyDefined(span1, span2, name) => {
+                let name = render_name(name);
                 miette::miette!(
                     labels = two_labels_from_two_spans(code, span1, span2, "this".to_owned(), "is already defined here".to_owned()),
                     "Type `{}` is already defined.", name
                 )
             }
             Self::NameAlreadyDeclared(span1, span2, name) => {
+                let name = render_name(name);
                 miette::miette!(
                     labels = two_labels_from_two_spans(code, span1, span2, "this".to_owned(), "is already declared here".to_owned()),
                     "`{}` is already declared.",
@@ -105,6 +127,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                 )
             }
             Self::NameAlreadyDefined(span1, span2, name) => {
+                let name = render_name(name);
                 miette::miette!(
                     labels = two_labels_from_two_spans(code, span1, span2, "this".to_owned(), "is already defined here".to_owned()),
                     "`{}` is already defined",
@@ -112,6 +135,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                 )
             }
             Self::DeclaredButNotDefined(span,  name) => {
+                let name = render_name(name);
                 let mut labels = labels_from_span(code, span);
                 labels.iter_mut().for_each(|x| {
                     x.set_label(Some("declared here".to_owned()));
@@ -152,6 +176,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::TypeNameNotDefined(span, name) => {
                 let labels = labels_from_span(code, span);
+                let name = render_name(name);
                 miette::miette!(labels = labels, "Type `{}` is not defined.", name)
             }
             Self::TypeVariableNotDefined(span, name) => {
@@ -165,7 +190,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                     if i > 0 {
                         write!(&mut deps_str, " -> ").unwrap();
                     }
-                    write!(&mut deps_str, "{}", dep).unwrap();
+                    write!(&mut deps_str, "{}", render_name(dep)).unwrap();
                 }
                 miette::miette!(
                     labels = labels,
@@ -175,6 +200,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::WrongNumberOfTypeArgs(span, name, required_number, provided_number) => {
                 let labels = labels_from_span(code, span);
+                let name = render_name(name);
                 miette::miette!(
                     labels = labels,
                     "Type `{}` has {} type arguments, but {} were provided.",
@@ -185,6 +211,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::GlobalNameNotDefined(span, name) => {
                 let labels = labels_from_span(code, span);
+                let name = render_name(name);
                 miette::miette!(labels = labels, "`{}` is not defined.", name)
             }
             Self::VariableDoesNotExist(span, name) => {
@@ -224,9 +251,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::CannotAssignFromTo(span, from_type, to_type) => {
                 let labels = labels_from_span(code, span);
-                let (mut from_type_str, mut to_type_str) = (String::new(), String::new());
-                from_type.pretty(&mut from_type_str, 1).unwrap();
-                to_type.pretty(&mut to_type_str, 1).unwrap();
+                let from_type_str = render_type(from_type, 1);
+                let to_type_str = render_type(to_type, 1);
                 miette::miette!(
                     labels = labels,
                     "This type was required:\n\n  {}\n\nBut an incompatible type was provided:\n\n  {}\n",
@@ -252,8 +278,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::InvalidOperation(span, _, typ) => {
                 let labels = labels_from_span(code, span);
-                let mut typ_str = String::new();
-                typ.pretty(&mut typ_str, 1).unwrap();
+                let typ_str = render_type(typ, 1);
                 miette::miette!(
                     labels = labels,
                     "This operation cannot be performed on:\n\n  {}\n",
@@ -262,8 +287,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::InvalidBranch(span, branch, typ) => {
                 let labels = labels_from_span(code, span);
-                let mut typ_str = String::new();
-                typ.pretty(&mut typ_str, 1).unwrap();
+                let typ_str = render_type(typ, 1);
                 miette::miette!(
                     labels = labels,
                     "Branch `{}` is not available on:\n\n  {}\n",
@@ -273,8 +297,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::MissingBranch(span, branch, typ) => {
                 let labels = labels_from_span(code, span);
-                let mut typ_str = String::new();
-                typ.pretty(&mut typ_str, 1).unwrap();
+                let typ_str = render_type(typ, 1);
                 miette::miette!(
                     labels = labels,
                     "Branch `{}` was not handled for:\n\n  {}\n",
@@ -284,8 +307,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::RedundantBranch(span, branch, typ) => {
                 let labels = labels_from_span(code, span);
-                let mut typ_str = String::new();
-                typ.pretty(&mut typ_str, 1).unwrap();
+                let typ_str = render_type(typ, 1);
                 miette::miette!(
                     labels = labels,
                     "Branch `{}` is not possible for:\n\n  {}\n",
@@ -303,10 +325,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::MergeVariableTypesCannotBeUnified(span, name, t1, t2) => {
                 let labels = labels_from_span(code, span);
-                let mut t1s = String::new();
-                t1.pretty(&mut t1s, 1).unwrap();
-                let mut t2s = String::new();
-                t2.pretty(&mut t2s, 1).unwrap();
+                let t1s = render_type(t1, 1);
+                let t2s = render_type(t2, 1);
                 miette::miette!(
                     labels = labels,
                     "Types of `{}` across merging paths cannot be unified:\n\n  {}\n\n  {}\n",
@@ -348,9 +368,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::LoopVariableChangedType(span, name, loop_type, begin_type) => {
                 let labels = labels_from_span(code, span);
-                let (mut loop_type_str, mut begin_type_str) = (String::new(), String::new());
-                loop_type.pretty(&mut loop_type_str, 1).unwrap();
-                begin_type.pretty(&mut begin_type_str, 1).unwrap();
+                let loop_type_str = render_type(loop_type, 1);
+                let begin_type_str = render_type(begin_type, 1);
                 miette::miette!(
                     labels = labels,
                     "For next iteration, `{}` is required to be:\n\n  {}\n\nBut it has an incompatible type:\n\n  {}\n",
@@ -368,8 +387,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::PollClientMustBeRecursive(span, typ) => {
                 let labels = labels_from_span(code, span);
-                let mut typ_str = String::new();
-                typ.pretty(&mut typ_str, 1).unwrap();
+                let typ_str = render_type(typ, 1);
                 miette::miette!(
                     labels = labels,
                     "Clients of `poll(...)` must have a `recursive` type, but this has type:\n\n  {}\n",
@@ -386,9 +404,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::SubmittedClientNotAssignableToPoll(span, client_type, poll_type) => {
                 let labels = labels_from_span(code, span);
-                let (mut client_str, mut poll_str) = (String::new(), String::new());
-                client_type.pretty(&mut client_str, 1).unwrap();
-                poll_type.pretty(&mut poll_str, 1).unwrap();
+                let client_str = render_type(client_type, 1);
+                let poll_str = render_type(poll_type, 1);
                 miette::miette!(
                     labels = labels,
                     "This `submit(...)` cannot submit this client.\n\nIt has type:\n\n  {}\n\nBut this `poll(...)` expects clients of type:\n\n  {}\n",
@@ -421,9 +438,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
             }
             Self::PollVariableChangedType(span, name, current_type, poll_type) => {
                 let labels = labels_from_span(code, span);
-                let (mut current_type_str, mut poll_type_str) = (String::new(), String::new());
-                current_type.pretty(&mut current_type_str, 1).unwrap();
-                poll_type.pretty(&mut poll_type_str, 1).unwrap();
+                let current_type_str = render_type(current_type, 1);
+                let poll_type_str = render_type(poll_type, 1);
                 miette::miette!(
                     labels = labels,
                     "For the next poll iteration, `{}` is required to be:\n\n  {}\n\nBut it has an incompatible type:\n\n  {}\n",
@@ -448,7 +464,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                 let mut buf = String::new();
                 for (name, typ) in variables {
                     write!(&mut buf, "{}: ", name).unwrap();
-                    typ.pretty(&mut buf, 0).unwrap();
+                    write!(&mut buf, "{}", render_type(typ, 0)).unwrap();
                     write!(&mut buf, "\n\n").unwrap();
                 }
                 miette::miette! {
@@ -470,6 +486,20 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
 
             }
         }.with_source_code(source_code)
+    }
+}
+
+impl TypeError<Universal> {
+    pub fn to_report_in_scope(
+        &self,
+        source_code: Arc<str>,
+        scope: Option<&FileImportScope<Universal>>,
+    ) -> miette::Report {
+        self.to_report_with(
+            source_code,
+            |name| render_global_name_in_scope(scope, name),
+            |typ, indent| render_type_in_scope_with_indent(scope, typ, indent),
+        )
     }
 }
 

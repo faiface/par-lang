@@ -80,7 +80,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
         args: &[Type<S>],
     ) -> Result<(&Span, Type<S>), TypeError<S>> {
         match self.globals.get(name) {
-            Some((span, params, typ)) => {
+            Some((definition_span, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -90,7 +90,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                     ));
                 }
                 let typ = typ.clone().substitute(params.iter().zip(args).collect())?;
-                Ok((span, typ))
+                Ok((definition_span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
@@ -113,7 +113,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
         args: &[Type<S>],
     ) -> Result<(&Span, Type<S>), TypeError<S>> {
         match self.globals.get(name) {
-            Some((span, params, typ)) => {
+            Some((definition_span, params, typ)) => {
                 if params.len() != args.len() {
                     return Err(TypeError::WrongNumberOfTypeArgs(
                         span.clone(),
@@ -126,7 +126,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                     .clone()
                     .dual(Span::None)
                     .substitute(params.iter().zip(args).collect())?;
-                Ok((span, typ))
+                Ok((definition_span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }

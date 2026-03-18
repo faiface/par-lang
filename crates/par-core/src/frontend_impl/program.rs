@@ -281,7 +281,16 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
         for (name, (span, _, typ)) in program.type_defs.globals.iter() {
             let Some(file) = span.file() else { continue };
             let file_hovers = files.entry(file).or_default();
-            file_hovers.push(name.span(), NameWithType::global(name.clone(), typ.clone()));
+            file_hovers.push(
+                name.span(),
+                NameWithType {
+                    name: Some(name.to_string()),
+                    global_name: Some(name.clone()),
+                    typ: typ.clone(),
+                    def_span: span.clone(),
+                    decl_span: span.clone(),
+                },
+            );
             typ.types_at_spans(&program.type_defs, &mut |span, name_info| {
                 file_hovers.push(span, name_info)
             });
@@ -293,7 +302,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
             };
             let file_hovers = files.entry(file).or_default();
             let def_span = (program.definitions.get(name))
-                .map(|(def, _typ)| def.name.span())
+                .map(|(def, _typ)| def.span.clone())
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
@@ -302,7 +311,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
                     global_name: Some(name.clone()),
                     typ: declaration.typ.clone(),
                     def_span,
-                    decl_span: Span::None,
+                    decl_span: declaration.span.clone(),
                 },
             );
             declaration
@@ -318,7 +327,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
             };
             let file_hovers = files.entry(file).or_default();
             let decl_span = (program.declarations.get(name))
-                .map(|decl| decl.name.span())
+                .map(|decl| decl.span.clone())
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
@@ -326,7 +335,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
                     name: Some(name.to_string()),
                     global_name: Some(name.clone()),
                     typ: typ.clone(),
-                    def_span: Span::None,
+                    def_span: definition.span.clone(),
                     decl_span,
                 },
             );

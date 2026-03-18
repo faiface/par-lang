@@ -1,14 +1,14 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use crate::package_utils::normalized_path;
+use crate::package_utils::{SourceLookup, normalized_path};
 use crate::workspace_support::default_workspace_from_parsed;
 use lsp_types::{self as lsp, Uri};
 use par_core::frontend::TypeError;
 use par_core::frontend::language::Universal;
-use par_core::source::FileName;
+use par_core::source::{FileName, Span};
 use par_core::workspace::{
-    CheckedWorkspace, LoadedPackageFile, PackageLoadError, WorkspaceError, collect_source_files,
-    find_package_layout, parse_loaded_files,
+    CheckedWorkspace, FileImportScope, LoadedPackageFile, PackageLoadError, WorkspaceError,
+    collect_source_files, find_package_layout, parse_loaded_files,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,7 +18,11 @@ use url::Url;
 #[derive(Debug, Clone)]
 pub enum CompileError {
     Workspace(WorkspaceError),
-    Type(TypeError<Universal>),
+    Type {
+        error: TypeError<Universal>,
+        file_scope: Option<FileImportScope<Universal>>,
+        sources: SourceLookup,
+    },
 }
 
 pub struct Instance {
@@ -80,6 +84,7 @@ impl Instance {
             return None;
         };
         let checked_module = checked.checked_module();
+        let same_file = |span: &Span| span.file() == Some(self.file.clone());
 
         let mut symbols = HashMap::new();
 
@@ -98,13 +103,16 @@ impl Instance {
          */
 
         for (name, (span, _, _)) in checked_module.type_defs.globals.as_ref() {
+            if !same_file(span) {
+                continue;
+            }
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), span.points())
             {
                 symbols.insert(
                     name,
                     lsp::DocumentSymbol {
-                        name: name.to_string(),
+                        name: checked.render_global_in_file(&self.file, name),
                         detail: None,
                         kind: lsp::SymbolKind::INTERFACE,
                         tags: None,
@@ -124,8 +132,10 @@ impl Instance {
         }
 
         for (name, declaration) in &checked_module.declarations {
-            let mut detail = String::new();
-            declaration.typ.pretty_compact(&mut detail).unwrap();
+            if !same_file(&declaration.span) {
+                continue;
+            }
+            let detail = checked.render_type_in_file(&self.file, &declaration.typ);
 
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), declaration.span.points())
@@ -133,7 +143,7 @@ impl Instance {
                 symbols.insert(
                     name,
                     lsp::DocumentSymbol {
-                        name: name.to_string(),
+                        name: checked.render_global_in_file(&self.file, name),
                         detail: Some(detail),
                         kind: lsp::SymbolKind::FUNCTION,
                         tags: None,
@@ -153,6 +163,9 @@ impl Instance {
         }
 
         for (name, (definition, typ)) in &checked_module.definitions {
+            if !same_file(&definition.span) {
+                continue;
+            }
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), definition.span.points())
             {
@@ -174,7 +187,7 @@ impl Instance {
                         let detail = checked.render_type_in_file(&self.file, &typ);
 
                         lsp::DocumentSymbol {
-                            name: name.to_string(),
+                            name: checked.render_global_in_file(&self.file, name),
                             detail: Some(detail),
                             kind: lsp::SymbolKind::FUNCTION,
                             tags: None,
@@ -366,7 +379,18 @@ impl Instance {
         }])
         .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
-        let checked = Arc::new(workspace.type_check().map_err(CompileError::Type)?);
+        let sources = workspace.sources.clone();
+        let checked = Arc::new(workspace.type_check().map_err(|error| {
+            CompileError::Type {
+                file_scope: error
+                    .spans()
+                    .0
+                    .file()
+                    .and_then(|file| workspace.import_scope(&file).cloned()),
+                error,
+                sources: sources.clone(),
+            }
+        })?);
         Ok(checked)
     }
 
@@ -397,7 +421,18 @@ impl Instance {
         let parsed = parse_loaded_files(files)
             .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
-        let checked = Arc::new(workspace.type_check().map_err(CompileError::Type)?);
+        let sources = workspace.sources.clone();
+        let checked = Arc::new(workspace.type_check().map_err(|error| {
+            CompileError::Type {
+                file_scope: error
+                    .spans()
+                    .0
+                    .file()
+                    .and_then(|file| workspace.import_scope(&file).cloned()),
+                error,
+                sources: sources.clone(),
+            }
+        })?);
         Ok(checked)
     }
 }
@@ -424,4 +459,110 @@ fn file_name_to_uri(file: &FileName) -> Option<Uri> {
     Url::from_file_path(path)
         .ok()
         .and_then(|url| url.as_str().parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::language_server::feedback::diagnostic_for_error;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_package(files: &[(&str, &str)]) -> (PathBuf, HashMap<String, Uri>) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("par-lang-lsp-{unique}"));
+        fs::create_dir_all(root.join("src")).expect("failed to create temp package");
+        fs::write(root.join("Par.toml"), "[package]\nname = \"tmp\"\n")
+            .expect("failed to write manifest");
+
+        let mut uris = HashMap::new();
+        for (relative_path, source) in files {
+            let path = root.join(relative_path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("failed to create temp source directory");
+            }
+            fs::write(&path, source).expect("failed to write temp source file");
+            let uri = Url::from_file_path(&path)
+                .expect("temp path should convert to file URL")
+                .as_str()
+                .parse()
+                .expect("file URL should parse as URI");
+            uris.insert((*relative_path).to_string(), uri);
+        }
+
+        (root, uris)
+    }
+
+    #[test]
+    fn diagnostics_target_the_file_that_owns_the_error() {
+        let (root, uris) = temp_package(&[
+            ("src/Main.par", "module Main\n\ndef Main = 0\n"),
+            ("src/Other.par", "module Other\n\ndef Broken = missing\n"),
+        ]);
+        let main_uri = uris["src/Main.par"].clone();
+        let other_uri = uris["src/Other.par"].clone();
+
+        let mut io = IO::new();
+        io.update_file(
+            &main_uri,
+            fs::read_to_string(root.join("src/Main.par")).expect("failed to read Main.par"),
+        );
+
+        let mut instance = Instance::new(main_uri.clone(), io);
+        instance.compile();
+
+        let error = instance.last_error().expect("compile should fail");
+        let (diagnostic_uri, diagnostic) = diagnostic_for_error(&error, &main_uri);
+        assert_eq!(diagnostic_uri, other_uri);
+        assert_eq!(diagnostic.range.start.line, 2);
+    }
+
+    #[test]
+    fn document_symbols_only_include_current_file() {
+        let (root, uris) = temp_package(&[
+            ("src/Main.par", "module Main\n\ndef Foo = 0\n"),
+            ("src/Other.par", "module Other\n\ndef Bar = 1\n"),
+        ]);
+        let main_uri = uris["src/Main.par"].clone();
+
+        let mut io = IO::new();
+        io.update_file(
+            &main_uri,
+            fs::read_to_string(root.join("src/Main.par")).expect("failed to read Main.par"),
+        );
+
+        let mut instance = Instance::new(main_uri.clone(), io);
+        instance.compile();
+
+        let params = lsp::DocumentSymbolParams {
+            text_document: lsp::TextDocumentIdentifier {
+                uri: main_uri.clone(),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let Some(lsp::DocumentSymbolResponse::Nested(symbols)) =
+            instance.provide_document_symbols(&params)
+        else {
+            panic!("expected document symbols");
+        };
+
+        let names = symbols
+            .into_iter()
+            .map(|symbol| symbol.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 1);
+        assert!(
+            names[0].contains("Foo"),
+            "unexpected symbol names: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|name| name.contains("Bar")),
+            "unexpected symbol names: {names:?}"
+        );
+    }
 }

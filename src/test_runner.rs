@@ -14,7 +14,7 @@ use par_core::{
     },
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
-    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
+    workspace::{CheckedWorkspace, FileImportScope, ModulePath, PackageLoadError, WorkspaceError},
 };
 use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
@@ -30,6 +30,7 @@ enum BuildError {
     Workspace(WorkspaceError),
     Type {
         error: TypeError<Universal>,
+        file_scope: Option<FileImportScope<Universal>>,
         sources: SourceLookup,
     },
     InetCompile {
@@ -67,10 +68,17 @@ impl BuildError {
                 error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type { error, sources } => {
+            Self::Type {
+                error,
+                file_scope,
+                sources,
+            } => {
                 format!(
                     "{:?}",
-                    error.to_report(source_for_type_error(error, sources))
+                    error.to_report_in_scope(
+                        source_for_type_error(error, sources),
+                        file_scope.as_ref()
+                    )
                 )
             }
             Self::InetCompile { error, sources } => format!(
@@ -88,6 +96,11 @@ fn build_for_run(
     let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
     let sources = workspace.sources.clone();
     let checked = workspace.type_check().map_err(|error| BuildError::Type {
+        file_scope: error
+            .spans()
+            .0
+            .file()
+            .and_then(|file| workspace.import_scope(&file).cloned()),
         error,
         sources: sources.clone(),
     })?;

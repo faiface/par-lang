@@ -213,22 +213,17 @@ impl<'c> LanguageServer<'c> {
         // Now update feedback/diagnostics
         let feedback = self.feedback.cleanup();
         if let Some(err) = err {
-            // Use the latest cached text for accurate spans
-            let code = self
-                .io
-                .read(uri)
-                .map(|s| std::sync::Arc::from(s.into_boxed_str()))
-                .unwrap_or_else(|| std::sync::Arc::from(""));
-            let diagnostic = diagnostic_for_error(&err, code);
-            feedback.add_diagnostic(uri.clone(), diagnostic);
+            let (diagnostic_uri, diagnostic) = diagnostic_for_error(&err, uri);
+            feedback.add_diagnostic(diagnostic_uri, diagnostic);
         }
     }
 
     fn cache_file(&mut self, uri: &Uri, text: String) {
         tracing::info!("Caching file: {:?}", uri);
         self.io.update_file(uri, text);
-        let instance = self.instance_for(uri);
-        instance.mark_dirty();
+        for instance in self.instances.values_mut() {
+            instance.mark_dirty();
+        }
     }
 
     fn instance_for(&mut self, uri: &Uri) -> &mut Instance {

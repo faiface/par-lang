@@ -558,15 +558,11 @@ impl CheckedWorkspace {
     }
 
     pub fn render_global_in_file(&self, file: &FileName, name: &GlobalName<Universal>) -> String {
-        let mut output = String::new();
-        let _ = write_global_name_in_file(&mut output, self.import_scope(file), name);
-        output
+        render_global_name_in_scope(self.import_scope(file), name)
     }
 
     pub fn render_type_in_file(&self, file: &FileName, typ: &Type<Universal>) -> String {
-        let mut output = String::new();
-        let _ = write_type_in_file(&mut output, self.import_scope(file), typ);
-        output
+        render_type_in_scope(self.import_scope(file), typ)
     }
 
     pub fn render_hover_in_file(
@@ -584,6 +580,32 @@ impl CheckedWorkspace {
         let _ = write_type_in_file(&mut output, self.import_scope(file), &hover.typ);
         output
     }
+}
+
+pub fn render_global_name_in_scope(
+    scope: Option<&FileImportScope<Universal>>,
+    name: &GlobalName<Universal>,
+) -> String {
+    let mut output = String::new();
+    let _ = write_global_name_in_file(&mut output, scope, name);
+    output
+}
+
+pub fn render_type_in_scope(
+    scope: Option<&FileImportScope<Universal>>,
+    typ: &Type<Universal>,
+) -> String {
+    render_type_in_scope_with_indent(scope, typ, 0)
+}
+
+pub fn render_type_in_scope_with_indent(
+    scope: Option<&FileImportScope<Universal>>,
+    typ: &Type<Universal>,
+    indent: usize,
+) -> String {
+    let mut output = String::new();
+    let _ = write_type_in_file_with_indent(&mut output, scope, typ, indent);
+    output
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
