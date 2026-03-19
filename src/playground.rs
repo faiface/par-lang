@@ -585,7 +585,7 @@ impl eframe::App for Playground {
                                     .render_hover_signature_in_file(&hover_file_name, &name_info);
                                 editor.response.on_hover_ui_at_pointer(|ui| {
                                     ui.label(RichText::new(signature).code());
-                                    if let Some(doc) = name_info.doc.as_ref() {
+                                    if let Some(doc) = name_info.doc() {
                                         ui.separator();
                                         ui.label(doc.markdown.as_str());
                                     }

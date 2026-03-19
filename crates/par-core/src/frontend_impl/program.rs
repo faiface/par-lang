@@ -355,19 +355,18 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
     pub fn new(program: &CheckedModule<S>, docs: &Docs<S>) -> Self {
         let mut files = HashMap::<_, FileHovers<S>>::new();
 
-        for (name, (span, _, typ)) in program.type_defs.globals.iter() {
+        for (name, (span, params, typ)) in program.type_defs.globals.iter() {
             let Some(file) = span.file() else { continue };
             let file_hovers = files.entry(file).or_default();
             file_hovers.push(
                 name.span(),
-                HoverInfo {
-                    name: Some(name.to_string()),
-                    global_name: Some(name.clone()),
-                    typ: typ.clone(),
-                    doc: docs.type_doc(name).cloned(),
-                    def_span: span.clone(),
-                    decl_span: span.clone(),
-                },
+                HoverInfo::type_definition(
+                    name.clone(),
+                    params.clone(),
+                    typ.clone(),
+                    docs.type_doc(name).cloned(),
+                    span.clone(),
+                ),
             );
             typ.types_at_spans(&program.type_defs, docs, &mut |span, name_info| {
                 file_hovers.push(span, name_info)
@@ -384,14 +383,13 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
-                HoverInfo {
-                    name: Some(name.to_string()),
-                    global_name: Some(name.clone()),
-                    typ: declaration.typ.clone(),
-                    doc: docs.declaration_doc(name).cloned(),
+                HoverInfo::declaration(
+                    name.clone(),
+                    declaration.typ.clone(),
+                    docs.declaration_doc(name).cloned(),
                     def_span,
-                    decl_span: declaration.span.clone(),
-                },
+                    declaration.span.clone(),
+                ),
             );
             declaration
                 .typ
@@ -410,14 +408,13 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
-                HoverInfo {
-                    name: Some(name.to_string()),
-                    global_name: Some(name.clone()),
-                    typ: typ.clone(),
-                    doc: docs.declaration_doc(name).cloned(),
-                    def_span: definition.span.clone(),
+                HoverInfo::declaration(
+                    name.clone(),
+                    typ.clone(),
+                    docs.declaration_doc(name).cloned(),
+                    definition.span.clone(),
                     decl_span,
-                },
+                ),
             );
             if let DefinitionBody::Par(expr) = &definition.body {
                 expr.types_at_spans(program, docs, &mut |span, name_info| {

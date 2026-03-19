@@ -1,7 +1,8 @@
 use crate::frontend::lower;
 use crate::frontend::parse_source_file;
 use crate::frontend_impl::language::{
-    CompileError, GlobalName, PackageId, Resolved, ResolvedPackageRef, Universal, Unresolved,
+    CompileError, GlobalName, LocalName, PackageId, Resolved, ResolvedPackageRef, Universal,
+    Unresolved,
 };
 use crate::frontend_impl::parse::SyntaxError;
 use crate::frontend_impl::process;
@@ -612,13 +613,31 @@ impl CheckedWorkspace {
         hover: &process::HoverInfo<Universal>,
     ) -> String {
         let mut output = String::new();
-        if let Some(global_name) = hover.global_name.as_ref() {
-            let _ = write_global_name_in_file(&mut output, self.import_scope(file), global_name);
-            let _ = write!(output, ": ");
-        } else if let Some(name) = hover.name.as_ref() {
-            let _ = write!(output, "{}: ", name);
+        if hover.is_type() {
+            if let Some(global_name) = hover.global_name() {
+                let _ = write!(output, "type ");
+                let _ =
+                    write_global_name_in_file(&mut output, self.import_scope(file), global_name);
+                if let Some(header) = hover.type_header() {
+                    let _ = write_type_hover_header_in_file(
+                        &mut output,
+                        self.import_scope(file),
+                        header,
+                    );
+                }
+                let _ = write!(output, " = ");
+            }
+        } else if hover.is_declaration() {
+            if let Some(global_name) = hover.global_name() {
+                let _ = write!(output, "dec ");
+                let _ =
+                    write_global_name_in_file(&mut output, self.import_scope(file), global_name);
+                let _ = write!(output, " : ");
+            }
+        } else if let Some(name) = hover.variable_name() {
+            let _ = write!(output, "{} : ", name);
         }
-        let _ = write_type_in_file(&mut output, self.import_scope(file), &hover.typ);
+        let _ = write_type_in_file(&mut output, self.import_scope(file), hover.typ());
         output
     }
 
@@ -636,7 +655,7 @@ impl CheckedWorkspace {
         hover: &process::HoverInfo<Universal>,
     ) -> String {
         let signature = self.render_hover_signature_in_file(file, hover);
-        if let Some(doc) = hover.doc.as_ref() {
+        if let Some(doc) = hover.doc() {
             format!("```par\n{signature}\n```\n\n{}", doc.markdown)
         } else {
             format!("```par\n{signature}\n```")
@@ -1601,6 +1620,31 @@ fn write_type_args(
     write!(f, ">")
 }
 
+fn write_type_hover_header_in_file(
+    f: &mut impl Write,
+    scope: Option<&FileImportScope<Universal>>,
+    header: &process::TypeHoverHeader<Universal>,
+) -> fmt::Result {
+    match header {
+        process::TypeHoverHeader::Parameters(params) => write_type_parameters(f, params),
+        process::TypeHoverHeader::Arguments(args) => write_type_args(f, scope, args, 0),
+    }
+}
+
+fn write_type_parameters(f: &mut impl Write, params: &[LocalName]) -> fmt::Result {
+    if params.is_empty() {
+        return Ok(());
+    }
+    write!(f, "<")?;
+    for (i, param) in params.iter().enumerate() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{param}")?;
+    }
+    write!(f, ">")
+}
+
 fn write_pair_like(
     f: &mut impl Write,
     scope: Option<&FileImportScope<Universal>>,
@@ -1827,24 +1871,164 @@ def Main = Run
         let (item_row, item_column) = row_and_column(source, item_index);
         let item_hover = checked.hover_at(file, item_row, item_column).unwrap();
         assert_eq!(
-            item_hover.doc.as_ref().map(|doc| doc.markdown.as_str()),
+            item_hover.doc().map(|doc| doc.markdown.as_str()),
             Some("Type docs")
         );
-        assert!(item_hover.global_name.is_none());
+        assert_eq!(
+            item_hover.global_name().map(|name| name.primary.as_str()),
+            Some("Item")
+        );
 
         let run_index = source.match_indices("Run").last().unwrap().0;
         let (run_row, run_column) = row_and_column(source, run_index);
         let run_hover = checked.hover_at(file, run_row, run_column).unwrap();
         assert_eq!(
-            run_hover.doc.as_ref().map(|doc| doc.markdown.as_str()),
+            run_hover.doc().map(|doc| doc.markdown.as_str()),
             Some("Run docs")
         );
         assert_eq!(
-            run_hover
-                .global_name
-                .as_ref()
-                .map(|name| name.primary.as_str()),
+            run_hover.global_name().map(|name| name.primary.as_str()),
             Some("Run")
+        );
+    }
+
+    #[test]
+    fn hover_signature_formats_types_declarations_and_variables() {
+        let source = "\
+module Main
+
+type Item = !
+
+dec Run : Item
+def Run = external
+
+dec Main : Item
+def Main =
+  let value = Run
+  in value
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.sources.keys().next().unwrap();
+
+        let item_index = source.match_indices("Item").nth(1).unwrap().0;
+        let (item_row, item_column) = row_and_column(source, item_index);
+        let item_hover = checked.hover_at(file, item_row, item_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &item_hover),
+            "type Item = !"
+        );
+
+        let run_index = source.match_indices("Run").last().unwrap().0;
+        let (run_row, run_column) = row_and_column(source, run_index);
+        let run_hover = checked.hover_at(file, run_row, run_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &run_hover),
+            "dec Run : Item"
+        );
+
+        let value_index = source.match_indices("value").last().unwrap().0;
+        let (value_row, value_column) = row_and_column(source, value_index);
+        let value_hover = checked.hover_at(file, value_row, value_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &value_hover),
+            "value : Item"
+        );
+    }
+
+    #[test]
+    fn hover_signature_distinguishes_type_and_value_namespaces() {
+        let source = "\
+module Main
+
+type Item = !
+
+dec Item : !
+def Item = external
+
+dec Main : !
+def Main = Item
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.sources.keys().next().unwrap();
+
+        let type_index = source.match_indices("Item").next().unwrap().0;
+        let (type_row, type_column) = row_and_column(source, type_index);
+        let type_hover = checked.hover_at(file, type_row, type_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &type_hover),
+            "type Item = !"
+        );
+
+        let value_index = source.match_indices("Item").last().unwrap().0;
+        let (value_row, value_column) = row_and_column(source, value_index);
+        let value_hover = checked.hover_at(file, value_row, value_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &value_hover),
+            "dec Item : !"
+        );
+    }
+
+    #[test]
+    fn hover_signature_includes_generic_type_headers_at_definition_and_use_sites() {
+        let source = "\
+module Main
+
+type Producer<a> = (a) !
+type Event = !
+
+dec Main : Producer<Event>
+def Main = external
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.sources.keys().next().unwrap();
+
+        let definition_index = source.match_indices("Producer<a>").next().unwrap().0;
+        let (definition_row, definition_column) = row_and_column(source, definition_index);
+        let definition_hover = checked
+            .hover_at(file, definition_row, definition_column)
+            .unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &definition_hover),
+            "type Producer<a> = (a)!"
+        );
+
+        let use_index = source.match_indices("Producer<Event>").next().unwrap().0;
+        let (use_row, use_column) = row_and_column(source, use_index);
+        let use_hover = checked.hover_at(file, use_row, use_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &use_hover),
+            "type Producer<Event> = (Event)!"
+        );
+    }
+
+    #[test]
+    fn hover_signature_splits_dual_keyword_from_named_type_hover() {
+        let source = "\
+module Main
+
+type Producer<a> = (a) !
+type Event = !
+
+dec Main : dual Producer<Event>
+def Main = external
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.sources.keys().next().unwrap();
+
+        let dual_index = source.match_indices("dual").next().unwrap().0;
+        let (dual_row, dual_column) = row_and_column(source, dual_index);
+        let dual_hover = checked.hover_at(file, dual_row, dual_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &dual_hover),
+            "[Event]?"
+        );
+
+        let name_index = source.match_indices("Producer<Event>").next().unwrap().0;
+        let (name_row, name_column) = row_and_column(source, name_index);
+        let name_hover = checked.hover_at(file, name_row, name_column).unwrap();
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &name_hover),
+            "type Producer<Event> = (Event)!"
         );
     }
 }

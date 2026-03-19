@@ -242,8 +242,9 @@ impl Instance {
 
         let name_info = checked.hover_at(&self.file, pos.line, pos.character)?;
 
-        let (start, end) = name_info.decl_span.points()?;
-        let path = name_info.decl_span.file()?;
+        let decl_span = name_info.decl_span();
+        let (start, end) = decl_span.points()?;
+        let path = decl_span.file()?;
         if path == FileName::BUILTIN {
             return None;
         }
@@ -272,8 +273,9 @@ impl Instance {
 
         let name_info = checked.hover_at(&self.file, pos.line, pos.character)?;
 
-        let (start, end) = name_info.def_span.points()?;
-        let path = name_info.def_span.file()?;
+        let def_span = name_info.def_span();
+        let (start, end) = def_span.points()?;
+        let path = def_span.file()?;
         if path == FileName::BUILTIN {
             return None;
         }

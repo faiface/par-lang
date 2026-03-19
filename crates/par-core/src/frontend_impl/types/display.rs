@@ -2,7 +2,7 @@ use crate::frontend_impl::language::GlobalName;
 use crate::frontend_impl::process::HoverInfo;
 use crate::frontend_impl::program::Docs;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
-use crate::location::Span;
+use crate::location::{Span, Spanning};
 use std::fmt;
 use std::fmt::Write;
 
@@ -429,23 +429,53 @@ where
         match self {
             Self::Primitive(_, _) | Self::DualPrimitive(_, _) => {}
             Self::Var(_, _) | Self::DualVar(_, _) => {}
-            Self::Name(span, name, args) | Self::DualName(span, name, args) => {
-                let (def_span, typ) = match self {
-                    Self::Name(..) => type_defs.get_with_span(span, name, args),
-                    _ => type_defs.get_dual_with_span(span, name, args),
-                }
-                .unwrap_or_else(|_| (&Span::None, self.clone()));
+            Self::Name(span, name, args) => {
+                let (def_span, typ) = type_defs
+                    .get_with_span(span, name, args)
+                    .unwrap_or_else(|_| (&Span::None, self.clone()));
                 consume(
                     span.clone(),
-                    HoverInfo {
-                        name: None,
-                        global_name: None,
+                    HoverInfo::type_instantiation(
+                        name.clone(),
+                        args.clone(),
                         typ,
-                        doc: docs.type_doc(name).cloned(),
-                        def_span: def_span.clone(),
-                        decl_span: def_span.clone(),
-                    },
+                        docs.type_doc(name).cloned(),
+                        def_span.clone(),
+                    ),
                 );
+                for arg in args {
+                    arg.types_at_spans(type_defs, docs, consume);
+                }
+            }
+            Self::DualName(span, name, args) => {
+                let (def_span, typ) =
+                    type_defs
+                        .get_with_span(span, name, args)
+                        .unwrap_or_else(|_| {
+                            (
+                                &Span::None,
+                                Type::Name(span.clone(), name.clone(), args.clone()),
+                            )
+                        });
+                consume(
+                    dual_name_hover_span(span, name),
+                    HoverInfo::type_instantiation(
+                        name.clone(),
+                        args.clone(),
+                        typ,
+                        docs.type_doc(name).cloned(),
+                        def_span.clone(),
+                    ),
+                );
+
+                let (_dual_def_span, dual_typ) = type_defs
+                    .get_dual_with_span(span, name, args)
+                    .unwrap_or_else(|_| (&Span::None, self.clone()));
+                consume(
+                    dual_keyword_hover_span(span, name),
+                    HoverInfo::unnamed(dual_typ),
+                );
+
                 for arg in args {
                     arg.types_at_spans(type_defs, docs, consume);
                 }
@@ -489,6 +519,22 @@ where
             Type::Hole(_, _, _) => {}
             Type::DualHole(_, _, _) => {}
         }
+    }
+}
+
+fn dual_name_hover_span<S>(full_span: &Span, name: &GlobalName<S>) -> Span {
+    match (name.span().start(), full_span.end(), full_span.file()) {
+        (Some(start), Some(end), Some(file)) => Span::At { start, end, file },
+        _ => name.span(),
+    }
+}
+
+fn dual_keyword_hover_span<S>(full_span: &Span, name: &GlobalName<S>) -> Span {
+    match (full_span.start(), name.span().start(), full_span.file()) {
+        (Some(start), Some(end), Some(file)) if start.offset < end.offset => {
+            Span::At { start, end, file }
+        }
+        _ => Span::None,
     }
 }
 

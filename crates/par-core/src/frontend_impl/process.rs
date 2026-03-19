@@ -750,47 +750,177 @@ impl<S: Clone> Expression<(), S> {
 
 #[derive(Clone, Debug)]
 pub struct HoverInfo<S> {
-    pub name: Option<String>,
-    pub global_name: Option<GlobalName<S>>,
-    pub typ: Type<S>,
-    pub doc: Option<DocComment>,
-    pub def_span: Span,
-    pub decl_span: Span,
+    inner: HoverInfoInner<S>,
 }
 
-pub type NameWithType<S> = HoverInfo<S>;
+#[derive(Clone, Debug)]
+pub enum TypeHoverHeader<S> {
+    Parameters(Vec<LocalName>),
+    Arguments(Vec<Type<S>>),
+}
+
+#[derive(Clone, Debug)]
+enum HoverInfoInner<S> {
+    Type {
+        name: GlobalName<S>,
+        header: TypeHoverHeader<S>,
+        typ: Type<S>,
+        doc: Option<DocComment>,
+        span: Span,
+    },
+    Declaration {
+        name: GlobalName<S>,
+        typ: Type<S>,
+        doc: Option<DocComment>,
+        def_span: Span,
+        decl_span: Span,
+    },
+    Variable {
+        name: String,
+        typ: Type<S>,
+    },
+    Anonymous {
+        typ: Type<S>,
+    },
+}
 
 impl<S> HoverInfo<S> {
-    pub fn new(name: Option<String>, typ: Type<S>) -> Self {
-        HoverInfo {
-            name,
-            global_name: None,
-            typ,
-            doc: None,
-            def_span: Span::None,
-            decl_span: Span::None,
+    pub fn type_definition(
+        name: GlobalName<S>,
+        params: Vec<LocalName>,
+        typ: Type<S>,
+        doc: Option<DocComment>,
+        span: Span,
+    ) -> Self {
+        Self {
+            inner: HoverInfoInner::Type {
+                name,
+                header: TypeHoverHeader::Parameters(params),
+                typ,
+                doc,
+                span,
+            },
         }
-    }
-    pub fn global(name: GlobalName<S>, typ: Type<S>) -> Self {
-        HoverInfo {
-            name: Some(name.primary.clone()),
-            global_name: Some(name),
-            typ,
-            doc: None,
-            def_span: Span::None,
-            decl_span: Span::None,
-        }
-    }
-    pub fn named(name: impl ToString, typ: Type<S>) -> Self {
-        Self::new(Some(name.to_string()), typ)
-    }
-    pub fn unnamed(typ: Type<S>) -> Self {
-        Self::new(None, typ)
     }
 
-    pub fn with_doc(mut self, doc: Option<DocComment>) -> Self {
-        self.doc = doc;
-        self
+    pub fn type_instantiation(
+        name: GlobalName<S>,
+        args: Vec<Type<S>>,
+        typ: Type<S>,
+        doc: Option<DocComment>,
+        span: Span,
+    ) -> Self {
+        Self {
+            inner: HoverInfoInner::Type {
+                name,
+                header: TypeHoverHeader::Arguments(args),
+                typ,
+                doc,
+                span,
+            },
+        }
+    }
+
+    pub fn declaration(
+        name: GlobalName<S>,
+        typ: Type<S>,
+        doc: Option<DocComment>,
+        def_span: Span,
+        decl_span: Span,
+    ) -> Self {
+        Self {
+            inner: HoverInfoInner::Declaration {
+                name,
+                typ,
+                doc,
+                def_span,
+                decl_span,
+            },
+        }
+    }
+
+    pub fn named(name: impl ToString, typ: Type<S>) -> Self {
+        Self {
+            inner: HoverInfoInner::Variable {
+                name: name.to_string(),
+                typ,
+            },
+        }
+    }
+
+    pub fn unnamed(typ: Type<S>) -> Self {
+        Self {
+            inner: HoverInfoInner::Anonymous { typ },
+        }
+    }
+
+    pub fn typ(&self) -> &Type<S> {
+        match &self.inner {
+            HoverInfoInner::Type { typ, .. }
+            | HoverInfoInner::Declaration { typ, .. }
+            | HoverInfoInner::Variable { typ, .. }
+            | HoverInfoInner::Anonymous { typ } => typ,
+        }
+    }
+
+    pub fn doc(&self) -> Option<&DocComment> {
+        match &self.inner {
+            HoverInfoInner::Type { doc, .. } | HoverInfoInner::Declaration { doc, .. } => {
+                doc.as_ref()
+            }
+            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => None,
+        }
+    }
+
+    pub fn global_name(&self) -> Option<&GlobalName<S>> {
+        match &self.inner {
+            HoverInfoInner::Type { name, .. } | HoverInfoInner::Declaration { name, .. } => {
+                Some(name)
+            }
+            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => None,
+        }
+    }
+
+    pub fn type_header(&self) -> Option<&TypeHoverHeader<S>> {
+        match &self.inner {
+            HoverInfoInner::Type { header, .. } => Some(header),
+            HoverInfoInner::Declaration { .. }
+            | HoverInfoInner::Variable { .. }
+            | HoverInfoInner::Anonymous { .. } => None,
+        }
+    }
+
+    pub fn variable_name(&self) -> Option<&str> {
+        match &self.inner {
+            HoverInfoInner::Variable { name, .. } => Some(name.as_str()),
+            HoverInfoInner::Type { .. }
+            | HoverInfoInner::Declaration { .. }
+            | HoverInfoInner::Anonymous { .. } => None,
+        }
+    }
+
+    pub fn is_type(&self) -> bool {
+        matches!(self.inner, HoverInfoInner::Type { .. })
+    }
+
+    pub fn is_declaration(&self) -> bool {
+        matches!(self.inner, HoverInfoInner::Declaration { .. })
+    }
+
+    pub fn decl_span(&self) -> Span {
+        match &self.inner {
+            HoverInfoInner::Type { span, .. } => span.clone(),
+            HoverInfoInner::Declaration { decl_span, .. } => decl_span.clone(),
+            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => Span::None,
+        }
+    }
+
+    pub fn def_span(&self) -> Span {
+        match &self.inner {
+            HoverInfoInner::Type { span, .. } => span.clone(),
+            HoverInfoInner::Declaration { def_span, .. } => def_span.clone(),
+            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => Span::None,
+        }
     }
 }
 
@@ -811,14 +941,13 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S>
                     .unwrap_or_else(|| def_span.clone());
                 consume(
                     name.span(),
-                    HoverInfo {
-                        name: Some(name.to_string()),
-                        global_name: Some(name.clone()),
-                        typ: typ.clone(),
-                        doc: docs.declaration_doc(name).cloned(),
+                    HoverInfo::declaration(
+                        name.clone(),
+                        typ.clone(),
+                        docs.declaration_doc(name).cloned(),
                         def_span,
                         decl_span,
-                    },
+                    ),
                 );
             }
             Self::Variable(_, name, typ, _usage) => {
