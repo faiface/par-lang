@@ -4,17 +4,18 @@ use super::{
         Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
         Unresolved,
     },
-    lexer::{Input, Token, TokenKind, lex},
+    lexer::{Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments},
 };
 use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::{
     language::LocalName,
     program::{
-        Declaration, Definition, ImportDecl, ImportPath, Module, ModuleDecl, SourceFile, TypeDef,
+        Declaration, Definition, DocComment, ImportDecl, ImportPath, Module, ModuleDecl,
+        SourceFile, TypeDef,
     },
     types::Type,
 };
-use crate::location::{FileName, Span, Spanning};
+use crate::location::{FileName, Point, Span, Spanning};
 use arcstr::ArcStr;
 use bytes::Bytes;
 use core::fmt::Display;
@@ -354,6 +355,7 @@ fn source_file(
                 if let Some(typ) = annotation {
                     acc.declarations.push(Declaration {
                         span: span.clone(),
+                        doc: None,
                         name: name.clone(),
                         typ,
                     });
@@ -457,9 +459,14 @@ pub(crate) fn parse_source_file(
     input: &str,
     file: FileName,
 ) -> std::result::Result<SourceFile<Expression<Unresolved>>, SyntaxError> {
-    let tokens = lex(&input, &file);
+    let lexed = lex_with_comments(&input, &file);
+    let comments = lexed.comments;
+    let tokens = lexed.tokens;
     let e = match source_file(Input::new(&tokens)) {
-        Ok(x) => return Ok(x),
+        Ok(mut x) => {
+            attach_doc_comments(input, &comments, &mut x);
+            return Ok(x);
+        }
         Err(e) => e,
     };
     // Empty input doesn't error so this won't panic.
@@ -491,6 +498,209 @@ pub(crate) fn parse_source_file(
     })
 }
 
+#[derive(Clone, Copy)]
+enum DocTarget {
+    TypeDef(usize),
+    Declaration(usize),
+}
+
+struct TopLevelBarrier {
+    start: Point,
+    end: Point,
+    target: Option<DocTarget>,
+}
+
+fn attach_doc_comments(
+    source: &str,
+    comments: &[Comment<'_>],
+    source_file: &mut SourceFile<Expression<Unresolved>>,
+) {
+    let mut barriers = Vec::new();
+
+    if let Some(module_decl) = source_file.module_decl.as_ref() {
+        if let Some((start, end)) = module_decl.span.points() {
+            barriers.push(TopLevelBarrier {
+                start,
+                end,
+                target: None,
+            });
+        }
+    }
+
+    for import in &source_file.imports {
+        if let Some((start, end)) = import.span.points() {
+            barriers.push(TopLevelBarrier {
+                start,
+                end,
+                target: None,
+            });
+        }
+    }
+
+    for (index, type_def) in source_file.body.type_defs.iter().enumerate() {
+        if let Some((start, end)) = type_def.span.points() {
+            barriers.push(TopLevelBarrier {
+                start,
+                end,
+                target: Some(DocTarget::TypeDef(index)),
+            });
+        }
+    }
+
+    for (index, declaration) in source_file.body.declarations.iter().enumerate() {
+        if !is_explicit_declaration(source, declaration) {
+            continue;
+        }
+
+        if let Some((start, end)) = declaration.span.points() {
+            barriers.push(TopLevelBarrier {
+                start,
+                end,
+                target: Some(DocTarget::Declaration(index)),
+            });
+        }
+    }
+
+    for definition in &source_file.body.definitions {
+        if let Some((start, end)) = definition.span.points() {
+            barriers.push(TopLevelBarrier {
+                start,
+                end,
+                target: None,
+            });
+        }
+    }
+
+    barriers.sort_by_key(|barrier| barrier.start.offset);
+
+    let mut previous_barrier_end = 0;
+    let mut comment_start = 0;
+    for barrier in barriers {
+        while comment_start < comments.len()
+            && comments[comment_start]
+                .span
+                .end()
+                .is_some_and(|end| end.offset <= previous_barrier_end)
+        {
+            comment_start += 1;
+        }
+
+        let mut comment_end = comment_start;
+        while comment_end < comments.len()
+            && comments[comment_end]
+                .span
+                .end()
+                .is_some_and(|end| end.offset <= barrier.start.offset)
+        {
+            comment_end += 1;
+        }
+
+        if let Some(doc) =
+            doc_comment_before_item(&comments[comment_start..comment_end], barrier.start)
+        {
+            match barrier.target {
+                Some(DocTarget::TypeDef(index)) => {
+                    source_file.body.type_defs[index].doc = Some(doc)
+                }
+                Some(DocTarget::Declaration(index)) => {
+                    source_file.body.declarations[index].doc = Some(doc)
+                }
+                None => {}
+            }
+        }
+
+        previous_barrier_end = barrier.end.offset;
+        comment_start = comment_end;
+    }
+}
+
+fn is_explicit_declaration(source: &str, declaration: &Declaration<Unresolved>) -> bool {
+    declaration
+        .span
+        .start()
+        .and_then(|start| source.get(start.offset as usize..))
+        .is_some_and(|rest| rest.starts_with("dec"))
+}
+
+fn doc_comment_before_item(comments: &[Comment<'_>], item_start: Point) -> Option<DocComment> {
+    let last = comments.last()?;
+    let last_end = last.span.end()?;
+    if has_blank_line_between(last_end.row, item_start.row) {
+        return None;
+    }
+
+    match last.kind {
+        CommentKind::Block => {
+            if let Some(previous) = comments.iter().rev().nth(1) {
+                let previous_end = previous.span.end()?;
+                let last_start = last.span.start()?;
+                if !has_blank_line_between(previous_end.row, last_start.row) {
+                    return None;
+                }
+            }
+
+            Some(DocComment {
+                span: last.span.clone(),
+                markdown: normalize_doc_newlines(strip_block_comment(last.raw)).into(),
+            })
+        }
+        CommentKind::Line => {
+            let mut run_start = comments.len() - 1;
+            while run_start > 0 {
+                let previous = &comments[run_start - 1];
+                let current = &comments[run_start];
+                let previous_end = previous.span.end()?;
+                let current_start = current.span.start()?;
+                if previous.kind == CommentKind::Line
+                    && !has_blank_line_between(previous_end.row, current_start.row)
+                {
+                    run_start -= 1;
+                } else {
+                    break;
+                }
+            }
+
+            let run = &comments[run_start..];
+            let markdown = run
+                .iter()
+                .map(|comment| strip_line_comment(comment.raw))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            Some(DocComment {
+                span: run
+                    .first()
+                    .map(|first| first.span.join(run.last().unwrap().span.clone()))
+                    .unwrap_or_else(|| last.span.clone()),
+                markdown: markdown.into(),
+            })
+        }
+    }
+}
+
+fn has_blank_line_between(previous_end_row: u32, next_start_row: u32) -> bool {
+    next_start_row > previous_end_row + 1
+}
+
+fn strip_line_comment(raw: &str) -> String {
+    raw.strip_prefix("//")
+        .unwrap_or(raw)
+        .strip_prefix(' ')
+        .unwrap_or_else(|| raw.strip_prefix("//").unwrap_or(raw))
+        .trim_end_matches('\r')
+        .to_string()
+}
+
+fn strip_block_comment(raw: &str) -> &str {
+    raw.strip_prefix("/*")
+        .and_then(|raw| raw.strip_suffix("*/"))
+        .unwrap_or(raw)
+}
+
+fn normalize_doc_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
 pub fn parse_bytes(input: &str, file: &FileName) -> Option<Vec<u8>> {
     (literal_bytes_inner, winnow::combinator::eof)
         .parse_next(&mut Input::new(&lex(input, file)))
@@ -505,6 +715,7 @@ fn type_def(input: &mut Input) -> Result<TypeDef<Unresolved>> {
     )
     .map(|(pre, (name, type_params, _, typ))| TypeDef {
         span: pre.span.join(typ.span()),
+        doc: None,
         name,
         params: type_params.map_or_else(Vec::new, |(_, params)| params),
         typ,
@@ -520,6 +731,7 @@ fn declaration(input: &mut Input) -> Result<Declaration<Unresolved>> {
     )
     .map(|(pre, (name, _, typ))| Declaration {
         span: pre.span.join(typ.span()),
+        doc: None,
         name,
         typ,
     })
@@ -2987,5 +3199,58 @@ mod test {
 
         let inline_program = "def IfInline: ! = chan exit { if .true! => { exit! } exit! }";
         assert!(parse_module(inline_program, "if_inline.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_doc_comments_attach_to_type_and_explicit_declaration() {
+        let source = "\
+module Main
+
+/*Type docs*/
+type Item = !
+
+// First line
+// Second line
+dec Run : !
+
+// Not docs
+def Helper: ! = external
+";
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+
+        assert_eq!(
+            parsed.body.type_defs[0]
+                .doc
+                .as_ref()
+                .map(|doc| doc.markdown.as_str()),
+            Some("Type docs")
+        );
+        assert_eq!(
+            parsed.body.declarations[0]
+                .doc
+                .as_ref()
+                .map(|doc| doc.markdown.as_str()),
+            Some("First line\nSecond line")
+        );
+        assert_eq!(parsed.body.declarations[1].doc, None);
+    }
+
+    #[test]
+    fn test_doc_comments_require_direct_precedence() {
+        let source = "\
+module Main
+
+/*Not attached*/
+
+type Item = !
+
+// Also not attached
+
+dec Run : !
+";
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+
+        assert_eq!(parsed.body.type_defs[0].doc, None);
+        assert_eq!(parsed.body.declarations[0].doc, None);
     }
 }

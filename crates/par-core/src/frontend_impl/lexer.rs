@@ -88,6 +88,25 @@ pub struct Token<'i> {
     pub span: Span,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CommentKind {
+    Line,
+    Block,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Comment<'i> {
+    pub kind: CommentKind,
+    pub raw: &'i str,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Lexed<'i> {
+    pub tokens: Vec<Token<'i>>,
+    pub comments: Vec<Comment<'i>>,
+}
+
 impl Token<'_> {
     pub fn span(&self) -> Span {
         self.span.clone()
@@ -219,13 +238,18 @@ pub(crate) type Tokens<'i> = TokenSlice<'i, Token<'i>>;
 pub(crate) type Input<'a> = Tokens<'a>;
 
 pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
+    lex_with_comments(input, file).tokens
+}
+
+pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s> {
     type Error = EmptyError;
-    (|input: &'s str| -> Result<Vec<Token<'s>>, Error> {
+    (|input: &'s str| -> Result<Lexed<'s>, Error> {
         let mut input = input;
         let input = &mut input;
         let mut row = 0;
         let mut last_newline = input.len();
         let mut tokens = Vec::new();
+        let mut comments = Vec::new();
         let mut idx = 0;
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
@@ -395,12 +419,28 @@ pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                     Some((raw, TokenKind::Gt, raw.len()))
                 }
                 '/' => {
-                    let (is_comment, raw) = alt((
-                        comment().take().map(|x| (true, x)),
-                        any.take().map(|x| (false, x)),
+                    let (comment_kind, raw) = alt((
+                        line_comment().map(|raw| (Some(CommentKind::Line), raw)),
+                        block_comment().map(|raw| (Some(CommentKind::Block), raw)),
+                        any.take().map(|x| (None, x)),
                     ))
                     .parse_next(input)?;
-                    if is_comment {
+                    if let Some(comment_kind) = comment_kind {
+                        let start = Point {
+                            offset: idx as u32,
+                            row: row as u32,
+                            column: column as u32,
+                        };
+                        let end = end_point_for_raw(start, raw);
+                        comments.push(Comment {
+                            kind: comment_kind,
+                            raw,
+                            span: Span::At {
+                                start,
+                                end,
+                                file: file.clone(),
+                            },
+                        });
                         if let Some(extra_len) = raw.chars().rev().position(|x| x == '\n') {
                             last_newline = input.len() + extra_len;
                         }
@@ -471,12 +511,32 @@ pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
                 },
             });
         }
-        Ok(tokens)
+        Ok(Lexed { tokens, comments })
     })(input)
     .expect("lexing failed")
 }
 
-pub(crate) fn comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
+fn end_point_for_raw(start: Point, raw: &str) -> Point {
+    let newline_count = raw.bytes().filter(|&byte| byte == b'\n').count() as u32;
+    let end_column = match raw.as_bytes().iter().rposition(|&byte| byte == b'\n') {
+        Some(last_newline) => (raw.len() - last_newline - 1) as u32,
+        None => start.column + raw.len() as u32,
+    };
+    Point {
+        offset: start.offset + raw.len() as u32,
+        row: start.row + newline_count,
+        column: end_column,
+    }
+}
+
+fn line_comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
+where
+    E: ParserError<&'s str>,
+{
+    preceded("//", repeat(0.., (not("\n"), any)).map(|()| ())).take()
+}
+
+fn block_comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
 where
     E: ParserError<&'s str>,
 {
@@ -512,12 +572,7 @@ where
             }
         }
     };
-    alt((
-        preceded("//", repeat(0.., (not("\n"), any)).map(|()| ())),
-        preceded("/*", comment_block_rest).map(|()| ()),
-    ))
-    //.context(StrContext::Label("comment"))
-    .take()
+    preceded("/*", comment_block_rest).map(|()| ()).take()
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use crate::frontend_impl::language::{
 use crate::frontend_impl::parse::SyntaxError;
 use crate::frontend_impl::process;
 use crate::frontend_impl::program::{
-    CheckedModule, ImportDecl, ImportPath, Module, SourceFile, TypeOnHover,
+    CheckedModule, DocComment, Docs, ImportDecl, ImportPath, Module, SourceFile, TypeOnHover,
 };
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeError};
 use crate::location::{FileName, Span};
@@ -437,6 +437,7 @@ pub struct FileImportScope<S> {
 #[derive(Debug, Clone)]
 pub struct Workspace {
     lowered: Module<Arc<process::Expression<(), Universal>>, Universal>,
+    docs: Docs<Universal>,
     package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
     root_packages: Vec<PackageId>,
     file_scopes: HashMap<FileName, FileImportScope<Universal>>,
@@ -446,6 +447,10 @@ pub struct Workspace {
 impl Workspace {
     pub fn lowered_module(&self) -> &Module<Arc<process::Expression<(), Universal>>, Universal> {
         &self.lowered
+    }
+
+    pub fn docs(&self) -> &Docs<Universal> {
+        &self.docs
     }
 
     pub fn packages(&self) -> Vec<PackageId> {
@@ -474,10 +479,19 @@ impl Workspace {
         self.file_scopes.get(file)
     }
 
+    pub fn type_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
+        self.docs.type_doc(name)
+    }
+
+    pub fn declaration_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
+        self.docs.declaration_doc(name)
+    }
+
     pub fn type_check(&self) -> Result<CheckedWorkspace, TypeError<Universal>> {
         let checked = self.lowered.type_check()?;
         Ok(CheckedWorkspace::new(
             checked,
+            self.docs.clone(),
             self.package_modules.clone(),
             self.root_packages.clone(),
             self.file_scopes.clone(),
@@ -489,6 +503,7 @@ impl Workspace {
 #[derive(Clone)]
 pub struct CheckedWorkspace {
     checked: CheckedModule<Universal>,
+    docs: Docs<Universal>,
     package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
     root_packages: Vec<PackageId>,
     file_scopes: HashMap<FileName, FileImportScope<Universal>>,
@@ -499,6 +514,7 @@ pub struct CheckedWorkspace {
 impl CheckedWorkspace {
     fn new(
         checked: CheckedModule<Universal>,
+        docs: Docs<Universal>,
         package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
         root_packages: Vec<PackageId>,
         file_scopes: HashMap<FileName, FileImportScope<Universal>>,
@@ -507,6 +523,7 @@ impl CheckedWorkspace {
         let type_on_hover = TypeOnHover::new(&checked);
         Self {
             checked,
+            docs,
             package_modules,
             root_packages,
             file_scopes,
@@ -519,6 +536,10 @@ impl CheckedWorkspace {
         &self.checked
     }
 
+    pub fn docs(&self) -> &Docs<Universal> {
+        &self.docs
+    }
+
     pub fn packages(&self) -> Vec<PackageId> {
         self.package_modules.keys().cloned().collect()
     }
@@ -543,6 +564,14 @@ impl CheckedWorkspace {
 
     pub fn import_scope(&self, file: &FileName) -> Option<&FileImportScope<Universal>> {
         self.file_scopes.get(file)
+    }
+
+    pub fn type_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
+        self.docs.type_doc(name)
+    }
+
+    pub fn declaration_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
+        self.docs.declaration_doc(name)
     }
 
     pub fn type_on_hover(&self) -> &TypeOnHover<Universal> {
@@ -664,8 +693,10 @@ pub fn load_workspace(input: WorkspaceInput) -> Result<Workspace, WorkspaceError
         )?;
     }
 
+    let docs = lowered.docs();
     Ok(Workspace {
         lowered,
+        docs,
         package_modules,
         root_packages: input.root_packages,
         file_scopes,
@@ -1675,4 +1706,59 @@ fn write_indentation(f: &mut impl Write, indent: usize) -> fmt::Result {
         write!(f, "  ")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doc_comments_survive_into_checked_workspace_docs() {
+        let source = "\
+module Main
+
+/*Type docs*/
+type Item = !
+
+// Run docs
+dec Run : !
+def Run = external
+";
+        let parsed = parse_loaded_files(vec![LoadedPackageFile {
+            absolute_path: PathBuf::from("Main.par"),
+            relative_path_from_src: PathBuf::from("Main.par"),
+            source: source.to_string(),
+        }])
+        .unwrap();
+        let workspace = WorkspaceInput::new()
+            .with_root_package(WorkspacePackage::from_parsed(PackageId::Local, parsed))
+            .build()
+            .unwrap();
+        let checked = workspace.type_check().unwrap();
+
+        let type_name = checked
+            .checked_module()
+            .type_defs
+            .globals
+            .keys()
+            .find(|name| name.primary == "Item")
+            .unwrap();
+        let declaration_name = checked
+            .checked_module()
+            .declarations
+            .keys()
+            .find(|name| name.primary == "Run")
+            .unwrap();
+
+        assert_eq!(
+            checked.type_doc(type_name).map(|doc| doc.markdown.as_str()),
+            Some("Type docs")
+        );
+        assert_eq!(
+            checked
+                .declaration_doc(declaration_name)
+                .map(|doc| doc.markdown.as_str()),
+            Some("Run docs")
+        );
+    }
 }

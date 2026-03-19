@@ -21,8 +21,8 @@ pub mod frontend {
     pub use crate::frontend_impl::parse::SyntaxError;
     pub use crate::frontend_impl::parse_bytes;
     pub use crate::frontend_impl::program::{
-        CheckedModule, Declaration, Definition, DefinitionBody, ImportDecl, ImportPath, Module,
-        ModuleDecl, ParseAndCompileError, SourceFile, TypeDef, TypeOnHover,
+        CheckedModule, Declaration, Definition, DefinitionBody, DocComment, Docs, ImportDecl,
+        ImportPath, Module, ModuleDecl, ParseAndCompileError, SourceFile, TypeDef, TypeOnHover,
     };
     pub use crate::frontend_impl::set_miette_hook;
     pub use crate::frontend_impl::types::lattice::{intersect_types, union_types};

@@ -59,6 +59,7 @@ pub struct CheckedModule<S> {
 #[derive(Clone, Debug)]
 pub struct TypeDef<S> {
     pub span: Span,
+    pub doc: Option<DocComment>,
     pub name: GlobalName<S>,
     pub params: Vec<LocalName>,
     pub typ: Type<S>,
@@ -67,8 +68,31 @@ pub struct TypeDef<S> {
 #[derive(Clone, Debug)]
 pub struct Declaration<S> {
     pub span: Span,
+    pub doc: Option<DocComment>,
     pub name: GlobalName<S>,
     pub typ: Type<S>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocComment {
+    pub span: Span,
+    pub markdown: ArcStr,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Docs<S> {
+    pub types: IndexMap<GlobalName<S>, DocComment>,
+    pub declarations: IndexMap<GlobalName<S>, DocComment>,
+}
+
+impl<S: std::hash::Hash + Eq> Docs<S> {
+    pub fn type_doc(&self, name: &GlobalName<S>) -> Option<&DocComment> {
+        self.types.get(name)
+    }
+
+    pub fn declaration_doc(&self, name: &GlobalName<S>) -> Option<&DocComment> {
+        self.declarations.get(name)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +120,7 @@ impl TypeDef<Unresolved> {
     pub fn external(name: &'static str, params: &[&'static str], typ: Type<Unresolved>) -> Self {
         Self {
             span: Default::default(),
+            doc: None,
             name: GlobalName::<Unresolved>::external(None, name),
             params: params
                 .into_iter()
@@ -139,12 +164,14 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
                 .map(
                     |TypeDef {
                          span,
+                         doc,
                          name,
                          params,
                          typ,
                      }| {
                         Ok(TypeDef {
                             span,
+                            doc,
                             name: map_name(name)?,
                             params,
                             typ: typ.map_global_names(&mut map_name)?,
@@ -155,13 +182,21 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
             declarations: self
                 .declarations
                 .into_iter()
-                .map(|Declaration { span, name, typ }| {
-                    Ok(Declaration {
-                        span,
-                        name: map_name(name)?,
-                        typ: typ.map_global_names(&mut map_name)?,
-                    })
-                })
+                .map(
+                    |Declaration {
+                         span,
+                         doc,
+                         name,
+                         typ,
+                     }| {
+                        Ok(Declaration {
+                            span,
+                            doc,
+                            name: map_name(name)?,
+                            typ: typ.map_global_names(&mut map_name)?,
+                        })
+                    },
+                )
                 .collect::<Result<Vec<_>, _>>()?,
             definitions: self
                 .definitions
@@ -206,7 +241,10 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
         }
 
         let mut declarations = IndexMap::new();
-        for Declaration { span, name, typ } in &self.declarations {
+        for Declaration {
+            span, name, typ, ..
+        } in &self.declarations
+        {
             if !unchecked_definitions.contains_key(name) {
                 return Err(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
             }
@@ -235,7 +273,22 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
             declarations: context
                 .get_declarations()
                 .into_iter()
-                .map(|(name, (span, typ))| (name.clone(), Declaration { span, name, typ }))
+                .map(|(name, (span, typ))| {
+                    let doc = self
+                        .declarations
+                        .iter()
+                        .find(|declaration| declaration.name == name && declaration.span == span)
+                        .and_then(|declaration| declaration.doc.clone());
+                    (
+                        name.clone(),
+                        Declaration {
+                            span,
+                            doc,
+                            name,
+                            typ,
+                        },
+                    )
+                })
                 .collect(),
             definitions: context
                 .get_checked_definitions()
@@ -254,6 +307,28 @@ impl<Expr, S> Default for Module<Expr, S> {
             type_defs: Vec::new(),
             declarations: Vec::new(),
             definitions: Vec::new(),
+        }
+    }
+}
+
+impl<Expr, S: Clone + Eq + std::hash::Hash> Module<Expr, S> {
+    pub fn docs(&self) -> Docs<S> {
+        Docs {
+            types: self
+                .type_defs
+                .iter()
+                .filter_map(|type_def| type_def.doc.clone().map(|doc| (type_def.name.clone(), doc)))
+                .collect(),
+            declarations: self
+                .declarations
+                .iter()
+                .filter_map(|declaration| {
+                    declaration
+                        .doc
+                        .clone()
+                        .map(|doc| (declaration.name.clone(), doc))
+                })
+                .collect(),
         }
     }
 }

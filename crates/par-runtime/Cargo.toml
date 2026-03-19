@@ -15,7 +15,7 @@ bytes = "1.6.1"
 inventory = "0.3.22"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal", "sync"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-tokio = { version = "1.49.0", features = ["rt", "macros", "io-util"] }
+tokio = { version = "1.49.0", features = ["rt", "macros", "io-util", "sync"] }
