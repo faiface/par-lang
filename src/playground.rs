@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs::File,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -20,18 +20,17 @@ use par_core::frontend::DefinitionBody;
 use par_core::{
     frontend::{
         Type, TypeError,
-        language::{GlobalName, Universal},
+        language::{GlobalName, PackageId, Universal},
     },
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
     workspace::{
-        CheckedWorkspace, LoadedPackageFile, PackageLoadError, WorkspaceError,
+        CheckedWorkspace, LoadedPackageFile, ModulePath, PackageLoadError, WorkspaceError,
         collect_source_files, find_package_layout, parse_loaded_files,
     },
 };
 use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
-use std::collections::HashMap;
 use std::fmt::Write;
 use std::pin::Pin;
 use std::time::Instant;
@@ -323,6 +322,33 @@ impl ThemeMode {
 impl Default for ThemeMode {
     fn default() -> Self {
         Self::System
+    }
+}
+
+#[derive(Default)]
+struct ModuleMenuTree<'a> {
+    directories: BTreeMap<&'a str, ModuleMenuTree<'a>>,
+    modules: BTreeMap<&'a str, &'a ModulePath>,
+}
+
+impl<'a> ModuleMenuTree<'a> {
+    fn from_modules(modules: &'a [ModulePath]) -> Self {
+        let mut tree = Self::default();
+        for module in modules {
+            tree.insert(module, 0);
+        }
+        tree
+    }
+
+    fn insert(&mut self, module: &'a ModulePath, depth: usize) {
+        if let Some(directory) = module.directories.get(depth) {
+            self.directories
+                .entry(directory.as_str())
+                .or_default()
+                .insert(module, depth + 1);
+        } else {
+            self.modules.insert(module.module.as_str(), module);
+        }
     }
 }
 
@@ -669,7 +695,66 @@ impl Playground {
         }
     }
 
-    fn readback(
+    fn run_definition(
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
+        cancel_token: &mut Option<CancellationToken>,
+        element: &mut Option<Arc<Mutex<Element>>>,
+        program: Arc<CheckedWorkspace>,
+        compiled: &Compiled<Linked>,
+        name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        name: &GlobalName<Universal>,
+        ctx: &egui::Context,
+    ) {
+        if let Some(cancel_token) = cancel_token {
+            cancel_token.cancel();
+        }
+        let token = CancellationToken::new();
+        *cancel_token = Some(token.clone());
+
+        let ty = name_to_ty.get(name).unwrap();
+        let package = compiled.code.get_with_name(name).unwrap();
+        let (handle, reducer_future) = par_runtime::start_and_instantiate(
+            spawner.clone(),
+            compiled.code.arena.clone(),
+            package,
+        );
+        let stats: RunStats = Arc::new(Mutex::new(None));
+
+        let repaint_ctx = ctx.clone();
+        *element = Some(Element::new(
+            Arc::new(move || {
+                repaint_ctx.request_repaint();
+            }),
+            spawner.clone(),
+            TypedHandle::new(
+                program.checked_module().type_defs.clone(),
+                ty.clone(),
+                handle,
+            ),
+            Arc::clone(&stats),
+        ));
+        let stats_clone = Arc::clone(&stats);
+        let repaint_ctx = ctx.clone();
+        let _ = spawner.spawn(async move {
+            #[cfg(not(target_arch = "wasm32"))]
+            let start = Instant::now();
+            tokio::select! {
+                _ = token.cancelled() => {
+                    println!("Note: Reducer cancelled.");
+                }
+                result = reducer_future => {
+                   #[cfg(not(target_arch = "wasm32"))] {
+                        let elapsed = start.elapsed();
+                        *stats_clone.lock().unwrap() = Some((result, elapsed));
+                   }
+                    repaint_ctx.request_repaint();
+                    println!("Note: Reducer completed.");
+                }
+            }
+        });
+    }
+
+    fn show_definition_item(
         spawner: Arc<dyn Spawn + Send + Sync + 'static>,
         cancel_token: &mut Option<CancellationToken>,
         element: &mut Option<Arc<Mutex<Element>>>,
@@ -677,56 +762,239 @@ impl Playground {
         program: Arc<CheckedWorkspace>,
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        name: &GlobalName<Universal>,
+        label: &str,
     ) -> () {
-        for (name, _) in &program.checked_module().definitions {
-            if ui.button(format!("{}", name)).clicked() {
-                if let Some(cancel_token) = cancel_token {
-                    cancel_token.cancel();
-                }
-                let token = CancellationToken::new();
-                *cancel_token = Some(token.clone());
+        if ui.button(label).clicked() {
+            Self::run_definition(
+                spawner,
+                cancel_token,
+                element,
+                program,
+                compiled,
+                name_to_ty,
+                name,
+                ui.ctx(),
+            );
+            ui.close();
+        }
+    }
 
-                let ty = name_to_ty.get(name).unwrap();
-                let package = compiled.code.get_with_name(name).unwrap();
-                let (handle, reducer_future) = par_runtime::start_and_instantiate(
+    fn show_module_definitions(
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
+        cancel_token: &mut Option<CancellationToken>,
+        element: &mut Option<Arc<Mutex<Element>>>,
+        ui: &mut egui::Ui,
+        program: Arc<CheckedWorkspace>,
+        compiled: &Compiled<Linked>,
+        name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        package: &PackageId,
+        module: &ModulePath,
+    ) {
+        let mut has_definitions = false;
+        for name in program.checked_module().definitions.keys().filter(|name| {
+            name.module.package == *package
+                && name.module.directories == module.directories
+                && name.module.module == module.module
+        }) {
+            has_definitions = true;
+            Self::show_definition_item(
+                spawner.clone(),
+                cancel_token,
+                element,
+                ui,
+                program.clone(),
+                compiled,
+                name_to_ty,
+                name,
+                &name.primary,
+            );
+        }
+
+        if !has_definitions {
+            ui.label(RichText::new("No definitions").italics());
+        }
+    }
+
+    fn show_module_tree(
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
+        cancel_token: &mut Option<CancellationToken>,
+        element: &mut Option<Arc<Mutex<Element>>>,
+        ui: &mut egui::Ui,
+        program: Arc<CheckedWorkspace>,
+        compiled: &Compiled<Linked>,
+        name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        package: &PackageId,
+        tree: &ModuleMenuTree<'_>,
+    ) {
+        for (directory, subtree) in &tree.directories {
+            ui.menu_button(*directory, |ui| {
+                Self::show_module_tree(
                     spawner.clone(),
-                    compiled.code.arena.clone(),
+                    cancel_token,
+                    element,
+                    ui,
+                    program.clone(),
+                    compiled,
+                    name_to_ty,
                     package,
+                    subtree,
                 );
-                let stats: RunStats = Arc::new(Mutex::new(None));
+            });
+        }
 
-                let ctx = ui.ctx().clone();
-                *element = Some(Element::new(
-                    Arc::new(move || {
-                        ctx.request_repaint();
-                    }),
+        for (module_name, module) in &tree.modules {
+            ui.menu_button(*module_name, |ui| {
+                Self::show_module_definitions(
                     spawner.clone(),
-                    TypedHandle::new(
-                        program.checked_module().type_defs.clone(),
-                        ty.clone(),
-                        handle,
-                    ),
-                    Arc::clone(&stats),
-                ));
-                let stats_clone = Arc::clone(&stats);
-                let ctx = ui.ctx().clone();
-                let _ = spawner.spawn(async move {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    let start = Instant::now();
-                    tokio::select! {
-                        _ = token.cancelled() => {
-                            println!("Note: Reducer cancelled.");
-                        }
-                        result = reducer_future => {
-                           #[cfg(not(target_arch = "wasm32"))] {
-                                let elapsed = start.elapsed();
-                                *stats_clone.lock().unwrap() = Some((result, elapsed));
-                           }
-                            ctx.request_repaint();
-                            println!("Note: Reducer completed.");
-                        }
-                    }
+                    cancel_token,
+                    element,
+                    ui,
+                    program.clone(),
+                    compiled,
+                    name_to_ty,
+                    package,
+                    module,
+                );
+            });
+        }
+    }
+
+    fn show_package_modules(
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
+        cancel_token: &mut Option<CancellationToken>,
+        element: &mut Option<Arc<Mutex<Element>>>,
+        ui: &mut egui::Ui,
+        program: Arc<CheckedWorkspace>,
+        compiled: &Compiled<Linked>,
+        name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        package: &PackageId,
+        exclude_module: Option<&ModulePath>,
+    ) {
+        let modules = program
+            .modules_in_package(package)
+            .iter()
+            .filter(|module| exclude_module != Some(*module))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if modules.is_empty() {
+            let empty_label = if exclude_module.is_some() {
+                "No other modules"
+            } else {
+                "No modules"
+            };
+            ui.label(RichText::new(empty_label).italics());
+            return;
+        }
+
+        let tree = ModuleMenuTree::from_modules(&modules);
+        Self::show_module_tree(
+            spawner,
+            cancel_token,
+            element,
+            ui,
+            program,
+            compiled,
+            name_to_ty,
+            package,
+            &tree,
+        );
+    }
+
+    fn package_label(package: &PackageId) -> String {
+        match package {
+            PackageId::Local => String::from("This package"),
+            PackageId::Package(name) => format!("@{name}"),
+        }
+    }
+
+    fn show_run_menu(
+        spawner: Arc<dyn Spawn + Send + Sync + 'static>,
+        cancel_token: &mut Option<CancellationToken>,
+        element: &mut Option<Arc<Mutex<Element>>>,
+        ui: &mut egui::Ui,
+        active_file: &FileName,
+        program: Arc<CheckedWorkspace>,
+        compiled: &Compiled<Linked>,
+        name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+    ) {
+        let current_scope = program.import_scope(&active_file);
+        let current_package = current_scope.map(|scope| scope.current_module.package.clone());
+        let current_module = current_scope.map(|scope| scope.current_module.clone());
+        let current_module_path = current_module.as_ref().map(|module| ModulePath {
+            directories: module.directories.clone(),
+            module: module.module.clone(),
+        });
+        let other_packages = program
+            .packages()
+            .into_iter()
+            .filter(|package| current_package.as_ref() != Some(package))
+            .collect::<Vec<_>>();
+
+        ui.menu_button("Packages", |ui| {
+            if other_packages.is_empty() {
+                ui.label(RichText::new("No other packages").italics());
+            }
+
+            for package in &other_packages {
+                ui.menu_button(Self::package_label(&package), |ui| {
+                    Self::show_package_modules(
+                        spawner.clone(),
+                        cancel_token,
+                        element,
+                        ui,
+                        program.clone(),
+                        compiled,
+                        name_to_ty,
+                        package,
+                        None,
+                    );
                 });
+            }
+        });
+
+        if let Some(package) = current_package.as_ref() {
+            ui.menu_button("Modules", |ui| {
+                Self::show_package_modules(
+                    spawner.clone(),
+                    cancel_token,
+                    element,
+                    ui,
+                    program.clone(),
+                    compiled,
+                    name_to_ty,
+                    package,
+                    current_module_path.as_ref(),
+                );
+            });
+        }
+
+        if let Some(current_module) = current_module.as_ref() {
+            let current_definitions = program
+                .checked_module()
+                .definitions
+                .keys()
+                .filter(|name| name.module == *current_module)
+                .collect::<Vec<_>>();
+
+            if !current_definitions.is_empty() {
+                ui.separator();
+            }
+
+            for name in current_definitions {
+                let label = program.render_global_in_file(&active_file, name);
+                Self::show_definition_item(
+                    spawner.clone(),
+                    cancel_token,
+                    element,
+                    ui,
+                    program.clone(),
+                    compiled,
+                    name_to_ty,
+                    name,
+                    &label,
+                );
             }
         }
     }
@@ -778,6 +1046,10 @@ impl Playground {
                     if let (Some(checked), Some(rt_compiled)) =
                         (self.build.checked(), self.build.rt_compiled())
                     {
+                        let active_file = self.active_file_name();
+                        let spawner = self.spawner.clone();
+                        let cancel_token = &mut self.cancel_token;
+                        let element = &mut self.element;
                         let name_to_ty = &rt_compiled.name_to_ty;
                         egui::containers::menu::MenuButton::from_button(
                             egui::Button::new(
@@ -789,11 +1061,12 @@ impl Playground {
                         )
                         .ui(ui, |ui| {
                             egui::ScrollArea::vertical().show(ui, |ui| {
-                                Self::readback(
-                                    self.spawner.clone(),
-                                    &mut self.cancel_token,
-                                    &mut self.element,
+                                Self::show_run_menu(
+                                    spawner.clone(),
+                                    cancel_token,
+                                    element,
                                     ui,
+                                    &active_file,
                                     checked.clone(),
                                     rt_compiled,
                                     name_to_ty,

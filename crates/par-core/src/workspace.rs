@@ -448,6 +448,10 @@ impl Workspace {
         &self.lowered
     }
 
+    pub fn packages(&self) -> Vec<PackageId> {
+        self.package_modules.keys().cloned().collect()
+    }
+
     pub fn root_packages(&self) -> &[PackageId] {
         &self.root_packages
     }
@@ -513,6 +517,10 @@ impl CheckedWorkspace {
 
     pub fn checked_module(&self) -> &CheckedModule<Universal> {
         &self.checked
+    }
+
+    pub fn packages(&self) -> Vec<PackageId> {
+        self.package_modules.keys().cloned().collect()
     }
 
     pub fn root_packages(&self) -> &[PackageId] {
