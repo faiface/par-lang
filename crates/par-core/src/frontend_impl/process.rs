@@ -859,7 +859,7 @@ impl<S> HoverInfo<S> {
             HoverInfoInner::Type { typ, .. }
             | HoverInfoInner::Declaration { typ, .. }
             | HoverInfoInner::Variable { typ, .. }
-            | HoverInfoInner::Anonymous { typ } => typ,
+            | HoverInfoInner::Anonymous { typ, .. } => typ,
         }
     }
 
@@ -896,6 +896,15 @@ impl<S> HoverInfo<S> {
             HoverInfoInner::Type { .. }
             | HoverInfoInner::Declaration { .. }
             | HoverInfoInner::Anonymous { .. } => None,
+        }
+    }
+
+    pub fn prefer_display_hints(&self) -> bool {
+        match &self.inner {
+            HoverInfoInner::Type { .. } => false,
+            HoverInfoInner::Declaration { .. }
+            | HoverInfoInner::Variable { .. }
+            | HoverInfoInner::Anonymous { .. } => true,
         }
     }
 

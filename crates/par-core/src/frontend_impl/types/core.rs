@@ -8,7 +8,7 @@ use num_bigint::BigInt;
 use par_runtime::primitive::Primitive;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -32,6 +32,49 @@ pub enum PrimitiveType {
     Char,
     Byte,
     Bytes,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct Ignored<T>(pub(crate) T);
+
+impl<T: Default> Default for Ignored<T> {
+    fn default() -> Self {
+        Self(T::default())
+    }
+}
+
+impl<T> PartialEq for Ignored<T> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> Eq for Ignored<T> {}
+
+impl<T> Hash for Ignored<T> {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct NamedTypeDisplay<S> {
+    pub(crate) name: GlobalName<S>,
+    pub(crate) args: Vec<Type<S>>,
+    pub(crate) dual: bool,
+}
+
+impl<S> NamedTypeDisplay<S> {
+    pub(crate) fn new(name: GlobalName<S>, args: Vec<Type<S>>, dual: bool) -> Self {
+        Self { name, args, dual }
+    }
+
+    pub(crate) fn dual(self) -> Self {
+        Self {
+            dual: !self.dual,
+            ..self
+        }
+    }
 }
 
 pub(crate) fn get_primitive_type<S: Clone>(primitive: &Primitive) -> Type<S> {
@@ -167,12 +210,14 @@ pub enum Type<S> {
         asc: HashSet<LoopId>,
         label: Option<LocalName>,
         body: Box<Self>,
+        display_hint: Ignored<Option<NamedTypeDisplay<S>>>,
     },
     Iterative {
         span: Span,
         asc: HashSet<LoopId>,
         label: Option<LocalName>,
         body: Box<Self>,
+        display_hint: Ignored<Option<NamedTypeDisplay<S>>>,
     },
     Self_(Span, Option<LocalName>),
     DualSelf(Span, Option<LocalName>),
@@ -321,6 +366,7 @@ impl<S: Clone> Type<S> {
                 string: ArcStr::from(label),
             }),
             body: Box::new(body),
+            display_hint: Default::default(),
         }
     }
 
@@ -333,6 +379,7 @@ impl<S: Clone> Type<S> {
                 string: ArcStr::from(label),
             }),
             body: Box::new(body),
+            display_hint: Default::default(),
         }
     }
 
@@ -469,22 +516,48 @@ impl<S: Clone> Type<S> {
                 asc,
                 label,
                 body,
+                display_hint,
             } => Type::Recursive {
                 span,
                 asc,
                 label,
                 body: Box::new(body.map_global_names(f)?),
+                display_hint: Ignored(match display_hint.0 {
+                    Some(display_hint) => Some(NamedTypeDisplay {
+                        name: f(display_hint.name)?,
+                        args: display_hint
+                            .args
+                            .into_iter()
+                            .map(|arg| arg.map_global_names(f))
+                            .collect::<Result<Vec<_>, _>>()?,
+                        dual: display_hint.dual,
+                    }),
+                    None => None,
+                }),
             },
             Self::Iterative {
                 span,
                 asc,
                 label,
                 body,
+                display_hint,
             } => Type::Iterative {
                 span,
                 asc,
                 label,
                 body: Box::new(body.map_global_names(f)?),
+                display_hint: Ignored(match display_hint.0 {
+                    Some(display_hint) => Some(NamedTypeDisplay {
+                        name: f(display_hint.name)?,
+                        args: display_hint
+                            .args
+                            .into_iter()
+                            .map(|arg| arg.map_global_names(f))
+                            .collect::<Result<Vec<_>, _>>()?,
+                        dual: display_hint.dual,
+                    }),
+                    None => None,
+                }),
             },
             Self::Exists(span, name, body) => {
                 Type::Exists(span, name, Box::new(body.map_global_names(f)?))
@@ -525,6 +598,49 @@ impl<S> Spanning for Type<S> {
             | Self::Forall(span, _, _)
             | Self::Hole(span, _, _)
             | Self::DualHole(span, _, _) => span.clone(),
+        }
+    }
+}
+
+impl<S> Type<S> {
+    pub(crate) fn display_hint(&self) -> Option<&NamedTypeDisplay<S>> {
+        match self {
+            Self::Recursive { display_hint, .. } | Self::Iterative { display_hint, .. } => {
+                display_hint.0.as_ref()
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn with_display_hint(self, display_hint: NamedTypeDisplay<S>) -> Self {
+        match self {
+            Self::Recursive {
+                span,
+                asc,
+                label,
+                body,
+                ..
+            } => Self::Recursive {
+                span,
+                asc,
+                label,
+                body,
+                display_hint: Ignored(Some(display_hint)),
+            },
+            Self::Iterative {
+                span,
+                asc,
+                label,
+                body,
+                ..
+            } => Self::Iterative {
+                span,
+                asc,
+                label,
+                body,
+                display_hint: Ignored(Some(display_hint)),
+            },
+            typ => typ,
         }
     }
 }

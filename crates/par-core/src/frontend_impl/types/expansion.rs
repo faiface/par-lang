@@ -1,4 +1,5 @@
 use crate::frontend_impl::language::LocalName;
+use crate::frontend_impl::types::core::{Ignored, NamedTypeDisplay};
 use crate::frontend_impl::types::visit;
 use crate::frontend_impl::types::{LoopId, Type, TypeDefs, TypeError};
 use crate::location::Span;
@@ -16,10 +17,11 @@ impl<S: Clone> Type<S> {
         }
     }
 
-    pub fn expand_recursive(
+    pub(crate) fn expand_recursive(
         asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
+        display_hint: Option<&NamedTypeDisplay<S>>,
     ) -> Result<Self, TypeError<S>> {
         let mut typ = body.clone();
         fn inner<S: Clone>(
@@ -27,6 +29,7 @@ impl<S: Clone> Type<S> {
             target_label: &Option<LocalName>,
             asc: &HashSet<LoopId>,
             body: &Type<S>,
+            display_hint: Option<&NamedTypeDisplay<S>>,
         ) -> Result<(), TypeError<S>> {
             match typ {
                 Type::Self_(span, label) if label == target_label => {
@@ -35,6 +38,7 @@ impl<S: Clone> Type<S> {
                         asc: asc.clone(),
                         label: label.clone(),
                         body: Box::new(body.clone()),
+                        display_hint: Ignored(display_hint.cloned()),
                     };
                 }
                 Type::DualSelf(span, label) if label == target_label => {
@@ -43,6 +47,7 @@ impl<S: Clone> Type<S> {
                         asc: asc.clone(),
                         label: label.clone(),
                         body: Box::new(body.clone()),
+                        display_hint: Ignored(display_hint.cloned()),
                     }
                     .dual(Span::None);
                 }
@@ -50,22 +55,23 @@ impl<S: Clone> Type<S> {
                     if label == target_label => {}
                 _ => {
                     visit::continue_mut(typ, |child: &mut Type<S>| {
-                        inner(child, target_label, asc, body)
+                        inner(child, target_label, asc, body, display_hint)
                     })?;
                 }
             }
             Ok(())
         }
 
-        inner(&mut typ, label, asc, body)?;
+        inner(&mut typ, label, asc, body, display_hint)?;
         Ok(typ)
     }
 
-    pub fn expand_iterative(
+    pub(crate) fn expand_iterative(
         span: &Span,
         asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
+        display_hint: Option<&NamedTypeDisplay<S>>,
     ) -> Result<Self, TypeError<S>> {
         if !asc.is_empty() {
             return Err(TypeError::CannotUnrollAscendantIterative(
@@ -74,15 +80,16 @@ impl<S: Clone> Type<S> {
             ));
         }
 
-        Type::expand_iterative_unsafe(span, asc, label, body)
+        Type::expand_iterative_unsafe(span, asc, label, body, display_hint)
     }
 
     // This variant does not make sure asc isn't empty
-    pub fn expand_iterative_unsafe(
+    pub(crate) fn expand_iterative_unsafe(
         _span: &Span,
         asc: &HashSet<LoopId>,
         label: &Option<LocalName>,
         body: &Self,
+        display_hint: Option<&NamedTypeDisplay<S>>,
     ) -> Result<Self, TypeError<S>> {
         let mut typ = body.clone();
         fn inner<S: Clone>(
@@ -90,6 +97,7 @@ impl<S: Clone> Type<S> {
             target_label: &Option<LocalName>,
             asc: &HashSet<LoopId>,
             body: &Type<S>,
+            display_hint: Option<&NamedTypeDisplay<S>>,
         ) -> Result<(), TypeError<S>> {
             match typ {
                 Type::Self_(span, label) if label == target_label => {
@@ -98,6 +106,7 @@ impl<S: Clone> Type<S> {
                         asc: asc.clone(),
                         label: label.clone(),
                         body: Box::new(body.clone()),
+                        display_hint: Ignored(display_hint.cloned()),
                     };
                 }
                 Type::DualSelf(span, label) if label == target_label => {
@@ -106,6 +115,7 @@ impl<S: Clone> Type<S> {
                         asc: asc.clone(),
                         label: label.clone(),
                         body: Box::new(body.clone()),
+                        display_hint: Ignored(display_hint.cloned()),
                     }
                     .dual(Span::None);
                 }
@@ -116,14 +126,14 @@ impl<S: Clone> Type<S> {
                 }
                 _ => {
                     visit::continue_mut(typ, |child: &mut Type<S>| {
-                        inner(child, target_label, asc, body)
+                        inner(child, target_label, asc, body, display_hint)
                     })?;
                 }
             }
             Ok(())
         }
 
-        inner(&mut typ, label, asc, body)?;
+        inner(&mut typ, label, asc, body, display_hint)?;
         Ok(typ)
     }
 
@@ -131,14 +141,19 @@ impl<S: Clone> Type<S> {
     pub fn expand_fixpoint(&self) -> Result<Self, TypeError<S>> {
         match self {
             Type::Recursive {
-                asc, label, body, ..
-            } => Self::expand_recursive(asc, label, body),
+                asc,
+                label,
+                body,
+                display_hint,
+                ..
+            } => Self::expand_recursive(asc, label, body, display_hint.0.as_ref()),
             Type::Iterative {
                 span,
                 asc,
                 label,
                 body,
-            } => Self::expand_iterative(span, asc, label, body),
+                display_hint,
+            } => Self::expand_iterative(span, asc, label, body, display_hint.0.as_ref()),
             _ => Ok(self.clone()),
         }
     }
@@ -147,14 +162,19 @@ impl<S: Clone> Type<S> {
     pub fn expand_fixpoint_unfounded(&self) -> Result<Self, TypeError<S>> {
         match self {
             Type::Recursive {
-                asc, label, body, ..
-            } => Self::expand_recursive(asc, label, body),
+                asc,
+                label,
+                body,
+                display_hint,
+                ..
+            } => Self::expand_recursive(asc, label, body, display_hint.0.as_ref()),
             Type::Iterative {
                 span,
                 asc,
                 label,
                 body,
-            } => Self::expand_iterative_unsafe(span, asc, label, body),
+                display_hint,
+            } => Self::expand_iterative_unsafe(span, asc, label, body, display_hint.0.as_ref()),
             _ => Ok(self.clone()),
         }
     }

@@ -1,4 +1,5 @@
 use crate::frontend_impl::language::{GlobalName, LocalName};
+use crate::frontend_impl::types::core::NamedTypeDisplay;
 use crate::frontend_impl::types::{Type, TypeError, visit};
 use crate::location::Span;
 use indexmap::{IndexMap, IndexSet};
@@ -89,7 +90,10 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                         args.len(),
                     ));
                 }
-                let typ = typ.clone().substitute(params.iter().zip(args).collect())?;
+                let typ = typ
+                    .clone()
+                    .substitute(params.iter().zip(args).collect())?
+                    .with_display_hint(NamedTypeDisplay::new(name.clone(), args.to_vec(), false));
                 Ok((definition_span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
@@ -125,7 +129,8 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                 let typ = typ
                     .clone()
                     .dual(Span::None)
-                    .substitute(params.iter().zip(args).collect())?;
+                    .substitute(params.iter().zip(args).collect())?
+                    .with_display_hint(NamedTypeDisplay::new(name.clone(), args.to_vec(), true));
                 Ok((definition_span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),

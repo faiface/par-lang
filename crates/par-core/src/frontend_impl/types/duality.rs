@@ -1,4 +1,5 @@
 use super::super::language::LocalName;
+use super::core::Ignored;
 use super::core::Type;
 use crate::frontend_impl::types::visit;
 use crate::location::Span;
@@ -46,6 +47,7 @@ impl<S> Type<S> {
                 asc,
                 label,
                 body: t,
+                display_hint,
             } => {
                 let body = Box::new(t.dual(Span::None).dualize_self(&label));
                 Self::Iterative {
@@ -53,6 +55,7 @@ impl<S> Type<S> {
                     asc,
                     label,
                     body,
+                    display_hint: Ignored(display_hint.0.map(|display_hint| display_hint.dual())),
                 }
             }
             Self::Iterative {
@@ -60,6 +63,7 @@ impl<S> Type<S> {
                 asc,
                 label,
                 body: t,
+                display_hint,
             } => {
                 let body = Box::new(t.dual(Span::None).dualize_self(&label));
                 Self::Recursive {
@@ -67,6 +71,7 @@ impl<S> Type<S> {
                     asc,
                     label,
                     body,
+                    display_hint: Ignored(display_hint.0.map(|display_hint| display_hint.dual())),
                 }
             }
             Self::Self_(span, label) => Self::DualSelf(span0.join(span), label),

@@ -1,6 +1,7 @@
 use crate::frontend_impl::language::GlobalName;
 use crate::frontend_impl::process::HoverInfo;
 use crate::frontend_impl::program::Docs;
+use crate::frontend_impl::types::core::NamedTypeDisplay;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
 use crate::location::{Span, Spanning};
 use std::fmt;
@@ -11,6 +12,10 @@ where
     GlobalName<S>: fmt::Display,
 {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
+        if let Some(display_hint) = self.display_hint() {
+            return write_named_type_display(f, display_hint, indent, false);
+        }
+
         match self {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
@@ -215,6 +220,10 @@ where
     }
 
     pub fn pretty_compact(&self, f: &mut impl Write) -> fmt::Result {
+        if let Some(display_hint) = self.display_hint() {
+            return write_named_type_display(f, display_hint, 0, true);
+        }
+
         match self {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
@@ -520,6 +529,37 @@ where
             Type::DualHole(_, _, _) => {}
         }
     }
+}
+
+fn write_named_type_display<S: Clone>(
+    f: &mut impl Write,
+    display_hint: &NamedTypeDisplay<S>,
+    indent: usize,
+    compact: bool,
+) -> fmt::Result
+where
+    GlobalName<S>: fmt::Display,
+{
+    if display_hint.dual {
+        write!(f, "dual ")?;
+    }
+    write!(f, "{}", display_hint.name)?;
+    if display_hint.args.is_empty() {
+        return Ok(());
+    }
+
+    write!(f, "<")?;
+    for (i, arg) in display_hint.args.iter().enumerate() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        if compact {
+            arg.pretty_compact(f)?;
+        } else {
+            arg.pretty(f, indent)?;
+        }
+    }
+    write!(f, ">")
 }
 
 fn dual_name_hover_span<S>(full_span: &Span, name: &GlobalName<S>) -> Span {

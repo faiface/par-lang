@@ -1023,6 +1023,7 @@ fn typ_recursive(input: &mut Input) -> Result<Type<Unresolved>> {
             asc: Default::default(),
             label,
             body: Box::new(typ),
+            display_hint: Default::default(),
         })
         .parse_next(input)
 }
@@ -1037,6 +1038,7 @@ fn typ_iterative(input: &mut Input) -> Result<Type<Unresolved>> {
         asc: Default::default(),
         label,
         body: Box::new(typ),
+        display_hint: Default::default(),
     })
     .parse_next(input)
 }

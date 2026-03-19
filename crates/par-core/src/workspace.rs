@@ -637,7 +637,13 @@ impl CheckedWorkspace {
         } else if let Some(name) = hover.variable_name() {
             let _ = write!(output, "{} : ", name);
         }
-        let _ = write_type_in_file(&mut output, self.import_scope(file), hover.typ());
+        let _ = write_type_in_file_with_indent_and_preference(
+            &mut output,
+            self.import_scope(file),
+            hover.typ(),
+            0,
+            hover.prefer_display_hints(),
+        );
         output
     }
 
@@ -685,7 +691,7 @@ pub fn render_type_in_scope_with_indent(
     indent: usize,
 ) -> String {
     let mut output = String::new();
-    let _ = write_type_in_file_with_indent(&mut output, scope, typ, indent);
+    let _ = write_type_in_file_with_indent_and_preference(&mut output, scope, typ, indent, true);
     output
 }
 
@@ -1495,20 +1501,25 @@ fn write_global_name_in_file(
     }
 }
 
-fn write_type_in_file(
-    f: &mut impl Write,
-    scope: Option<&FileImportScope<Universal>>,
-    typ: &Type<Universal>,
-) -> fmt::Result {
-    write_type_in_file_with_indent(f, scope, typ, 0)
-}
-
-fn write_type_in_file_with_indent(
+fn write_type_in_file_with_indent_and_preference(
     f: &mut impl Write,
     scope: Option<&FileImportScope<Universal>>,
     typ: &Type<Universal>,
     indent: usize,
+    prefer_display_hints: bool,
 ) -> fmt::Result {
+    if prefer_display_hints {
+        if let Some(display_hint) = typ.display_hint() {
+            return write_named_type_display_in_file(
+                f,
+                scope,
+                display_hint,
+                indent,
+                prefer_display_hints,
+            );
+        }
+    }
+
     match typ {
         Type::Primitive(_, primitive) => write_primitive_type(f, primitive.clone()),
         Type::DualPrimitive(_, primitive) => {
@@ -1519,33 +1530,75 @@ fn write_type_in_file_with_indent(
         Type::DualVar(_, name) => write!(f, "dual {name}"),
         Type::Name(_, name, args) => {
             write_global_name_in_file(f, scope, name)?;
-            write_type_args(f, scope, args, indent)
+            write_type_args(f, scope, args, indent, prefer_display_hints)
         }
         Type::DualName(_, name, args) => {
             write!(f, "dual ")?;
             write_global_name_in_file(f, scope, name)?;
-            write_type_args(f, scope, args, indent)
+            write_type_args(f, scope, args, indent, prefer_display_hints)
         }
         Type::Box(_, body) => {
             write!(f, "box ")?;
-            write_type_in_file_with_indent(f, scope, body, indent)
+            write_type_in_file_with_indent_and_preference(
+                f,
+                scope,
+                body,
+                indent,
+                prefer_display_hints,
+            )
         }
         Type::DualBox(_, body) => {
             write!(f, "dual box ")?;
-            write_type_in_file_with_indent(f, scope, body, indent)
+            write_type_in_file_with_indent_and_preference(
+                f,
+                scope,
+                body,
+                indent,
+                prefer_display_hints,
+            )
         }
-        Type::Pair(_, arg, then, vars) => {
-            write_pair_like(f, scope, "(", ")", arg, then, vars, false, indent)
-        }
-        Type::Function(_, arg, then, vars) => {
-            write_pair_like(f, scope, "[", "]", arg, then, vars, true, indent)
-        }
-        Type::Either(_, branches) => {
-            write_braced_branches(f, scope, "either", branches, indent, false)
-        }
-        Type::Choice(_, branches) => {
-            write_braced_branches(f, scope, "choice", branches, indent, true)
-        }
+        Type::Pair(_, arg, then, vars) => write_pair_like(
+            f,
+            scope,
+            "(",
+            ")",
+            arg,
+            then,
+            vars,
+            false,
+            indent,
+            prefer_display_hints,
+        ),
+        Type::Function(_, arg, then, vars) => write_pair_like(
+            f,
+            scope,
+            "[",
+            "]",
+            arg,
+            then,
+            vars,
+            true,
+            indent,
+            prefer_display_hints,
+        ),
+        Type::Either(_, branches) => write_braced_branches(
+            f,
+            scope,
+            "either",
+            branches,
+            indent,
+            false,
+            prefer_display_hints,
+        ),
+        Type::Choice(_, branches) => write_braced_branches(
+            f,
+            scope,
+            "choice",
+            branches,
+            indent,
+            true,
+            prefer_display_hints,
+        ),
         Type::Break(_) => write!(f, "!"),
         Type::Continue(_) => write!(f, "?"),
         Type::Recursive { label, body, .. } => {
@@ -1554,7 +1607,13 @@ fn write_type_in_file_with_indent(
                 write!(f, "@{label}")?;
             }
             write!(f, " ")?;
-            write_type_in_file_with_indent(f, scope, body, indent)
+            write_type_in_file_with_indent_and_preference(
+                f,
+                scope,
+                body,
+                indent,
+                prefer_display_hints,
+            )
         }
         Type::Iterative { label, body, .. } => {
             write!(f, "iterative")?;
@@ -1562,7 +1621,13 @@ fn write_type_in_file_with_indent(
                 write!(f, "@{label}")?;
             }
             write!(f, " ")?;
-            write_type_in_file_with_indent(f, scope, body, indent)
+            write_type_in_file_with_indent_and_preference(
+                f,
+                scope,
+                body,
+                indent,
+                prefer_display_hints,
+            )
         }
         Type::Self_(_, label) => {
             write!(f, "self")?;
@@ -1578,12 +1643,28 @@ fn write_type_in_file_with_indent(
             }
             Ok(())
         }
-        Type::Exists(_, name, then) => {
-            write_quantified_type(f, scope, "(", ")", "type", name, then, indent)
-        }
-        Type::Forall(_, name, then) => {
-            write_quantified_type(f, scope, "[", "]", "type", name, then, indent)
-        }
+        Type::Exists(_, name, then) => write_quantified_type(
+            f,
+            scope,
+            "(",
+            ")",
+            "type",
+            name,
+            then,
+            indent,
+            prefer_display_hints,
+        ),
+        Type::Forall(_, name, then) => write_quantified_type(
+            f,
+            scope,
+            "[",
+            "]",
+            "type",
+            name,
+            then,
+            indent,
+            prefer_display_hints,
+        ),
         Type::Hole(_, name, _) => write!(f, "%{name}"),
         Type::DualHole(_, name, _) => write!(f, "dual %{name}"),
     }
@@ -1606,6 +1687,7 @@ fn write_type_args(
     scope: Option<&FileImportScope<Universal>>,
     args: &[Type<Universal>],
     indent: usize,
+    prefer_display_hints: bool,
 ) -> fmt::Result {
     if args.is_empty() {
         return Ok(());
@@ -1615,7 +1697,7 @@ fn write_type_args(
         if i > 0 {
             write!(f, ", ")?;
         }
-        write_type_in_file_with_indent(f, scope, arg, indent)?;
+        write_type_in_file_with_indent_and_preference(f, scope, arg, indent, prefer_display_hints)?;
     }
     write!(f, ">")
 }
@@ -1627,7 +1709,7 @@ fn write_type_hover_header_in_file(
 ) -> fmt::Result {
     match header {
         process::TypeHoverHeader::Parameters(params) => write_type_parameters(f, params),
-        process::TypeHoverHeader::Arguments(args) => write_type_args(f, scope, args, 0),
+        process::TypeHoverHeader::Arguments(args) => write_type_args(f, scope, args, 0, true),
     }
 }
 
@@ -1655,6 +1737,7 @@ fn write_pair_like(
     vars: &[crate::frontend_impl::language::LocalName],
     function: bool,
     indent: usize,
+    prefer_display_hints: bool,
 ) -> fmt::Result {
     let mut then = then;
     if !vars.is_empty() {
@@ -1665,10 +1748,10 @@ fn write_pair_like(
         }
         write!(f, ">")?;
         write!(f, "{open}")?;
-        write_type_in_file_with_indent(f, scope, arg, indent)?;
+        write_type_in_file_with_indent_and_preference(f, scope, arg, indent, prefer_display_hints)?;
     } else {
         write!(f, "{open}")?;
-        write_type_in_file_with_indent(f, scope, arg, indent)?;
+        write_type_in_file_with_indent_and_preference(f, scope, arg, indent, prefer_display_hints)?;
         while let Some((next_arg, next_then, next_vars)) = if function {
             match then {
                 Type::Function(_, next_arg, next_then, next_vars) => {
@@ -1688,7 +1771,13 @@ fn write_pair_like(
                 break;
             }
             write!(f, ", ")?;
-            write_type_in_file_with_indent(f, scope, next_arg, indent)?;
+            write_type_in_file_with_indent_and_preference(
+                f,
+                scope,
+                next_arg,
+                indent,
+                prefer_display_hints,
+            )?;
             then = next_then;
         }
     }
@@ -1706,7 +1795,7 @@ fn write_pair_like(
         }
     } else {
         write!(f, "{close} ")?;
-        write_type_in_file_with_indent(f, scope, then, indent)
+        write_type_in_file_with_indent_and_preference(f, scope, then, indent, prefer_display_hints)
     }
 }
 
@@ -1719,6 +1808,7 @@ fn write_quantified_type(
     name: &crate::frontend_impl::language::LocalName,
     then: &Type<Universal>,
     indent: usize,
+    prefer_display_hints: bool,
 ) -> fmt::Result {
     let mut then = then;
     write!(f, "{open}{prefix} {name}")?;
@@ -1736,7 +1826,7 @@ fn write_quantified_type(
         }
     }
     write!(f, "{close} ")?;
-    write_type_in_file_with_indent(f, scope, then, indent)
+    write_type_in_file_with_indent_and_preference(f, scope, then, indent, prefer_display_hints)
 }
 
 fn write_braced_branches(
@@ -1749,6 +1839,7 @@ fn write_braced_branches(
     >,
     indent: usize,
     choice: bool,
+    prefer_display_hints: bool,
 ) -> fmt::Result {
     if branches.is_empty() {
         return write!(f, "{prefix} {{}}");
@@ -1762,11 +1853,31 @@ fn write_braced_branches(
         } else {
             write!(f, ".{} ", branch)?;
         }
-        write_type_in_file_with_indent(f, scope, branch_type, indent + 1)?;
+        write_type_in_file_with_indent_and_preference(
+            f,
+            scope,
+            branch_type,
+            indent + 1,
+            prefer_display_hints,
+        )?;
         write!(f, ",")?;
     }
     write_indentation(f, indent)?;
     write!(f, "}}")
+}
+
+fn write_named_type_display_in_file(
+    f: &mut impl Write,
+    scope: Option<&FileImportScope<Universal>>,
+    display_hint: &crate::frontend_impl::types::core::NamedTypeDisplay<Universal>,
+    indent: usize,
+    prefer_display_hints: bool,
+) -> fmt::Result {
+    if display_hint.dual {
+        write!(f, "dual ")?;
+    }
+    write_global_name_in_file(f, scope, &display_hint.name)?;
+    write_type_args(f, scope, &display_hint.args, indent, prefer_display_hints)
 }
 
 fn write_indentation(f: &mut impl Write, indent: usize) -> fmt::Result {

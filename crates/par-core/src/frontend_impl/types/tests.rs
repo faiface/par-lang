@@ -1,7 +1,50 @@
 #[cfg(test)]
 mod tests {
-    use crate::frontend_impl::language::Universal;
+    use crate::frontend_impl::language::{GlobalName, LocalName, PackageId, Universal};
     use crate::frontend_impl::types::{Type, TypeDefs};
+    use crate::location::Span;
+    use crate::workspace::render_type_in_scope;
+    use arcstr::ArcStr;
+
+    fn alias_preserving_type_defs() -> (TypeDefs<Universal>, GlobalName<Universal>) {
+        let span = Span::None;
+        let key = LocalName {
+            span: Span::None,
+            string: ArcStr::from("k"),
+        };
+        let value = LocalName {
+            span: Span::None,
+            string: ArcStr::from("v"),
+        };
+        let map_name = GlobalName::new(
+            Span::None,
+            Universal {
+                package: PackageId::Local,
+                directories: vec![],
+                module: "Main".to_string(),
+            },
+            "Map".to_string(),
+        );
+        let body = Type::iterative(
+            None,
+            Type::choice(vec![
+                ("delete", Type::self_(None)),
+                (
+                    "put",
+                    Type::Function(
+                        Span::None,
+                        Box::new(Type::Var(Span::None, value.clone())),
+                        Box::new(Type::self_(None)),
+                        vec![],
+                    ),
+                ),
+            ]),
+        );
+        let params = vec![key, value];
+        let defs = TypeDefs::new_with_validation([(&span, &map_name, &params, &body)].into_iter())
+            .unwrap();
+        (defs, map_name)
+    }
 
     #[test]
     fn test_iterative_box_choice() {
@@ -119,6 +162,40 @@ mod tests {
             any_type
                 .is_assignable_to(&empty_choice, &type_defs)
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_display_keeps_named_fixpoint_aliases_after_expansion() {
+        let (defs, map_name) = alias_preserving_type_defs();
+        let expanded = defs
+            .get(&Span::None, &map_name, &[Type::string(), Type::int()])
+            .unwrap()
+            .expand_fixpoint()
+            .unwrap();
+
+        assert_eq!(
+            format!("{expanded}"),
+            "choice {.delete => Main.Map<String, Int>,.put => [Int] Main.Map<String, Int>,}"
+        );
+    }
+
+    #[test]
+    fn test_workspace_renderer_keeps_named_fixpoint_aliases_after_expansion() {
+        let (defs, map_name) = alias_preserving_type_defs();
+        let expanded = defs
+            .get(&Span::None, &map_name, &[Type::string(), Type::int()])
+            .unwrap()
+            .expand_fixpoint()
+            .unwrap();
+
+        assert_eq!(
+            render_type_in_scope(None, &expanded),
+            "\
+choice {
+  .delete => Main.Map<String, Int>,
+  .put => [Int] Main.Map<String, Int>,
+}"
         );
     }
 }

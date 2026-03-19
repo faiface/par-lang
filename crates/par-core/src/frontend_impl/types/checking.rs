@@ -178,12 +178,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         asc: point_asc,
                         label: point_label,
                         body: point_body,
+                        display_hint,
                         ..
                     } = point_client_type.clone()
                     else {
                         panic!("poll point client type must be recursive");
                     };
-                    name_typ = Type::expand_recursive(&point_asc, &point_label, &point_body)?;
+                    name_typ = Type::expand_recursive(
+                        &point_asc,
+                        &point_label,
+                        &point_body,
+                        display_hint.0.as_ref(),
+                    )?;
 
                     let Some(base_poll) = base.poll.as_mut() else {
                         panic!("repoll without a poll scope after validation");
@@ -238,6 +244,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         asc,
                         label,
                         body,
+                        display_hint,
                     } = client_type.clone()
                     else {
                         return Err(TypeError::PollClientMustBeRecursive(
@@ -256,9 +263,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         asc: asc.clone(),
                         label: label.clone(),
                         body: body.clone(),
+                        display_hint: display_hint.clone(),
                     };
 
-                    name_typ = Type::expand_recursive(&asc, &label, &body)?;
+                    name_typ =
+                        Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())?;
 
                     then_ctx = base.clone();
                     let prev_poll = then_ctx.poll.take();
@@ -546,6 +555,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 asc: top_asc,
                 label: top_label,
                 body,
+                display_hint,
                 ..
             } = typ
             {
@@ -553,7 +563,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_iterative(span, top_asc, top_label, body)?,
+                    &Type::expand_iterative(
+                        span,
+                        top_asc,
+                        top_label,
+                        body,
+                        display_hint.0.as_ref(),
+                    )?,
                     command,
                     mode,
                 );
@@ -564,6 +580,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 asc: top_asc,
                 label: top_label,
                 body,
+                display_hint,
                 ..
             } = typ
             {
@@ -571,7 +588,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_recursive(top_asc, top_label, body)?,
+                    &Type::expand_recursive(top_asc, top_label, body, display_hint.0.as_ref())?,
                     command,
                     mode,
                 );
@@ -818,6 +835,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     asc: typ_asc,
                     label: typ_label,
                     body: typ_body,
+                    display_hint,
                 } = typ
                 else {
                     return Err(TypeError::InvalidOperation(
@@ -841,6 +859,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                             asc: typ_asc.clone(),
                             label: typ_label.clone(),
                             body: typ_body.clone(),
+                            display_hint: display_hint.clone(),
                         },
                         Arc::new(
                             self.variables
@@ -855,7 +874,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 self.put(
                     span,
                     object.clone(),
-                    Type::expand_recursive(&typ_asc, typ_label, typ_body)?,
+                    Type::expand_recursive(&typ_asc, typ_label, typ_body, display_hint.0.as_ref())?,
                 )?;
                 let (process, _inferred_type) = self.analyze_process(process, mode)?;
                 (
@@ -1134,12 +1153,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         asc: point_asc,
                         label: point_label,
                         body: point_body,
+                        display_hint,
                         ..
                     } = point_client_type.clone()
                     else {
                         panic!("poll point client type must be recursive");
                     };
-                    name_typ = Type::expand_recursive(&point_asc, &point_label, &point_body)?;
+                    name_typ = Type::expand_recursive(
+                        &point_asc,
+                        &point_label,
+                        &point_body,
+                        display_hint.0.as_ref(),
+                    )?;
 
                     let Some(base_poll) = base.poll.as_mut() else {
                         panic!("repoll without a poll scope after validation");
@@ -1195,6 +1220,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         asc,
                         label,
                         body,
+                        display_hint,
                     } = client_type.clone()
                     else {
                         return Err(TypeError::PollClientMustBeRecursive(
@@ -1213,9 +1239,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         asc: asc.clone(),
                         label: label.clone(),
                         body: body.clone(),
+                        display_hint: display_hint.clone(),
                     };
 
-                    name_typ = Type::expand_recursive(&asc, &label, &body)?;
+                    name_typ =
+                        Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())?;
 
                     then_ctx = base.clone();
                     let prev_poll = then_ctx.poll.take();
@@ -1681,16 +1709,29 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                             asc,
                             label,
                             body,
+                            display_hint,
                         } => {
-                            target_inner_type = Type::expand_recursive(&asc, &label, &body)?;
+                            target_inner_type = Type::expand_recursive(
+                                &asc,
+                                &label,
+                                &body,
+                                display_hint.0.as_ref(),
+                            )?;
                         }
                         Type::Iterative {
                             span,
                             asc,
                             label,
                             body,
+                            display_hint,
                         } => {
-                            target_inner_type = Type::expand_iterative(&span, &asc, &label, &body)?;
+                            target_inner_type = Type::expand_iterative(
+                                &span,
+                                &asc,
+                                &label,
+                                &body,
+                                display_hint.0.as_ref(),
+                            )?;
                         }
                         _ => break,
                     }
