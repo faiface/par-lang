@@ -4,7 +4,7 @@ use super::{
     types::Type,
 };
 use crate::{
-    frontend_impl::program::CheckedModule,
+    frontend_impl::program::{CheckedModule, DocComment, Docs},
     location::{Span, Spanning},
 };
 use indexmap::IndexSet;
@@ -495,7 +495,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
     pub fn types_at_spans(
         &self,
         program: &CheckedModule<S>,
-        consume: &mut impl FnMut(Span, NameWithType<S>),
+        docs: &Docs<S>,
+        consume: &mut impl FnMut(Span, HoverInfo<S>),
     ) {
         match self {
             Process::Let {
@@ -506,12 +507,12 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
                 then,
                 ..
             } => {
-                value.types_at_spans(program, consume);
-                consume(name.span(), NameWithType::named(name, typ.clone()));
+                value.types_at_spans(program, docs, consume);
+                consume(name.span(), HoverInfo::named(name, typ.clone()));
                 if let Some(annotation) = annotation {
-                    annotation.types_at_spans(&program.type_defs, consume);
+                    annotation.types_at_spans(&program.type_defs, docs, consume);
                 }
-                then.types_at_spans(program, consume);
+                then.types_at_spans(program, docs, consume);
             }
             Process::Do {
                 span,
@@ -520,18 +521,18 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
                 command,
                 ..
             } => {
-                consume(name.span(), NameWithType::named(name, typ.clone()));
+                consume(name.span(), HoverInfo::named(name, typ.clone()));
                 if name == &LocalName::result() {
                     consume(
                         span.clone(),
-                        NameWithType::unnamed(typ.clone().dual(Span::None)),
+                        HoverInfo::unnamed(typ.clone().dual(Span::None)),
                     );
                 } else if name == &LocalName::object() {
-                    consume(span.clone(), NameWithType::unnamed(typ.clone()));
+                    consume(span.clone(), HoverInfo::unnamed(typ.clone()));
                 } else {
-                    consume(span.clone(), NameWithType::named(name, typ.clone()));
+                    consume(span.clone(), HoverInfo::named(name, typ.clone()));
                 }
-                command.types_at_spans(program, consume);
+                command.types_at_spans(program, docs, consume);
             }
             Process::Poll {
                 clients,
@@ -542,23 +543,23 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
                 ..
             } => {
                 for client in clients {
-                    client.types_at_spans(program, consume);
+                    client.types_at_spans(program, docs, consume);
                 }
-                consume(name.span(), NameWithType::named(name, name_typ.clone()));
-                then.types_at_spans(program, consume);
-                else_.types_at_spans(program, consume);
+                consume(name.span(), HoverInfo::named(name, name_typ.clone()));
+                then.types_at_spans(program, docs, consume);
+                else_.types_at_spans(program, docs, consume);
             }
             Process::Submit { values, .. } => {
                 for value in values {
-                    value.types_at_spans(program, consume);
+                    value.types_at_spans(program, docs, consume);
                 }
             }
             Process::Telltypes(_, process) => {
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Process::Block(_, _, body, process) => {
-                body.types_at_spans(program, consume);
-                process.types_at_spans(program, consume);
+                body.types_at_spans(program, docs, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Process::Goto(_, _, _) => {}
             Process::Unreachable(_) => {}
@@ -607,47 +608,48 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Command<Type<S>, S> {
     pub fn types_at_spans(
         &self,
         program: &CheckedModule<S>,
-        consume: &mut impl FnMut(Span, NameWithType<S>),
+        docs: &Docs<S>,
+        consume: &mut impl FnMut(Span, HoverInfo<S>),
     ) {
         match self {
             Self::Link(expression) => {
-                expression.types_at_spans(program, consume);
+                expression.types_at_spans(program, docs, consume);
             }
             Self::Send(argument, process) => {
-                argument.types_at_spans(program, consume);
-                process.types_at_spans(program, consume);
+                argument.types_at_spans(program, docs, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Self::Receive(param, annotation, param_type, process, _) => {
-                consume(param.span(), NameWithType::named(param, param_type.clone()));
+                consume(param.span(), HoverInfo::named(param, param_type.clone()));
                 if let Some(annotation) = annotation {
-                    annotation.types_at_spans(&program.type_defs, consume);
+                    annotation.types_at_spans(&program.type_defs, docs, consume);
                 }
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Self::Signal(_, process) => {
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Self::Case(_, branches, else_process) => {
                 for process in branches {
-                    process.types_at_spans(program, consume);
+                    process.types_at_spans(program, docs, consume);
                 }
                 if let Some(process) = else_process {
-                    process.types_at_spans(program, consume);
+                    process.types_at_spans(program, docs, consume);
                 }
             }
             Self::Break => {}
             Self::Continue(process) => {
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Self::Begin { body, .. } => {
-                body.types_at_spans(program, consume);
+                body.types_at_spans(program, docs, consume);
             }
             Self::Loop(_, _, _) => {}
             Self::SendType(_, process) => {
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Self::ReceiveType(_, process) => {
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
         }
     }
@@ -747,29 +749,34 @@ impl<S: Clone> Expression<(), S> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NameWithType<S> {
+pub struct HoverInfo<S> {
     pub name: Option<String>,
     pub global_name: Option<GlobalName<S>>,
     pub typ: Type<S>,
+    pub doc: Option<DocComment>,
     pub def_span: Span,
     pub decl_span: Span,
 }
 
-impl<S> NameWithType<S> {
+pub type NameWithType<S> = HoverInfo<S>;
+
+impl<S> HoverInfo<S> {
     pub fn new(name: Option<String>, typ: Type<S>) -> Self {
-        NameWithType {
+        HoverInfo {
             name,
             global_name: None,
             typ,
+            doc: None,
             def_span: Span::None,
             decl_span: Span::None,
         }
     }
     pub fn global(name: GlobalName<S>, typ: Type<S>) -> Self {
-        NameWithType {
+        HoverInfo {
             name: Some(name.primary.clone()),
             global_name: Some(name),
             typ,
+            doc: None,
             def_span: Span::None,
             decl_span: Span::None,
         }
@@ -780,13 +787,19 @@ impl<S> NameWithType<S> {
     pub fn unnamed(typ: Type<S>) -> Self {
         Self::new(None, typ)
     }
+
+    pub fn with_doc(mut self, doc: Option<DocComment>) -> Self {
+        self.doc = doc;
+        self
+    }
 }
 
 impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S> {
     pub fn types_at_spans(
         &self,
         program: &CheckedModule<S>,
-        consume: &mut impl FnMut(Span, NameWithType<S>),
+        docs: &Docs<S>,
+        consume: &mut impl FnMut(Span, HoverInfo<S>),
     ) {
         match self {
             Self::Global(_, name, typ) => {
@@ -798,21 +811,22 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S>
                     .unwrap_or_else(|| def_span.clone());
                 consume(
                     name.span(),
-                    NameWithType {
+                    HoverInfo {
                         name: Some(name.to_string()),
                         global_name: Some(name.clone()),
                         typ: typ.clone(),
+                        doc: docs.declaration_doc(name).cloned(),
                         def_span,
                         decl_span,
                     },
                 );
             }
             Self::Variable(_, name, typ, _usage) => {
-                consume(name.span(), NameWithType::named(name, typ.clone()));
+                consume(name.span(), HoverInfo::named(name, typ.clone()));
             }
             Self::Box(span, _, expression, typ) => {
-                consume(span.clone(), NameWithType::unnamed(typ.clone()));
-                expression.types_at_spans(program, consume);
+                consume(span.clone(), HoverInfo::unnamed(typ.clone()));
+                expression.types_at_spans(program, docs, consume);
             }
             Self::Chan {
                 chan_name,
@@ -823,12 +837,12 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Expression<Type<S>, S>
             } => {
                 consume(
                     chan_name.span(),
-                    NameWithType::named(chan_name, chan_type.clone()),
+                    HoverInfo::named(chan_name, chan_type.clone()),
                 );
                 if let Some(chan_annotation) = chan_annotation {
-                    chan_annotation.types_at_spans(&program.type_defs, consume);
+                    chan_annotation.types_at_spans(&program.type_defs, docs, consume);
                 }
-                process.types_at_spans(program, consume);
+                process.types_at_spans(program, docs, consume);
             }
             Self::Primitive(_, _, _) => {}
             Self::External(_, _) => {}

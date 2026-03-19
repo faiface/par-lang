@@ -6,7 +6,7 @@ use crate::frontend_impl::language::{
 use crate::frontend_impl::parse::SyntaxError;
 use crate::frontend_impl::process;
 use crate::frontend_impl::program::{
-    CheckedModule, DocComment, Docs, ImportDecl, ImportPath, Module, SourceFile, TypeOnHover,
+    CheckedModule, DocComment, Docs, HoverIndex, ImportDecl, ImportPath, Module, SourceFile,
 };
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeError};
 use crate::location::{FileName, Span};
@@ -508,7 +508,7 @@ pub struct CheckedWorkspace {
     root_packages: Vec<PackageId>,
     file_scopes: HashMap<FileName, FileImportScope<Universal>>,
     pub sources: HashMap<FileName, Arc<str>>,
-    type_on_hover: TypeOnHover<Universal>,
+    hover_index: HoverIndex<Universal>,
 }
 
 impl CheckedWorkspace {
@@ -520,7 +520,7 @@ impl CheckedWorkspace {
         file_scopes: HashMap<FileName, FileImportScope<Universal>>,
         sources: HashMap<FileName, Arc<str>>,
     ) -> Self {
-        let type_on_hover = TypeOnHover::new(&checked);
+        let hover_index = HoverIndex::new(&checked, &docs);
         Self {
             checked,
             docs,
@@ -528,7 +528,7 @@ impl CheckedWorkspace {
             root_packages,
             file_scopes,
             sources,
-            type_on_hover,
+            hover_index,
         }
     }
 
@@ -574,8 +574,12 @@ impl CheckedWorkspace {
         self.docs.declaration_doc(name)
     }
 
-    pub fn type_on_hover(&self) -> &TypeOnHover<Universal> {
-        &self.type_on_hover
+    pub fn hover_index(&self) -> &HoverIndex<Universal> {
+        &self.hover_index
+    }
+
+    pub fn type_on_hover(&self) -> &HoverIndex<Universal> {
+        self.hover_index()
     }
 
     pub fn hover_at(
@@ -583,8 +587,8 @@ impl CheckedWorkspace {
         file: &FileName,
         row: u32,
         column: u32,
-    ) -> Option<process::NameWithType<Universal>> {
-        self.type_on_hover.query(file, row, column)
+    ) -> Option<process::HoverInfo<Universal>> {
+        self.hover_index.query(file, row, column)
     }
 
     pub fn compile_runtime(
@@ -602,10 +606,10 @@ impl CheckedWorkspace {
         render_type_in_scope(self.import_scope(file), typ)
     }
 
-    pub fn render_hover_in_file(
+    pub fn render_hover_signature_in_file(
         &self,
         file: &FileName,
-        hover: &process::NameWithType<Universal>,
+        hover: &process::HoverInfo<Universal>,
     ) -> String {
         let mut output = String::new();
         if let Some(global_name) = hover.global_name.as_ref() {
@@ -616,6 +620,27 @@ impl CheckedWorkspace {
         }
         let _ = write_type_in_file(&mut output, self.import_scope(file), &hover.typ);
         output
+    }
+
+    pub fn render_hover_in_file(
+        &self,
+        file: &FileName,
+        hover: &process::HoverInfo<Universal>,
+    ) -> String {
+        self.render_hover_signature_in_file(file, hover)
+    }
+
+    pub fn render_hover_markdown_in_file(
+        &self,
+        file: &FileName,
+        hover: &process::HoverInfo<Universal>,
+    ) -> String {
+        let signature = self.render_hover_signature_in_file(file, hover);
+        if let Some(doc) = hover.doc.as_ref() {
+            format!("```par\n{signature}\n```\n\n{}", doc.markdown)
+        } else {
+            format!("```par\n{signature}\n```")
+        }
     }
 }
 
@@ -1712,6 +1737,34 @@ fn write_indentation(f: &mut impl Write, indent: usize) -> fmt::Result {
 mod tests {
     use super::*;
 
+    fn checked_workspace_from_source(source: &str) -> CheckedWorkspace {
+        let parsed = parse_loaded_files(vec![LoadedPackageFile {
+            absolute_path: PathBuf::from("Main.par"),
+            relative_path_from_src: PathBuf::from("Main.par"),
+            source: source.to_string(),
+        }])
+        .unwrap();
+        WorkspaceInput::new()
+            .with_root_package(WorkspacePackage::from_parsed(PackageId::Local, parsed))
+            .build()
+            .unwrap()
+            .type_check()
+            .unwrap()
+    }
+
+    fn row_and_column(source: &str, index: usize) -> (u32, u32) {
+        let (mut row, mut column) = (0, 0);
+        for ch in source[..index].chars() {
+            if ch == '\n' {
+                row += 1;
+                column = 0;
+            } else {
+                column += 1;
+            }
+        }
+        (row, column)
+    }
+
     #[test]
     fn doc_comments_survive_into_checked_workspace_docs() {
         let source = "\
@@ -1724,17 +1777,7 @@ type Item = !
 dec Run : !
 def Run = external
 ";
-        let parsed = parse_loaded_files(vec![LoadedPackageFile {
-            absolute_path: PathBuf::from("Main.par"),
-            relative_path_from_src: PathBuf::from("Main.par"),
-            source: source.to_string(),
-        }])
-        .unwrap();
-        let workspace = WorkspaceInput::new()
-            .with_root_package(WorkspacePackage::from_parsed(PackageId::Local, parsed))
-            .build()
-            .unwrap();
-        let checked = workspace.type_check().unwrap();
+        let checked = checked_workspace_from_source(source);
 
         let type_name = checked
             .checked_module()
@@ -1759,6 +1802,49 @@ def Run = external
                 .declaration_doc(declaration_name)
                 .map(|doc| doc.markdown.as_str()),
             Some("Run docs")
+        );
+    }
+
+    #[test]
+    fn hover_info_includes_doc_comments_for_global_identifiers() {
+        let source = "\
+module Main
+
+/*Type docs*/
+type Item = !
+
+// Run docs
+dec Run : Item
+def Run = external
+
+dec Main : Item
+def Main = Run
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.sources.keys().next().unwrap();
+
+        let item_index = source.match_indices("Item").nth(1).unwrap().0;
+        let (item_row, item_column) = row_and_column(source, item_index);
+        let item_hover = checked.hover_at(file, item_row, item_column).unwrap();
+        assert_eq!(
+            item_hover.doc.as_ref().map(|doc| doc.markdown.as_str()),
+            Some("Type docs")
+        );
+        assert!(item_hover.global_name.is_none());
+
+        let run_index = source.match_indices("Run").last().unwrap().0;
+        let (run_row, run_column) = row_and_column(source, run_index);
+        let run_hover = checked.hover_at(file, run_row, run_column).unwrap();
+        assert_eq!(
+            run_hover.doc.as_ref().map(|doc| doc.markdown.as_str()),
+            Some("Run docs")
+        );
+        assert_eq!(
+            run_hover
+                .global_name
+                .as_ref()
+                .map(|name| name.primary.as_str()),
+            Some("Run")
         );
     }
 }

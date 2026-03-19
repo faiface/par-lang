@@ -8,7 +8,7 @@ use crate::location::{FileName, Point, Span, Spanning};
 use super::{
     language::{CompileError, GlobalName, LocalName, Unresolved},
     parse::SyntaxError,
-    process::{self, NameWithType},
+    process::{self, HoverInfo},
     types::{Context, Type, TypeDefs, TypeError},
 };
 
@@ -334,13 +334,13 @@ impl<Expr, S: Clone + Eq + std::hash::Hash> Module<Expr, S> {
 }
 
 #[derive(Clone)]
-pub struct TypeOnHover<S> {
+pub struct HoverIndex<S> {
     files: HashMap<FileName, FileHovers<S>>,
 }
 
 #[derive(Clone)]
 struct FileHovers<S> {
-    pairs: Vec<((Point, Point), NameWithType<S>)>,
+    pairs: Vec<((Point, Point), HoverInfo<S>)>,
 }
 
 impl<S> Default for FileHovers<S> {
@@ -349,8 +349,10 @@ impl<S> Default for FileHovers<S> {
     }
 }
 
-impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
-    pub fn new(program: &CheckedModule<S>) -> Self {
+pub type TypeOnHover<S> = HoverIndex<S>;
+
+impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
+    pub fn new(program: &CheckedModule<S>, docs: &Docs<S>) -> Self {
         let mut files = HashMap::<_, FileHovers<S>>::new();
 
         for (name, (span, _, typ)) in program.type_defs.globals.iter() {
@@ -358,15 +360,16 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
             let file_hovers = files.entry(file).or_default();
             file_hovers.push(
                 name.span(),
-                NameWithType {
+                HoverInfo {
                     name: Some(name.to_string()),
                     global_name: Some(name.clone()),
                     typ: typ.clone(),
+                    doc: docs.type_doc(name).cloned(),
                     def_span: span.clone(),
                     decl_span: span.clone(),
                 },
             );
-            typ.types_at_spans(&program.type_defs, &mut |span, name_info| {
+            typ.types_at_spans(&program.type_defs, docs, &mut |span, name_info| {
                 file_hovers.push(span, name_info)
             });
         }
@@ -381,17 +384,18 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
-                NameWithType {
+                HoverInfo {
                     name: Some(name.to_string()),
                     global_name: Some(name.clone()),
                     typ: declaration.typ.clone(),
+                    doc: docs.declaration_doc(name).cloned(),
                     def_span,
                     decl_span: declaration.span.clone(),
                 },
             );
             declaration
                 .typ
-                .types_at_spans(&program.type_defs, &mut |span, name_info| {
+                .types_at_spans(&program.type_defs, docs, &mut |span, name_info| {
                     file_hovers.push(span, name_info)
                 });
         }
@@ -406,16 +410,17 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
                 .unwrap_or_default();
             file_hovers.push(
                 name.span(),
-                NameWithType {
+                HoverInfo {
                     name: Some(name.to_string()),
                     global_name: Some(name.clone()),
                     typ: typ.clone(),
+                    doc: docs.declaration_doc(name).cloned(),
                     def_span: definition.span.clone(),
                     decl_span,
                 },
             );
             if let DefinitionBody::Par(expr) = &definition.body {
-                expr.types_at_spans(program, &mut |span, name_info| {
+                expr.types_at_spans(program, docs, &mut |span, name_info| {
                     file_hovers.push(span, name_info)
                 });
             }
@@ -428,13 +433,13 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeOnHover<S> {
         Self { files }
     }
 
-    pub fn query(&self, file: &FileName, row: u32, column: u32) -> Option<NameWithType<S>> {
+    pub fn query(&self, file: &FileName, row: u32, column: u32) -> Option<HoverInfo<S>> {
         self.files.get(file)?.query(row, column)
     }
 }
 
 impl<S: Clone> FileHovers<S> {
-    fn push(&mut self, span: Span, name_info: NameWithType<S>) {
+    fn push(&mut self, span: Span, name_info: HoverInfo<S>) {
         if let Some(points) = span.points() {
             self.pairs.push((points, name_info))
         }
@@ -443,7 +448,7 @@ impl<S: Clone> FileHovers<S> {
         self.pairs.sort_by_key(|((start, _), _)| start.offset);
         self.pairs.dedup_by_key(|((start, _), _)| start.offset);
     }
-    fn query(&self, row: u32, column: u32) -> Option<NameWithType<S>> {
+    fn query(&self, row: u32, column: u32) -> Option<HoverInfo<S>> {
         let sorted_pairs = &self.pairs;
         if sorted_pairs.is_empty() {
             return None;

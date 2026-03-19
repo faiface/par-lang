@@ -581,10 +581,14 @@ impl eframe::App for Playground {
                             if let Some(name_info) =
                                 checked.hover_at(&hover_file_name, hover_pos.0, hover_pos.1)
                             {
-                                let buf =
-                                    checked.render_hover_in_file(&hover_file_name, &name_info);
+                                let signature = checked
+                                    .render_hover_signature_in_file(&hover_file_name, &name_info);
                                 editor.response.on_hover_ui_at_pointer(|ui| {
-                                    ui.label(RichText::new(buf).code());
+                                    ui.label(RichText::new(signature).code());
+                                    if let Some(doc) = name_info.doc.as_ref() {
+                                        ui.separator();
+                                        ui.label(doc.markdown.as_str());
+                                    }
                                 });
                             }
                         }

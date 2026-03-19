@@ -1,5 +1,6 @@
 use crate::frontend_impl::language::GlobalName;
-use crate::frontend_impl::process::NameWithType;
+use crate::frontend_impl::process::HoverInfo;
+use crate::frontend_impl::program::Docs;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
 use crate::location::Span;
 use std::fmt;
@@ -420,7 +421,8 @@ where
     pub fn types_at_spans(
         &self,
         type_defs: &TypeDefs<S>,
-        consume: &mut impl FnMut(Span, NameWithType<S>),
+        docs: &Docs<S>,
+        consume: &mut impl FnMut(Span, HoverInfo<S>),
     ) where
         S: Eq + std::hash::Hash,
     {
@@ -435,51 +437,54 @@ where
                 .unwrap_or_else(|_| (&Span::None, self.clone()));
                 consume(
                     span.clone(),
-                    NameWithType {
+                    HoverInfo {
                         name: None,
                         global_name: None,
                         typ,
+                        doc: docs.type_doc(name).cloned(),
                         def_span: def_span.clone(),
                         decl_span: def_span.clone(),
                     },
                 );
                 for arg in args {
-                    arg.types_at_spans(type_defs, consume);
+                    arg.types_at_spans(type_defs, docs, consume);
                 }
             }
-            Self::Box(_, body) | Self::DualBox(_, body) => body.types_at_spans(type_defs, consume),
+            Self::Box(_, body) | Self::DualBox(_, body) => {
+                body.types_at_spans(type_defs, docs, consume)
+            }
             Self::Pair(_, t, u, _) => {
-                t.types_at_spans(type_defs, consume);
-                u.types_at_spans(type_defs, consume);
+                t.types_at_spans(type_defs, docs, consume);
+                u.types_at_spans(type_defs, docs, consume);
             }
             Self::Function(_, t, u, _) => {
-                t.types_at_spans(type_defs, consume);
-                u.types_at_spans(type_defs, consume);
+                t.types_at_spans(type_defs, docs, consume);
+                u.types_at_spans(type_defs, docs, consume);
             }
             Self::Either(_, branches) => {
                 for (_, t) in branches.iter() {
-                    t.types_at_spans(type_defs, consume);
+                    t.types_at_spans(type_defs, docs, consume);
                 }
             }
             Self::Choice(_, branches) => {
                 for (_, t) in branches.iter() {
-                    t.types_at_spans(type_defs, consume);
+                    t.types_at_spans(type_defs, docs, consume);
                 }
             }
             Self::Break(_) => {}
             Self::Continue(_) => {}
             Self::Recursive { body, .. } => {
-                body.types_at_spans(type_defs, consume);
+                body.types_at_spans(type_defs, docs, consume);
             }
             Self::Iterative { body, .. } => {
-                body.types_at_spans(type_defs, consume);
+                body.types_at_spans(type_defs, docs, consume);
             }
             Self::Self_(_, _) | Self::DualSelf(_, _) => {}
             Self::Exists(_, _, body) => {
-                body.types_at_spans(type_defs, consume);
+                body.types_at_spans(type_defs, docs, consume);
             }
             Self::Forall(_, _, body) => {
-                body.types_at_spans(type_defs, consume);
+                body.types_at_spans(type_defs, docs, consume);
             }
             Type::Hole(_, _, _) => {}
             Type::DualHole(_, _, _) => {}

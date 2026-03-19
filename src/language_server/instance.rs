@@ -51,19 +51,22 @@ impl Instance {
 
         let pos = params.text_document_position_params.position;
 
-        let payload = match self.checked.as_ref() {
+        let contents = match self.checked.as_ref() {
             Some(checked) => match checked.hover_at(&self.file, pos.line, pos.character) {
-                Some(name_info) => lsp::MarkedString::LanguageString(lsp::LanguageString {
-                    language: "par".to_owned(),
-                    value: checked.render_hover_in_file(&self.file, &name_info),
+                Some(name_info) => lsp::HoverContents::Markup(lsp::MarkupContent {
+                    kind: lsp::MarkupKind::Markdown,
+                    value: checked.render_hover_markdown_in_file(&self.file, &name_info),
                 }),
                 _ => return None,
             },
-            None => lsp::MarkedString::String("Not compiled".to_string()),
+            None => lsp::HoverContents::Markup(lsp::MarkupContent {
+                kind: lsp::MarkupKind::PlainText,
+                value: "Not compiled".to_string(),
+            }),
         };
 
         let hover = lsp::Hover {
-            contents: lsp::HoverContents::Scalar(payload),
+            contents,
             range: None,
         };
         Some(hover)
