@@ -1,3 +1,4 @@
+use crate::frontend_impl::language::LocalName;
 use crate::frontend_impl::types::assignability::SubtypeResult::{Compatible, Cycle, Incompatible};
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use crate::location::Span;
@@ -201,164 +202,222 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
 
         let pair = (type1, type2);
 
-        if let Some(ind) = ctx.visited.get_index_of(&pair) {
-            if debug_enabled() {
-                debug_log_stack(&ctx);
-            }
-            let min_left = ctx
-                .visited
-                .iter()
-                .skip(ind)
-                .map(|(t1, _t2)| t1)
-                .filter(|t1| t1.is_fixpoint())
-                .filter_map(|t1| t1.size(ctx.type_defs).ok().map(|size| (size, t1)))
-                .min_by_key(|(size, _)| *size)
-                .map(|(_, typ)| typ)
-                .expect("minimum should exist");
-            let min_right = ctx
-                .visited
-                .iter()
-                .skip(ind)
-                .map(|(_t1, t2)| t2)
-                .filter(|t2| t2.is_fixpoint())
-                .filter_map(|t2| t2.size(ctx.type_defs).ok().map(|size| (size, t2)))
-                .min_by_key(|(size, _)| *size)
-                .map(|(_, typ)| typ)
-                .expect("minimum should exist");
-            if !matches!(min_left, Type::Recursive { .. })
-                && !matches!(min_right, Type::Iterative { .. })
-            {
-                return Ok(Incompatible);
-            }
-            return Ok(Cycle {
-                min_left: min_left.clone(),
-                size_left: min_left.size(ctx.type_defs)?,
-                min_right: min_right.clone(),
-                size_right: min_right.size(ctx.type_defs)?,
-                ttl: ctx.visited.len(),
-            });
+        if let Some(result) = Type::is_subtype_cycle(&pair, &ctx)? {
+            return Ok(result);
         }
 
         ctx.visited.insert(pair.clone());
         let (type1, type2) = pair;
 
-        if let Type::Iterative { asc: asc1, .. } = &type1 {
+        if let Some(result) = Type::is_subtype_fixpoint_guard(&type1, &type2) {
+            return Ok(result);
+        }
+
+        if let Some(result) = Type::is_subtype_expand_fixpoints(&type1, &type2, &ctx)? {
+            return Ok(result);
+        }
+
+        Ok(Type::is_subtype_structural(type1, type2, ctx)?.ttl_dec())
+    }
+
+    fn is_subtype_cycle(
+        pair: &(Type<S>, Type<S>),
+        ctx: &SubtypeContext<S>,
+    ) -> Result<Option<SubtypeResult<S>>, TypeError<S>> {
+        let Some(ind) = ctx.visited.get_index_of(pair) else {
+            return Ok(None);
+        };
+        if debug_enabled() {
+            debug_log_stack(ctx);
+        }
+        let min_left = ctx
+            .visited
+            .iter()
+            .skip(ind)
+            .map(|(t1, _t2)| t1)
+            .filter(|t1| t1.is_fixpoint())
+            .filter_map(|t1| t1.size(ctx.type_defs).ok().map(|size| (size, t1)))
+            .min_by_key(|(size, _)| *size)
+            .map(|(_, typ)| typ)
+            .expect("minimum should exist");
+        let min_right = ctx
+            .visited
+            .iter()
+            .skip(ind)
+            .map(|(_t1, t2)| t2)
+            .filter(|t2| t2.is_fixpoint())
+            .filter_map(|t2| t2.size(ctx.type_defs).ok().map(|size| (size, t2)))
+            .min_by_key(|(size, _)| *size)
+            .map(|(_, typ)| typ)
+            .expect("minimum should exist");
+        if !matches!(min_left, Type::Recursive { .. })
+            && !matches!(min_right, Type::Iterative { .. })
+        {
+            return Ok(Some(Incompatible));
+        }
+        Ok(Some(Cycle {
+            min_left: min_left.clone(),
+            size_left: min_left.size(ctx.type_defs)?,
+            min_right: min_right.clone(),
+            size_right: min_right.size(ctx.type_defs)?,
+            ttl: ctx.visited.len(),
+        }))
+    }
+
+    fn is_subtype_fixpoint_guard(type1: &Type<S>, type2: &Type<S>) -> Option<SubtypeResult<S>> {
+        if let Type::Iterative { asc: asc1, .. } = type1 {
             if !asc1.is_empty() {
-                return if let Self::Recursive { asc: asc2, .. } = &type2 {
+                return Some(if let Self::Recursive { asc: asc2, .. } = type2 {
                     if asc1.is_subset(asc2) {
-                        Ok(Compatible)
+                        Compatible
                     } else {
-                        Ok(Incompatible)
+                        Incompatible
                     }
                 } else {
-                    Ok(Incompatible)
-                };
+                    Incompatible
+                });
             }
         }
 
-        if let Type::Recursive { asc: asc2, .. } = &type2 {
+        if let Type::Recursive { asc: asc2, .. } = type2 {
             if !asc2.is_empty() {
-                return if let Self::Recursive { asc: asc1, .. } = &type1 {
+                return Some(if let Self::Recursive { asc: asc1, .. } = type1 {
                     if asc2.is_subset(asc1) {
-                        Ok(Compatible)
+                        Compatible
                     } else {
-                        Ok(Incompatible)
+                        Incompatible
                     }
                 } else {
-                    Ok(Incompatible)
-                };
+                    Incompatible
+                });
             }
         }
 
-        if let Type::Recursive { .. } | Type::Iterative { .. } = &type1 {
-            let type1 = Type::expand_fixpoint_unfounded(&type1)?;
-            return Ok(Type::is_subtype_helper(type1, type2.clone(), ctx.clone())?.ttl_dec());
+        None
+    }
+
+    fn is_subtype_expand_fixpoints(
+        type1: &Type<S>,
+        type2: &Type<S>,
+        ctx: &SubtypeContext<S>,
+    ) -> Result<Option<SubtypeResult<S>>, TypeError<S>> {
+        if let Type::Recursive { .. } | Type::Iterative { .. } = type1 {
+            let type1 = Type::expand_fixpoint_unfounded(type1)?;
+            return Ok(Some(
+                Type::is_subtype_helper(type1, type2.clone(), ctx.clone())?.ttl_dec(),
+            ));
         }
 
-        if let Type::Recursive { .. } | Type::Iterative { .. } = &type2 {
-            let type2 = Type::expand_fixpoint_unfounded(&type2)?;
-            return Ok(Type::is_subtype_helper(type1.clone(), type2, ctx.clone())?.ttl_dec());
+        if let Type::Recursive { .. } | Type::Iterative { .. } = type2 {
+            let type2 = Type::expand_fixpoint_unfounded(type2)?;
+            return Ok(Some(
+                Type::is_subtype_helper(type1.clone(), type2, ctx.clone())?.ttl_dec(),
+            ));
         }
 
-        let res: SubtypeResult<S> = match (type1, type2) {
+        Ok(None)
+    }
+
+    fn is_subtype_structural(
+        type1: Self,
+        type2: Self,
+        ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
+        match (type1, type2) {
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => {
-                if Self::is_primitive_subtype(&p1, &p2) {
+                Ok(if Self::is_primitive_subtype(&p1, &p2) {
                     Compatible
                 } else {
                     Incompatible
-                }
+                })
             }
             (Self::DualPrimitive(_, p1), Self::DualPrimitive(_, p2)) => {
-                if Self::is_primitive_subtype(&p2, &p1) {
+                Ok(if Self::is_primitive_subtype(&p2, &p1) {
                     Compatible
                 } else {
                     Incompatible
-                }
+                })
             }
 
             (Self::Hole(_, name1, _hole1), Self::Hole(_, name2, _hole2)) if name1 == name2 => {
-                Compatible
+                Ok(Compatible)
             }
 
             (Self::DualHole(_, name1, _hole1), Self::DualHole(_, name2, _hole2))
                 if name1 == name2 =>
             {
-                Compatible
+                Ok(Compatible)
             }
 
             (Self::Hole(_, _name, hole), t2) => {
                 hole.add_upper_bound(t2.clone());
-                Compatible
+                Ok(Compatible)
             }
 
             (t1, Self::Hole(_, _name, hole)) => {
                 hole.add_lower_bound(t1.clone());
-                Compatible
+                Ok(Compatible)
             }
 
             (Self::DualHole(_, _name, hole), t2) => {
                 hole.add_lower_bound(t2.clone().dual(Span::None));
-                Compatible
+                Ok(Compatible)
             }
 
             (t1, Self::DualHole(_, _name, hole)) => {
                 hole.add_upper_bound(t1.clone().dual(Span::None));
+                Ok(Compatible)
+            }
+
+            (Self::Var(_, name1), Self::Var(_, name2)) => Ok(if name1 == name2 {
                 Compatible
-            }
+            } else {
+                Incompatible
+            }),
+            (Self::DualVar(_, name1), Self::DualVar(_, name2)) => Ok(if name1 == name2 {
+                Compatible
+            } else {
+                Incompatible
+            }),
 
-            (Self::Var(_, name1), Self::Var(_, name2)) => {
-                if name1 == name2 {
-                    Compatible
-                } else {
-                    Incompatible
-                }
-            }
-            (Self::DualVar(_, name1), Self::DualVar(_, name2)) => {
-                if name1 == name2 {
-                    Compatible
-                } else {
-                    Incompatible
-                }
-            }
+            (t1, t2) => Type::is_subtype_box(t1, t2, ctx),
+        }
+    }
 
+    fn is_subtype_box(
+        type1: Self,
+        type2: Self,
+        ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
+        match (type1, type2) {
             (t1, Self::Box(_, t2)) if t1.is_positive(ctx.type_defs)? => {
-                Type::is_subtype_helper(t1, *t2, ctx)?
+                Type::is_subtype_helper(t1, *t2, ctx)
             }
             (Self::DualBox(_, t1), t2) if t1.is_positive(ctx.type_defs)? => {
-                Type::is_subtype_helper(t1.clone().dual(Span::None), t2, ctx)?
+                Type::is_subtype_helper(t1.clone().dual(Span::None), t2, ctx)
             }
-            (Self::Box(_, t1), Self::Box(_, t2)) => Type::is_subtype_helper(*t1, *t2, ctx)?,
-            (Self::Box(_, t1), t2) => Type::is_subtype_helper(*t1, t2, ctx)?,
+            (Self::Box(_, t1), Self::Box(_, t2)) => Type::is_subtype_helper(*t1, *t2, ctx),
+            (Self::Box(_, t1), t2) => Type::is_subtype_helper(*t1, t2, ctx),
             (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
                 let t1 = t1.clone().dual(Span::None);
                 let t2 = t2.clone().dual(Span::None);
-                Type::is_subtype_helper(t1, t2, ctx)?
+                Type::is_subtype_helper(t1, t2, ctx)
             }
             (t1, Self::DualBox(_, t2)) => {
                 let t2 = t2.clone().dual(Span::None);
-                Type::is_subtype_helper(t1, t2, ctx)?
+                Type::is_subtype_helper(t1, t2, ctx)
             }
 
+            (t1, t2) => Type::is_subtype_pair_like(t1, t2, ctx),
+        }
+    }
+
+    fn is_subtype_pair_like(
+        type1: Self,
+        type2: Self,
+        ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
+        match (type1, type2) {
             (Self::Pair(_, t1, u1, vars1), Self::Pair(_, t2, u2, vars2)) => {
                 if vars1.len() != vars2.len() {
                     return Ok(Incompatible);
@@ -375,8 +434,8 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                         &Type::Var(Span::None, var1.clone()),
                     )]))?;
                 }
-                Type::is_subtype_helper(*t1, t2, ctx.clone())?
-                    & Type::is_subtype_helper(*u1, u2, ctx)?
+                Ok(Type::is_subtype_helper(*t1, t2, ctx.clone())?
+                    & Type::is_subtype_helper(*u1, u2, ctx)?)
             }
             (Self::Function(_, t1, u1, vars1), Self::Function(_, t2, u2, vars2)) => {
                 let t1 = t1.clone().dual(Span::None);
@@ -396,21 +455,31 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                         &Type::Var(Span::None, var1.clone()),
                     )]))?;
                 }
-                Type::is_subtype_helper(t1, t2, ctx.clone())?
-                    & Type::is_subtype_helper(*u1, u2, ctx)?
+                Ok(Type::is_subtype_helper(t1, t2, ctx.clone())?
+                    & Type::is_subtype_helper(*u1, u2, ctx)?)
             }
-            (Self::Either(_, branches1), _) if branches1.is_empty() => Compatible,
+            (t1, t2) => Type::is_subtype_branching(t1, t2, ctx),
+        }
+    }
+
+    fn is_subtype_branching(
+        type1: Self,
+        type2: Self,
+        ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
+        match (type1, type2) {
+            (Self::Either(_, branches1), _) if branches1.is_empty() => Ok(Compatible),
             (Self::Either(_, branches1), Self::Either(_, branches2)) => {
                 let mut res = Compatible;
                 for (branch, t1) in branches1 {
                     let Some(t2) = branches2.get(&branch) else {
                         return Ok(Incompatible);
                     };
-                    res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?
+                    res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?;
                 }
-                res
+                Ok(res)
             }
-            (_, Self::Choice(_, branches2)) if branches2.is_empty() => Compatible,
+            (_, Self::Choice(_, branches2)) if branches2.is_empty() => Ok(Compatible),
             (Self::Choice(_, branches1), Self::Choice(_, branches2)) => {
                 let mut res = Compatible;
                 for (branch, t2) in branches2 {
@@ -419,30 +488,39 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                     };
                     res = res & Type::is_subtype_helper(t1.clone(), t2.clone(), ctx.clone())?;
                 }
-                res
+                Ok(res)
             }
-            (Self::Break(_), Self::Break(_)) => Compatible,
-            (Self::Continue(_), Self::Continue(_)) => Compatible,
+            (Self::Break(_), Self::Break(_)) => Ok(Compatible),
+            (Self::Continue(_), Self::Continue(_)) => Ok(Compatible),
 
             (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
             | (Self::Forall(loc, name1, body1), Self::Forall(_, name2, body2)) => {
-                let body2 = body2.clone().substitute(BTreeMap::from([(
-                    &name2,
-                    &Type::Var(loc.clone(), name1.clone()),
-                )]))?;
-                // type_defs.vars.insert(name1.clone());
-                Type::is_subtype_helper(*body1, body2, ctx)?
+                Type::is_subtype_quantified(loc, name1, body1, name2, body2, ctx)
             }
 
-            _ => {
+            (_t1, _t2) => {
                 if debug_enabled() {
                     debug_log("fallback => false");
                     debug_log_stack(&ctx);
                 }
-                Incompatible
+                Ok(Incompatible)
             }
-        };
-        Ok(res.ttl_dec())
+        }
+    }
+
+    fn is_subtype_quantified(
+        loc: Span,
+        name1: LocalName,
+        body1: Box<Self>,
+        name2: LocalName,
+        body2: Box<Self>,
+        ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
+        let body2 = body2.substitute(BTreeMap::from([(
+            &name2,
+            &Type::Var(loc.clone(), name1.clone()),
+        )]))?;
+        Type::is_subtype_helper(*body1, body2, ctx)
     }
 }
 

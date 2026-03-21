@@ -227,8 +227,111 @@ pub enum Type<S> {
     DualHole(Span, LocalName, Hole<S>),
 }
 
+fn current_depth_from_children(children: impl IntoIterator<Item = usize>) -> usize {
+    1 + children.into_iter().max().unwrap_or(0)
+}
+
+fn flattened_depth_with_tail(
+    tail_depth: usize,
+    side_children: impl IntoIterator<Item = usize>,
+) -> usize {
+    match side_children.into_iter().max() {
+        Some(side_depth) => tail_depth.max(1 + side_depth),
+        None => tail_depth.max(1),
+    }
+}
+
+fn flattened_depth_from_side_children(children: impl IntoIterator<Item = usize>) -> usize {
+    match children.into_iter().max() {
+        Some(depth) => 1 + depth,
+        None => 1,
+    }
+}
+
+fn flattened_depth_from_branches(children: impl IntoIterator<Item = usize>) -> usize {
+    let mut deepest = 0;
+    let mut second_deepest = 0;
+    let mut saw_any = false;
+
+    for depth in children {
+        saw_any = true;
+        if depth >= deepest {
+            second_deepest = deepest;
+            deepest = depth;
+        } else if depth > second_deepest {
+            second_deepest = depth;
+        }
+    }
+
+    if !saw_any {
+        1
+    } else {
+        deepest.max(1 + second_deepest)
+    }
+}
+
 #[allow(unused)]
 impl<S: Clone> Type<S> {
+    pub fn current_depth(&self) -> usize {
+        match self {
+            Self::Primitive(..)
+            | Self::DualPrimitive(..)
+            | Self::Var(..)
+            | Self::DualVar(..)
+            | Self::Break(..)
+            | Self::Continue(..)
+            | Self::Self_(..)
+            | Self::DualSelf(..)
+            | Self::Hole(..)
+            | Self::DualHole(..) => 1,
+            Self::Name(_, _, args) | Self::DualName(_, _, args) => {
+                current_depth_from_children(args.iter().map(|arg| arg.current_depth()))
+            }
+            Self::Box(_, inner)
+            | Self::DualBox(_, inner)
+            | Self::Exists(_, _, inner)
+            | Self::Forall(_, _, inner) => current_depth_from_children([inner.current_depth()]),
+            Self::Pair(_, left, right, _) | Self::Function(_, left, right, _) => {
+                current_depth_from_children([left.current_depth(), right.current_depth()])
+            }
+            Self::Either(_, branches) | Self::Choice(_, branches) => {
+                current_depth_from_children(branches.values().map(|branch| branch.current_depth()))
+            }
+            Self::Recursive { body, .. } | Self::Iterative { body, .. } => {
+                current_depth_from_children([body.current_depth()])
+            }
+        }
+    }
+
+    pub fn flattened_depth(&self) -> usize {
+        match self {
+            Self::Primitive(..)
+            | Self::DualPrimitive(..)
+            | Self::Var(..)
+            | Self::DualVar(..)
+            | Self::Break(..)
+            | Self::Continue(..)
+            | Self::Self_(..)
+            | Self::DualSelf(..)
+            | Self::Hole(..)
+            | Self::DualHole(..) => 1,
+            Self::Name(_, _, args) | Self::DualName(_, _, args) => {
+                flattened_depth_from_side_children(args.iter().map(|arg| arg.flattened_depth()))
+            }
+            Self::Box(_, inner)
+            | Self::DualBox(_, inner)
+            | Self::Exists(_, _, inner)
+            | Self::Forall(_, _, inner) => inner.flattened_depth(),
+            Self::Pair(_, left, right, _) | Self::Function(_, left, right, _) => {
+                flattened_depth_with_tail(right.flattened_depth(), [left.flattened_depth()])
+            }
+            Self::Either(_, branches) | Self::Choice(_, branches) => flattened_depth_from_branches(
+                branches.values().map(|branch| branch.flattened_depth()),
+            ),
+            Self::Recursive { body, .. } | Self::Iterative { body, .. } => body.flattened_depth(),
+        }
+    }
+
     pub fn nat() -> Self {
         Self::Primitive(Span::None, PrimitiveType::Nat)
     }
