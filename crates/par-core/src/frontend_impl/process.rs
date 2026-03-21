@@ -1186,7 +1186,7 @@ impl<S: Clone> Process<(), S> {
         self,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Process<(), T>, E> {
-        Ok(match self {
+        match self {
             Process::Let {
                 span,
                 name,
@@ -1194,27 +1194,14 @@ impl<S: Clone> Process<(), S> {
                 typ: (),
                 value,
                 then,
-            } => Process::Let {
-                span,
-                name,
-                annotation: annotation.map(|typ| typ.map_global_names(f)).transpose()?,
-                typ: (),
-                value: Arc::new(Arc::unwrap_or_clone(value).map_global_names(f)?),
-                then: Arc::new(Arc::unwrap_or_clone(then).map_global_names(f)?),
-            },
+            } => Self::map_global_names_let(span, name, annotation, value, then, f),
             Process::Do {
                 span,
                 name,
                 usage,
                 typ: (),
                 command,
-            } => Process::Do {
-                span,
-                name,
-                usage,
-                typ: (),
-                command: command.map_global_names(f)?,
-            },
+            } => Self::map_global_names_do(span, name, usage, command, f),
             Process::Poll {
                 span,
                 kind,
@@ -1226,58 +1213,123 @@ impl<S: Clone> Process<(), S> {
                 captures,
                 then,
                 else_,
-            } => Process::Poll {
-                span,
-                kind,
-                driver,
-                point,
-                clients: clients
-                    .into_iter()
-                    .map(|client| {
-                        Arc::unwrap_or_clone(client)
-                            .map_global_names(f)
-                            .map(Arc::new)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-                name,
-                name_typ: (),
-                captures,
-                then: Arc::new(Arc::unwrap_or_clone(then).map_global_names(f)?),
-                else_: Arc::new(Arc::unwrap_or_clone(else_).map_global_names(f)?),
-            },
+            } => Self::map_global_names_poll(
+                span, kind, driver, point, clients, name, captures, then, else_, f,
+            ),
             Process::Submit {
                 span,
                 driver,
                 point,
                 values,
                 captures,
-            } => Process::Submit {
-                span,
-                driver,
-                point,
-                values: values
-                    .into_iter()
-                    .map(|value| {
-                        Arc::unwrap_or_clone(value)
-                            .map_global_names(f)
-                            .map(Arc::new)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-                captures,
-            },
-            Process::Telltypes(span, process) => Process::Telltypes(
-                span,
-                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-            ),
-            Process::Block(span, index, body, then) => Process::Block(
-                span,
-                index,
-                Arc::new(Arc::unwrap_or_clone(body).map_global_names(f)?),
-                Arc::new(Arc::unwrap_or_clone(then).map_global_names(f)?),
-            ),
-            Process::Goto(span, index, captures) => Process::Goto(span, index, captures),
-            Process::Unreachable(span) => Process::Unreachable(span),
+            } => Self::map_global_names_submit(span, driver, point, values, captures, f),
+            Process::Telltypes(span, process) => Self::map_global_names_telltypes(span, process, f),
+            Process::Block(span, index, body, then) => {
+                Self::map_global_names_block(span, index, body, then, f)
+            }
+            Process::Goto(span, index, captures) => Ok(Process::Goto(span, index, captures)),
+            Process::Unreachable(span) => Ok(Process::Unreachable(span)),
+        }
+    }
+
+    fn map_global_names_let<T, E>(
+        span: Span,
+        name: LocalName,
+        annotation: Option<Type<S>>,
+        value: Arc<Expression<(), S>>,
+        then: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(Process::Let {
+            span,
+            name,
+            annotation: annotation.map(|typ| typ.map_global_names(f)).transpose()?,
+            typ: (),
+            value: map_arc_expression(value, f)?,
+            then: map_arc_process(then, f)?,
         })
+    }
+
+    fn map_global_names_do<T, E>(
+        span: Span,
+        name: LocalName,
+        usage: VariableUsage,
+        command: Command<(), S>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(Process::Do {
+            span,
+            name,
+            usage,
+            typ: (),
+            command: command.map_global_names(f)?,
+        })
+    }
+
+    fn map_global_names_poll<T, E>(
+        span: Span,
+        kind: PollKind,
+        driver: LocalName,
+        point: LocalName,
+        clients: Vec<Arc<Expression<(), S>>>,
+        name: LocalName,
+        captures: Captures,
+        then: Arc<Process<(), S>>,
+        else_: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(Process::Poll {
+            span,
+            kind,
+            driver,
+            point,
+            clients: map_expression_vec(clients, f)?,
+            name,
+            name_typ: (),
+            captures,
+            then: map_arc_process(then, f)?,
+            else_: map_arc_process(else_, f)?,
+        })
+    }
+
+    fn map_global_names_submit<T, E>(
+        span: Span,
+        driver: LocalName,
+        point: LocalName,
+        values: Vec<Arc<Expression<(), S>>>,
+        captures: Captures,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(Process::Submit {
+            span,
+            driver,
+            point,
+            values: map_expression_vec(values, f)?,
+            captures,
+        })
+    }
+
+    fn map_global_names_telltypes<T, E>(
+        span: Span,
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(Process::Telltypes(span, map_arc_process(process, f)?))
+    }
+
+    fn map_global_names_block<T, E>(
+        span: Span,
+        index: usize,
+        body: Arc<Process<(), S>>,
+        then: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Process<(), T>, E> {
+        Ok(Process::Block(
+            span,
+            index,
+            map_arc_process(body, f)?,
+            map_arc_process(then, f)?,
+        ))
     }
 }
 
@@ -1286,70 +1338,132 @@ impl<S: Clone> Command<(), S> {
         self,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Command<(), T>, E> {
-        Ok(match self {
-            Command::Link(expression) => Command::Link(Arc::new(
-                Arc::unwrap_or_clone(expression).map_global_names(f)?,
-            )),
-            Command::Send(argument, process) => Command::Send(
-                Arc::new(Arc::unwrap_or_clone(argument).map_global_names(f)?),
-                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-            ),
-            Command::Receive(parameter, annotation, (), process, vars) => Command::Receive(
-                parameter,
-                annotation.map(|typ| typ.map_global_names(f)).transpose()?,
-                (),
-                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-                vars,
-            ),
-            Command::Signal(chosen, process) => Command::Signal(
-                chosen,
-                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-            ),
-            Command::Case(branches, processes, else_process) => Command::Case(
-                branches,
-                processes
-                    .into_vec()
-                    .into_iter()
-                    .map(|process| {
-                        Arc::unwrap_or_clone(process)
-                            .map_global_names(f)
-                            .map(Arc::new)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_boxed_slice(),
-                else_process
-                    .map(|process| {
-                        Arc::unwrap_or_clone(process)
-                            .map_global_names(f)
-                            .map(Arc::new)
-                    })
-                    .transpose()?,
-            ),
-            Command::Break => Command::Break,
-            Command::Continue(process) => {
-                Command::Continue(Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?))
+        match self {
+            Command::Link(expression) => Self::map_global_names_link(expression, f),
+            Command::Send(argument, process) => {
+                Self::map_global_names_send(argument, process, f)
             }
+            Command::Receive(parameter, annotation, (), process, vars) => {
+                Self::map_global_names_receive(parameter, annotation, process, vars, f)
+            }
+            Command::Signal(chosen, process) => {
+                Self::map_global_names_signal(chosen, process, f)
+            }
+            Command::Case(branches, processes, else_process) => {
+                Self::map_global_names_case(branches, processes, else_process, f)
+            }
+            Command::Break => Ok(Command::Break),
+            Command::Continue(process) => Self::map_global_names_continue(process, f),
             Command::Begin {
                 unfounded,
                 label,
                 captures,
                 body,
-            } => Command::Begin {
-                unfounded,
-                label,
-                captures,
-                body: Arc::new(Arc::unwrap_or_clone(body).map_global_names(f)?),
-            },
-            Command::Loop(label, driver, captures) => Command::Loop(label, driver, captures),
-            Command::SendType(argument, process) => Command::SendType(
-                argument.map_global_names(f)?,
-                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-            ),
-            Command::ReceiveType(parameter, process) => Command::ReceiveType(
+            } => Self::map_global_names_begin(unfounded, label, captures, body, f),
+            Command::Loop(label, driver, captures) => Ok(Command::Loop(label, driver, captures)),
+            Command::SendType(argument, process) => {
+                Self::map_global_names_send_type(argument, process, f)
+            }
+            Command::ReceiveType(parameter, process) => {
+                Self::map_global_names_receive_type(parameter, process, f)
+            }
+        }
+    }
+
+    fn map_global_names_link<T, E>(
+        expression: Arc<Expression<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Link(map_arc_expression(expression, f)?))
+    }
+
+    fn map_global_names_send<T, E>(
+        argument: Arc<Expression<(), S>>,
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Send(
+            map_arc_expression(argument, f)?,
+            map_arc_process(process, f)?,
+        ))
+    }
+
+    fn map_global_names_receive<T, E>(
+        parameter: LocalName,
+        annotation: Option<Type<S>>,
+        process: Arc<Process<(), S>>,
+        vars: Vec<LocalName>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Receive(
                 parameter,
-                Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-            ),
+                annotation.map(|typ| typ.map_global_names(f)).transpose()?,
+                (),
+                map_arc_process(process, f)?,
+                vars,
+        ))
+    }
+
+    fn map_global_names_signal<T, E>(
+        chosen: LocalName,
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Signal(chosen, map_arc_process(process, f)?))
+    }
+
+    fn map_global_names_case<T, E>(
+        branches: Arc<[LocalName]>,
+        processes: Box<[Arc<Process<(), S>>]>,
+        else_process: Option<Arc<Process<(), S>>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Case(
+            branches,
+            map_process_boxed_slice(processes, f)?,
+            else_process.map(|process| map_arc_process(process, f)).transpose()?,
+        ))
+    }
+
+    fn map_global_names_continue<T, E>(
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Continue(map_arc_process(process, f)?))
+    }
+
+    fn map_global_names_begin<T, E>(
+        unfounded: bool,
+        label: Option<LocalName>,
+        captures: Captures,
+        body: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Begin {
+            unfounded,
+            label,
+            captures,
+            body: map_arc_process(body, f)?,
         })
+    }
+
+    fn map_global_names_send_type<T, E>(
+        argument: Type<S>,
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::SendType(
+            argument.map_global_names(f)?,
+            map_arc_process(process, f)?,
+        ))
+    }
+
+    fn map_global_names_receive_type<T, E>(
+        parameter: LocalName,
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::ReceiveType(parameter, map_arc_process(process, f)?))
     }
 }
 
@@ -1358,17 +1472,14 @@ impl<S: Clone> Expression<(), S> {
         self,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Expression<(), T>, E> {
-        Ok(match self {
-            Expression::Global(span, name, ()) => Expression::Global(span, f(name)?, ()),
+        match self {
+            Expression::Global(span, name, ()) => Ok(Expression::Global(span, f(name)?, ())),
             Expression::Variable(span, name, (), usage) => {
-                Expression::Variable(span, name, (), usage)
+                Ok(Expression::Variable(span, name, (), usage))
             }
-            Expression::Box(span, captures, expression, ()) => Expression::Box(
-                span,
-                captures,
-                Arc::new(Arc::unwrap_or_clone(expression).map_global_names(f)?),
-                (),
-            ),
+            Expression::Box(span, captures, expression, ()) => {
+                Self::map_global_names_box(span, captures, expression, f)
+            }
             Expression::Chan {
                 span,
                 captures,
@@ -1377,23 +1488,93 @@ impl<S: Clone> Expression<(), S> {
                 chan_type: (),
                 expr_type: (),
                 process,
-            } => Expression::Chan {
+            } => Self::map_global_names_chan(
                 span,
                 captures,
                 chan_name,
-                chan_annotation: chan_annotation
-                    .map(|typ| typ.map_global_names(f))
-                    .transpose()?,
-                chan_type: (),
-                expr_type: (),
-                process: Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?),
-            },
+                chan_annotation,
+                process,
+                f,
+            ),
             Expression::Primitive(span, primitive, ()) => {
-                Expression::Primitive(span, primitive, ())
+                Ok(Expression::Primitive(span, primitive, ()))
             }
-            Expression::External(external, ()) => Expression::External(external, ()),
+            Expression::External(external, ()) => Ok(Expression::External(external, ())),
+        }
+    }
+
+    fn map_global_names_box<T, E>(
+        span: Span,
+        captures: Captures,
+        expression: Arc<Expression<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Expression<(), T>, E> {
+        Ok(Expression::Box(span, captures, map_arc_expression(expression, f)?, ()))
+    }
+
+    fn map_global_names_chan<T, E>(
+        span: Span,
+        captures: Captures,
+        chan_name: LocalName,
+        chan_annotation: Option<Type<S>>,
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Expression<(), T>, E> {
+        Ok(Expression::Chan {
+            span,
+            captures,
+            chan_name,
+            chan_annotation: chan_annotation
+                .map(|typ| typ.map_global_names(f))
+                .transpose()?,
+            chan_type: (),
+            expr_type: (),
+            process: map_arc_process(process, f)?,
         })
     }
+}
+
+fn map_arc_process<S: Clone, T, E>(
+    process: Arc<Process<(), S>>,
+    f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+) -> Result<Arc<Process<(), T>>, E> {
+    Ok(Arc::new(Arc::unwrap_or_clone(process).map_global_names(f)?))
+}
+
+fn map_arc_expression<S: Clone, T, E>(
+    expression: Arc<Expression<(), S>>,
+    f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+) -> Result<Arc<Expression<(), T>>, E> {
+    Ok(Arc::new(Arc::unwrap_or_clone(expression).map_global_names(f)?))
+}
+
+fn map_process_vec<S: Clone, T, E>(
+    processes: Vec<Arc<Process<(), S>>>,
+    f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+) -> Result<Vec<Arc<Process<(), T>>>, E> {
+    let mut mapped = Vec::with_capacity(processes.len());
+    for process in processes {
+        mapped.push(map_arc_process(process, f)?);
+    }
+    Ok(mapped)
+}
+
+fn map_process_boxed_slice<S: Clone, T, E>(
+    processes: Box<[Arc<Process<(), S>>]>,
+    f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+) -> Result<Box<[Arc<Process<(), T>>]>, E> {
+    Ok(map_process_vec(processes.into_vec(), f)?.into_boxed_slice())
+}
+
+fn map_expression_vec<S: Clone, T, E>(
+    expressions: Vec<Arc<Expression<(), S>>>,
+    f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+) -> Result<Vec<Arc<Expression<(), T>>>, E> {
+    let mut mapped = Vec::with_capacity(expressions.len());
+    for expression in expressions {
+        mapped.push(map_arc_expression(expression, f)?);
+    }
+    Ok(mapped)
 }
 
 impl<Typ, S> Process<Typ, S> {

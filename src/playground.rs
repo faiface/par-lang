@@ -1014,7 +1014,7 @@ impl Playground {
     }
 
     fn recompile(&mut self) {
-        stacker::grow(32 * 1024 * 1024, || {
+        {
             self.build = match self.file_path.as_ref() {
                 Some(file_path) => BuildResult::from_package_active_file(
                     file_path,
@@ -1027,7 +1027,7 @@ impl Playground {
                     self.max_interactions,
                 ),
             };
-        });
+        };
         self.built_code = Arc::from(self.code.as_str());
     }
 

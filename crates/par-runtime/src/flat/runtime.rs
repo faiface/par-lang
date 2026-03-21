@@ -467,7 +467,7 @@ impl Runtime {
         self.share_inner(node)
     }
     fn share_inner(&mut self, node: Node<Linked>) -> Option<Shared<Linked>> {
-        stacker::maybe_grow(32 * 1024, 1024 * 1024, move || match node {
+        match node {
             Node::Shared(shared) => Some(shared),
             Node::Global(instance, global_index) => match self.arena().get(global_index) {
                 Global::Destruct(..) => None,
@@ -525,7 +525,7 @@ impl Runtime {
                 Some(shared)
             }
             Node::Linear(Linear::ShareHole(..)) => None,
-        })
+        }
     }
 
     fn fill_hole(&mut self, hole: Arc<Mutex<SharedHole<Linked>>>, value: Node<Linked>) {

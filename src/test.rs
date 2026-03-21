@@ -188,9 +188,7 @@ fn temp_package(name: &str, source: &str) -> PathBuf {
 }
 
 fn missing_external_error(package: &PathBuf) -> String {
-    let error = match stacker::grow(32 * 1024 * 1024, || {
-        crate::build_runtime_package(package, 10_000)
-    }) {
+    let error = match crate::build_runtime_package(package, 10_000) {
         Ok(_) => panic!("link should fail"),
         Err(error) => error,
     };
@@ -220,7 +218,7 @@ fn runtime_link_reports_missing_external_registration() {
 #[test]
 #[ignore = "measurement helper"]
 fn measure_examples_depths() {
-    let metrics = stacker::grow(32 * 1024 * 1024, || {
+    let metrics = {
         let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         root.push("examples");
 
@@ -246,7 +244,7 @@ fn measure_examples_depths() {
             }
         }
         metrics
-    });
+    };
 
     println!("Examples depth study");
     println!(

@@ -213,10 +213,11 @@ fn file_name_to_uri(file: &FileName) -> Option<Uri> {
     if *file == FileName::BUILTIN {
         return None;
     }
-    if let Ok(uri) = file.0.as_str().parse() {
-        return Some(uri);
+    let path = Path::new(file.0.as_str());
+    if path.is_absolute() {
+        return path_to_uri(path);
     }
-    path_to_uri(Path::new(file.0.as_str()))
+    file.0.as_str().parse().ok()
 }
 
 fn path_to_uri(path: &Path) -> Option<Uri> {

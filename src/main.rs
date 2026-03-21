@@ -26,6 +26,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 mod language_server;
 mod package_utils;
 #[cfg(feature = "playground")]
@@ -362,15 +363,14 @@ fn run_definition(
 ) {
     let runtime = tokio_factory::create_runtime().expect("Failed to create Tokio runtime");
     runtime.block_on(async {
-        let (checked, rt_compiled, local_modules) = match stacker::grow(32 * 1024 * 1024, || {
-            build_runtime_package(&package_path, max_interactions)
-        }) {
-            Ok((checked, rt_compiled, local_modules)) => (checked, rt_compiled, local_modules),
-            Err(error) => {
-                println!("{}", error.display().bright_red());
-                return;
-            }
-        };
+        let (checked, rt_compiled, local_modules) =
+            match build_runtime_package(&package_path, max_interactions) {
+                Ok((checked, rt_compiled, local_modules)) => (checked, rt_compiled, local_modules),
+                Err(error) => {
+                    println!("{}", error.display().bright_red());
+                    return;
+                }
+            };
 
         let Some(name) = resolve_target_definition(target.as_deref(), &checked, &local_modules)
         else {
@@ -434,9 +434,7 @@ fn resolve_target_definition<'a>(
 fn check(package_path: PathBuf) -> Result<(), String> {
     println!("Checking package: {}", package_path.display());
 
-    let build_result = stacker::grow(32 * 1024 * 1024, || {
-        build_runtime_package(&package_path, MAX_INTERACTIONS_DEFAULT)
-    });
+    let build_result = build_runtime_package(&package_path, MAX_INTERACTIONS_DEFAULT);
     if let Err(error) = build_result {
         let error_string = error.display();
         eprintln!("{}", error_string.bright_red());
@@ -445,6 +443,7 @@ fn check(package_path: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn run_language_server() {
     language_server::language_server_main::main()
 }

@@ -9,7 +9,6 @@ playground=[]
 [dependencies]
 arcstr = "1.2.0"
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-stacker = "0.1.19"
 num-bigint = "0.4.6"
 bytes = "1.6.1"
 inventory = "0.3.22"

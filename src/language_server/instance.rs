@@ -331,7 +331,7 @@ impl Instance {
             return;
         };
 
-        let result = stacker::grow(32 * 1024 * 1024, || {
+        let result = {
             let package_result = uri_to_path(&self.uri)
                 .map(|path| self.compile_package_with_overlays(&path))
                 .unwrap_or_else(|| {
@@ -349,7 +349,7 @@ impl Instance {
                 ))) => self.compile_single_file(&code),
                 Err(error) => Err(error),
             }
-        });
+        };
 
         match result {
             Ok(checked) => {
@@ -457,6 +457,12 @@ fn file_name_for_uri(uri: &Uri) -> FileName {
 }
 
 fn file_name_to_uri(file: &FileName) -> Option<Uri> {
+    let path = PathBuf::from(file.0.as_str());
+    if path.is_absolute() {
+        return Url::from_file_path(path)
+            .ok()
+            .and_then(|url| url.as_str().parse().ok());
+    }
     if let Ok(uri) = file.0.as_str().parse() {
         return Some(uri);
     }

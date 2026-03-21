@@ -634,11 +634,7 @@ impl Compiler {
         match proc {
             Process::Let {
                 name, value, then, ..
-            } => {
-                let value = self.compile_expression(value)?;
-                self.bind_variable(name.clone(), value)?;
-                self.compile_process(then)
-            }
+            } => self.compile_process_let(name, value, then),
 
             Process::Do {
                 span,
@@ -646,7 +642,7 @@ impl Compiler {
                 usage,
                 typ,
                 command,
-            } => self.compile_command(span, name.clone(), usage, typ.clone(), command),
+            } => self.compile_process_do(span, name, usage, typ, command),
 
             Process::Telltypes(_, _) => unreachable!(),
 
@@ -661,163 +657,9 @@ impl Compiler {
                 captures,
                 then,
                 else_,
-            } => {
-                let labels_in_scope: BTreeSet<_> =
-                    self.context.loop_points.keys().cloned().collect();
-
-                // Initialize the poll token (only for `poll`, not `repoll`).
-                if matches!(kind, PollKind::Poll) {
-                    self.bind_variable(
-                        driver.clone(),
-                        poll_token_tree().with_type(Type::Break(Span::None)),
-                    )?;
-                }
-
-                // Pre-submit the initial clients (also used by `repoll` to enqueue extra clients).
-                if !clients.is_empty() {
-                    let mut initial_client_trees = Vec::with_capacity(clients.len());
-                    for client in clients {
-                        initial_client_trees.push(self.compile_expression(client)?);
-                    }
-
-                    let driver_tree = self.use_variable(driver, &VariableUsage::Move, false)?;
-                    let (next0, next1) = self.create_typed_wire();
-                    let stream = self.build_submit_stream(initial_client_trees);
-                    let payload = Tree::Times(Box::new(next1.tree), Box::new(stream));
-                    let request = Tree::Signal(ArcStr::from("#submit"), Box::new(payload));
-                    self.net.link(driver_tree.tree, request);
-                    self.bind_variable(driver.clone(), next0)?;
-                }
-
-                // Create the poll body package, so submits can "jump" back to it.
-                let captures = captures.clone();
-                let driver = driver.clone();
-                let point = point.clone();
-                let name = name.clone();
-                let then = then.clone();
-                let else_ = else_.clone();
-
-                let pack_template = self.context.pack_template(
-                    Some(&driver),
-                    Some(&captures),
-                    Some(&labels_in_scope),
-                );
-
-                // Pack the current context for entering the poll body.
-                //
-                // This must happen before creating the package: `in_package` temporarily captures
-                // loop variables that are in scope, and `unpack` will reintroduce them from the
-                // packed context. If we don't pack here (which also clears `loop_points`), we may
-                // end up binding the same loop variable twice.
-                let (context_in, _pack_data) = self.context.pack(
-                    Some(&driver),
-                    Some(&captures),
-                    Some(&labels_in_scope),
-                    &mut self.net,
-                );
-
-                let (poll_package_id, _) = self.in_package(
-                    format!("poll body at {:?}", proc.span()),
-                    |this, package_id| {
-                        this.poll_packages.insert(
-                            point.clone(),
-                            PollInfo {
-                                package_id,
-                                labels_in_scope: labels_in_scope.clone(),
-                                driver: driver.clone(),
-                            },
-                        );
-
-                        // Unpack the incoming context.
-                        let context_out = this.context.unpack(&pack_template, &mut this.net);
-
-                        // poll request: driver <> .poll((result_slot) next_slot)
-                        let driver_tree =
-                            this.use_variable(&driver, &VariableUsage::Move, false)?;
-                        let (next0, next1) = this.create_typed_wire();
-                        let (result0, result1) = this.create_typed_wire();
-
-                        let payload = Tree::Times(Box::new(next1.tree), Box::new(result1.tree));
-                        let request = Tree::Signal(ArcStr::from("#poll"), Box::new(payload));
-                        this.net.link(driver_tree.tree, request);
-                        this.bind_variable(driver.clone(), next0)?;
-
-                        // Case on the poll result.
-                        this.context.unguarded_loop_labels.clear();
-                        let (case_context_in, case_pack_data) =
-                            this.context.pack(None, None, None, &mut this.net);
-
-                        let mut branches = HashMap::new();
-
-                        // #client branch
-                        {
-                            let (package_id, _) =
-                                this.in_package("poll #client branch".to_string(), |this, _| {
-                                    let (w0, w1) = this.create_typed_wire();
-                                    this.bind_variable(name.clone(), w0)?;
-                                    let context_out =
-                                        this.context.unpack(&case_pack_data, &mut this.net);
-                                    this.compile_process(&then)?;
-                                    Ok((w1, context_out.with_type(Type::Continue(Span::None))))
-                                })?;
-                            branches.insert(ArcStr::from("#client"), package_id);
-                        }
-
-                        // #empty branch
-                        {
-                            let (package_id, _) =
-                                this.in_package("poll #empty branch".to_string(), |this, _| {
-                                    let context_out =
-                                        this.context.unpack(&case_pack_data, &mut this.net);
-                                    if let Ok(driver_tree) =
-                                        this.use_variable(&driver, &VariableUsage::Move, false)
-                                    {
-                                        this.net.link(
-                                            driver_tree.tree,
-                                            Tree::Signal(
-                                                ArcStr::from("#close"),
-                                                Box::new(Tree::Break),
-                                            ),
-                                        );
-                                    }
-                                    this.compile_process(&else_)?;
-                                    Ok((
-                                        Tree::Era.with_type(Type::Break(Span::None)),
-                                        context_out.with_type(Type::Continue(Span::None)),
-                                    ))
-                                })?;
-                            branches.insert(ArcStr::from("#empty"), package_id);
-                        }
-
-                        let (else_branch, _) =
-                            this.in_package("poll (invalid branch)".to_string(), |this, _| {
-                                let context_out =
-                                    this.context.unpack(&case_pack_data, &mut this.net);
-                                this.end_context()?;
-                                Ok((
-                                    Tree::Era.with_type(Type::Break(Span::None)),
-                                    context_out.with_type(Type::Continue(Span::None)),
-                                ))
-                            })?;
-
-                        let choice =
-                            this.choice_instance(case_context_in, branches, Some(else_branch));
-                        this.net.link(result0.tree, choice);
-
-                        Ok((
-                            Tree::Era.with_type(Type::Break(Span::None)),
-                            context_out.with_type(Type::Continue(Span::None)),
-                        ))
-                    },
-                )?;
-
-                // Enter the poll body (process-ending).
-                self.lazy_redexes.push((
-                    Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
-                    Tree::Break,
-                ));
-                Ok(())
-            }
+            } => self.compile_process_poll(
+                proc, kind, driver, point, clients, name, captures, then, else_,
+            ),
 
             Process::Submit {
                 span: _span,
@@ -825,70 +667,15 @@ impl Compiler {
                 point,
                 values,
                 captures,
-            } => {
-                let Some(poll_info) = self.poll_packages.get(point).cloned() else {
-                    panic!("Submit to unknown poll-point during compilation: {point}");
-                };
-                if poll_info.driver != *driver {
-                    panic!("Submit poll-point driver mismatch: submit to {driver}, point {point}");
-                }
-                let poll_package_id = poll_info.package_id;
-
-                let mut value_trees = Vec::with_capacity(values.len());
-                for value in values {
-                    value_trees.push(self.compile_expression(value)?);
-                }
-
-                // driver <> .submit((stream) next_slot)
-                let driver_tree = self.use_variable(driver, &VariableUsage::Move, false)?;
-                let (next0, next1) = self.create_typed_wire();
-                let stream = self.build_submit_stream(value_trees);
-                let payload = Tree::Times(Box::new(next1.tree), Box::new(stream));
-                let request = Tree::Signal(ArcStr::from("#submit"), Box::new(payload));
-                self.net.link(driver_tree.tree, request);
-                self.bind_variable(driver.clone(), next0)?;
-
-                // Jump back to the poll body (process-ending).
-                let (context_in, _pack_data) = self.context.pack(
-                    Some(driver),
-                    Some(captures),
-                    Some(&poll_info.labels_in_scope),
-                    &mut self.net,
-                );
-                self.lazy_redexes.push((
-                    Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
-                    Tree::Break,
-                ));
-                Ok(())
-            }
+            } => self.compile_process_submit(driver, point, values, captures),
 
             Process::Block(_, index, body, process) => {
-                let prev = self.blocks.insert(*index, body.clone());
-                self.compile_process(process)?;
-                match prev {
-                    Some(old) => {
-                        self.blocks.insert(*index, old);
-                    }
-                    None => {
-                        self.blocks.shift_remove(index);
-                    }
-                }
-                Ok(())
+                self.compile_process_block(*index, body, process)
             }
 
-            Process::Goto(_, index, _) => {
-                let body = self
-                    .blocks
-                    .get(index)
-                    .expect("goto target missing during compilation")
-                    .clone();
-                self.compile_process(&body)
-            }
+            Process::Goto(_, index, _) => self.compile_process_goto(*index),
 
-            Process::Unreachable(_) => {
-                self.end_context()?;
-                Ok(())
-            }
+            Process::Unreachable(_) => self.compile_process_unreachable(),
         }
     }
 
@@ -901,207 +688,521 @@ impl Compiler {
         cmd: &Command<Type<Universal>, Universal>,
     ) -> Result<()> {
         match cmd {
-            Command::Link(expr) => {
-                let subject = self.use_variable(&name, usage, true)?;
-                let value = self.compile_expression(expr)?;
-                self.link_typed(subject, value);
-                self.end_context()?;
-            }
+            Command::Link(expr) => self.compile_command_link(&name, usage, expr)?,
             // types get erased.
             Command::SendType(_argument, process) => {
-                let subject = self.use_variable(&name, usage, true)?;
-                self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
-                self.compile_process(process)?;
+                self.compile_command_send_type(name, usage, process)?
             }
             Command::ReceiveType(parameter, process) => {
-                let subject = self.use_variable(&name, usage, true)?;
-                let was_empty_before = self.type_defs.vars.insert(parameter.clone());
-                self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
-                self.compile_process(process)?;
-                if was_empty_before {
-                    self.type_defs.vars.shift_remove(parameter);
-                }
+                self.compile_command_receive_type(name, usage, parameter, process)?
             }
             Command::Send(expr, process) => {
-                // < name(expr) process >
-                // ==
-                // name = free
-                // free = (name < expr >)
-                // < process >
-                let subject = self.use_variable(&name, usage, true)?;
-                let expr = self.compile_expression(expr)?;
-                let (v0, v1) = self.create_typed_wire();
-                self.bind_variable(name, v0)?;
-                self.net.link(
-                    Tree::Times(Box::new(v1.tree), Box::new(expr.tree)),
-                    subject.tree,
-                );
-                self.compile_process(process)?;
+                self.compile_command_send(name, usage, expr, process)?
             }
             Command::Receive(target, _, _, process, _) => {
-                // < name[target] process >
-                // ==
-                // name = free
-                // free = (name target)
-                // < process >
-                let subject = self.use_variable(&name, usage, true)?;
-                let (v0, v1) = self.create_typed_wire();
-                let (w0, w1) = self.create_typed_wire();
-                self.bind_variable(name, w0)?;
-                self.bind_variable(target.clone(), v0)?;
-                self.net.link(
-                    Tree::Par(Box::new(w1.tree), Box::new(v1.tree)),
-                    subject.tree,
-                );
-                self.compile_process(process)?;
+                self.compile_command_receive(name, usage, target, process)?
             }
             Command::Signal(chosen, process) => {
-                let subject = self.use_variable(&name, usage, true)?;
-                let (v0, v1) = self.create_typed_wire();
-                let choosing_tree = self.either_instance(ArcStr::from(&chosen.string), v1.tree);
-                self.net.link(choosing_tree, subject.tree);
-                self.bind_variable(name, v0)?;
-                self.compile_process(process)?;
+                self.compile_command_signal(name, usage, chosen, process)?
             }
             Command::Case(names, processes, else_process) => {
-                self.context.unguarded_loop_labels.clear();
-                let old_tree = self.use_variable(&name, usage, true)?;
-                // Multiplex all other variables in the context.
-                let (context_in, pack_data) = self.context.pack(None, None, None, &mut self.net);
-
-                let mut branches = HashMap::new();
-                let mut choice_and_process: Vec<_> = names.iter().zip(processes.iter()).collect();
-                choice_and_process.sort_by_key(|k| k.0);
-
-                for (branch_name, process) in choice_and_process {
-                    let branch_name = ArcStr::from(&branch_name.string);
-                    let (package_id, _) = self.in_package(
-                        format!("Branch {branch_name} at {span:?}"),
-                        |this, id| {
-                            this.package_is_case_branch.insert(id, branch_name.clone());
-                            let (w0, w1) = this.create_typed_wire();
-                            this.bind_variable(name.clone(), w0)?;
-                            let context_out = this.context.unpack(&pack_data, &mut this.net);
-                            this.compile_process(process)?;
-                            Ok((
-                                w1,
-                                context_out.with_type(Type::Continue(Default::default())),
-                            ))
-                        },
-                    )?;
-                    branches.insert(branch_name, package_id);
-                }
-
-                let else_branch = match else_process {
-                    Some(process) => {
-                        let (package_id, _) =
-                            self.in_package(format!("Else branch at {span:?}"), |this, id| {
-                                this.package_is_case_branch.insert(id, ArcStr::from(""));
-                                let (w0, w1) = this.create_typed_wire();
-                                this.bind_variable(name.clone(), w0)?;
-                                let context_out = this.context.unpack(&pack_data, &mut this.net);
-                                this.compile_process(process)?;
-                                Ok((
-                                    w1,
-                                    context_out.with_type(Type::Continue(Default::default())),
-                                ))
-                            })?;
-                        Some(package_id)
-                    }
-                    None => None,
-                };
-
-                let t = self.choice_instance(context_in, branches, else_branch);
-
-                self.net.link(old_tree.tree, t);
+                self.compile_command_case(span, name, usage, names, processes, else_process)?
             }
-            Command::Break => {
-                // < name ! >
-                // ==
-                // name = *
-                let a = self.use_variable(&name, usage, true)?.tree;
-                self.net.link(a, Tree::Break);
-                self.end_context()?;
-            }
-            Command::Continue(process) => {
-                // < name ? process >
-                // ==
-                // name = *
-                // < process >
-                let a = self.use_variable(&name, usage, true)?.tree;
-                self.net.link(a, Tree::Continue);
-                self.compile_process(process)?;
-            }
+            Command::Break => self.compile_command_break(&name, usage)?,
+            Command::Continue(process) => self.compile_command_continue(&name, usage, process)?,
             Command::Begin {
                 label,
                 captures,
                 body,
                 ..
-            } => {
-                let label = LoopLabel(label.clone());
-
-                let (def0, def1) = self.net.create_wire();
-                let prev = self.context.vars.insert(
-                    Var::Loop(label.0.clone()),
-                    def0.with_type(Type::Break(Span::default())),
-                );
-
-                if let Some(prev_tree) = prev {
-                    self.net.link(prev_tree.tree, Tree::Era);
-                }
-
-                let mut labels_in_scope: BTreeSet<_> =
-                    self.context.loop_points.keys().cloned().collect();
-                labels_in_scope.insert(label.clone());
-                self.context
-                    .loop_points
-                    .insert(label.clone(), labels_in_scope);
-
-                self.context.unguarded_loop_labels.push(label.clone());
-
-                let (context_in, pack_data) =
-                    self.context
-                        .pack(Some(&name), Some(captures), None, &mut self.net);
-                let (id, _) = self.in_package(
-                    format!("Loop body at {span:?}"),
-                    |this, _| {
-                        let context_out = this.context.unpack(&pack_data, &mut this.net);
-                        this.compile_process(body)?;
-                        Ok((
-                            context_out.with_type(Type::Break(Span::default())),
-                            (Tree::Continue).with_type(Type::Continue(Span::default())),
-                        ))
-                    },
-                    //true,
-                )?;
-                self.net.link(
-                    def1,
-                    Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
-                );
-                self.net.link(
-                    context_in,
-                    Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
-                );
-            }
+            } => self.compile_command_begin(span, &name, label, captures, body)?,
             Command::Loop(label, driver, captures) => {
-                let label = LoopLabel(label.clone());
-                if self.context.unguarded_loop_labels.contains(&label) {
-                    return Err(Error::UnguardedLoop(span.clone(), label.clone().0));
-                }
-                let tree =
-                    self.use_var(&Var::Loop(label.0.clone()), &VariableUsage::Copy, false)?;
-                let driver_tree = self.use_variable(&name, usage, true)?;
-                self.bind_variable(driver.clone(), driver_tree)?;
-                let labels_in_scope = self.context.loop_points.get(&label).unwrap().clone();
-                let (context_in, _) = self.context.pack(
-                    Some(driver),
-                    Some(captures),
-                    Some(&labels_in_scope),
-                    &mut self.net,
-                );
-                self.net.redexes.push_back((tree.tree, context_in));
+                self.compile_command_loop(span, &name, usage, label, driver, captures)?
             }
         };
+        Ok(())
+    }
+
+    fn compile_process_let(
+        &mut self,
+        name: &LocalName,
+        value: &Expression<Type<Universal>, Universal>,
+        then: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let value = self.compile_expression(value)?;
+        self.bind_variable(name.clone(), value)?;
+        self.compile_process(then)
+    }
+
+    fn compile_process_do(
+        &mut self,
+        span: &Span,
+        name: &LocalName,
+        usage: &VariableUsage,
+        typ: &Type<Universal>,
+        command: &Command<Type<Universal>, Universal>,
+    ) -> Result<()> {
+        self.compile_command(span, name.clone(), usage, typ.clone(), command)
+    }
+
+    fn compile_process_poll(
+        &mut self,
+        proc: &Process<Type<Universal>, Universal>,
+        kind: &PollKind,
+        driver: &LocalName,
+        point: &LocalName,
+        clients: &[Arc<Expression<Type<Universal>, Universal>>],
+        name: &LocalName,
+        captures: &Captures,
+        then: &Arc<Process<Type<Universal>, Universal>>,
+        else_: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let labels_in_scope: BTreeSet<_> = self.context.loop_points.keys().cloned().collect();
+
+        if matches!(kind, PollKind::Poll) {
+            self.bind_variable(
+                driver.clone(),
+                poll_token_tree().with_type(Type::Break(Span::None)),
+            )?;
+        }
+
+        if !clients.is_empty() {
+            let mut initial_client_trees = Vec::with_capacity(clients.len());
+            for client in clients {
+                initial_client_trees.push(self.compile_expression(client)?);
+            }
+
+            let driver_tree = self.use_variable(driver, &VariableUsage::Move, false)?;
+            let (next0, next1) = self.create_typed_wire();
+            let stream = self.build_submit_stream(initial_client_trees);
+            let payload = Tree::Times(Box::new(next1.tree), Box::new(stream));
+            let request = Tree::Signal(ArcStr::from("#submit"), Box::new(payload));
+            self.net.link(driver_tree.tree, request);
+            self.bind_variable(driver.clone(), next0)?;
+        }
+
+        let captures = captures.clone();
+        let driver = driver.clone();
+        let point = point.clone();
+        let name = name.clone();
+        let then = then.clone();
+        let else_ = else_.clone();
+
+        let pack_template =
+            self.context
+                .pack_template(Some(&driver), Some(&captures), Some(&labels_in_scope));
+
+        let (context_in, _pack_data) = self.context.pack(
+            Some(&driver),
+            Some(&captures),
+            Some(&labels_in_scope),
+            &mut self.net,
+        );
+
+        let (poll_package_id, _) = self.in_package(
+            format!("poll body at {:?}", proc.span()),
+            |this, package_id| {
+                this.poll_packages.insert(
+                    point.clone(),
+                    PollInfo {
+                        package_id,
+                        labels_in_scope: labels_in_scope.clone(),
+                        driver: driver.clone(),
+                    },
+                );
+
+                let context_out = this.context.unpack(&pack_template, &mut this.net);
+                let driver_tree = this.use_variable(&driver, &VariableUsage::Move, false)?;
+                let (next0, next1) = this.create_typed_wire();
+                let (result0, result1) = this.create_typed_wire();
+
+                let payload = Tree::Times(Box::new(next1.tree), Box::new(result1.tree));
+                let request = Tree::Signal(ArcStr::from("#poll"), Box::new(payload));
+                this.net.link(driver_tree.tree, request);
+                this.bind_variable(driver.clone(), next0)?;
+
+                this.context.unguarded_loop_labels.clear();
+                let (case_context_in, case_pack_data) =
+                    this.context.pack(None, None, None, &mut this.net);
+
+                let mut branches = HashMap::new();
+
+                {
+                    let (package_id, _) =
+                        this.in_package("poll #client branch".to_string(), |this, _| {
+                            let (w0, w1) = this.create_typed_wire();
+                            this.bind_variable(name.clone(), w0)?;
+                            let context_out = this.context.unpack(&case_pack_data, &mut this.net);
+                            this.compile_process(&then)?;
+                            Ok((w1, context_out.with_type(Type::Continue(Span::None))))
+                        })?;
+                    branches.insert(ArcStr::from("#client"), package_id);
+                }
+
+                {
+                    let (package_id, _) =
+                        this.in_package("poll #empty branch".to_string(), |this, _| {
+                            let context_out = this.context.unpack(&case_pack_data, &mut this.net);
+                            if let Ok(driver_tree) =
+                                this.use_variable(&driver, &VariableUsage::Move, false)
+                            {
+                                this.net.link(
+                                    driver_tree.tree,
+                                    Tree::Signal(ArcStr::from("#close"), Box::new(Tree::Break)),
+                                );
+                            }
+                            this.compile_process(&else_)?;
+                            Ok((
+                                Tree::Era.with_type(Type::Break(Span::None)),
+                                context_out.with_type(Type::Continue(Span::None)),
+                            ))
+                        })?;
+                    branches.insert(ArcStr::from("#empty"), package_id);
+                }
+
+                let (else_branch, _) =
+                    this.in_package("poll (invalid branch)".to_string(), |this, _| {
+                        let context_out = this.context.unpack(&case_pack_data, &mut this.net);
+                        this.end_context()?;
+                        Ok((
+                            Tree::Era.with_type(Type::Break(Span::None)),
+                            context_out.with_type(Type::Continue(Span::None)),
+                        ))
+                    })?;
+
+                let choice = this.choice_instance(case_context_in, branches, Some(else_branch));
+                this.net.link(result0.tree, choice);
+
+                Ok((
+                    Tree::Era.with_type(Type::Break(Span::None)),
+                    context_out.with_type(Type::Continue(Span::None)),
+                ))
+            },
+        )?;
+
+        self.lazy_redexes.push((
+            Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
+            Tree::Break,
+        ));
+        Ok(())
+    }
+
+    fn compile_process_submit(
+        &mut self,
+        driver: &LocalName,
+        point: &LocalName,
+        values: &[Arc<Expression<Type<Universal>, Universal>>],
+        captures: &Captures,
+    ) -> Result<()> {
+        let Some(poll_info) = self.poll_packages.get(point).cloned() else {
+            panic!("Submit to unknown poll-point during compilation: {point}");
+        };
+        if poll_info.driver != *driver {
+            panic!("Submit poll-point driver mismatch: submit to {driver}, point {point}");
+        }
+        let poll_package_id = poll_info.package_id;
+
+        let mut value_trees = Vec::with_capacity(values.len());
+        for value in values {
+            value_trees.push(self.compile_expression(value)?);
+        }
+
+        let driver_tree = self.use_variable(driver, &VariableUsage::Move, false)?;
+        let (next0, next1) = self.create_typed_wire();
+        let stream = self.build_submit_stream(value_trees);
+        let payload = Tree::Times(Box::new(next1.tree), Box::new(stream));
+        let request = Tree::Signal(ArcStr::from("#submit"), Box::new(payload));
+        self.net.link(driver_tree.tree, request);
+        self.bind_variable(driver.clone(), next0)?;
+
+        let (context_in, _pack_data) = self.context.pack(
+            Some(driver),
+            Some(captures),
+            Some(&poll_info.labels_in_scope),
+            &mut self.net,
+        );
+        self.lazy_redexes.push((
+            Tree::Package(poll_package_id, Box::new(context_in), FanBehavior::Expand),
+            Tree::Break,
+        ));
+        Ok(())
+    }
+
+    fn compile_process_block(
+        &mut self,
+        index: usize,
+        body: &Arc<Process<Type<Universal>, Universal>>,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let prev = self.blocks.insert(index, body.clone());
+        self.compile_process(process)?;
+        match prev {
+            Some(old) => {
+                self.blocks.insert(index, old);
+            }
+            None => {
+                self.blocks.shift_remove(&index);
+            }
+        }
+        Ok(())
+    }
+
+    fn compile_process_goto(&mut self, index: usize) -> Result<()> {
+        let body = self
+            .blocks
+            .get(&index)
+            .expect("goto target missing during compilation")
+            .clone();
+        self.compile_process(&body)
+    }
+
+    fn compile_process_unreachable(&mut self) -> Result<()> {
+        self.end_context()?;
+        Ok(())
+    }
+
+    fn compile_command_link(
+        &mut self,
+        name: &LocalName,
+        usage: &VariableUsage,
+        expr: &Expression<Type<Universal>, Universal>,
+    ) -> Result<()> {
+        let subject = self.use_variable(name, usage, true)?;
+        let value = self.compile_expression(expr)?;
+        self.link_typed(subject, value);
+        self.end_context()?;
+        Ok(())
+    }
+
+    fn compile_command_send_type(
+        &mut self,
+        name: LocalName,
+        usage: &VariableUsage,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let subject = self.use_variable(&name, usage, true)?;
+        self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
+        self.compile_process(process)
+    }
+
+    fn compile_command_receive_type(
+        &mut self,
+        name: LocalName,
+        usage: &VariableUsage,
+        parameter: &LocalName,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let subject = self.use_variable(&name, usage, true)?;
+        let was_empty_before = self.type_defs.vars.insert(parameter.clone());
+        self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
+        self.compile_process(process)?;
+        if was_empty_before {
+            self.type_defs.vars.shift_remove(parameter);
+        }
+        Ok(())
+    }
+
+    fn compile_command_send(
+        &mut self,
+        name: LocalName,
+        usage: &VariableUsage,
+        expr: &Expression<Type<Universal>, Universal>,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let subject = self.use_variable(&name, usage, true)?;
+        let expr = self.compile_expression(expr)?;
+        let (v0, v1) = self.create_typed_wire();
+        self.bind_variable(name, v0)?;
+        self.net.link(
+            Tree::Times(Box::new(v1.tree), Box::new(expr.tree)),
+            subject.tree,
+        );
+        self.compile_process(process)
+    }
+
+    fn compile_command_receive(
+        &mut self,
+        name: LocalName,
+        usage: &VariableUsage,
+        target: &LocalName,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let subject = self.use_variable(&name, usage, true)?;
+        let (v0, v1) = self.create_typed_wire();
+        let (w0, w1) = self.create_typed_wire();
+        self.bind_variable(name, w0)?;
+        self.bind_variable(target.clone(), v0)?;
+        self.net.link(
+            Tree::Par(Box::new(w1.tree), Box::new(v1.tree)),
+            subject.tree,
+        );
+        self.compile_process(process)
+    }
+
+    fn compile_command_signal(
+        &mut self,
+        name: LocalName,
+        usage: &VariableUsage,
+        chosen: &LocalName,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let subject = self.use_variable(&name, usage, true)?;
+        let (v0, v1) = self.create_typed_wire();
+        let choosing_tree = self.either_instance(ArcStr::from(&chosen.string), v1.tree);
+        self.net.link(choosing_tree, subject.tree);
+        self.bind_variable(name, v0)?;
+        self.compile_process(process)
+    }
+
+    fn compile_command_case(
+        &mut self,
+        span: &Span,
+        name: LocalName,
+        usage: &VariableUsage,
+        names: &[LocalName],
+        processes: &[Arc<Process<Type<Universal>, Universal>>],
+        else_process: &Option<Arc<Process<Type<Universal>, Universal>>>,
+    ) -> Result<()> {
+        self.context.unguarded_loop_labels.clear();
+        let old_tree = self.use_variable(&name, usage, true)?;
+        let (context_in, pack_data) = self.context.pack(None, None, None, &mut self.net);
+
+        let mut branches = HashMap::new();
+        let mut choice_and_process: Vec<_> = names.iter().zip(processes.iter()).collect();
+        choice_and_process.sort_by_key(|k| k.0);
+
+        for (branch_name, process) in choice_and_process {
+            let branch_name = ArcStr::from(&branch_name.string);
+            let (package_id, _) =
+                self.in_package(format!("Branch {branch_name} at {span:?}"), |this, id| {
+                    this.package_is_case_branch.insert(id, branch_name.clone());
+                    let (w0, w1) = this.create_typed_wire();
+                    this.bind_variable(name.clone(), w0)?;
+                    let context_out = this.context.unpack(&pack_data, &mut this.net);
+                    this.compile_process(process)?;
+                    Ok((
+                        w1,
+                        context_out.with_type(Type::Continue(Default::default())),
+                    ))
+                })?;
+            branches.insert(branch_name, package_id);
+        }
+
+        let else_branch = match else_process {
+            Some(process) => {
+                let (package_id, _) =
+                    self.in_package(format!("Else branch at {span:?}"), |this, id| {
+                        this.package_is_case_branch.insert(id, ArcStr::from(""));
+                        let (w0, w1) = this.create_typed_wire();
+                        this.bind_variable(name.clone(), w0)?;
+                        let context_out = this.context.unpack(&pack_data, &mut this.net);
+                        this.compile_process(process)?;
+                        Ok((
+                            w1,
+                            context_out.with_type(Type::Continue(Default::default())),
+                        ))
+                    })?;
+                Some(package_id)
+            }
+            None => None,
+        };
+
+        let t = self.choice_instance(context_in, branches, else_branch);
+        self.net.link(old_tree.tree, t);
+        Ok(())
+    }
+
+    fn compile_command_break(&mut self, name: &LocalName, usage: &VariableUsage) -> Result<()> {
+        let a = self.use_variable(name, usage, true)?.tree;
+        self.net.link(a, Tree::Break);
+        self.end_context()?;
+        Ok(())
+    }
+
+    fn compile_command_continue(
+        &mut self,
+        name: &LocalName,
+        usage: &VariableUsage,
+        process: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let a = self.use_variable(name, usage, true)?.tree;
+        self.net.link(a, Tree::Continue);
+        self.compile_process(process)
+    }
+
+    fn compile_command_begin(
+        &mut self,
+        span: &Span,
+        name: &LocalName,
+        label: &Option<LocalName>,
+        captures: &Captures,
+        body: &Arc<Process<Type<Universal>, Universal>>,
+    ) -> Result<()> {
+        let label = LoopLabel(label.clone());
+
+        let (def0, def1) = self.net.create_wire();
+        let prev = self.context.vars.insert(
+            Var::Loop(label.0.clone()),
+            def0.with_type(Type::Break(Span::default())),
+        );
+
+        if let Some(prev_tree) = prev {
+            self.net.link(prev_tree.tree, Tree::Era);
+        }
+
+        let mut labels_in_scope: BTreeSet<_> = self.context.loop_points.keys().cloned().collect();
+        labels_in_scope.insert(label.clone());
+        self.context
+            .loop_points
+            .insert(label.clone(), labels_in_scope);
+        self.context.unguarded_loop_labels.push(label.clone());
+
+        let (context_in, pack_data) =
+            self.context
+                .pack(Some(name), Some(captures), None, &mut self.net);
+        let (id, _) = self.in_package(format!("Loop body at {span:?}"), |this, _| {
+            let context_out = this.context.unpack(&pack_data, &mut this.net);
+            this.compile_process(body)?;
+            Ok((
+                context_out.with_type(Type::Break(Span::default())),
+                (Tree::Continue).with_type(Type::Continue(Span::default())),
+            ))
+        })?;
+        self.net.link(
+            def1,
+            Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
+        );
+        self.net.link(
+            context_in,
+            Tree::Package(id, Box::new(Tree::Break), FanBehavior::Propagate),
+        );
+        Ok(())
+    }
+
+    fn compile_command_loop(
+        &mut self,
+        span: &Span,
+        name: &LocalName,
+        usage: &VariableUsage,
+        label: &Option<LocalName>,
+        driver: &LocalName,
+        captures: &Captures,
+    ) -> Result<()> {
+        let label = LoopLabel(label.clone());
+        if self.context.unguarded_loop_labels.contains(&label) {
+            return Err(Error::UnguardedLoop(span.clone(), label.clone().0));
+        }
+        let tree = self.use_var(&Var::Loop(label.0.clone()), &VariableUsage::Copy, false)?;
+        let driver_tree = self.use_variable(name, usage, true)?;
+        self.bind_variable(driver.clone(), driver_tree)?;
+        let labels_in_scope = self.context.loop_points.get(&label).unwrap().clone();
+        let (context_in, _) = self.context.pack(
+            Some(driver),
+            Some(captures),
+            Some(&labels_in_scope),
+            &mut self.net,
+        );
+        self.net.redexes.push_back((tree.tree, context_in));
         Ok(())
     }
 
