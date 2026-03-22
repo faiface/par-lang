@@ -32,8 +32,7 @@ pub fn default_workspace_from_parsed(
     let builtin_packages = builtin_packages().packages;
     if let Some(core) = builtin_packages.get("core").cloned() {
         input.add_package(
-            WorkspacePackage::from_path(PackageId::Package("core".to_string()), core.root)
-                .map_err(par_core::workspace::WorkspaceError::Load)?
+            WorkspacePackage::from_parsed(PackageId::Package("core".to_string()), core.parsed)
                 .with_externals(
                     core.externals.into_iter().map(|(module_path, module)| {
                         (module_path_from_builtin(module_path), module)
@@ -45,8 +44,7 @@ pub fn default_workspace_from_parsed(
 
     if let Some(basic) = builtin_packages.get("basic").cloned() {
         input.add_package(
-            WorkspacePackage::from_path(PackageId::Package("basic".to_string()), basic.root)
-                .map_err(par_core::workspace::WorkspaceError::Load)?
+            WorkspacePackage::from_parsed(PackageId::Package("basic".to_string()), basic.parsed)
                 .with_dependency("core", PackageId::Package("core".to_string()))
                 .with_externals(
                     basic.externals.into_iter().map(|(module_path, module)| {
