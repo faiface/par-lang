@@ -135,9 +135,9 @@ dec ParserFromReader : <e>[Reader<e>] Parser<e>
 def ParserFromReader = external
 
 // Creates a `Reader` from a function that writes to a `Writer`.
-// The writer function receives a `Writer<!>` (infallible writes) and returns
-// `Result<e, !>` to signal success or error. The resulting reader streams
-// the written bytes on demand.
+// The function receives a `Writer<!>` whose writes fail with `!` if the
+// reader's consumer closes early, signaling the writer to stop.
+// The function returns `Result<e, !>` to propagate errors to the reader.
 //
 // ```par
 // Bytes.PipeReader(type MyError)([w]
