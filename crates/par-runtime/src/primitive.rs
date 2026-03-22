@@ -5,8 +5,9 @@ use std::{
 
 use bytes::Bytes;
 use num_bigint::BigInt;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Primitive {
     Int(BigInt),
     String(ParString),
@@ -39,7 +40,7 @@ impl Primitive {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ParString {
     bytes: Bytes,
 }

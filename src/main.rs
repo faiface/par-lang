@@ -17,11 +17,13 @@ use par_core::{
 };
 use tokio::time::Instant;
 
-use par_runtime::linker::Linked;
+use par_runtime::linker::{Artifact, Linked, Unlinked};
 use par_runtime::spawn::TokioSpawn;
 use std::fmt::Display;
+use std::fs::File;
 #[cfg(feature = "playground")]
 use std::io::Write;
+use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -134,6 +136,29 @@ fn build_checked_package(
     Ok((checked, root_modules, sources))
 }
 
+fn build_unlinked_package(
+    package_path: &PathBuf,
+    max_interactions: u32,
+) -> Result<
+    (
+        CheckedWorkspace,
+        par_core::runtime::Compiled<Unlinked>,
+        Vec<ModulePath>,
+        SourceLookup,
+    ),
+    BuildError,
+> {
+    let (checked, local_modules, sources) = build_checked_package(package_path)?;
+    let rt_compiled =
+        checked
+            .compile_runtime(max_interactions)
+            .map_err(|error| BuildError::InetCompile {
+                error,
+                sources: sources.clone(),
+            })?;
+    Ok((checked, rt_compiled, local_modules, sources))
+}
+
 fn build_runtime_package(
     package_path: &PathBuf,
     max_interactions: u32,
@@ -145,15 +170,18 @@ fn build_runtime_package(
     ),
     BuildError,
 > {
-    let (checked, local_modules, sources) = build_checked_package(package_path)?;
-    let rt_compiled = checked
-        .compile_runtime(max_interactions)
-        .and_then(|compiled| compiled.link())
-        .map_err(|error| BuildError::InetCompile {
-            error,
-            sources: sources.clone(),
-        })?;
-    Ok((checked, rt_compiled, local_modules))
+    let (checked, rt_compiled, local_modules, sources) =
+        build_unlinked_package(package_path, max_interactions)?;
+    Ok((
+        checked,
+        rt_compiled
+            .link()
+            .map_err(|error| BuildError::InetCompile {
+                error,
+                sources: sources.clone(),
+            })?,
+        local_modules,
+    ))
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -199,6 +227,30 @@ fn main() -> ExitCode {
                 .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
         )
         .subcommand(
+            Command::new("compile")
+                .about("Compile a Par package")
+                .arg(
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
+                )
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag"))
+                .arg(arg!(--max_interactions <MAX_INTERACTIONS> ... "Maximum number of interactions during compilation")
+                    .value_parser(value_parser!(u32))),
+        )
+        .subcommand(
+            Command::new("run-vm")
+                .about("Run a definition in a Par package")
+                .arg(arg!(--stats "Print statistics after running the definition"))
+                .arg(
+                    arg!(--file <FILE> "Path to .pvm file")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("./compiled.pvm"),
+                )
+                .arg(arg!([target] "Target to run: `path/to/Module` or `path/to/Module.Def`"))
+                .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
+        )
+        .subcommand(
             Command::new("lsp")
                 .about("Start the Par language server for editor integration")
                 .arg(arg!(--stdio "Run lsp over stdio (default behavior)")),
@@ -237,6 +289,20 @@ fn main() -> ExitCode {
                 .cloned()
                 .unwrap_or(MAX_INTERACTIONS_DEFAULT);
             run_definition(package, target, stats, max_interactions);
+        }
+        Some(("compile", args)) => {
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            let max_interactions = args
+                .get_one::<u32>("max_interactions")
+                .cloned()
+                .unwrap_or(MAX_INTERACTIONS_DEFAULT);
+            compile(package, max_interactions);
+        }
+        Some(("run-vm", args)) => {
+            let stats = *args.get_one::<bool>("stats").unwrap();
+            let file = args.get_one::<PathBuf>("file").unwrap().clone();
+            let target = args.get_one::<String>("target").cloned();
+            run_definition_vm(file, target, stats);
         }
         Some(("check", args)) => {
             let package = args.get_one::<PathBuf>("package").unwrap().clone();
@@ -406,18 +472,71 @@ fn run_definition(
     });
 }
 
+fn run_definition_vm(binary_path: PathBuf, target: Option<String>, print_stats: bool) {
+    let runtime = tokio_factory::create_runtime().expect("Failed to create Tokio runtime");
+    runtime.block_on(async {
+        let file = File::open(binary_path).expect("Failed to open file");
+        let reader = BufReader::new(file);
+        let artifact: Artifact<Unlinked> =
+            bincode::deserialize_from(reader).expect("Failed to deserialize artifact");
+        let artifact = match artifact.link() {
+            Ok(artifact) => artifact,
+            Err(error) => {
+                println!("{}", error.to_string().bright_red());
+                return;
+            }
+        };
+
+        let (module_target, definition_target) = parse_cli_target(target.as_deref());
+        let target = format!("{}.{}", module_target, definition_target);
+
+        let start = Instant::now();
+        let package_to_run = artifact
+            .definition_to_package
+            .get(&target)
+            .expect(format!("Definition {target} not found").as_str());
+        let (root, reducer_future) = par_runtime::start_and_instantiate(
+            Arc::new(TokioSpawn::new()),
+            artifact.arena.clone(),
+            package_to_run.clone(),
+        );
+
+        root.continue_();
+        let stats = reducer_future.await;
+
+        if print_stats {
+            eprintln!("{}", stats.show(start.elapsed()));
+            eprintln!("\tArena size: {}", artifact.arena.memory_size());
+        }
+    });
+}
+
+fn compile(package_path: PathBuf, max_interactions: u32) {
+    let (_checked, rt_compiled, _local_modules, _sources) =
+        match build_unlinked_package(&package_path, max_interactions) {
+            Ok((checked, rt_compiled, local_modules, sources)) => {
+                (checked, rt_compiled, local_modules, sources)
+            }
+            Err(error) => {
+                println!("{}", error.display().bright_red());
+                return;
+            }
+        };
+
+    let artifact: Artifact<Unlinked> = rt_compiled.code.into();
+    let file = File::create("compiled.pvm").expect("Failed to create file");
+    let writer = BufWriter::new(file);
+    bincode::serialize_into(writer, &artifact).expect("Failed to serialize");
+}
+
 fn resolve_target_definition<'a>(
     target: Option<&str>,
     checked: &'a CheckedWorkspace,
     local_modules: &[ModulePath],
 ) -> Option<&'a par_core::frontend::language::GlobalName<par_core::frontend::language::Universal>> {
-    let target = target.unwrap_or("Main.Main");
-    let parsed_target = parse_target(target);
-    let definition_target = parsed_target
-        .definition_name
-        .unwrap_or_else(|| "Main".to_string());
+    let (module_target, definition_target) = parse_cli_target(target);
 
-    let canonical_module = find_local_module(&parsed_target.module_path, local_modules)?;
+    let canonical_module = find_local_module(&module_target, local_modules)?;
     let module_name = canonical_module.to_slash_path();
 
     checked
@@ -429,6 +548,15 @@ fn resolve_target_definition<'a>(
                 && local_module_slash_path(&name.module).as_deref() == Some(module_name.as_str())
         })
         .map(|(name, _)| name)
+}
+
+fn parse_cli_target(target: Option<&str>) -> (String, String) {
+    let target = target.unwrap_or("Main.Main");
+    let parsed_target = parse_target(target);
+    let definition_target = parsed_target
+        .definition_name
+        .unwrap_or_else(|| "Main".to_string());
+    (parsed_target.module_path, definition_target)
 }
 
 fn check(package_path: PathBuf) -> Result<(), String> {

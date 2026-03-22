@@ -1,4 +1,6 @@
-#[derive(Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// The behavior of a `Package` node when it interacts
 /// with a fan node (duplicate or erase)
 pub enum FanBehavior {

@@ -1,23 +1,58 @@
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::sync::OnceLock;
-
 use super::runtime::{Global, Package};
 use crate::flat::{
     runtime::PackageBody,
     show::{Showable, Shower},
 };
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::sync::OnceLock;
 
 /// The `Arena` is a store for values from a finite set of types,
 /// and returns indices into the arena. Allocation is done using [`Arena::alloc`],
 /// and values can be accessed later with [`Arena::get`]
+#[derive(Serialize, Deserialize)]
 pub struct Arena<Ext: Clone> {
     pub(crate) nodes: Vec<Global<Ext>>,
     pub(crate) strings: String,
     pub(crate) string_to_location: BTreeMap<String, Index<Ext, str>>,
     pub(crate) case_branches: Vec<(Index<Ext, str>, PackageBody<Ext>)>,
+    #[serde(
+        serialize_with = "serialize_packages",
+        deserialize_with = "deserialize_packages"
+    )]
     pub(crate) packages: Vec<OnceLock<Package<Ext>>>,
     pub(crate) redexes: Vec<(Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>)>,
+}
+
+fn serialize_packages<S, Ext: Clone + Serialize>(
+    value: &Vec<OnceLock<Package<Ext>>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let unwrapped: Vec<&Package<Ext>> = value.iter().map(|v| v.get().unwrap()).collect();
+
+    unwrapped.serialize(serializer)
+}
+
+fn deserialize_packages<'de, D, Ext: Clone + Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Vec<OnceLock<Package<Ext>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values: Vec<Package<Ext>> = Vec::deserialize(deserializer)?;
+
+    Ok(values
+        .into_iter()
+        .map(|value| {
+            let lock = OnceLock::new();
+            lock.set(value).ok().unwrap(); // always succeeds for fresh lock
+            lock
+        })
+        .collect())
 }
 
 impl<Ext: Clone> Default for Arena<Ext> {
@@ -101,7 +136,7 @@ impl<Ext: Clone> std::fmt::Display for Arena<Ext> {
         Ok(())
     }
 }
-
+#[derive(Serialize, Deserialize)]
 pub struct Index<Ext: Clone, T: Indexable<Ext> + ?Sized>(pub T::Store);
 
 impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Copy for Index<Ext, T> {}
@@ -112,7 +147,7 @@ impl<Ext: Clone, T: Indexable<Ext> + ?Sized> Copy for Index<Ext, T> {}
 /// which represents the offset into the array that contains it
 /// but a slice type requires a pair of offset and length.
 pub trait Indexable<Ext: Clone> {
-    type Store: Copy + PartialEq + Eq + PartialOrd + Ord;
+    type Store: Copy + PartialEq + Eq + PartialOrd + Ord + Serialize;
     fn get<'s>(store: &'s Arena<Ext>, index: Index<Ext, Self>) -> &'s Self;
     fn alloc<'s>(store: &'s mut Arena<Ext>, data: Self) -> Index<Ext, Self>
     where

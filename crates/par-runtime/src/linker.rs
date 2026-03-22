@@ -3,18 +3,21 @@ use crate::flat::runtime::{
     ExternalFn, Global, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
 };
 use crate::registry::{DefinitionRef, PackageRef, get_external_fn};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::sync::OnceLock;
+use std::hash::Hash;
+use std::sync::{Arc, OnceLock};
 
 pub type Linked = ExternalFn;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PackageID {
     Local,
     Package(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Unlinked {
     pub package: PackageID,
     pub path: Vec<String>,
@@ -175,4 +178,23 @@ fn link_global_cont(cont: &GlobalCont<Unlinked>) -> Result<GlobalCont<Linked>, L
 
 pub fn link_package_ptr(package: &PackagePtr<Unlinked>) -> PackagePtr<Linked> {
     Index(package.0.clone())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Artifact<Ext: Clone> {
+    pub arena: Arc<Arena<Ext>>,
+    pub definition_to_package: HashMap<String, PackagePtr<Ext>>,
+}
+
+impl Artifact<Unlinked> {
+    pub fn link(&self) -> Result<Artifact<Linked>, LinkError> {
+        Ok(Artifact {
+            arena: Arc::new(link_arena(self.arena.as_ref())?),
+            definition_to_package: self
+                .definition_to_package
+                .iter()
+                .map(|(k, v)| (k.clone(), link_package_ptr(v)))
+                .collect(),
+        })
+    }
 }
