@@ -11,9 +11,7 @@ use par_core::{
     frontend::{ParString, Primitive, parse_bytes},
     runtime::{TypedHandle, TypedReadback},
 };
-use par_runtime::flat::stats::Rewrites;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 enum Request {
     Nat(String, Box<dyn Send + FnOnce(BigInt)>),
@@ -52,8 +50,6 @@ pub enum Event {
     },
 }
 
-pub type RunStats = Arc<Mutex<Option<(Rewrites, Duration)>>>;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Polarity {
     Positive,
@@ -89,7 +85,6 @@ impl Event {
 pub struct Element {
     history: Vec<Event>,
     request: Option<Request>,
-    stats: RunStats,
 }
 
 impl Element {
@@ -97,13 +92,10 @@ impl Element {
         refresh: Arc<dyn Fn() + Send + Sync>,
         spawner: Arc<dyn Spawn + Send + Sync>,
         handle: TypedHandle,
-        stats: RunStats,
     ) -> Arc<Mutex<Self>> {
-        let stats = Arc::clone(&stats);
         let element = Arc::new(Mutex::new(Self {
             history: vec![],
             request: None,
-            stats: Arc::clone(&stats),
         }));
 
         spawner
@@ -112,7 +104,6 @@ impl Element {
                 Arc::clone(&spawner),
                 handle,
                 Arc::clone(&element),
-                stats,
             ))
             .expect("spawn failed");
         element
@@ -123,21 +114,7 @@ impl Element {
             ui.horizontal(|ui| {
                 self.show_content(ui);
             });
-            ui.separator();
-            self.show_stats(ui);
         });
-    }
-
-    pub fn show_stats(&self, ui: &mut egui::Ui) {
-        let stats = self.stats.lock().unwrap();
-        match stats.as_ref() {
-            Some((result, elapsed)) => {
-                ui.label(RichText::new(result.show(*elapsed)).code());
-            }
-            None => {
-                ui.label(RichText::new("Stats pending...").code());
-            }
-        }
     }
 
     pub fn show_content(&mut self, ui: &mut egui::Ui) {
@@ -419,7 +396,6 @@ async fn handle_coroutine(
     spawner: Arc<dyn Spawn + Send + Sync>,
     handle: TypedHandle,
     element: Arc<Mutex<Element>>,
-    stats: RunStats,
 ) {
     let mut handle = handle;
 
@@ -515,7 +491,6 @@ async fn handle_coroutine(
                     Arc::clone(&refresh),
                     Arc::clone(&spawner),
                     handle1,
-                    Arc::clone(&stats),
                 )));
                 handle = handle2;
                 refresh();
@@ -527,7 +502,6 @@ async fn handle_coroutine(
                     Arc::clone(&refresh),
                     Arc::clone(&spawner),
                     handle1,
-                    Arc::clone(&stats),
                 )));
                 handle = handle2;
                 refresh();

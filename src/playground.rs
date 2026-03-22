@@ -12,7 +12,7 @@ use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use futures::task::{Spawn, SpawnExt};
 
-use crate::readback::{Element, RunStats};
+use crate::readback::Element;
 #[cfg(target_arch = "wasm32")]
 use crate::wasm_spawn::WasmSpawn;
 use core::time::Duration;
@@ -33,7 +33,6 @@ use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
 use std::fmt::Write;
 use std::pin::Pin;
-use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -722,7 +721,6 @@ impl Playground {
             compiled.code.arena.clone(),
             package,
         );
-        let stats: RunStats = Arc::new(Mutex::new(None));
 
         let repaint_ctx = ctx.clone();
         *element = Some(Element::new(
@@ -735,22 +733,14 @@ impl Playground {
                 ty.clone(),
                 handle,
             ),
-            Arc::clone(&stats),
         ));
-        let stats_clone = Arc::clone(&stats);
         let repaint_ctx = ctx.clone();
         let _ = spawner.spawn(async move {
-            #[cfg(not(target_arch = "wasm32"))]
-            let start = Instant::now();
             tokio::select! {
                 _ = token.cancelled() => {
                     println!("Note: Reducer cancelled.");
                 }
-                result = reducer_future => {
-                   #[cfg(not(target_arch = "wasm32"))] {
-                        let elapsed = start.elapsed();
-                        *stats_clone.lock().unwrap() = Some((result, elapsed));
-                   }
+                _ = reducer_future => {
                     repaint_ctx.request_repaint();
                     println!("Note: Reducer completed.");
                 }
