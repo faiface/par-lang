@@ -46,5 +46,3 @@ def Empty = [type a] do {
     }
   }
 }
-
-

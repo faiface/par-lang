@@ -51,4 +51,3 @@ def IntListSet = ListSet(type Int)(box Int.Equals)
 def TestDedup =
   Deduplicate(type Int)(IntListSet)
     (Map(type Int, Int)(box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
-

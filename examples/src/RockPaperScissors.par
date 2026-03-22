@@ -89,4 +89,3 @@ def CalculateRound = [move1, move2] move1.case {
     .scissors! => .draw!
   }
 }
-

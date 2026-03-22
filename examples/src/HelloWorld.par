@@ -5,4 +5,3 @@ import @basic/Console
 def Main = Console.Open
   .print("Hello, world!")
   .close
-

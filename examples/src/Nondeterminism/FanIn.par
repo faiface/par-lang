@@ -39,4 +39,3 @@ def FanIn = [type a] [lists] chan yield {
 
   yield.end!
 }
-

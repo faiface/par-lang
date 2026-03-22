@@ -97,4 +97,3 @@ def TrimPrefix = [prefix, bytes]
     .fail p => do { p.close } in bytes,
     .match(_, trimmed)! => trimmed,
   }
-

@@ -34,4 +34,3 @@ def Main: ! = do {
   fib.close
   console.close
 } in !
-

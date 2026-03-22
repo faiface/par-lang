@@ -105,4 +105,3 @@ def Main = chan exit {
   console.close
   exit!
 }
-

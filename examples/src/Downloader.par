@@ -248,4 +248,3 @@ def TrimStart = [whole, start]
     .fail p => do { p.close } in whole,
     .match(_, trimmed)! => trimmed,
   }
-

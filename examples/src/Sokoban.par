@@ -297,4 +297,3 @@ def CoordListContains = [list, (x, y)!] list.begin.case {
   },
   .end! => .false!,
 }
-

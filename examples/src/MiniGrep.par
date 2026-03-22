@@ -148,4 +148,3 @@ def Enumerate1 = <e, a>[iter] do {
     } in iter.loop
   }
 }
-

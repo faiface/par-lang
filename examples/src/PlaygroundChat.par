@@ -194,4 +194,3 @@ def ServeChat = [api] do {
     } in rest.loop
   }
 }
-

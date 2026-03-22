@@ -20,4 +20,3 @@ def Main: ! =
     console.print(Nat.ToString(status))
     console.close
   } in !
-

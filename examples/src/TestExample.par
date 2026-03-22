@@ -40,5 +40,3 @@ def Program: ! = Console.Open
   .print("Run with: par-lang run par")
   .print("Test with: par-lang test par")
   .close
-
-
