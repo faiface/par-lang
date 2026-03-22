@@ -6,17 +6,17 @@ import Nat
 import Ordering
 import String
 
-def Add   : [Int, Int] Int = external
-def Sub   : [Int, Int] Int = external
-def Mul   : [Int, Int] Int = external
-def Div   : [Int, Int] Int = external
-def Mod   : [Int, Nat] Nat = external
-def Min   : [Int, Int] Int = external
-def Max   : [Int, Int] Int = external
-def Abs   : [Int] Nat = external
+def Add   : [Int, Int] Int       = external
+def Sub   : [Int, Int] Int       = external
+def Mul   : [Int, Int] Int       = external
+def Div   : [Int, Int] Int       = external
+def Mod   : [Int, Nat] Nat       = external
+def Min   : [Int, Int] Int       = external
+def Max   : [Int, Int] Int       = external
+def Abs   : [Int] Nat            = external
 def Clamp : [Int] [Int, Int] Int = external
 
-def Equals  : [Int, Int] Bool = external
+def Equals  : [Int, Int] Bool     = external
 def Compare : [Int, Int] Ordering = external
 
 def Range : [Int, Int] List<Int> = external

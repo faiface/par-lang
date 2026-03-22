@@ -15,6 +15,6 @@ type Class = either {
   },
 }
 
-def Equals : [Char, Char] Bool = external
-def Code   : [Char] Nat = external
+def Equals : [Char, Char] Bool  = external
+def Code   : [Char] Nat         = external
 def Is     : [Char, Class] Bool = external

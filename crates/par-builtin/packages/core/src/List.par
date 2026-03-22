@@ -29,26 +29,6 @@ def Builder = [type a]
     .build => append(.end!),
   }
 
-dec Find : <a>[List<box a>] [box [box a] Bool] Option<a>
-def Find = <a>[list] [f] list.begin.case {
-  .end! => .err!,
-  .item(v) list => f(v).case {
-    .true! => .ok v,
-    .false! => list.loop,
-  },
-}
-
-dec FindLast : <a>[List<box a>] [box [box a] Bool] Option<a>
-def FindLast = <a>[list] [f]
-  let result: Option<box a> = .err! in
-  list.begin.case {
-    .end! => result,
-    .item(v) list => f(v).case {
-      .true! => let result = .ok v in list.loop,
-      .false! => list.loop,
-    },
-  }
-
 dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
 def Map = <a>[list] [type b] [f] list.begin.case {
   .end! => .end!
@@ -77,12 +57,6 @@ dec Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
 def Fold = <a>[list] <r>[result] [f] list.begin.case {
   .end! => result,
   .item(v) list => let result = f(result, v) in list.loop,
-}
-
-dec Reduce : <a>[List<a>] [box [a, a] a] Option<a>
-def Reduce = <a>[list] [f] list.case {
-  .end! => .err!,
-  .item(result) list => .ok Fold(list, result, f),
 }
 
 dec Length : <a>[List<box a>] Nat
@@ -117,40 +91,6 @@ def Copy = <a>[dst] [src] do {
   }
 } in dst
 
-dec MinMax : <a>[List<box a>] [box [box a, box a] Ordering] Option<(a) a>
-def MinMax = <a>[list] [cmp]
-  let result: Option<(box a) box a> = .err! in
-  list.begin.case {
-    .end! => result,
-    .item(v) list => result.case {
-      .err! =>
-        let result = .ok(v) v in
-        list.loop,
-      .ok(min) max =>
-        let result = cmp(v, min).case {
-          .less! => .ok (v) max,
-          else _ => cmp(v, max).case {
-            .greater! => .ok (min) v,
-            else _ => result,
-          },
-        } in list.loop,
-    },
-  }
-
-dec Min : <a>[List<box a>] [box [box a, box a] Ordering] Option<a>
-def Min = <a>[list] [cmp]
-  MinMax(list, cmp).case {
-    .err! => .err!,
-    .ok(min) _ => .ok min,
-  }
-
-dec Max : <a>[List<box a>] [box [box a, box a] Ordering] Option<a>
-def Max = <a>[list] [cmp]
-  MinMax(list, cmp).case {
-    .err! => .err!,
-    .ok(_) max => .ok max,
-  }
-
 dec Zip : <a>[List<box a>] <b>[List<box b>] List<(a) b>
 def Zip = <a>[list1] <b>[list2] chan yield {
   list1.begin.case {
@@ -168,21 +108,14 @@ def Zip = <a>[list1] <b>[list2] chan yield {
 }
 
 dec Unzip : <a, b>[List<(a) b>] (List<a>) List<b>
-def Unzip = <a, b>[list] do {
-  let list1 = Builder(type a)
-  let list2 = Builder(type b)
+def Unzip = <a, b>[list] list.begin.case {
+  .end! => (.end!) .end!,
+  .item((x) y) xys => do {
+    let (xs) ys = xys.loop
+  } in (.item(x) xs) .item(y) ys
+}
 
-  list.begin.case {
-    .end! => {},
-    .item((v1) v2) list => {
-      list1.add(v1)
-      list2.add(v2)
-      list.loop
-    },
-  }
-} in (list1.build) list2.build
-
-dec All : <a>[List<box a>] [box [box a] Bool] Bool
+dec All : <a>[List<box a>] [box [a] Bool] Bool
 def All = <a>[list] [f]
   list.begin.case {
     .end! => .true!,
@@ -192,27 +125,8 @@ def All = <a>[list] [f]
     },
   }
 
-dec Any : <a>[List<box a>] [box [box a] Bool] Bool
-def Any = <a>[list] [f] All(list, box [v] f(v).case {
-  .true! => .false!,
-  .false! => .true!,
-})
-
-dec Dedup : <a>[List<box a>] [box [box a, box a] Bool] List<a>
-def Dedup = <a>[list] [eq]
-  list.case {
-    .end! => .end!,
-    .item(prev) list => .item(prev)
-      list.begin.case {
-        .end! => .end!,
-        .item(v) list => eq(prev, v).case {
-          .true! => list.loop,
-          .false! =>
-            let prev = v in
-            .item(v) list.loop,
-        }
-      }
-  }
+dec Any : <a>[List<box a>] [box [a] Bool] Bool
+def Any = <a>[list] [f] {not list->All(box [v] {not f(v)})}
 
 dec Take : <a>[List<box a>] [Nat] List<a>
 def Take = <a>[list] [n]
@@ -233,43 +147,3 @@ def Drop = <a>[list] [n]
       .item(_) list => next.loop,
     },
   }
-
-dec Chunk : <a>[List<a>] [Nat] List<List<a>>
-def Chunk = <a>[list] [n] chan outer {
-  let inner: Option<Builder<a>> = .err!
-  let i = 0
-
-  list.begin.case {
-    .end! => {
-      inner.case {
-        .err! => {},
-        .ok builder => { outer.item(builder.build) },
-      }
-      outer.end!
-    },
-    .item(v) list => {
-      inner.case {
-        .err! => {
-          let inner = .ok Builder(type a).add(v)
-        },
-        .ok builder => {
-          let inner = .ok builder.add(v)
-        },
-      }
-      i->Nat.Add(1)
-      Nat.Equals(i, n).case {
-        .true! => {
-          inner.case {
-            .ok builder => { outer.item(builder.build) },
-          }
-          let inner = .err!
-          let i = 0
-          list.loop
-        },
-        .false! => {
-          list.loop
-        },
-      }
-    },
-  }
-}

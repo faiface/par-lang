@@ -7,7 +7,7 @@ import @core/Result
 import @core/String
 import @core/Url
 
-type Error  = String
+type Error = String
 
 type Request =
   (String)

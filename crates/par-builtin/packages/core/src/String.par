@@ -47,12 +47,12 @@ type Pattern = recursive either {
 }
 
 def Quote     : [String] String = external
-def FromBytes : [Bytes] String = external
+def FromBytes : [Bytes] String  = external
 
-def Equals    : [String, String] Bool = external
+def Equals    : [String, String] Bool     = external
 def Compare   : [String, String] Ordering = external
 
-def Builder : Builder = external
+def Builder : Builder                    = external
 def Parser  : [String] Parser<either {}> = external
 
 def ParserFromReader : <e>[Bytes.Reader<e>] Parser<e> = external

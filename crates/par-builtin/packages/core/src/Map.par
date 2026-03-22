@@ -18,6 +18,6 @@ type Map<k, v> = iterative choice {
 }
 
 def OfString : [type v] [List<(String) box v>] Map<String, v> = external
-def OfBytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v> = external
-def OfInt    : [type v] [List<(Int) box v>]    Map<Int, v> = external
-def OfNat    : [type v] [List<(Nat) box v>]    Map<Nat, v> = external
+def OfBytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>  = external
+def OfInt    : [type v] [List<(Int) box v>]    Map<Int, v>    = external
+def OfNat    : [type v] [List<(Nat) box v>]    Map<Nat, v>    = external

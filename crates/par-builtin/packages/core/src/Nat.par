@@ -6,16 +6,16 @@ import List
 import Ordering
 import String
 
-def Add   : [Nat, Nat] Nat = external
-def Sub   : [Nat, Int] Nat = external
-def Mul   : [Nat, Nat] Nat = external
-def Div   : [Nat, Nat] Nat = external
-def Mod   : [Nat, Nat] Nat = external
-def Min   : [Nat, Nat] Nat = external
-def Max   : [Nat, Int] Nat = external
+def Add   : [Nat, Nat] Nat       = external
+def Sub   : [Nat, Int] Nat       = external
+def Mul   : [Nat, Nat] Nat       = external
+def Div   : [Nat, Nat] Nat       = external
+def Mod   : [Nat, Nat] Nat       = external
+def Min   : [Nat, Nat] Nat       = external
+def Max   : [Nat, Int] Nat       = external
 def Clamp : [Int] [Nat, Nat] Nat = external
 
-def Equals  : [Nat, Nat] Bool = external
+def Equals  : [Nat, Nat] Bool     = external
 def Compare : [Nat, Nat] Ordering = external
 
 def Repeat : [Nat] recursive either {
