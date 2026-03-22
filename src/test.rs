@@ -9,6 +9,23 @@ use par_core::frontend::{DefinitionBody, Type};
 
 use crate::check;
 
+const LARGE_TEST_STACK_SIZE: usize = 6 * 1024 * 1024;
+
+fn run_with_large_stack<T>(f: impl FnOnce() -> T + Send + 'static) -> T
+where
+    T: Send + 'static,
+{
+    let handle = std::thread::Builder::new()
+        .name("par-large-stack-test".to_string())
+        .stack_size(LARGE_TEST_STACK_SIZE)
+        .spawn(f)
+        .expect("failed to spawn large-stack test thread");
+    match handle.join() {
+        Ok(result) => result,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
+
 #[derive(Default, Debug)]
 struct DepthMetrics {
     expression_current: usize,
@@ -155,23 +172,27 @@ impl DepthMetrics {
 
 #[test]
 fn check_all_examples() -> Result<(), String> {
-    // Check the examples package as a whole.
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.push("examples");
-    eprintln!("Checking {:?}", d);
-    check(d)
+    run_with_large_stack(|| {
+        // Check the examples package as a whole.
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("examples");
+        eprintln!("Checking {:?}", d);
+        check(d)
+    })
 }
 
 #[test]
 fn test_all_files() -> Result<(), String> {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.push("tests");
-    eprintln!("Testing {:?}", d);
-    if crate::test_runner::run_tests(d, None, None, 10_000) {
-        Ok(())
-    } else {
-        Err("Some tests failed".to_string())
-    }
+    run_with_large_stack(|| {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("tests");
+        eprintln!("Testing {:?}", d);
+        if crate::test_runner::run_tests(d, None, None, 10_000) {
+            Ok(())
+        } else {
+            Err("Some tests failed".to_string())
+        }
+    })
 }
 
 fn temp_package(name: &str, source: &str) -> PathBuf {
@@ -212,67 +233,5 @@ fn runtime_link_reports_missing_external_registration() {
     assert!(
         display.contains("Missing external registration for"),
         "unexpected error: {display}"
-    );
-}
-
-#[test]
-#[ignore = "measurement helper"]
-fn measure_examples_depths() {
-    let metrics = {
-        let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        root.push("examples");
-
-        let workspace = crate::workspace_support::default_workspace_from_path(&root)
-            .expect("failed to load examples workspace");
-        let checked = workspace
-            .type_check()
-            .expect("failed to type check examples workspace");
-
-        let mut metrics = DepthMetrics::default();
-        let module = checked.checked_module();
-
-        for (_, _, typ) in module.type_defs.globals.values() {
-            metrics.observe_type(typ);
-        }
-        for declaration in module.declarations.values() {
-            metrics.observe_type(&declaration.typ);
-        }
-        for (definition, typ) in module.definitions.values() {
-            metrics.observe_type(typ);
-            if let DefinitionBody::Par(expression) = &definition.body {
-                metrics.observe_expression(expression);
-            }
-        }
-        metrics
-    };
-
-    println!("Examples depth study");
-    println!(
-        "Expressions: current={}, flattened={}",
-        metrics.expression_current, metrics.expression_flattened
-    );
-    println!(
-        "Processes: current={}, flattened={}",
-        metrics.process_current, metrics.process_flattened
-    );
-    println!(
-        "Types: current={}, flattened={}",
-        metrics.type_current, metrics.type_flattened
-    );
-
-    assert!(
-        metrics.expression_flattened <= metrics.expression_current,
-        "expression flattened depth exceeded current depth: {:?}",
-        metrics
-    );
-    assert!(
-        metrics.process_flattened <= metrics.process_current,
-        "process flattened depth exceeded current depth: {:?}",
-        metrics
-    );
-    assert!(
-        metrics.type_flattened <= metrics.type_current,
-        "type flattened depth exceeded current depth: {:?}",
-        metrics
     );
 }
