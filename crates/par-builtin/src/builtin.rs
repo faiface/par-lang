@@ -5,13 +5,13 @@ mod bytes;
 mod char_;
 mod console;
 mod debug;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 mod http;
 mod int;
 mod list;
 mod map;
 mod nat;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 mod os;
 mod parser;
 mod string;
@@ -33,7 +33,7 @@ pub fn builtin_packages() -> Vec<WorkspacePackage> {
     let mut packages = Vec::new();
     packages.push(core_package());
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(target_family = "wasm"))]
     packages.push(basic_package());
 
     packages
@@ -45,7 +45,7 @@ fn core_package() -> WorkspacePackage {
     WorkspacePackage::new(PackageId::Package("core".to_string()), parsed).with_externals(externals)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 fn basic_package() -> WorkspacePackage {
     let parsed = parse_builtin_sources("basic", BASIC_SOURCE_FILES);
     let externals = load_external_type_defs("basic");
@@ -130,7 +130,7 @@ const CORE_SOURCE_FILES: &[BuiltinSourceFile] = &[
     },
 ];
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 const BASIC_SOURCE_FILES: &[BuiltinSourceFile] = &[
     BuiltinSourceFile {
         relative_path_from_src: "Console.par",

@@ -13,7 +13,7 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use futures::task::{Spawn, SpawnExt};
 
 use crate::readback::Element;
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 use crate::wasm_spawn::WasmSpawn;
 use core::time::Duration;
 use par_core::frontend::DefinitionBody;
@@ -377,13 +377,13 @@ impl Playground {
             style.wrap_mode = Some(egui::TextWrapMode::Extend);
         });
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_family = "wasm"))]
         let runtime =
             crate::tokio_factory::create_runtime().expect("Failed to create Tokio runtime");
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_family = "wasm"))]
         let spawner = Arc::new(TokioSpawn::from_handle(runtime.handle().clone()));
 
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(target_family = "wasm")]
         let spawner = Arc::new(WasmSpawn::new());
 
         let mut playground = Box::new(Self {
@@ -618,14 +618,14 @@ fn editor_hover_pos(output: &egui::text_edit::TextEditOutput) -> Option<(u32, u3
 }
 
 impl Playground {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(target_family = "wasm"))]
     fn open_file(&mut self) {
         if let Some(path) = rfd::FileDialog::new().pick_file() {
             self.open(path);
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(target_family = "wasm")]
     fn open_file(&mut self) {}
 
     fn open(&mut self, file_path: PathBuf) {
@@ -650,7 +650,7 @@ impl Playground {
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(target_family = "wasm"))]
     fn save_file_as(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .set_can_create_directories(true)
@@ -661,7 +661,7 @@ impl Playground {
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(target_family = "wasm")]
     fn save_file_as(&mut self) {}
 
     fn save_file(&mut self, path: &Path) {

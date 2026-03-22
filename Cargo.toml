@@ -53,10 +53,10 @@ percent-encoding = "2.3.1"
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[target.'cfg(target_family = "wasm")'.dependencies]
 tokio = { version = "1.49.0", features = ["rt", "macros", "io-util"] }
 log = "0.4.28"
 wasm-bindgen-futures = "0.4.64"

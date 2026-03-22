@@ -98,7 +98,7 @@ impl Reducer {
         loop {
             loop {
                 if !self.runtime.redexes.is_empty() {
-                    #[cfg(not(target_arch = "wasm32"))]
+                    #[cfg(not(target_family = "wasm"))]
                     let start = Instant::now();
                     if let Some((a, b)) = self.runtime.reduce() {
                         match (a, b) {
@@ -126,7 +126,7 @@ impl Reducer {
                             }
                         }
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
+                    #[cfg(not(target_family = "wasm"))]
                     {
                         self.runtime.rewrites.net_duration += start.elapsed();
                     }

@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 mod language_server;
 mod package_utils;
 #[cfg(feature = "playground")]
@@ -36,9 +36,14 @@ mod readback;
 mod test;
 mod test_runner;
 mod tokio_factory;
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 mod wasm_spawn;
 mod workspace_support;
+
+#[cfg(target_family = "wasm")]
+unsafe extern "C" {
+    fn __wasm_call_ctors();
+}
 
 const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
@@ -156,7 +161,7 @@ fn build_runtime_package(
     Ok((checked, rt_compiled, local_modules))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 fn main() -> ExitCode {
     let matches = command!()
         .subcommand_required(true)
@@ -263,8 +268,12 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 fn main() {
+    unsafe {
+        __wasm_call_ctors();
+    }
+
     use eframe::wasm_bindgen::JsCast as _;
 
     // Redirect `log` message to `console.log` and friends:
@@ -320,7 +329,7 @@ fn run_playground(_: Option<PathBuf>, _: u32) {
     eprintln!("Playground was disabled when building Par")
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 #[cfg(feature = "playground")]
 fn run_playground(file: Option<PathBuf>, max_interactions: u32) {
     let options = eframe::NativeOptions {
@@ -443,7 +452,7 @@ fn check(package_path: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 fn run_language_server() {
     language_server::language_server_main::main()
 }
