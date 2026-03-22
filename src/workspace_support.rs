@@ -16,29 +16,13 @@ pub fn default_workspace_from_path(
 pub fn default_workspace_from_parsed(
     local: ParsedPackage,
 ) -> Result<Workspace, par_core::workspace::WorkspaceError> {
-    let mut packages = Vec::new();
+    let mut packages = builtin_packages();
 
-    let builtin_packages = builtin_packages().packages;
-    if let Some(core) = builtin_packages.get("core").cloned() {
-        packages.push(
-            WorkspacePackage::new(PackageId::Package("core".to_string()), core.parsed)
-                .with_externals(core.externals),
-        );
-    }
-
-    if let Some(basic) = builtin_packages.get("basic").cloned() {
-        packages.push(
-            WorkspacePackage::new(PackageId::Package("basic".to_string()), basic.parsed)
-                .with_dependency("core", PackageId::Package("core".to_string()))
-                .with_externals(basic.externals),
-        );
-    }
-
-    let mut local_package = WorkspacePackage::new(PackageId::Local, local)
-        .with_dependency("core", PackageId::Package("core".to_string()));
-    if builtin_packages.contains_key("basic") {
-        local_package =
-            local_package.with_dependency("basic", PackageId::Package("basic".to_string()));
+    let mut local_package = WorkspacePackage::new(PackageId::Local, local);
+    for builtin in &packages {
+        if let PackageId::Package(name) = &builtin.id {
+            local_package = local_package.with_dependency(name.as_str(), builtin.id.clone());
+        }
     }
     packages.push(local_package);
 

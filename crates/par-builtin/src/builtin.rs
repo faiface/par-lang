@@ -20,57 +20,38 @@ mod url;
 
 use std::collections::{BTreeMap, btree_map::Entry};
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use par_core::frontend::language::Unresolved;
-use par_core::frontend::{Module, TypeDef, get_external_type_defs, process};
+use par_core::frontend::language::PackageId;
+use par_core::frontend::{TypeDef, get_external_type_defs};
 use par_core::source::FileName;
-use par_core::workspace::{LoadedPackageFile, ModulePath, ParsedPackage, parse_loaded_files};
+use par_core::workspace::{
+    ExternalModule, LoadedPackageFile, ModulePath, WorkspacePackage, parse_loaded_files,
+};
 use par_runtime::registry::PackageRef;
 
-pub type BuiltinModule = Module<Arc<process::Expression<(), Unresolved>>, Unresolved>;
-
-#[derive(Debug, Clone)]
-pub struct BuiltinPackage {
-    pub parsed: ParsedPackage,
-    pub externals: BTreeMap<ModulePath, BuiltinModule>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BuiltinPackages {
-    pub packages: BTreeMap<String, BuiltinPackage>,
-}
-
-pub fn builtin_packages() -> BuiltinPackages {
-    let mut packages = BTreeMap::new();
-    packages.insert("core".to_string(), core_builtin_package());
+pub fn builtin_packages() -> Vec<WorkspacePackage> {
+    let mut packages = Vec::new();
+    packages.push(core_package());
 
     #[cfg(not(target_arch = "wasm32"))]
-    packages.insert("basic".to_string(), basic_builtin_package());
+    packages.push(basic_package());
 
-    BuiltinPackages { packages }
+    packages
 }
 
-fn core_builtin_package() -> BuiltinPackage {
-    let mut package = BuiltinPackage {
-        parsed: parse_builtin_package("core", CORE_SOURCE_FILES),
-        externals: BTreeMap::new(),
-    };
-
-    package.load_external_type_defs("core");
-    package
+fn core_package() -> WorkspacePackage {
+    let parsed = parse_builtin_sources("core", CORE_SOURCE_FILES);
+    let externals = load_external_type_defs("core");
+    WorkspacePackage::new(PackageId::Package("core".to_string()), parsed).with_externals(externals)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn basic_builtin_package() -> BuiltinPackage {
-    let mut package = BuiltinPackage {
-        parsed: parse_builtin_package("basic", BASIC_SOURCE_FILES),
-        externals: BTreeMap::new(),
-    };
-
-    package.load_external_type_defs("basic");
-
-    package
+fn basic_package() -> WorkspacePackage {
+    let parsed = parse_builtin_sources("basic", BASIC_SOURCE_FILES);
+    let externals = load_external_type_defs("basic");
+    WorkspacePackage::new(PackageId::Package("basic".to_string()), parsed)
+        .with_dependency("core", PackageId::Package("core".to_string()))
+        .with_externals(externals)
 }
 
 struct BuiltinSourceFile {
@@ -173,7 +154,10 @@ const BASIC_SOURCE_FILES: &[BuiltinSourceFile] = &[
     },
 ];
 
-fn parse_builtin_package(package_name: &str, source_files: &[BuiltinSourceFile]) -> ParsedPackage {
+fn parse_builtin_sources(
+    package_name: &str,
+    source_files: &[BuiltinSourceFile],
+) -> par_core::workspace::ParsedPackage {
     let files = source_files
         .iter()
         .map(|file| LoadedPackageFile {
@@ -187,42 +171,31 @@ fn parse_builtin_package(package_name: &str, source_files: &[BuiltinSourceFile])
     parse_loaded_files(files).expect("embedded builtin package should parse")
 }
 
-impl BuiltinPackage {
-    fn append_external(&mut self, module_path: ModulePath, module: BuiltinModule) {
-        match self.externals.entry(module_path) {
+fn load_external_type_defs(name: &str) -> BTreeMap<ModulePath, ExternalModule> {
+    let mut externals = BTreeMap::<ModulePath, ExternalModule>::new();
+    for type_def in get_external_type_defs(&PackageRef::Package(name)) {
+        let module_path = ModulePath {
+            directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
+            module: type_def.path.module.into(),
+        };
+        match externals.entry(module_path) {
             Entry::Vacant(vacant) => {
-                vacant.insert(module);
-            }
-            Entry::Occupied(mut occupied) => {
-                append_module(occupied.get_mut(), module);
-            }
-        }
-    }
-
-    fn load_external_type_defs(&mut self, name: &str) {
-        for type_def in get_external_type_defs(&PackageRef::Package(name)) {
-            let module_path = ModulePath {
-                directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
-                module: type_def.path.module.into(),
-            };
-            if !self.externals.contains_key(&module_path) {
-                self.append_external(module_path.clone(), BuiltinModule::default());
-            }
-            self.externals
-                .get_mut(&module_path)
-                .unwrap()
-                .type_defs
-                .push(TypeDef::external(
+                let mut module = ExternalModule::default();
+                module.type_defs.push(TypeDef::external(
                     type_def.path.name,
                     &[],
                     type_def.typ.clone(),
                 ));
+                vacant.insert(module);
+            }
+            Entry::Occupied(mut occupied) => {
+                occupied.get_mut().type_defs.push(TypeDef::external(
+                    type_def.path.name,
+                    &[],
+                    type_def.typ.clone(),
+                ));
+            }
         }
     }
-}
-
-fn append_module(target: &mut BuiltinModule, mut other: BuiltinModule) {
-    target.type_defs.append(&mut other.type_defs);
-    target.declarations.append(&mut other.declarations);
-    target.definitions.append(&mut other.definitions);
+    externals
 }
