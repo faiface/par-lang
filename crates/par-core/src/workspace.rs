@@ -190,11 +190,7 @@ impl Display for PackageLoadError {
                 write!(f, "Failed to parse source file {}", file.0)
             }
             Self::MissingModuleDeclaration { file } => {
-                write!(
-                    f,
-                    "Source file is missing `module` declaration: {}",
-                    file.0
-                )
+                write!(f, "Source file is missing `module` declaration: {}", file.0)
             }
             Self::FileNameModuleMismatch {
                 file,
@@ -204,9 +200,7 @@ impl Display for PackageLoadError {
                 write!(
                     f,
                     "Module declaration `{}` does not match source file name `{}` in {}",
-                    declared_module,
-                    file_module_name,
-                    file.0
+                    declared_module, file_module_name, file.0
                 )
             }
             Self::ConflictingModuleNameCasing {
@@ -382,7 +376,6 @@ impl WorkspacePackage {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct FileImportScope<S> {
     pub current_module: S,
@@ -502,8 +495,11 @@ impl CheckedWorkspace {
         if hover.is_type() {
             if let Some(global_name) = hover.global_name() {
                 let _ = write!(output, "type ");
-                let _ =
-                    write_global_name_in_file(&mut output, self.workspace.import_scope(file), global_name);
+                let _ = write_global_name_in_file(
+                    &mut output,
+                    self.workspace.import_scope(file),
+                    global_name,
+                );
                 if let Some(header) = hover.type_header() {
                     let _ = write_type_hover_header_in_file(
                         &mut output,
@@ -516,8 +512,11 @@ impl CheckedWorkspace {
         } else if hover.is_declaration() {
             if let Some(global_name) = hover.global_name() {
                 let _ = write!(output, "dec ");
-                let _ =
-                    write_global_name_in_file(&mut output, self.workspace.import_scope(file), global_name);
+                let _ = write_global_name_in_file(
+                    &mut output,
+                    self.workspace.import_scope(file),
+                    global_name,
+                );
                 let _ = write!(output, " : ");
             }
         } else if let Some(name) = hover.variable_name() {
@@ -669,12 +668,13 @@ pub fn parse_loaded_files(
         let (file_module_name, module_part_suffix) =
             parse_module_name_from_file_name(&file.relative_path_from_src)?;
         let source: Arc<str> = Arc::from(file.source.as_str());
-        let source_file = parse_source_file(&file.source, file.name.clone())
-            .map_err(|error| PackageLoadError::ParseError {
+        let source_file = parse_source_file(&file.source, file.name.clone()).map_err(|error| {
+            PackageLoadError::ParseError {
                 file: file.name.clone(),
                 source: Arc::clone(&source),
                 error,
-            })?;
+            }
+        })?;
 
         let declared_module_name = source_file
             .module_decl
@@ -751,11 +751,7 @@ fn build_module_lookup(
     for package in packages {
         for module in &package.parsed.modules {
             lookup.insert(
-                module_lookup_key(
-                    &package.id,
-                    &module.path.directories,
-                    &module.path.module,
-                ),
+                module_lookup_key(&package.id, &module.path.directories, &module.path.module),
                 module.path.clone(),
             );
         }
@@ -1792,7 +1788,10 @@ def Run = external
             .unwrap();
 
         assert_eq!(
-            checked.workspace().type_doc(type_name).map(|doc| doc.markdown.as_str()),
+            checked
+                .workspace()
+                .type_doc(type_name)
+                .map(|doc| doc.markdown.as_str()),
             Some("Type docs")
         );
         assert_eq!(

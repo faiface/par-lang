@@ -371,8 +371,7 @@ impl Instance {
     }
 
     fn compile_single_file(&self, code: &str) -> Result<Arc<CheckedWorkspace>, CompileError> {
-        let file_path =
-            uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
+        let file_path = uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
         let relative_path_from_src = file_path
             .file_name()
             .map(PathBuf::from)
@@ -418,7 +417,9 @@ impl Instance {
             .collect::<HashMap<_, _>>();
 
         for file in &mut files {
-            if let Some(source) = overlay_sources.get(&file.name.0.to_lowercase().replace('\\', "/")) {
+            if let Some(source) =
+                overlay_sources.get(&file.name.0.to_lowercase().replace('\\', "/"))
+            {
                 file.source = source.clone();
             }
         }

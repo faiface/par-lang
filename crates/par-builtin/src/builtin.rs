@@ -173,14 +173,13 @@ const BASIC_SOURCE_FILES: &[BuiltinSourceFile] = &[
     },
 ];
 
-fn parse_builtin_package(
-    package_name: &str,
-    source_files: &[BuiltinSourceFile],
-) -> ParsedPackage {
+fn parse_builtin_package(package_name: &str, source_files: &[BuiltinSourceFile]) -> ParsedPackage {
     let files = source_files
         .iter()
         .map(|file| LoadedPackageFile {
-            name: FileName::from(format!("par:{}/{}", package_name, file.relative_path_from_src).as_str()),
+            name: FileName::from(
+                format!("par:{}/{}", package_name, file.relative_path_from_src).as_str(),
+            ),
             relative_path_from_src: PathBuf::from(file.relative_path_from_src),
             source: file.source.to_owned(),
         })

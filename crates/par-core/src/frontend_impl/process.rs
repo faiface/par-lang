@@ -1340,15 +1340,11 @@ impl<S: Clone> Command<(), S> {
     ) -> Result<Command<(), T>, E> {
         match self {
             Command::Link(expression) => Self::map_global_names_link(expression, f),
-            Command::Send(argument, process) => {
-                Self::map_global_names_send(argument, process, f)
-            }
+            Command::Send(argument, process) => Self::map_global_names_send(argument, process, f),
             Command::Receive(parameter, annotation, (), process, vars) => {
                 Self::map_global_names_receive(parameter, annotation, process, vars, f)
             }
-            Command::Signal(chosen, process) => {
-                Self::map_global_names_signal(chosen, process, f)
-            }
+            Command::Signal(chosen, process) => Self::map_global_names_signal(chosen, process, f),
             Command::Case(branches, processes, else_process) => {
                 Self::map_global_names_case(branches, processes, else_process, f)
             }
@@ -1396,11 +1392,11 @@ impl<S: Clone> Command<(), S> {
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Command<(), T>, E> {
         Ok(Command::Receive(
-                parameter,
-                annotation.map(|typ| typ.map_global_names(f)).transpose()?,
-                (),
-                map_arc_process(process, f)?,
-                vars,
+            parameter,
+            annotation.map(|typ| typ.map_global_names(f)).transpose()?,
+            (),
+            map_arc_process(process, f)?,
+            vars,
         ))
     }
 
@@ -1421,7 +1417,9 @@ impl<S: Clone> Command<(), S> {
         Ok(Command::Case(
             branches,
             map_process_boxed_slice(processes, f)?,
-            else_process.map(|process| map_arc_process(process, f)).transpose()?,
+            else_process
+                .map(|process| map_arc_process(process, f))
+                .transpose()?,
         ))
     }
 
@@ -1463,7 +1461,10 @@ impl<S: Clone> Command<(), S> {
         process: Arc<Process<(), S>>,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Command<(), T>, E> {
-        Ok(Command::ReceiveType(parameter, map_arc_process(process, f)?))
+        Ok(Command::ReceiveType(
+            parameter,
+            map_arc_process(process, f)?,
+        ))
     }
 }
 
@@ -1488,14 +1489,9 @@ impl<S: Clone> Expression<(), S> {
                 chan_type: (),
                 expr_type: (),
                 process,
-            } => Self::map_global_names_chan(
-                span,
-                captures,
-                chan_name,
-                chan_annotation,
-                process,
-                f,
-            ),
+            } => {
+                Self::map_global_names_chan(span, captures, chan_name, chan_annotation, process, f)
+            }
             Expression::Primitive(span, primitive, ()) => {
                 Ok(Expression::Primitive(span, primitive, ()))
             }
@@ -1509,7 +1505,12 @@ impl<S: Clone> Expression<(), S> {
         expression: Arc<Expression<(), S>>,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Expression<(), T>, E> {
-        Ok(Expression::Box(span, captures, map_arc_expression(expression, f)?, ()))
+        Ok(Expression::Box(
+            span,
+            captures,
+            map_arc_expression(expression, f)?,
+            (),
+        ))
     }
 
     fn map_global_names_chan<T, E>(
@@ -1545,7 +1546,9 @@ fn map_arc_expression<S: Clone, T, E>(
     expression: Arc<Expression<(), S>>,
     f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
 ) -> Result<Arc<Expression<(), T>>, E> {
-    Ok(Arc::new(Arc::unwrap_or_clone(expression).map_global_names(f)?))
+    Ok(Arc::new(
+        Arc::unwrap_or_clone(expression).map_global_names(f)?,
+    ))
 }
 
 fn map_process_vec<S: Clone, T, E>(

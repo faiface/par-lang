@@ -2,7 +2,9 @@ use std::path::Path;
 
 use par_builtin::builtin_packages;
 use par_core::frontend::language::PackageId;
-use par_core::workspace::{ParsedPackage, Workspace, WorkspacePackage, load_workspace, parse_package};
+use par_core::workspace::{
+    ParsedPackage, Workspace, WorkspacePackage, load_workspace, parse_package,
+};
 
 pub fn default_workspace_from_path(
     start: impl AsRef<Path>,

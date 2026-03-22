@@ -111,7 +111,11 @@ fn build_for_run(
             error,
             sources: sources.clone(),
         })?;
-    Ok((checked.clone(), compiled, checked.workspace().root_modules()))
+    Ok((
+        checked.clone(),
+        compiled,
+        checked.workspace().root_modules(),
+    ))
 }
 
 #[derive(Debug)]
@@ -165,14 +169,14 @@ pub fn run_tests(
     );
     println!();
 
-    let (checked, rt_compiled, local_modules) =
-        match build_for_run(&package_path, max_interactions) {
-            Ok(result) => result,
-            Err(error) => {
-                eprintln!("{}", error.display().bright_red());
-                return false;
-            }
-        };
+    let (checked, rt_compiled, local_modules) = match build_for_run(&package_path, max_interactions)
+    {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("{}", error.display().bright_red());
+            return false;
+        }
+    };
 
     let parsed_target = target.as_deref().map(parse_target);
     let module_selector = parsed_target
