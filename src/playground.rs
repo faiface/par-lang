@@ -32,7 +32,6 @@ use par_core::{
 use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
 use std::fmt::Write;
-use std::pin::Pin;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -280,13 +279,10 @@ pub struct Playground {
     element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (u32, u32),
     theme_mode: ThemeMode,
-    #[cfg(not(target_arch = "wasm32"))]
-    rt: tokio::runtime::Runtime,
     spawner: Arc<dyn Spawn + Send + Sync + 'static>,
     cancel_token: Option<CancellationToken>,
     file_old_mtime: Option<SystemTime>,
     max_interactions: u32,
-    future: Option<Pin<Box<dyn Future<Output = ()>>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -401,13 +397,10 @@ impl Playground {
             element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
-            #[cfg(not(target_arch = "wasm32"))]
-            rt: runtime,
             spawner,
             cancel_token: None,
             file_old_mtime: None,
             max_interactions: max_interactions,
-            future: None,
         });
 
         if let Some(path) = file_path {

@@ -160,8 +160,4 @@ impl Reducer {
             })
             .unwrap()
     }
-
-    pub(crate) fn spawner(&self) -> Arc<dyn Spawn + Send + Sync> {
-        self.spawner.clone()
-    }
 }
