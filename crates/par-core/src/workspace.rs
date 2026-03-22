@@ -388,6 +388,7 @@ pub struct Workspace {
     docs: Docs<Universal>,
     package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
     file_scopes: HashMap<FileName, FileImportScope<Universal>>,
+    import_spans: HashMap<FileName, Vec<(Span, Universal)>>,
     sources: HashMap<FileName, Arc<str>>,
 }
 
@@ -419,6 +420,10 @@ impl Workspace {
         self.file_scopes.get(file)
     }
 
+    pub fn import_spans(&self) -> &HashMap<FileName, Vec<(Span, Universal)>> {
+        &self.import_spans
+    }
+
     pub fn sources(&self) -> &HashMap<FileName, Arc<str>> {
         &self.sources
     }
@@ -433,7 +438,7 @@ impl Workspace {
 
     pub fn type_check(&self) -> Result<CheckedWorkspace, TypeError<Universal>> {
         let checked = self.lowered.type_check()?;
-        let hover_index = HoverIndex::new(&checked, &self.docs);
+        let hover_index = HoverIndex::new(&checked, &self.docs, &self.import_spans);
         Ok(CheckedWorkspace {
             workspace: self.clone(),
             checked,
@@ -492,6 +497,9 @@ impl CheckedWorkspace {
         hover: &process::HoverInfo<Universal>,
     ) -> String {
         let mut output = String::new();
+        if let Some((_, types, declarations)) = hover.module_items() {
+            return self.render_module_signature_in_file(file, types, declarations);
+        }
         if hover.is_type() {
             if let Some(global_name) = hover.global_name() {
                 let _ = write!(output, "type ");
@@ -522,13 +530,56 @@ impl CheckedWorkspace {
         } else if let Some(name) = hover.variable_name() {
             let _ = write!(output, "{} : ", name);
         }
-        let _ = write_type_in_file_with_indent_and_preference(
-            &mut output,
-            self.workspace.import_scope(file),
-            hover.typ(),
-            0,
-            hover.prefer_display_hints(),
-        );
+        if let Some(typ) = hover.typ() {
+            let _ = write_type_in_file_with_indent_and_preference(
+                &mut output,
+                self.workspace.import_scope(file),
+                typ,
+                0,
+                hover.prefer_display_hints(),
+            );
+        }
+        output
+    }
+
+    fn render_module_signature_in_file(
+        &self,
+        file: &FileName,
+        types: &[(GlobalName<Universal>, Vec<LocalName>, Type<Universal>)],
+        declarations: &[(GlobalName<Universal>, Type<Universal>)],
+    ) -> String {
+        let scope = self.workspace.import_scope(file);
+        let mut output = String::new();
+        for (name, params, typ) in types {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            let _ = write!(output, "type ");
+            let _ = write_global_name_in_file(&mut output, scope, name);
+            if !params.is_empty() {
+                let _ = write!(
+                    output,
+                    "<{}>",
+                    params
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            let _ = write!(output, " = ");
+            let _ =
+                write_type_in_file_with_indent_and_preference(&mut output, scope, typ, 0, false);
+        }
+        for (name, typ) in declarations {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            let _ = write!(output, "dec ");
+            let _ = write_global_name_in_file(&mut output, scope, name);
+            let _ = write!(output, " : ");
+            let _ = write_type_in_file_with_indent_and_preference(&mut output, scope, typ, 0, true);
+        }
         output
     }
 
@@ -586,12 +637,14 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
     let mut lowered = Module::default();
     let mut sources = HashMap::<FileName, Arc<str>>::new();
     let mut file_scopes = HashMap::<FileName, FileImportScope<Universal>>::new();
+    let mut import_spans = HashMap::<FileName, Vec<(Span, Universal)>>::new();
 
     for package in packages {
         load_package(
             &mut lowered,
             &mut sources,
             &mut file_scopes,
+            &mut import_spans,
             &module_lookup,
             package,
         )?;
@@ -603,6 +656,7 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
         docs,
         package_modules,
         file_scopes,
+        import_spans,
         sources,
     })
 }
@@ -780,6 +834,7 @@ fn load_package(
     lowered: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
     sources: &mut HashMap<FileName, Arc<str>>,
     file_scopes: &mut HashMap<FileName, FileImportScope<Universal>>,
+    import_spans: &mut HashMap<FileName, Vec<(Span, Universal)>>,
     module_lookup: &BTreeMap<AbsoluteModuleLookupKey, ModulePath>,
     package: WorkspacePackage,
 ) -> Result<(), WorkspaceError> {
@@ -812,6 +867,22 @@ fn load_package(
                 Arc::clone(&file.source),
             )?;
             file_scopes.insert(file.name.clone(), file_scope);
+
+            // Collect import spans for hover info
+            for import in &file.source_file.imports {
+                let imported_module =
+                    resolve_imported_module(import, file, &id, &dependencies, module_lookup)?;
+                let universal_module = universalize_module_path(
+                    &imported_module,
+                    &id,
+                    &dependencies,
+                    Arc::clone(&file.source),
+                )?;
+                import_spans
+                    .entry(file.name.clone())
+                    .or_default()
+                    .push((import.span.clone(), universal_module));
+            }
 
             let imported_aliases = imported_aliases(&imports, &current_module_path);
             let mut lowered_file = lower(file.source_file.body.clone()).map_err(|error| {

@@ -350,7 +350,14 @@ impl<S> Default for FileHovers<S> {
 }
 
 impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
-    pub fn new(program: &CheckedModule<S>, docs: &Docs<S>) -> Self {
+    pub fn new(
+        program: &CheckedModule<S>,
+        docs: &Docs<S>,
+        import_spans: &HashMap<FileName, Vec<(Span, S)>>,
+    ) -> Self
+    where
+        S: Ord,
+    {
         let mut files = HashMap::<_, FileHovers<S>>::new();
 
         for (name, (span, params, typ)) in program.type_defs.globals.iter() {
@@ -418,6 +425,40 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
                 expr.types_at_spans(program, docs, &mut |span, name_info| {
                     file_hovers.push(span, name_info)
                 });
+            }
+        }
+
+        // Add hover info for import declarations
+        for (file, spans) in import_spans {
+            let file_hovers = files.entry(file.clone()).or_default();
+            for (span, module) in spans {
+                let mut types = Vec::new();
+                for (name, (_, params, typ)) in program.type_defs.globals.iter() {
+                    if &name.module == module {
+                        types.push((name.clone(), params.clone(), typ.clone()));
+                    }
+                }
+                types.sort_by(|(a, _, _), (b, _, _)| a.primary.cmp(&b.primary));
+
+                let mut declarations = Vec::new();
+                // Collect from declarations
+                for (name, decl) in &program.declarations {
+                    if &name.module == module {
+                        declarations.push((name.clone(), decl.typ.clone()));
+                    }
+                }
+                // Collect from definitions that don't have a separate declaration
+                for (name, (_def, typ)) in &program.definitions {
+                    if &name.module == module && !program.declarations.contains_key(name) {
+                        declarations.push((name.clone(), typ.clone()));
+                    }
+                }
+                declarations.sort_by(|(a, _), (b, _)| a.primary.cmp(&b.primary));
+
+                file_hovers.push(
+                    span.clone(),
+                    HoverInfo::module(module.clone(), types, declarations),
+                );
             }
         }
 

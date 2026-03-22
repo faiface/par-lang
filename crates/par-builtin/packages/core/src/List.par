@@ -61,7 +61,7 @@ def FlatMap = <a>[list] [type b] [f] list.begin.case {
 }
 
 // Keeps only the elements for which the predicate returns `.true!`.
-dec Filter : <a>[List<box a>] [box [box a] Bool] List<a>
+dec Filter : <a>[List<box a>] [box [a] Bool] List<a>
 def Filter = <a>[list] [f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).case {

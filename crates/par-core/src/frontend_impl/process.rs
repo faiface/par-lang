@@ -963,6 +963,11 @@ enum HoverInfoInner<S> {
     Anonymous {
         typ: Type<S>,
     },
+    Module {
+        module: S,
+        types: Vec<(GlobalName<S>, Vec<LocalName>, Type<S>)>,
+        declarations: Vec<(GlobalName<S>, Type<S>)>,
+    },
 }
 
 impl<S> HoverInfo<S> {
@@ -1035,12 +1040,31 @@ impl<S> HoverInfo<S> {
         }
     }
 
-    pub fn typ(&self) -> &Type<S> {
+    pub fn module(
+        module: S,
+        types: Vec<(GlobalName<S>, Vec<LocalName>, Type<S>)>,
+        declarations: Vec<(GlobalName<S>, Type<S>)>,
+    ) -> Self {
+        Self {
+            inner: HoverInfoInner::Module {
+                module,
+                types,
+                declarations,
+            },
+        }
+    }
+
+    pub fn is_module(&self) -> bool {
+        matches!(self.inner, HoverInfoInner::Module { .. })
+    }
+
+    pub fn typ(&self) -> Option<&Type<S>> {
         match &self.inner {
             HoverInfoInner::Type { typ, .. }
             | HoverInfoInner::Declaration { typ, .. }
             | HoverInfoInner::Variable { typ, .. }
-            | HoverInfoInner::Anonymous { typ, .. } => typ,
+            | HoverInfoInner::Anonymous { typ, .. } => Some(typ),
+            HoverInfoInner::Module { .. } => None,
         }
     }
 
@@ -1049,7 +1073,9 @@ impl<S> HoverInfo<S> {
             HoverInfoInner::Type { doc, .. } | HoverInfoInner::Declaration { doc, .. } => {
                 doc.as_ref()
             }
-            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => None,
+            HoverInfoInner::Variable { .. }
+            | HoverInfoInner::Anonymous { .. }
+            | HoverInfoInner::Module { .. } => None,
         }
     }
 
@@ -1058,7 +1084,9 @@ impl<S> HoverInfo<S> {
             HoverInfoInner::Type { name, .. } | HoverInfoInner::Declaration { name, .. } => {
                 Some(name)
             }
-            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => None,
+            HoverInfoInner::Variable { .. }
+            | HoverInfoInner::Anonymous { .. }
+            | HoverInfoInner::Module { .. } => None,
         }
     }
 
@@ -1067,7 +1095,8 @@ impl<S> HoverInfo<S> {
             HoverInfoInner::Type { header, .. } => Some(header),
             HoverInfoInner::Declaration { .. }
             | HoverInfoInner::Variable { .. }
-            | HoverInfoInner::Anonymous { .. } => None,
+            | HoverInfoInner::Anonymous { .. }
+            | HoverInfoInner::Module { .. } => None,
         }
     }
 
@@ -1076,13 +1105,14 @@ impl<S> HoverInfo<S> {
             HoverInfoInner::Variable { name, .. } => Some(name.as_str()),
             HoverInfoInner::Type { .. }
             | HoverInfoInner::Declaration { .. }
-            | HoverInfoInner::Anonymous { .. } => None,
+            | HoverInfoInner::Anonymous { .. }
+            | HoverInfoInner::Module { .. } => None,
         }
     }
 
     pub fn prefer_display_hints(&self) -> bool {
         match &self.inner {
-            HoverInfoInner::Type { .. } => false,
+            HoverInfoInner::Type { .. } | HoverInfoInner::Module { .. } => false,
             HoverInfoInner::Declaration { .. }
             | HoverInfoInner::Variable { .. }
             | HoverInfoInner::Anonymous { .. } => true,
@@ -1101,7 +1131,9 @@ impl<S> HoverInfo<S> {
         match &self.inner {
             HoverInfoInner::Type { span, .. } => span.clone(),
             HoverInfoInner::Declaration { decl_span, .. } => decl_span.clone(),
-            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => Span::None,
+            HoverInfoInner::Variable { .. }
+            | HoverInfoInner::Anonymous { .. }
+            | HoverInfoInner::Module { .. } => Span::None,
         }
     }
 
@@ -1109,7 +1141,26 @@ impl<S> HoverInfo<S> {
         match &self.inner {
             HoverInfoInner::Type { span, .. } => span.clone(),
             HoverInfoInner::Declaration { def_span, .. } => def_span.clone(),
-            HoverInfoInner::Variable { .. } | HoverInfoInner::Anonymous { .. } => Span::None,
+            HoverInfoInner::Variable { .. }
+            | HoverInfoInner::Anonymous { .. }
+            | HoverInfoInner::Module { .. } => Span::None,
+        }
+    }
+
+    pub fn module_items(
+        &self,
+    ) -> Option<(
+        &S,
+        &[(GlobalName<S>, Vec<LocalName>, Type<S>)],
+        &[(GlobalName<S>, Type<S>)],
+    )> {
+        match &self.inner {
+            HoverInfoInner::Module {
+                module,
+                types,
+                declarations,
+            } => Some((module, types, declarations)),
+            _ => None,
         }
     }
 }
