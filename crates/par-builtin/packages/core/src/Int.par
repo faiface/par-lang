@@ -6,24 +6,71 @@ import Nat
 import Ordering
 import String
 
-def Add   : [Int, Int] Int       = external
-def Sub   : [Int, Int] Int       = external
-def Mul   : [Int, Int] Int       = external
-def Div   : [Int, Int] Int       = external
-def Mod   : [Int, Nat] Nat       = external
-def Min   : [Int, Int] Int       = external
-def Max   : [Int, Int] Int       = external
-def Abs   : [Int] Nat            = external
-def Clamp : [Int] [Int, Int] Int = external
+// Adds two integers.
+dec Add : [Int, Int] Int
+def Add = external
 
-def Equals  : [Int, Int] Bool     = external
-def Compare : [Int, Int] Ordering = external
+// Subtracts the second integer from the first.
+dec Sub : [Int, Int] Int
+def Sub = external
 
-def Range : [Int, Int] List<Int> = external
+// Multiplies two integers.
+dec Mul : [Int, Int] Int
+def Mul = external
 
-def ToString : [Int] String = external
+// Integer division, truncated toward zero. Returns 0 when the divisor is 0.
+dec Div : [Int, Int] Int
+def Div = external
 
-def FromString : [String] either {
+// Non-negative remainder (mathematical modulo). The result is always in `[0, n)`.
+// Returns 0 when `n` is 0.
+dec Mod : [Int, Nat] Nat
+def Mod = external
+
+// Returns the smaller of two integers.
+dec Min : [Int, Int] Int
+def Min = external
+
+// Returns the larger of two integers.
+dec Max : [Int, Int] Int
+def Max = external
+
+// Returns the absolute value as a natural number.
+dec Abs : [Int] Nat
+def Abs = external
+
+// Clamps an integer to the range `[min, max]`.
+//
+// ```par
+// Int.Clamp(7)(0, 5)   // = 5
+// Int.Clamp(-3)(0, 5)  // = 0
+// ```
+dec Clamp : [Int] [Int, Int] Int
+def Clamp = external
+
+// Tests two integers for equality.
+dec Equals : [Int, Int] Bool
+def Equals = external
+
+// Compares two integers, returning their `Ordering`.
+dec Compare : [Int, Int] Ordering
+def Compare = external
+
+// Produces a list of integers from `lo` (inclusive) to `hi` (exclusive).
+//
+// ```par
+// Int.Range(0, 5)  // = *(0, 1, 2, 3, 4)
+// ```
+dec Range : [Int, Int] List<Int>
+def Range = external
+
+// Converts an integer to its decimal string representation.
+dec ToString : [Int] String
+def ToString = external
+
+// Parses a decimal string into an integer. Returns `.err!` if the string is not a valid integer.
+dec FromString : [String] either {
   .ok Int,
   .err!,
-} = external
+}
+def FromString = external

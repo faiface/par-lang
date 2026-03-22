@@ -7,22 +7,64 @@ import @core/Result
 import @core/String
 import @core/Url
 
+// Error type for HTTP operations (a human-readable message).
 type Error = String
 
+// An HTTP request: `(method) (url) (headers) body`.
+//
+// - `method` — HTTP method string (e.g. `"GET"`, `"POST"`).
+// - `url` — the request `Url`.
+// - `headers` — list of `(name) value` pairs (values as `Bytes`).
+// - `body` — a `Bytes.Reader` for the request body.
 type Request =
   (String)
   (Url)
   (List<(String) Bytes>)
   Bytes.Reader<Error>
 
+// An HTTP response: `(status) (headers) body`.
+//
+// - `status` — HTTP status code as a `Nat` (e.g. 200, 404).
+// - `headers` — list of `(name) value` pairs (values as `Bytes`).
+// - `body` — a `Bytes.Reader` for the response body.
 type Response =
   (Nat)
   (List<(String) Bytes>)
   Bytes.Reader<Error>
 
-def Fetch : [Request] Result<Error, Response>  = external
+// Sends an HTTP request and returns the response.
+//
+// ```par
+// let try (status, headers) body = Http.Fetch(
+//   ("GET")
+//   (url)
+//   (*())
+//   Bytes.EmptyReader
+// )
+// ```
+dec Fetch : [Request] Result<Error, Response>
+def Fetch = external
 
-def Listen : [String] recursive either {
+// Starts an HTTP server listening on the given address (e.g. `"127.0.0.1:8080"`).
+//
+// Returns a recursive stream of events:
+// - `.shutdown result` — the server has shut down (e.g. on Ctrl+C or error).
+// - `.incoming(request, respond) next` — a request arrived. Call `respond` with
+//   a `Response` to send the reply. The result indicates if sending succeeded.
+//
+// ```par
+// Http.Listen("127.0.0.1:8080").begin.case {
+//   .shutdown try! => ...,
+//   .incoming(request, respond) next => {
+//     let (method, url, headers) body = request
+//     body.close
+//     respond((200, *()) Bytes.EmptyReader)
+//     next.loop
+//   }
+// }
+// ```
+dec Listen : [String] recursive either {
   .shutdown Result<Error, !>,
   .incoming(Request, [Response] Result<Error, !>) self,
-} = external
+}
+def Listen = external

@@ -2,6 +2,12 @@ module Test
 import String
 import Bool
 
+// A test runner interface for writing tests.
+//
+// - `.assert` — check a condition with a label.
+// - `.done` — finish the test.
+// - `.id` — obtain the identity function (useful for testing type-generic code).
+// - `.leak` — obtain a function that discards any value.
 type Test = iterative box choice {
   .assert => [String, Bool] self,
   .done => !,

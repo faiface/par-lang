@@ -1,5 +1,6 @@
 module Ordering
 
+// The result of a comparison between two values.
 type Ordering = either {
   .less!,
   .equal!,

@@ -2,4 +2,6 @@ module Time
 
 import @core/Nat
 
-def Now : [!] Nat = external
+// Returns the current time as milliseconds since the Unix epoch.
+dec Now : [!] Nat
+def Now = external

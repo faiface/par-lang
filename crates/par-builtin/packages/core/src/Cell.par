@@ -1,5 +1,10 @@
 module Cell
 
+// A shared mutable reference to a value. Multiple clients can access the cell concurrently.
+//
+// - `.end` — release the cell.
+// - `.split` — split into two cells sharing the same value.
+// - `.take` — take the value out; you must `.put` a value back.
 type Cell<a> = iterative choice {
   .end => ?,
   .split(dual self) => self,
@@ -8,6 +13,8 @@ type Cell<a> = iterative choice {
   }
 }
 
+// Wraps a value in a `Cell`, serving concurrent access from clients via nondeterminism.
+// Returns the value when all clients are done.
 dec Share : <a>[a] [dual Cell<a>] a
 def Share = <a>[value] [client] poll(client) {
   session => session.case {

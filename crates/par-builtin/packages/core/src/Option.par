@@ -2,4 +2,6 @@ module Option
 
 import Result
 
+// An `Option` is a `Result` where the error type is `!` (unit),
+// meaning it either holds a value (`.ok`) or nothing (`.err!`).
 type Option<a> = Result<!, a>

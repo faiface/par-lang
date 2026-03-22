@@ -1,14 +1,14 @@
 module Result
 
+// A value that is either successful (`.ok`) or an error (`.err`).
 type Result<e, a> = either {
   .ok a,
   .err e,
 }
 
+// Unwraps a `Result` that can never be an error.
 dec Always : <a>[Result<either {}, a>] a
 def Always = <a>[result] result.case {
   .ok value => value,
   .err impossible => impossible.case {},
 }
-
-type Option<a> = Result<!, a>

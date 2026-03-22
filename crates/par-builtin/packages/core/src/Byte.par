@@ -3,12 +3,25 @@ module Byte
 import Bool
 import Nat
 
+// A byte class for matching bytes. Used in byte parsers and `Byte.Is`.
+//
+// - `.any!` — any byte.
+// - `.byte b` — a specific byte.
+// - `.range(lo, hi)!` — bytes in the inclusive range `[lo, hi]`.
 type Class = either {
   .any!,
   .byte Byte,
   .range(Byte, Byte)!,
 }
 
-def Equals : [Byte, Byte] Bool  = external
-def Code   : [Byte] Nat         = external
-def Is     : [Byte, Class] Bool = external
+// Tests two bytes for equality.
+dec Equals : [Byte, Byte] Bool
+def Equals = external
+
+// Returns the numeric value of a byte (0-255) as a natural number.
+dec Code : [Byte] Nat
+def Code = external
+
+// Tests whether a byte belongs to the given class.
+dec Is : [Byte, Class] Bool
+def Is = external

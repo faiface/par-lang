@@ -1,5 +1,6 @@
 module Bool
 
+// A boolean value.
 type Bool = either {
   .false!,
   .true!,

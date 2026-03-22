@@ -7,11 +7,17 @@ import Nat
 import Ordering
 import Result
 
+// An incremental byte buffer builder. Add chunks with `.add`, then finalize with `.build`.
 type Builder = iterative choice {
   .add(Bytes) => self,
   .build => Bytes,
 }
 
+// A streaming byte reader, parameterized by an error type `e`.
+//
+// - `.close` — close the reader and return any error.
+// - `.read` — read the next chunk. Returns `.end` when exhausted,
+//   or `.chunk(bytes)` with the next chunk of data.
 type Reader<e> = recursive choice {
   .close => Result<e, !>,
   .read => Result<e, either {
@@ -20,12 +26,31 @@ type Reader<e> = recursive choice {
   }>,
 }
 
+// A streaming byte writer, parameterized by an error type `e`.
+//
+// - `.close` — close the writer, flushing any pending data.
+// - `.flush` — flush pending data without closing.
+// - `.write(bytes)` — write a chunk of bytes.
 type Writer<e> = iterative choice {
   .close => Result<e, !>,
   .flush => Result<e, self>,
   .write(Bytes) => Result<e, self>,
 }
 
+// A streaming byte parser, parameterized by an error type `e`.
+// Works like `String.Parser` but operates on raw bytes.
+//
+// Operations:
+// - `.close` — close the parser.
+// - `.remainder` — consume the parser and return all remaining bytes.
+// - `.byte` — read the next byte. Returns `.end` or `.byte(b)`.
+// - `.match(prefix, suffix)` — find the leftmost split where `prefix` matches the left part
+//   and `suffix` matches the longest possible right part. Returns `.match(prefix_bytes, suffix_bytes)`
+//   on success, `.fail` if no match (parser position unchanged), or `.end` if input is empty.
+// - `.matchEnd(prefix, suffix)` — like `.match`, but the suffix extends to the end of input.
+//   Terminates the parser on success.
+//
+// Use `.begin`/`.loop` (from the `recursive` wrapper) to iterate over multiple matches.
 type Parser<e> = recursive iterative@attempt choice {
   .close => Result<e, !>,
   .remainder => Result<e, Bytes>,
@@ -45,6 +70,22 @@ type Parser<e> = recursive iterative@attempt choice {
   },
 }
 
+// A pattern for matching within byte sequences.
+//
+// Atomic patterns:
+// - `.empty!` — matches empty bytes.
+// - `.bytes b` — matches literal bytes.
+// - `.one class` — matches a single byte of the given `Byte.Class`.
+// - `.non class` — matches a single byte NOT in the given `Byte.Class`.
+// - `.min n` — matches at least `n` bytes (any).
+// - `.max n` — matches at most `n` bytes (any).
+//
+// Combinators:
+// - `.repeat p` — matches zero or more repetitions of pattern `p`.
+// - `.repeat1 p` — matches one or more repetitions of pattern `p`.
+// - `.concat ps` — matches a sequence of patterns in order.
+// - `.and ps` — matches only if all patterns match the same input.
+// - `.or ps` — matches if any of the patterns match.
 type Pattern = recursive either {
   .empty!,
   .bytes Bytes,
@@ -59,14 +100,53 @@ type Pattern = recursive either {
   .or List<self>,
 }
 
-def Equals  : [Bytes, Bytes] Bool       = external
-def Compare : [Bytes, Bytes] Ordering   = external
-def Length  : [Bytes] Nat               = external
-def Builder : Builder                   = external
-def Reader  : [Bytes] Reader<either {}> = external
-def Parser  : [Bytes] Parser<either {}> = external
+// Tests two byte sequences for equality.
+dec Equals : [Bytes, Bytes] Bool
+def Equals = external
 
-def EmptyReader      : Reader<either {}>        = external
-def ParserFromReader : <e>[Reader<e>] Parser<e> = external
+// Compares two byte sequences lexicographically, returning their `Ordering`.
+dec Compare : [Bytes, Bytes] Ordering
+def Compare = external
 
-def PipeReader : [type e] [[Writer<!>] Result<e, !>] Reader<e> = external
+// Returns the length of a byte sequence.
+dec Length : [Bytes] Nat
+def Length = external
+
+// Creates a new byte buffer `Builder`.
+dec Builder : Builder
+def Builder = external
+
+// Creates a `Reader` from a byte sequence. The error type is `either {}` (impossible).
+dec Reader : [Bytes] Reader<either {}>
+def Reader = external
+
+// Creates a byte `Parser` from a byte sequence.
+// The error type is `either {}` (impossible).
+dec Parser : [Bytes] Parser<either {}>
+def Parser = external
+
+// Creates a `Reader` that is immediately empty.
+dec EmptyReader : Reader<either {}>
+def EmptyReader = external
+
+// Creates a byte `Parser` from a `Reader`.
+// The error type matches the reader's error type.
+dec ParserFromReader : <e>[Reader<e>] Parser<e>
+def ParserFromReader = external
+
+// Creates a `Reader` from a function that writes to a `Writer`.
+// The writer function receives a `Writer<!>` (infallible writes) and returns
+// `Result<e, !>` to signal success or error. The resulting reader streams
+// the written bytes on demand.
+//
+// ```par
+// Bytes.PipeReader(type MyError)([w]
+//   catch ! => .ok! in
+//   do {
+//     w.write("hello").try
+//     w.close.try
+//   } in .ok!
+// )
+// ```
+dec PipeReader : [type e] [[Writer<!>] Result<e, !>] Reader<e>
+def PipeReader = external

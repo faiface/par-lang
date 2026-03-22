@@ -3,6 +3,15 @@ module Char
 import Bool
 import Nat
 
+// A character class for matching characters. Used in parsers and `Char.Is`.
+//
+// - `.any!` — any character.
+// - `.char c` — a specific character.
+// - `.whitespace!` — any whitespace character.
+// - `.ascii.any!` — any ASCII character.
+// - `.ascii.alpha!` — ASCII letter (`a-z`, `A-Z`).
+// - `.ascii.alphanum!` — ASCII letter or digit.
+// - `.ascii.digit!` — ASCII digit (`0-9`).
 type Class = either {
   .any!,
   .char Char,
@@ -15,6 +24,14 @@ type Class = either {
   },
 }
 
-def Equals : [Char, Char] Bool  = external
-def Code   : [Char] Nat         = external
-def Is     : [Char, Class] Bool = external
+// Tests two characters for equality.
+dec Equals : [Char, Char] Bool
+def Equals = external
+
+// Returns the Unicode code point of a character as a natural number.
+dec Code : [Char] Nat
+def Code = external
+
+// Tests whether a character belongs to the given class.
+dec Is : [Char, Class] Bool
+def Is = external

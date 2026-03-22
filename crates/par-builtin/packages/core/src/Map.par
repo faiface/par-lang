@@ -7,6 +7,16 @@ import Nat
 import Option
 import String
 
+// A linear ordered map from keys to values, backed by a B-tree.
+//
+// - `.size` — get the number of entries, keeping the map.
+// - `.keys` — get a list of all keys, keeping the map.
+// - `.list` — consume the map and get all entries as a list of `(key) value` pairs.
+// - `.entry(key)` — look up a key, receiving `Option<v>` with the current value
+//   (if any), then choose `.put(v)` to insert/update or `.delete` to remove.
+//
+// The map is linear: `.list` consumes it, while `.size`, `.keys`, and `.entry`
+// allow continued use.
 type Map<k, v> = iterative choice {
   .size => (Nat) self,
   .keys => (List<k>) self,
@@ -17,7 +27,19 @@ type Map<k, v> = iterative choice {
   },
 }
 
-def OfString : [type v] [List<(String) box v>] Map<String, v> = external
-def OfBytes  : [type v] [List<(Bytes) box v>]  Map<Bytes, v>  = external
-def OfInt    : [type v] [List<(Int) box v>]    Map<Int, v>    = external
-def OfNat    : [type v] [List<(Nat) box v>]    Map<Nat, v>    = external
+// Creates a `Map` with `String` keys from a list of `(key) value` pairs.
+// If duplicate keys exist, the last value wins. Values must be boxed.
+dec OfString : [type v] [List<(String) box v>] Map<String, v>
+def OfString = external
+
+// Creates a `Map` with `Bytes` keys from a list of `(key) value` pairs.
+dec OfBytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
+def OfBytes = external
+
+// Creates a `Map` with `Int` keys from a list of `(key) value` pairs.
+dec OfInt : [type v] [List<(Int) box v>] Map<Int, v>
+def OfInt = external
+
+// Creates a `Map` with `Nat` keys from a list of `(key) value` pairs.
+dec OfNat : [type v] [List<(Nat) box v>] Map<Nat, v>
+def OfNat = external
