@@ -225,6 +225,10 @@ pub enum Type<S> {
     Forall(Span, LocalName, Box<Self>),
     Hole(Span, LocalName, Hole<S>),
     DualHole(Span, LocalName, Hole<S>),
+    /// A type that could not be determined due to a type error.
+    /// Self-dual, assignable to/from anything, non-linear.
+    /// Used to suppress cascading errors during multi-error type checking.
+    Fail(Span),
 }
 
 fn current_depth_from_children(children: impl IntoIterator<Item = usize>) -> usize {
@@ -283,7 +287,8 @@ impl<S: Clone> Type<S> {
             | Self::Self_(..)
             | Self::DualSelf(..)
             | Self::Hole(..)
-            | Self::DualHole(..) => 1,
+            | Self::DualHole(..)
+            | Self::Fail(..) => 1,
             Self::Name(_, _, args) | Self::DualName(_, _, args) => {
                 current_depth_from_children(args.iter().map(|arg| arg.current_depth()))
             }
@@ -314,7 +319,8 @@ impl<S: Clone> Type<S> {
             | Self::Self_(..)
             | Self::DualSelf(..)
             | Self::Hole(..)
-            | Self::DualHole(..) => 1,
+            | Self::DualHole(..)
+            | Self::Fail(..) => 1,
             Self::Name(_, _, args) | Self::DualName(_, _, args) => {
                 flattened_depth_from_side_children(args.iter().map(|arg| arg.flattened_depth()))
             }
@@ -542,6 +548,7 @@ impl<S: Clone> Type<S> {
             Self::Self_(_, _) | Self::DualSelf(_, _) => 1,
             Self::Exists(_, _, body) | Self::Forall(_, _, body) => 1 + body.size(defs)?,
             Self::Hole(_, _, _) | Self::DualHole(_, _, _) => 1,
+            Self::Fail(_) => 1,
         })
     }
 }
@@ -672,6 +679,7 @@ impl<S: Clone> Type<S> {
             Self::DualHole(span, name, hole) => {
                 Type::DualHole(span, name, hole.map_global_names(f)?)
             }
+            Self::Fail(span) => Type::Fail(span),
         })
     }
 }
@@ -700,7 +708,8 @@ impl<S> Spanning for Type<S> {
             | Self::Exists(span, _, _)
             | Self::Forall(span, _, _)
             | Self::Hole(span, _, _)
-            | Self::DualHole(span, _, _) => span.clone(),
+            | Self::DualHole(span, _, _)
+            | Self::Fail(span) => span.clone(),
         }
     }
 }

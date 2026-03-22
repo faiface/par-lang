@@ -14,7 +14,7 @@ use par_core::{
     },
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
-    workspace::{CheckedWorkspace, FileImportScope, ModulePath, PackageLoadError, WorkspaceError},
+    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
 };
 use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
@@ -29,8 +29,7 @@ use crate::workspace_support::default_workspace_from_path;
 enum BuildError {
     Workspace(WorkspaceError),
     Type {
-        error: TypeError<Universal>,
-        file_scope: Option<FileImportScope<Universal>>,
+        errors: Vec<TypeError<Universal>>,
         sources: SourceLookup,
     },
     InetCompile {
@@ -68,19 +67,16 @@ impl BuildError {
                 error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type {
-                error,
-                file_scope,
-                sources,
-            } => {
-                format!(
-                    "{:?}",
-                    error.to_report_in_scope(
-                        source_for_type_error(error, sources),
-                        file_scope.as_ref()
+            Self::Type { errors, sources } => errors
+                .iter()
+                .map(|error| {
+                    format!(
+                        "{:?}",
+                        error.to_report(source_for_type_error(error, sources))
                     )
-                )
-            }
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
             Self::InetCompile { error, sources } => format!(
                 "inet compilation error: {}",
                 error.display(&source_for_fallback(sources))
@@ -95,15 +91,13 @@ fn build_for_run(
 ) -> Result<(CheckedWorkspace, Compiled<Linked>, Vec<ModulePath>), BuildError> {
     let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
     let sources = workspace.sources().clone();
-    let checked = workspace.type_check().map_err(|error| BuildError::Type {
-        file_scope: error
-            .spans()
-            .0
-            .file()
-            .and_then(|file| workspace.import_scope(&file).cloned()),
-        error,
-        sources: sources.clone(),
-    })?;
+    let (checked, type_errors) = workspace.type_check();
+    if !type_errors.is_empty() {
+        return Err(BuildError::Type {
+            errors: type_errors,
+            sources: sources.clone(),
+        });
+    }
     let compiled = checked
         .compile_runtime(max_interactions)
         .and_then(|compiled| compiled.link())

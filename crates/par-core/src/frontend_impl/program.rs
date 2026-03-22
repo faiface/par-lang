@@ -217,22 +217,30 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
         })
     }
 
-    pub fn type_check(&self) -> Result<CheckedModule<S>, TypeError<S>>
+    pub fn type_check(&self) -> (CheckedModule<S>, Vec<TypeError<S>>)
     where
         S: Eq + std::hash::Hash,
     {
-        let type_defs = TypeDefs::new_with_validation(
+        let mut errors: Vec<TypeError<S>> = Vec::new();
+
+        let type_defs = match TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
                 .map(|d| (&d.span, &d.name, &d.params, &d.typ)),
-        )?;
+        ) {
+            Ok(td) => td,
+            Err(e) => {
+                errors.push(e);
+                TypeDefs::default()
+            }
+        };
 
         let mut unchecked_definitions = IndexMap::new();
         for Definition { span, name, body } in &self.definitions {
             if let Some((span1, _)) =
                 unchecked_definitions.insert(name.clone(), (span.clone(), body.clone()))
             {
-                return Err(TypeError::NameAlreadyDefined(
+                errors.push(TypeError::NameAlreadyDefined(
                     span.clone(),
                     span1,
                     name.clone(),
@@ -246,11 +254,11 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
         } in &self.declarations
         {
             if !unchecked_definitions.contains_key(name) {
-                return Err(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
+                errors.push(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
             }
             if let Some((span1, _)) = declarations.insert(name.clone(), (span.clone(), typ.clone()))
             {
-                return Err(TypeError::NameAlreadyDeclared(
+                errors.push(TypeError::NameAlreadyDeclared(
                     span.clone(),
                     span1,
                     name.clone(),
@@ -265,39 +273,44 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
 
         let mut context = Context::new(type_defs, declarations, unchecked_definitions);
         for (span, name) in names_to_check {
-            context.check_definition(&span, &name)?;
+            context.check_definition(&span, &name, &mut |e| errors.push(e));
         }
 
-        Ok(CheckedModule {
-            type_defs: context.get_type_defs().clone(),
-            declarations: context
-                .get_declarations()
-                .into_iter()
-                .map(|(name, (span, typ))| {
-                    let doc = self
-                        .declarations
-                        .iter()
-                        .find(|declaration| declaration.name == name && declaration.span == span)
-                        .and_then(|declaration| declaration.doc.clone());
-                    (
-                        name.clone(),
-                        Declaration {
-                            span,
-                            doc,
-                            name,
-                            typ,
-                        },
-                    )
-                })
-                .collect(),
-            definitions: context
-                .get_checked_definitions()
-                .into_iter()
-                .map(|(name, (span, body, typ))| {
-                    (name.clone(), (Definition { span, name, body }, typ))
-                })
-                .collect(),
-        })
+        (
+            CheckedModule {
+                type_defs: context.get_type_defs().clone(),
+                declarations: context
+                    .get_declarations()
+                    .into_iter()
+                    .map(|(name, (span, typ))| {
+                        let doc = self
+                            .declarations
+                            .iter()
+                            .find(|declaration| {
+                                declaration.name == name && declaration.span == span
+                            })
+                            .and_then(|declaration| declaration.doc.clone());
+                        (
+                            name.clone(),
+                            Declaration {
+                                span,
+                                doc,
+                                name,
+                                typ,
+                            },
+                        )
+                    })
+                    .collect(),
+                definitions: context
+                    .get_checked_definitions()
+                    .into_iter()
+                    .map(|(name, (span, body, typ))| {
+                        (name.clone(), (Definition { span, name, body }, typ))
+                    })
+                    .collect(),
+            },
+            errors,
+        )
     }
 }
 

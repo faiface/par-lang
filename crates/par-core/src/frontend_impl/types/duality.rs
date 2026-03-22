@@ -86,6 +86,8 @@ impl<S> Type<S> {
 
             Type::Hole(span, name, hole) => Type::DualHole(span0.join(span), name, hole),
             Type::DualHole(span, name, hole) => Type::Hole(span0.join(span), name, hole),
+
+            Type::Fail(span) => Type::Fail(span0.join(span)),
         }
     }
 

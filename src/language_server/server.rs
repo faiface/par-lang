@@ -204,15 +204,15 @@ impl<'c> LanguageServer<'c> {
 
     fn compile(&mut self, uri: &Uri) {
         // Compile and capture last error while holding the instance borrow
-        let err = {
+        let errs = {
             let instance = self.instance_for(uri);
             instance.compile();
-            instance.last_error()
+            instance.last_errors().to_vec()
         };
 
         // Now update feedback/diagnostics
         let feedback = self.feedback.cleanup();
-        if let Some(err) = err {
+        for err in errs {
             let (diagnostic_uri, diagnostic) = diagnostic_for_error(&err, uri);
             feedback.add_diagnostic(diagnostic_uri, diagnostic);
         }

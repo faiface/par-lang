@@ -216,6 +216,7 @@ where
             }
             Type::Hole(_, name, _) => write!(f, "%{}", name),
             Type::DualHole(_, name, _) => write!(f, "dual %{}", name),
+            Type::Fail(_) => write!(f, "<error>"),
         }
     }
 
@@ -424,6 +425,7 @@ where
             }
             Type::Hole(_, name, _) => write!(f, "%{}", name),
             Type::DualHole(_, name, _) => write!(f, "dual %{}", name),
+            Type::Fail(_) => write!(f, "<error>"),
         }
     }
 
@@ -527,6 +529,7 @@ where
             }
             Type::Hole(_, _, _) => {}
             Type::DualHole(_, _, _) => {}
+            Type::Fail(_) => {}
         }
     }
 }

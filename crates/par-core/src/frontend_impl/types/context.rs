@@ -71,19 +71,21 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         &mut self,
         span: &Span,
         name: &GlobalName<S>,
-    ) -> Result<Type<S>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Type<S> {
         if let Some(checked) = self.checked_definitions.read().unwrap().get(name) {
-            return Ok(checked.typ.clone());
+            return checked.typ.clone();
         }
 
         let Some((name_def, def)) = self.unchecked_definitions.get_key_value(name) else {
-            return Err(TypeError::GlobalNameNotDefined(span.clone(), name.clone()));
+            emit(TypeError::GlobalNameNotDefined(span.clone(), name.clone()));
+            return Type::Fail(span.clone());
         };
         let name_def = name_def.clone();
         let (span_def, unchecked_def) = def.clone();
 
         if !self.current_deps.insert(name.clone()) {
-            return Err(TypeError::DependencyCycle(
+            emit(TypeError::DependencyCycle(
                 span.clone(),
                 self.current_deps
                     .iter()
@@ -91,6 +93,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     .skip_while(|dep| dep != name)
                     .collect(),
             ));
+            return Type::Fail(span.clone());
         }
 
         let original_variables = self.variables.drain(..).collect();
@@ -101,11 +104,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
 
         let (checked_def, checked_type) = match self.declarations.get(name).cloned() {
             Some((_, declared_type)) => {
-                self.type_defs.validate_type(&declared_type)?;
+                if let Err(e) = self.type_defs.validate_type(&declared_type) {
+                    emit(e);
+                }
                 match unchecked_def {
                     DefinitionBody::Par(expression) => {
                         let checked_def =
-                            self.check_expression(None, &expression, &declared_type)?;
+                            self.check_expression(None, &expression, &declared_type, emit);
                         (DefinitionBody::Par(checked_def), declared_type)
                     }
                     DefinitionBody::External(span) => {
@@ -115,16 +120,21 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             }
             None => match unchecked_def {
                 DefinitionBody::Par(expr) => {
-                    let (expr, mut typ) = self.infer_expression(None, &expr)?;
-                    self.type_defs.validate_type(&typ)?;
-                    typ.remove_asc(&self.type_defs)?;
+                    let (expr, mut typ) = self.infer_expression(None, &expr, emit);
+                    if let Err(e) = self.type_defs.validate_type(&typ) {
+                        emit(e);
+                    }
+                    if let Err(e) = typ.remove_asc(&self.type_defs) {
+                        emit(e);
+                    }
                     (DefinitionBody::Par(expr), typ)
                 }
                 DefinitionBody::External(span) => {
-                    return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                    emit(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
                         LocalName::result(),
                     ));
+                    (DefinitionBody::External(span.clone()), Type::Fail(span))
                 }
             },
         };
@@ -144,7 +154,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             },
         );
 
-        Ok(checked_type)
+        checked_type
     }
 
     pub(crate) fn get_checked_definitions(
@@ -194,8 +204,9 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         &mut self,
         span: &Span,
         name: &GlobalName<S>,
-    ) -> Result<Type<S>, TypeError<S>> {
-        self.check_definition(span, name)
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Type<S> {
+        self.check_definition(span, name, emit)
     }
 
     pub(crate) fn get_variable(&mut self, name: &LocalName) -> Option<Type<S>> {

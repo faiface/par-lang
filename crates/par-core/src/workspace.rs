@@ -436,14 +436,17 @@ impl Workspace {
         self.docs.declaration_doc(name)
     }
 
-    pub fn type_check(&self) -> Result<CheckedWorkspace, TypeError<Universal>> {
-        let checked = self.lowered.type_check()?;
+    pub fn type_check(&self) -> (CheckedWorkspace, Vec<TypeError<Universal>>) {
+        let (checked, errors) = self.lowered.type_check();
         let hover_index = HoverIndex::new(&checked, &self.docs, &self.import_spans);
-        Ok(CheckedWorkspace {
-            workspace: self.clone(),
-            checked,
-            hover_index,
-        })
+        (
+            CheckedWorkspace {
+                workspace: self.clone(),
+                checked,
+                hover_index,
+            },
+            errors,
+        )
     }
 }
 
@@ -1579,6 +1582,7 @@ fn write_type_in_file_with_indent_and_preference(
         ),
         Type::Hole(_, name, _) => write!(f, "%{name}"),
         Type::DualHole(_, name, _) => write!(f, "dual %{name}"),
+        Type::Fail(_) => write!(f, "<error>"),
     }
 }
 
@@ -1811,10 +1815,12 @@ mod tests {
             source: source.to_string(),
         }])
         .unwrap();
-        load_workspace(vec![WorkspacePackage::new(PackageId::Local, parsed)])
-            .unwrap()
-            .type_check()
-            .unwrap()
+        let (checked, type_errors) =
+            load_workspace(vec![WorkspacePackage::new(PackageId::Local, parsed)])
+                .unwrap()
+                .type_check();
+        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
+        checked
     }
 
     fn row_and_column(source: &str, index: usize) -> (u32, u32) {

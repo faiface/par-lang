@@ -45,7 +45,8 @@ where
         | Type::Break(..)
         | Type::Continue(..)
         | Type::Self_(..)
-        | Type::DualSelf(..) => {}
+        | Type::DualSelf(..)
+        | Type::Fail(..) => {}
     }
     Ok(())
 }
@@ -92,7 +93,8 @@ where
         | Type::Break(..)
         | Type::Continue(..)
         | Type::Self_(..)
-        | Type::DualSelf(..) => {}
+        | Type::DualSelf(..)
+        | Type::Fail(..) => {}
     }
     Ok(())
 }

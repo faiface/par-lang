@@ -37,7 +37,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Clone)]
 enum BuildError {
     Workspace(WorkspaceError),
-    Type(TypeError<Universal>),
+    Type(Vec<TypeError<Universal>>),
     InetCompile(RuntimeCompilerError),
 }
 
@@ -70,7 +70,11 @@ impl BuildError {
                 error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type(error) => format!("{:?}", error.to_report(code)),
+            Self::Type(errors) => errors
+                .iter()
+                .map(|error| format!("{:?}", error.to_report(code.clone())))
+                .collect::<Vec<_>>()
+                .join("\n"),
             Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
         }
     }
@@ -84,7 +88,8 @@ enum BuildResult {
     },
     TypeError {
         pretty: String,
-        error: TypeError<Universal>,
+        checked: Arc<CheckedWorkspace>,
+        errors: Vec<TypeError<Universal>>,
     },
     InetError {
         pretty: String,
@@ -103,7 +108,7 @@ impl BuildResult {
         match self {
             Self::None => None,
             Self::WorkspaceError { error } => Some(BuildError::Workspace(error.clone())),
-            Self::TypeError { error, .. } => Some(BuildError::Type(error.clone())),
+            Self::TypeError { errors, .. } => Some(BuildError::Type(errors.clone())),
             Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
             Self::Ok { .. } => None,
         }
@@ -120,8 +125,10 @@ impl BuildResult {
 
     fn checked(&self) -> Option<Arc<CheckedWorkspace>> {
         match self {
-            Self::InetError { checked, .. } | Self::Ok { checked, .. } => Some(Arc::clone(checked)),
-            Self::None | Self::WorkspaceError { .. } | Self::TypeError { .. } => None,
+            Self::TypeError { checked, .. }
+            | Self::InetError { checked, .. }
+            | Self::Ok { checked, .. } => Some(Arc::clone(checked)),
+            Self::None | Self::WorkspaceError { .. } => None,
         }
     }
 
@@ -239,10 +246,15 @@ impl BuildResult {
             )
             .collect();
 
-        let checked = match workspace.type_check() {
-            Ok(checked) => Arc::new(checked),
-            Err(error) => return Self::TypeError { pretty, error },
-        };
+        let (checked, type_errors) = workspace.type_check();
+        let checked = Arc::new(checked);
+        if !type_errors.is_empty() {
+            return Self::TypeError {
+                pretty,
+                checked,
+                errors: type_errors,
+            };
+        }
         Self::from_checked(pretty, checked, max_interactions)
     }
 

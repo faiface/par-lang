@@ -21,22 +21,24 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         &mut self,
         process: &Process<(), S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Option<Type<S>>) {
         match mode {
             ProcessAnalyzerMode::Check => {
-                let process = self.check_process(process)?;
-                Ok((process, None))
+                let process = self.check_process(process, emit);
+                (process, None)
             }
             ProcessAnalyzerMode::Infer(inference_subject) => {
-                let (process, typ) = self.infer_process(process, &inference_subject)?;
-                Ok((process, Some(typ)))
+                let (process, typ) = self.infer_process(process, &inference_subject, emit);
+                (process, Some(typ))
             }
         }
     }
     pub(crate) fn check_process(
         &mut self,
         process: &Process<(), S>,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         match process {
             Process::Let {
                 span,
@@ -53,10 +55,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     annotated_type,
                     expression,
                     process,
+                    emit,
                 ),
-                None => {
-                    self.check_process_let_inferred(span, name, annotation, expression, process)
-                }
+                None => self
+                    .check_process_let_inferred(span, name, annotation, expression, process, emit),
             },
 
             Process::Do {
@@ -65,7 +67,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 usage,
                 typ: (),
                 command,
-            } => self.check_process_do(span, object, usage, command),
+            } => self.check_process_do(span, object, usage, command, emit),
 
             Process::Poll {
                 span,
@@ -79,7 +81,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then,
                 else_,
             } => self.check_process_poll(
-                span, kind, driver, point, clients, name, captures, then, else_,
+                span, kind, driver, point, clients, name, captures, then, else_, emit,
             ),
 
             Process::Submit {
@@ -88,17 +90,17 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 point,
                 values,
                 captures,
-            } => self.check_process_submit(span, driver, point, values, captures),
+            } => self.check_process_submit(span, driver, point, values, captures, emit),
 
-            Process::Telltypes(span, _) => self.check_process_telltypes(span),
+            Process::Telltypes(span, _) => self.check_process_telltypes(span, emit),
 
-            Process::Unreachable(span) => self.check_process_unreachable(span),
+            Process::Unreachable(span) => self.check_process_unreachable(span, emit),
 
             Process::Block(span, index, body, then) => {
-                self.check_process_block(span, *index, body, then)
+                self.check_process_block(span, *index, body, then, emit)
             }
 
-            Process::Goto(span, index, caps) => self.check_process_goto(span, *index, caps),
+            Process::Goto(span, index, caps) => self.check_process_goto(span, *index, caps, emit),
         }
     }
 
@@ -110,20 +112,25 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         annotated_type: &Type<S>,
         expression: &Expression<(), S>,
         process: &Process<(), S>,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
-        self.type_defs.validate_type(annotated_type)?;
-        let expression = self.check_expression(None, expression, annotated_type)?;
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
+        if let Err(e) = self.type_defs.validate_type(annotated_type) {
+            emit(e);
+        }
+        let expression = self.check_expression(None, expression, annotated_type, emit);
         let typ = annotated_type.clone();
-        self.put(span, name.clone(), typ.clone())?;
-        let process = self.check_process(process)?;
-        Ok(Arc::new(Process::Let {
+        if let Err(e) = self.put(span, name.clone(), typ.clone()) {
+            emit(e);
+        }
+        let process = self.check_process(process, emit);
+        Arc::new(Process::Let {
             span: span.clone(),
             name: name.clone(),
             annotation: annotation.clone(),
             typ,
             value: expression,
             then: process,
-        }))
+        })
     }
 
     fn check_process_let_inferred(
@@ -133,18 +140,21 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         annotation: &Option<Type<S>>,
         expression: &Expression<(), S>,
         process: &Process<(), S>,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
-        let (expression, typ) = self.infer_expression(None, expression)?;
-        self.put(span, name.clone(), typ.clone())?;
-        let process = self.check_process(process)?;
-        Ok(Arc::new(Process::Let {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
+        let (expression, typ) = self.infer_expression(None, expression, emit);
+        if let Err(e) = self.put(span, name.clone(), typ.clone()) {
+            emit(e);
+        }
+        let process = self.check_process(process, emit);
+        Arc::new(Process::Let {
             span: span.clone(),
             name: name.clone(),
             annotation: annotation.clone(),
             typ,
             value: expression,
             then: process,
-        }))
+        })
     }
 
     fn check_process_do(
@@ -153,8 +163,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         object: &LocalName,
         usage: &VariableUsage,
         command: &Command<(), S>,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
-        let typ = self.get_variable_or_error(span, object)?;
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
+        let typ = self
+            .get_variable_or_error(span, object)
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
         let (command, _) = self.check_command(
             None,
             span,
@@ -162,15 +178,16 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             &typ,
             command,
             &ProcessAnalyzerMode::Check,
-        )?;
+            emit,
+        );
 
-        Ok(Arc::new(Process::Do {
+        Arc::new(Process::Do {
             span: span.clone(),
             name: object.clone(),
             usage: usage.clone(),
             typ,
             command,
-        }))
+        })
     }
 
     fn check_process_poll(
@@ -184,7 +201,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         captures: &Captures,
         then: &Process<(), S>,
         else_: &Process<(), S>,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         let is_repoll = matches!(kind, PollKind::Repoll);
 
         let preserved_vars: IndexMap<_, _> = self
@@ -209,13 +227,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         poll.points.clone(),
                         poll.current_point.clone(),
                     ),
-                    None => return Err(TypeError::RepollOutsidePoll(span.clone())),
+                    None => {
+                        emit(TypeError::RepollOutsidePoll(span.clone()));
+                        return Arc::new(Process::Unreachable(span.clone()));
+                    }
                 };
             if poll_driver != *driver {
-                return Err(TypeError::RepollOutsidePoll(span.clone()));
+                emit(TypeError::RepollOutsidePoll(span.clone()));
+                return Arc::new(Process::Unreachable(span.clone()));
             }
             if self.get_variable(driver).is_none() {
-                return Err(TypeError::RepollOutsidePoll(span.clone()));
+                emit(TypeError::RepollOutsidePoll(span.clone()));
+                return Arc::new(Process::Unreachable(span.clone()));
             }
 
             let mut point_client_type = poll_points
@@ -225,27 +248,38 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 .clone();
 
             for client in clients {
-                let (typed, typ) = self.infer_expression(None, client)?;
+                let (typed, typ) = self.infer_expression(None, client, emit);
                 typed_clients.push(typed);
                 let mut typ = typ;
                 loop {
-                    let next = typ.expand_definition(&self.type_defs)?;
+                    let next = typ.expand_definition(&self.type_defs).unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
                     if next == typ {
                         break;
                     }
                     typ = next;
                 }
                 let Type::Recursive { .. } = typ else {
-                    return Err(TypeError::PollClientMustBeRecursive(span.clone(), typ));
+                    emit(TypeError::PollClientMustBeRecursive(span.clone(), typ));
+                    continue;
                 };
-                if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
-                    return Err(TypeError::SubmittedClientNotAssignableToPoll(
+                if !typ
+                    .is_assignable_to(&poll_pool_type, &self.type_defs)
+                    .unwrap_or(true)
+                {
+                    emit(TypeError::SubmittedClientNotAssignableToPoll(
                         span.clone(),
                         typ.clone(),
                         poll_pool_type.clone(),
                     ));
                 }
-                point_client_type = union_types(&self.type_defs, span, &point_client_type, &typ)?;
+                point_client_type = union_types(&self.type_defs, span, &point_client_type, &typ)
+                    .unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
             }
 
             base = self.clone();
@@ -265,7 +299,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 &point_label,
                 &point_body,
                 display_hint.0.as_ref(),
-            )?;
+            )
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
 
             let Some(base_poll) = base.poll.as_mut() else {
                 panic!("repoll without a poll scope after validation");
@@ -291,22 +329,33 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             then_ctx = base.clone();
         } else {
             if clients.is_empty() {
-                return Err(TypeError::PollMustHaveAtLeastOneClient(span.clone()));
+                emit(TypeError::PollMustHaveAtLeastOneClient(span.clone()));
+                return Arc::new(Process::Unreachable(span.clone()));
             }
 
             let mut client_type = None;
             for client in clients {
-                let (typed, typ) = self.infer_expression(None, client)?;
+                let (typed, typ) = self.infer_expression(None, client, emit);
                 typed_clients.push(typed);
                 client_type = Some(match client_type {
                     None => typ,
-                    Some(prev) => union_types(&self.type_defs, span, &prev, &typ)?,
+                    Some(prev) => {
+                        union_types(&self.type_defs, span, &prev, &typ).unwrap_or_else(|e| {
+                            emit(e);
+                            Type::Fail(span.clone())
+                        })
+                    }
                 });
             }
 
             let mut client_type = client_type.expect("clients is not empty");
             loop {
-                let next = client_type.expand_definition(&self.type_defs)?;
+                let next = client_type
+                    .expand_definition(&self.type_defs)
+                    .unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
                 if next == client_type {
                     break;
                 }
@@ -323,10 +372,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 display_hint,
             } = client_type.clone()
             else {
-                return Err(TypeError::PollClientMustBeRecursive(
+                emit(TypeError::PollClientMustBeRecursive(
                     span.clone(),
                     client_type,
                 ));
+                return Arc::new(Process::Unreachable(span.clone()));
             };
 
             let pool_type = client_type.clone();
@@ -342,7 +392,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 display_hint: display_hint.clone(),
             };
 
-            name_typ = Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())?;
+            name_typ = Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())
+                .unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                });
 
             then_ctx = base.clone();
             let prev_poll = then_ctx.poll.take();
@@ -365,9 +419,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             });
         }
 
-        then_ctx.put(span, driver.clone(), Type::Continue(span.clone()))?;
-        then_ctx.put(span, name.clone(), name_typ.clone())?;
-        let typed_then = then_ctx.check_process(then)?;
+        if let Err(e) = then_ctx.put(span, driver.clone(), Type::Continue(span.clone())) {
+            emit(e);
+        }
+        if let Err(e) = then_ctx.put(span, name.clone(), name_typ.clone()) {
+            emit(e);
+        }
+        let typed_then = then_ctx.check_process(then, emit);
 
         base.blocks = then_ctx.blocks.clone();
 
@@ -383,20 +441,22 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             else_ctx.variables.shift_remove(&current.driver);
             let prev = else_ctx.poll_stash.pop().unwrap_or(None);
             if let Some(prev_poll) = &prev {
-                else_ctx.put(
+                if let Err(e) = else_ctx.put(
                     &prev_poll.token_span,
                     prev_poll.driver.clone(),
                     Type::Continue(prev_poll.token_span.clone()),
-                )?;
+                ) {
+                    emit(e);
+                }
             }
             else_ctx.poll = prev;
         }
 
-        let typed_else = else_ctx.check_process(else_)?;
+        let typed_else = else_ctx.check_process(else_, emit);
 
         self.variables.clear();
 
-        Ok(Arc::new(Process::Poll {
+        Arc::new(Process::Poll {
             span: span.clone(),
             kind: kind.clone(),
             driver: driver.clone(),
@@ -407,7 +467,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             captures: captures.clone(),
             then: typed_then,
             else_: typed_else,
-        }))
+        })
     }
 
     fn check_process_submit(
@@ -417,7 +477,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         point: &LocalName,
         values: &[Arc<Expression<(), S>>],
         captures: &Captures,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         let (poll_pool_type, current_point_client_type, poll_point_client_type, preserved_vars) =
             match self.poll.as_ref() {
                 Some(poll) => {
@@ -442,11 +503,17 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         preserved.preserved.clone(),
                     )
                 }
-                None => return Err(TypeError::SubmitOutsidePoll(span.clone())),
+                None => {
+                    emit(TypeError::SubmitOutsidePoll(span.clone()));
+                    return Arc::new(Process::Unreachable(span.clone()));
+                }
             };
 
-        if !current_point_client_type.is_assignable_to(&poll_point_client_type, &self.type_defs)? {
-            return Err(TypeError::SubmitCannotTargetPollPoint(
+        if !current_point_client_type
+            .is_assignable_to(&poll_point_client_type, &self.type_defs)
+            .unwrap_or(true)
+        {
+            emit(TypeError::SubmitCannotTargetPollPoint(
                 span.clone(),
                 current_point_client_type,
                 poll_point_client_type.clone(),
@@ -455,37 +522,50 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
 
         let mut typed_values = Vec::with_capacity(values.len());
         for value in values {
-            let (typed, typ) = self.infer_expression(None, value)?;
+            let (typed, typ) = self.infer_expression(None, value, emit);
             let mut typ = typ;
             loop {
-                let next = typ.expand_definition(&self.type_defs)?;
+                let next = typ.expand_definition(&self.type_defs).unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                });
                 if next == typ {
                     break;
                 }
                 typ = next;
             }
-            if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
-                return Err(TypeError::SubmittedClientNotAssignableToPoll(
+            if !typ
+                .is_assignable_to(&poll_pool_type, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::SubmittedClientNotAssignableToPoll(
                     span.clone(),
                     typ.clone(),
                     poll_pool_type.clone(),
                 ));
             }
-            if !typ.is_assignable_to(&poll_point_client_type, &self.type_defs)? {
-                return Err(TypeError::SubmittedClientDoesNotDescend(span.clone()));
+            if !typ
+                .is_assignable_to(&poll_point_client_type, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::SubmittedClientDoesNotDescend(span.clone()));
             }
             typed_values.push(typed);
         }
 
         for (var, type_at_poll) in preserved_vars.iter() {
             let Some(current_type) = self.get_variable(var) else {
-                return Err(TypeError::PollVariableNotPreserved(
+                emit(TypeError::PollVariableNotPreserved(
                     span.clone(),
                     var.clone(),
                 ));
+                continue;
             };
-            if !current_type.is_assignable_to(type_at_poll, &self.type_defs)? {
-                return Err(TypeError::PollVariableChangedType(
+            if !current_type
+                .is_assignable_to(type_at_poll, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::PollVariableChangedType(
                     span.clone(),
                     var.clone(),
                     current_type,
@@ -495,32 +575,37 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         }
 
         if self.get_variable(driver).is_none() {
-            return Err(TypeError::SubmitOutsidePoll(span.clone()));
+            emit(TypeError::SubmitOutsidePoll(span.clone()));
         }
 
-        self.cannot_have_obligations(span)?;
+        if let Err(e) = self.cannot_have_obligations(span) {
+            emit(e);
+        }
         self.variables.clear();
 
-        Ok(Arc::new(Process::Submit {
+        Arc::new(Process::Submit {
             span: span.clone(),
             driver: driver.clone(),
             point: point.clone(),
             values: typed_values,
             captures: captures.clone(),
-        }))
+        })
     }
 
     fn check_process_telltypes(
         &mut self,
         span: &Span,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
-        Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
+        emit(TypeError::Telltypes(span.clone(), self.variables.clone()));
+        Arc::new(Process::Unreachable(span.clone()))
     }
 
     fn check_process_unreachable(
         &mut self,
         span: &Span,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         let impossible = Type::either(vec![]);
         let mut exhaustive = false;
         for typ in self.variables.values() {
@@ -530,14 +615,16 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     break;
                 }
                 Ok(false) => {}
-                Err(error) => return Err(error),
+                Err(error) => {
+                    emit(error);
+                }
             }
         }
         if !exhaustive {
-            return Err(TypeError::NonExhaustiveIf(span.clone()));
+            emit(TypeError::NonExhaustiveIf(span.clone()));
         }
         self.variables.clear();
-        Ok(Arc::new(Process::Unreachable(span.clone())))
+        Arc::new(Process::Unreachable(span.clone()))
     }
 
     fn check_process_block(
@@ -546,11 +633,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         index: usize,
         body: &Process<(), S>,
         then: &Process<(), S>,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         if self.blocks.insert(index, Vec::new()).is_some() {
             panic!("block {} already defined", index);
         }
-        let typed_then = self.check_process(then)?;
+        let typed_then = self.check_process(then, emit);
         let contexts = self
             .blocks
             .shift_remove(&index)
@@ -562,19 +650,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             );
         }
         let free = body.free_variables();
-        let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
+        let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free, emit);
 
         let saved = self.variables.clone();
         self.variables = merged;
-        let typed_body = self.check_process(body)?;
+        let typed_body = self.check_process(body, emit);
         self.variables = saved;
 
-        Ok(Arc::new(Process::Block(
-            span.clone(),
-            index,
-            typed_body,
-            typed_then,
-        )))
+        Arc::new(Process::Block(span.clone(), index, typed_body, typed_then))
     }
 
     fn check_process_goto(
@@ -582,11 +665,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         index: usize,
         caps: &Captures,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        _emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         let entry = self.blocks.get_mut(&index).unwrap();
         entry.push(self.variables.clone());
         self.variables.clear();
-        Ok(Arc::new(Process::Goto(span.clone(), index, caps.clone())))
+        Arc::new(Process::Goto(span.clone(), index, caps.clone()))
     }
 
     fn check_command(
@@ -597,32 +681,46 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         typ: &Type<S>,
         command: &Command<(), S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         if let Type::Name(_, name, args) = typ {
+            let expanded = self.type_defs.get(span, name, args).unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
             return self.check_command(
                 inference_subject,
                 span,
                 object,
-                &self.type_defs.get(span, name, args)?,
+                &expanded,
                 command,
                 mode,
+                emit,
             );
         }
         if let Type::DualName(_, name, args) = typ {
+            let expanded = self
+                .type_defs
+                .get_dual(span, name, args)
+                .unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                });
             return self.check_command(
                 inference_subject,
                 span,
                 object,
-                &self.type_defs.get_dual(span, name, args)?,
+                &expanded,
                 command,
                 mode,
+                emit,
             );
         }
         if let Type::Box(_, inner) = typ {
-            return self.check_command(inference_subject, span, object, inner, command, mode);
+            return self.check_command(inference_subject, span, object, inner, command, mode, emit);
         }
         if let Type::DualBox(_, inner) = typ {
-            if inner.is_positive(&self.type_defs)? {
+            if inner.is_positive(&self.type_defs).unwrap_or(false) {
                 return self.check_command(
                     inference_subject,
                     span,
@@ -630,6 +728,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     &inner.clone().dual(Span::None),
                     command,
                     mode,
+                    emit,
                 );
             }
         }
@@ -642,19 +741,20 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 ..
             } = typ
             {
+                let expanded =
+                    Type::expand_iterative(span, top_asc, top_label, body, display_hint.0.as_ref())
+                        .unwrap_or_else(|e| {
+                            emit(e);
+                            Type::Fail(span.clone())
+                        });
                 return self.check_command(
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_iterative(
-                        span,
-                        top_asc,
-                        top_label,
-                        body,
-                        display_hint.0.as_ref(),
-                    )?,
+                    &expanded,
                     command,
                     mode,
+                    emit,
                 );
             }
         }
@@ -667,18 +767,25 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 ..
             } = typ
             {
+                let expanded =
+                    Type::expand_recursive(top_asc, top_label, body, display_hint.0.as_ref())
+                        .unwrap_or_else(|e| {
+                            emit(e);
+                            Type::Fail(span.clone())
+                        });
                 return self.check_command(
                     inference_subject,
                     span,
                     object,
-                    &Type::expand_recursive(top_asc, top_label, body, display_hint.0.as_ref())?,
+                    &expanded,
                     command,
                     mode,
+                    emit,
                 );
             }
         }
 
-        self.check_command_normalized(inference_subject, span, object, typ, command, mode)
+        self.check_command_normalized(inference_subject, span, object, typ, command, mode, emit)
     }
 
     fn check_command_normalized(
@@ -689,11 +796,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         typ: &Type<S>,
         command: &Command<(), S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         match command {
-            Command::Link(expression) => self.check_command_link(span, typ, expression),
+            Command::Link(expression) => self.check_command_link(span, typ, expression, emit),
             Command::Send(argument, process) => {
-                self.check_command_send(span, object, typ, argument, process, mode)
+                self.check_command_send(span, object, typ, argument, process, mode, emit)
             }
             Command::Receive(parameter, annotation, (), process, type_parameters) => self
                 .check_command_receive(
@@ -705,25 +813,38 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     process,
                     type_parameters,
                     mode,
+                    emit,
                 ),
             Command::Signal(chosen, process) => {
-                self.check_command_signal(span, object, typ, chosen, process, mode)
+                self.check_command_signal(span, object, typ, chosen, process, mode, emit)
             }
-            Command::Case(branches, processes, else_process) => {
-                self.check_command_case(span, object, typ, branches, processes, else_process, mode)
-            }
+            Command::Case(branches, processes, else_process) => self.check_command_case(
+                span,
+                object,
+                typ,
+                branches,
+                processes,
+                else_process,
+                mode,
+                emit,
+            ),
             Command::Break => {
                 let Type::Continue(_) = typ else {
-                    return Err(TypeError::InvalidOperation(
+                    emit(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::Break,
                         typ.clone(),
                     ));
+                    return (Command::Break, None);
                 };
-                self.cannot_have_obligations(span)?;
-                Ok((Command::Break, None))
+                if let Err(e) = self.cannot_have_obligations(span) {
+                    emit(e);
+                }
+                (Command::Break, None)
             }
-            Command::Continue(process) => self.check_command_continue(span, typ, process, mode),
+            Command::Continue(process) => {
+                self.check_command_continue(span, typ, process, mode, emit)
+            }
             Command::Begin {
                 unfounded,
                 label,
@@ -739,6 +860,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 captures,
                 process,
                 mode,
+                emit,
             ),
             Command::Loop(label, driver, captures) => self.check_command_loop(
                 inference_subject,
@@ -748,12 +870,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 label,
                 driver,
                 captures,
+                emit,
             ),
             Command::SendType(argument, process) => {
-                self.check_command_send_type(span, object, typ, argument, process, mode)
+                self.check_command_send_type(span, object, typ, argument, process, mode, emit)
             }
             Command::ReceiveType(parameter, process) => {
-                self.check_command_receive_type(span, object, typ, parameter, process, mode)
+                self.check_command_receive_type(span, object, typ, parameter, process, mode, emit)
             }
         }
     }
@@ -763,10 +886,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         typ: &Type<S>,
         expression: &Arc<Expression<(), S>>,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
-        let expression = self.check_expression(None, expression, &typ.clone().dual(Span::None))?;
-        self.cannot_have_obligations(span)?;
-        Ok((Command::Link(expression), None))
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        let expression =
+            self.check_expression(None, expression, &typ.clone().dual(Span::None), emit);
+        if let Err(e) = self.cannot_have_obligations(span) {
+            emit(e);
+        }
+        (Command::Link(expression), None)
     }
 
     fn check_command_send(
@@ -777,13 +904,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         argument: &Arc<Expression<(), S>>,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Function(_, argument_type, then_type, vars) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Send,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
         if vars.is_empty() {
             self.check_command_send_plain(
@@ -794,6 +923,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 argument_type,
                 then_type,
                 mode,
+                emit,
             )
         } else {
             self.check_command_send_generic(
@@ -805,6 +935,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then_type,
                 vars,
                 mode,
+                emit,
             )
         }
     }
@@ -819,19 +950,28 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         then_type: &Type<S>,
         vars: &Vec<LocalName>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
-        let (argument, inferred_arg_type) = self.infer_expression(None, argument)?;
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        let (argument, inferred_arg_type) = self.infer_expression(None, argument, emit);
         let inferred_holes = infer_holes(
             span,
             &inferred_arg_type,
             argument_type,
             vars,
             &self.type_defs,
-        )?;
+        )
+        .unwrap_or_else(|e| {
+            emit(e);
+            BTreeMap::new()
+        });
         let then_type = then_type
             .clone()
-            .substitute(inferred_holes.iter().map(|(k, v)| (k, v)).collect())?;
-        self.finish_check_command_send(span, object, argument, process, then_type, mode)
+            .substitute(inferred_holes.iter().map(|(k, v)| (k, v)).collect())
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
+        self.finish_check_command_send(span, object, argument, process, then_type, mode, emit)
     }
 
     fn check_command_send_plain(
@@ -843,9 +983,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         argument_type: &Type<S>,
         then_type: &Type<S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
-        let argument = self.check_expression(None, argument, argument_type)?;
-        self.finish_check_command_send(span, object, argument, process, then_type.clone(), mode)
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        let argument = self.check_expression(None, argument, argument_type, emit);
+        self.finish_check_command_send(
+            span,
+            object,
+            argument,
+            process,
+            then_type.clone(),
+            mode,
+            emit,
+        )
     }
 
     fn finish_check_command_send(
@@ -856,10 +1005,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         process: &Arc<Process<(), S>>,
         then_type: Type<S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
-        self.put(span, object.clone(), then_type)?;
-        let (process, inferred_types) = self.analyze_process(process, mode)?;
-        Ok((Command::Send(argument, process), inferred_types))
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        if let Err(e) = self.put(span, object.clone(), then_type) {
+            emit(e);
+        }
+        let (process, inferred_types) = self.analyze_process(process, mode, emit);
+        (Command::Send(argument, process), inferred_types)
     }
 
     fn check_command_receive(
@@ -872,25 +1024,28 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         process: &Arc<Process<(), S>>,
         type_parameters: &[LocalName],
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Pair(_, param_type, then_type, type_names) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Receive {
                     generics: type_parameters.len(),
                 },
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
 
         if type_parameters.len() != type_names.len() {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Receive {
                     generics: type_parameters.len(),
                 },
                 typ.clone(),
             ));
+            return (Command::Break, None);
         }
 
         if type_names.is_empty() {
@@ -905,6 +1060,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then_type,
                 type_parameters,
                 mode,
+                emit,
             )
         } else {
             self.check_command_receive_generic(
@@ -918,6 +1074,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then_type,
                 type_parameters,
                 mode,
+                emit,
             )
         }
     }
@@ -934,17 +1091,26 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         then_type: &Type<S>,
         type_parameters: &[LocalName],
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let type_vars: Vec<Type<S>> = type_parameters
             .iter()
             .map(|v| Type::Var(Span::None, v.clone()))
             .collect();
         let then_type = then_type
             .clone()
-            .substitute(type_names.iter().zip(type_vars.iter()).collect())?;
+            .substitute(type_names.iter().zip(type_vars.iter()).collect())
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
         let param_type = param_type
             .clone()
-            .substitute(type_names.iter().zip(type_vars.iter()).collect())?;
+            .substitute(type_names.iter().zip(type_vars.iter()).collect())
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
         self.finish_check_command_receive(
             span,
             object,
@@ -956,6 +1122,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             param_type,
             then_type,
             mode,
+            emit,
         )
     }
 
@@ -971,7 +1138,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         then_type: &Type<S>,
         type_parameters: &[LocalName],
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         self.finish_check_command_receive(
             span,
             object,
@@ -983,6 +1151,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             param_type.clone(),
             then_type.clone(),
             mode,
+            emit,
         )
     }
 
@@ -998,17 +1167,26 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         param_type: Type<S>,
         then_type: Type<S>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         self.type_defs.vars.extend(type_parameters.iter().cloned());
 
         if let Some(annotated_type) = annotation {
-            self.type_defs.validate_type(annotated_type)?;
-            param_type.check_assignable(span, annotated_type, &self.type_defs)?;
+            if let Err(e) = self.type_defs.validate_type(annotated_type) {
+                emit(e);
+            }
+            if let Err(e) = param_type.check_assignable(span, annotated_type, &self.type_defs) {
+                emit(e);
+            }
         }
-        self.put(span, parameter.clone(), param_type.clone())?;
-        self.put(span, object.clone(), then_type)?;
-        let (process, inferred_types) = self.analyze_process(process, mode)?;
-        Ok((
+        if let Err(e) = self.put(span, parameter.clone(), param_type.clone()) {
+            emit(e);
+        }
+        if let Err(e) = self.put(span, object.clone(), then_type) {
+            emit(e);
+        }
+        let (process, inferred_types) = self.analyze_process(process, mode, emit);
+        (
             Command::Receive(
                 parameter.clone(),
                 annotation.clone(),
@@ -1017,7 +1195,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 type_names.to_vec(),
             ),
             inferred_types,
-        ))
+        )
     }
 
     fn check_command_signal(
@@ -1028,24 +1206,29 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         chosen: &LocalName,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Choice(_, branches) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Signal,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
         let Some(branch_type) = branches.get(chosen) else {
-            return Err(TypeError::InvalidBranch(
+            emit(TypeError::InvalidBranch(
                 span.clone(),
                 chosen.clone(),
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
-        self.put(span, object.clone(), branch_type.clone())?;
-        let (process, inferred_types) = self.analyze_process(process, mode)?;
-        Ok((Command::Signal(chosen.clone(), process), inferred_types))
+        if let Err(e) = self.put(span, object.clone(), branch_type.clone()) {
+            emit(e);
+        }
+        let (process, inferred_types) = self.analyze_process(process, mode, emit);
+        (Command::Signal(chosen.clone(), process), inferred_types)
     }
 
     fn check_command_case(
@@ -1057,13 +1240,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         processes: &Box<[Arc<Process<(), S>>]>,
         else_process: &Option<Arc<Process<(), S>>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Either(_, branch_types) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Case,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
 
         let mut remaining_branches = branch_types.clone();
@@ -1084,7 +1269,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 &mut typed_processes,
                 &mut inferred_type,
                 mode,
-            )?;
+                emit,
+            );
         }
 
         let typed_else_process = match else_process {
@@ -1096,26 +1282,27 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 process,
                 &mut inferred_type,
                 mode,
-            )?),
+                emit,
+            )),
             None => None,
         };
 
         if let Some((missing, _)) = remaining_branches.pop_first() {
-            return Err(TypeError::MissingBranch(
+            emit(TypeError::MissingBranch(
                 span.clone(),
                 missing.clone(),
                 typ.clone(),
             ));
         }
 
-        Ok((
+        (
             Command::Case(
                 Arc::clone(branches),
                 Box::from(typed_processes),
                 typed_else_process,
             ),
             inferred_type,
-        ))
+        )
     }
 
     fn check_command_case_branch(
@@ -1130,22 +1317,25 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         typed_processes: &mut Vec<Arc<Process<Type<S>, S>>>,
         inferred_type: &mut Option<Type<S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) {
         *self = original_context.clone();
 
         let Some(branch_type) = remaining_branches.remove(branch) else {
-            return Err(TypeError::RedundantBranch(
+            emit(TypeError::RedundantBranch(
                 span.clone(),
                 branch.clone(),
                 typ.clone(),
             ));
+            return;
         };
-        self.put(span, object.clone(), branch_type)?;
-        let (process, inferred_in_branch) = self.analyze_process(process, mode)?;
+        if let Err(e) = self.put(span, object.clone(), branch_type) {
+            emit(e);
+        }
+        let (process, inferred_in_branch) = self.analyze_process(process, mode, emit);
         typed_processes.push(process);
-        self.merge_command_case_inferred_type(span, inferred_type, inferred_in_branch)?;
+        self.merge_command_case_inferred_type(span, inferred_type, inferred_in_branch, emit);
         original_context.blocks = self.blocks.clone();
-        Ok(())
     }
 
     fn check_command_case_else(
@@ -1157,13 +1347,16 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         process: &Arc<Process<(), S>>,
         inferred_type: &mut Option<Type<S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<Arc<Process<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Process<Type<S>, S>> {
         *self = original_context.clone();
         let object_type = Type::Either(Span::None, std::mem::take(remaining_branches));
-        self.put(span, object.clone(), object_type)?;
-        let (process, inferred_in_branch) = self.analyze_process(process, mode)?;
-        self.merge_command_case_inferred_type(span, inferred_type, inferred_in_branch)?;
-        Ok(process)
+        if let Err(e) = self.put(span, object.clone(), object_type) {
+            emit(e);
+        }
+        let (process, inferred_in_branch) = self.analyze_process(process, mode, emit);
+        self.merge_command_case_inferred_type(span, inferred_type, inferred_in_branch, emit);
+        process
     }
 
     fn merge_command_case_inferred_type(
@@ -1171,13 +1364,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         inferred_type: &mut Option<Type<S>>,
         inferred_in_branch: Option<Type<S>>,
-    ) -> Result<(), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) {
         *inferred_type = match (inferred_type.take(), inferred_in_branch) {
             (None, Some(t2)) => Some(t2),
-            (Some(t1), Some(t2)) => Some(intersect_types(&self.type_defs, span, &t1, &t2)?),
+            (Some(t1), Some(t2)) => Some(
+                intersect_types(&self.type_defs, span, &t1, &t2).unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                }),
+            ),
             (t1, _) => t1,
         };
-        Ok(())
     }
 
     fn check_command_continue(
@@ -1186,16 +1384,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         typ: &Type<S>,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Break(_) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Continue,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
-        let (process, inferred_types) = self.analyze_process(process, mode)?;
-        Ok((Command::Continue(process), inferred_types))
+        let (process, inferred_types) = self.analyze_process(process, mode, emit);
+        (Command::Continue(process), inferred_types)
     }
 
     fn check_command_begin(
@@ -1209,12 +1409,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         captures: &Captures,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         if let Some(inference_subject) = inference_subject {
-            return Err(TypeError::TypeMustBeKnownAtThisPoint(
+            emit(TypeError::TypeMustBeKnownAtThisPoint(
                 span.clone(),
                 inference_subject.clone(),
             ));
+            return (Command::Break, None);
         }
         let Type::Recursive {
             span: typ_span,
@@ -1224,11 +1426,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             display_hint,
         } = typ
         else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Begin,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
 
         let mut typ_asc = typ_asc.clone();
@@ -1257,13 +1460,17 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             ),
         );
 
-        self.put(
-            span,
-            object.clone(),
-            Type::expand_recursive(&typ_asc, typ_label, typ_body, display_hint.0.as_ref())?,
-        )?;
-        let (process, _inferred_type) = self.analyze_process(process, mode)?;
-        Ok((
+        let expanded =
+            Type::expand_recursive(&typ_asc, typ_label, typ_body, display_hint.0.as_ref())
+                .unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                });
+        if let Err(e) = self.put(span, object.clone(), expanded) {
+            emit(e);
+        }
+        let (process, _inferred_type) = self.analyze_process(process, mode, emit);
+        (
             Command::Begin {
                 unfounded,
                 label: label.clone(),
@@ -1271,7 +1478,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 body: process,
             },
             None,
-        ))
+        )
     }
 
     fn check_command_loop(
@@ -1283,25 +1490,30 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         label: &Option<LocalName>,
         driver: &LocalName,
         captures: &Captures,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         if !matches!(typ, Type::Recursive { .. }) {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::Loop,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         }
         let Some((driver_type, variables)) = self.loop_points.get(label).cloned() else {
-            return Err(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
+            emit(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
+            return (Command::Break, None);
         };
-        self.put(span, driver.clone(), typ.clone())?;
+        if let Err(e) = self.put(span, driver.clone(), typ.clone()) {
+            emit(e);
+        }
 
         if let (Type::Recursive { asc: asc1, .. }, Type::Recursive { asc: asc2, .. }) =
             (typ, &driver_type)
         {
             for loop_id in asc2 {
                 if !asc1.contains(loop_id) {
-                    return Err(TypeError::DoesNotDescendSubjectOfBegin(
+                    emit(TypeError::DoesNotDescendSubjectOfBegin(
                         span.clone(),
                         loop_id.clone(),
                     ));
@@ -1317,13 +1529,17 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 continue;
             }
             let Some(current_type) = self.get_variable(var) else {
-                return Err(TypeError::LoopVariableNotPreserved(
+                emit(TypeError::LoopVariableNotPreserved(
                     span.clone(),
                     var.clone(),
                 ));
+                continue;
             };
-            if !current_type.is_assignable_to(type_at_begin, &self.type_defs)? {
-                return Err(TypeError::LoopVariableChangedType(
+            if !current_type
+                .is_assignable_to(type_at_begin, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::LoopVariableChangedType(
                     span.clone(),
                     var.clone(),
                     current_type,
@@ -1331,12 +1547,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 ));
             }
         }
-        self.cannot_have_obligations(span)?;
+        if let Err(e) = self.cannot_have_obligations(span) {
+            emit(e);
+        }
 
-        Ok((
+        (
             Command::Loop(label.clone(), driver.clone(), captures.clone()),
             inferred_loop.or(Some(Type::Self_(span.clone(), label.clone()))),
-        ))
+        )
     }
 
     fn check_command_send_type(
@@ -1347,20 +1565,28 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         argument: &Type<S>,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Forall(_, type_name, then_type) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::SendType,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
         let then_type = then_type
             .clone()
-            .substitute(BTreeMap::from([(type_name, argument)]))?;
-        self.put(span, object.clone(), then_type)?;
-        let (process, inferred_types) = self.analyze_process(process, mode)?;
-        Ok((Command::SendType(argument.clone(), process), inferred_types))
+            .substitute(BTreeMap::from([(type_name, argument)]))
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
+        if let Err(e) = self.put(span, object.clone(), then_type) {
+            emit(e);
+        }
+        let (process, inferred_types) = self.analyze_process(process, mode, emit);
+        (Command::SendType(argument.clone(), process), inferred_types)
     }
 
     fn check_command_receive_type(
@@ -1371,32 +1597,43 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         parameter: &LocalName,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
-    ) -> Result<(Command<Type<S>, S>, Option<Type<S>>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Exists(_, type_name, then_type) = typ else {
-            return Err(TypeError::InvalidOperation(
+            emit(TypeError::InvalidOperation(
                 span.clone(),
                 Operation::ReceiveType,
                 typ.clone(),
             ));
+            return (Command::Break, None);
         };
-        let then_type = then_type.clone().substitute(BTreeMap::from([(
-            type_name,
-            &Type::Var(span.clone(), parameter.clone()),
-        )]))?;
+        let then_type = then_type
+            .clone()
+            .substitute(BTreeMap::from([(
+                type_name,
+                &Type::Var(span.clone(), parameter.clone()),
+            )]))
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
         self.type_defs.vars.insert(parameter.clone());
-        self.put(span, object.clone(), then_type)?;
-        let (process, inferred_types) = self.analyze_process(process, mode)?;
-        Ok((
+        if let Err(e) = self.put(span, object.clone(), then_type) {
+            emit(e);
+        }
+        let (process, inferred_types) = self.analyze_process(process, mode, emit);
+        (
             Command::ReceiveType(parameter.clone(), process),
             inferred_types,
-        ))
+        )
     }
 
     pub(crate) fn infer_process(
         &mut self,
         process: &Process<(), S>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         match process {
             Process::Let {
                 span,
@@ -1414,6 +1651,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     expression,
                     process,
                     inference_subject,
+                    emit,
                 ),
                 None => self.infer_process_let_inferred(
                     span,
@@ -1422,6 +1660,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     expression,
                     process,
                     inference_subject,
+                    emit,
                 ),
             },
 
@@ -1431,7 +1670,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 usage,
                 typ: (),
                 command,
-            } => self.infer_process_do(span, object, usage, command, inference_subject),
+            } => self.infer_process_do(span, object, usage, command, inference_subject, emit),
 
             Process::Poll {
                 span,
@@ -1455,6 +1694,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then,
                 else_,
                 inference_subject,
+                emit,
             ),
 
             Process::Submit {
@@ -1463,21 +1703,31 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 point,
                 values,
                 captures,
-            } => {
-                self.infer_process_submit(span, driver, point, values, captures, inference_subject)
-            }
+            } => self.infer_process_submit(
+                span,
+                driver,
+                point,
+                values,
+                captures,
+                inference_subject,
+                emit,
+            ),
 
             Process::Telltypes(span, _) => {
-                Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
+                emit(TypeError::Telltypes(span.clone(), self.variables.clone()));
+                (
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::Fail(span.clone()),
+                )
             }
 
-            Process::Unreachable(span) => self.infer_process_unreachable(span),
+            Process::Unreachable(span) => self.infer_process_unreachable(span, emit),
 
             Process::Block(span, index, body, then) => {
-                self.infer_process_block(span, *index, body, then, inference_subject)
+                self.infer_process_block(span, *index, body, then, inference_subject, emit)
             }
 
-            Process::Goto(span, index, caps) => self.infer_process_goto(span, *index, caps),
+            Process::Goto(span, index, caps) => self.infer_process_goto(span, *index, caps, emit),
         }
     }
 
@@ -1490,9 +1740,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         expression: &Arc<Expression<(), S>>,
         process: &Arc<Process<(), S>>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         let expression =
-            self.check_expression(Some(inference_subject), expression, annotated_type)?;
+            self.check_expression(Some(inference_subject), expression, annotated_type, emit);
         self.finish_infer_process_let(
             span,
             name,
@@ -1501,6 +1752,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             expression,
             process,
             inference_subject,
+            emit,
         )
     }
 
@@ -1512,8 +1764,9 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         expression: &Arc<Expression<(), S>>,
         process: &Arc<Process<(), S>>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
-        let (expression, typ) = self.infer_expression(Some(inference_subject), expression)?;
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
+        let (expression, typ) = self.infer_expression(Some(inference_subject), expression, emit);
         self.finish_infer_process_let(
             span,
             name,
@@ -1522,6 +1775,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             expression,
             process,
             inference_subject,
+            emit,
         )
     }
 
@@ -1534,10 +1788,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         expression: Arc<Expression<Type<S>, S>>,
         process: &Arc<Process<(), S>>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
-        self.put(span, name.clone(), typ.clone())?;
-        let (process, subject_type) = self.infer_process(process, inference_subject)?;
-        Ok((
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
+        if let Err(e) = self.put(span, name.clone(), typ.clone()) {
+            emit(e);
+        }
+        let (process, subject_type) = self.infer_process(process, inference_subject, emit);
+        (
             Arc::new(Process::Let {
                 span: span.clone(),
                 name: name.clone(),
@@ -1547,7 +1804,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then: process,
             }),
             subject_type,
-        ))
+        )
     }
 
     fn infer_process_do(
@@ -1557,10 +1814,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         usage: &VariableUsage,
         command: &Command<(), S>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         if object == inference_subject {
-            let (command, typ) = self.infer_command(span, inference_subject, command)?;
-            return Ok((
+            let (command, typ) = self.infer_command(span, inference_subject, command, emit);
+            return (
                 Arc::new(Process::Do {
                     span: span.clone(),
                     name: object.clone(),
@@ -1569,9 +1827,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     command,
                 }),
                 typ,
-            ));
+            );
         }
-        let typ = self.get_variable_or_error(span, object)?;
+        let typ = self
+            .get_variable_or_error(span, object)
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
 
         let (command, inferred_type) = self.check_command(
             Some(inference_subject),
@@ -1580,16 +1843,27 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             &typ,
             command,
             &ProcessAnalyzerMode::Infer(inference_subject.clone()),
-        )?;
+            emit,
+        );
 
         let Some(inferred_type) = inferred_type else {
-            return Err(TypeError::TypeMustBeKnownAtThisPoint(
+            emit(TypeError::TypeMustBeKnownAtThisPoint(
                 span.clone(),
                 inference_subject.clone(),
             ));
+            return (
+                Arc::new(Process::Do {
+                    span: span.clone(),
+                    name: object.clone(),
+                    usage: usage.clone(),
+                    typ,
+                    command,
+                }),
+                Type::Fail(span.clone()),
+            );
         };
 
-        Ok((
+        (
             Arc::new(Process::Do {
                 span: span.clone(),
                 name: object.clone(),
@@ -1598,7 +1872,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 command,
             }),
             inferred_type,
-        ))
+        )
     }
 
     fn infer_process_poll(
@@ -1613,7 +1887,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         then: &Arc<Process<(), S>>,
         else_: &Arc<Process<(), S>>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         let is_repoll = matches!(kind, PollKind::Repoll);
 
         let preserved_vars: IndexMap<_, _> = self
@@ -1638,14 +1913,28 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         poll.points.clone(),
                         poll.current_point.clone(),
                     ),
-                    None => return Err(TypeError::RepollOutsidePoll(span.clone())),
+                    None => {
+                        emit(TypeError::RepollOutsidePoll(span.clone()));
+                        return (
+                            Arc::new(Process::Unreachable(span.clone())),
+                            Type::Fail(span.clone()),
+                        );
+                    }
                 };
             if poll_driver != *driver {
-                return Err(TypeError::RepollOutsidePoll(span.clone()));
+                emit(TypeError::RepollOutsidePoll(span.clone()));
+                return (
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::Fail(span.clone()),
+                );
             }
 
             if self.get_variable(driver).is_none() {
-                return Err(TypeError::RepollOutsidePoll(span.clone()));
+                emit(TypeError::RepollOutsidePoll(span.clone()));
+                return (
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::Fail(span.clone()),
+                );
             }
 
             let mut point_client_type = poll_points
@@ -1655,27 +1944,38 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 .clone();
 
             for client in clients {
-                let (typed, typ) = self.infer_expression(Some(inference_subject), client)?;
+                let (typed, typ) = self.infer_expression(Some(inference_subject), client, emit);
                 typed_clients.push(typed);
                 let mut typ = typ;
                 loop {
-                    let next = typ.expand_definition(&self.type_defs)?;
+                    let next = typ.expand_definition(&self.type_defs).unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
                     if next == typ {
                         break;
                     }
                     typ = next;
                 }
                 let Type::Recursive { .. } = typ else {
-                    return Err(TypeError::PollClientMustBeRecursive(span.clone(), typ));
+                    emit(TypeError::PollClientMustBeRecursive(span.clone(), typ));
+                    continue;
                 };
-                if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
-                    return Err(TypeError::SubmittedClientNotAssignableToPoll(
+                if !typ
+                    .is_assignable_to(&poll_pool_type, &self.type_defs)
+                    .unwrap_or(true)
+                {
+                    emit(TypeError::SubmittedClientNotAssignableToPoll(
                         span.clone(),
                         typ.clone(),
                         poll_pool_type.clone(),
                     ));
                 }
-                point_client_type = union_types(&self.type_defs, span, &point_client_type, &typ)?;
+                point_client_type = union_types(&self.type_defs, span, &point_client_type, &typ)
+                    .unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
             }
 
             base = self.clone();
@@ -1695,7 +1995,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 &point_label,
                 &point_body,
                 display_hint.0.as_ref(),
-            )?;
+            )
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
 
             let Some(base_poll) = base.poll.as_mut() else {
                 panic!("repoll without a poll scope after validation");
@@ -1721,22 +2025,37 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             then_ctx = base.clone();
         } else {
             if clients.is_empty() {
-                return Err(TypeError::PollMustHaveAtLeastOneClient(span.clone()));
+                emit(TypeError::PollMustHaveAtLeastOneClient(span.clone()));
+                return (
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::Fail(span.clone()),
+                );
             }
 
             let mut client_type = None;
             for client in clients {
-                let (client_expr, typ) = self.infer_expression(Some(inference_subject), client)?;
+                let (client_expr, typ) =
+                    self.infer_expression(Some(inference_subject), client, emit);
                 typed_clients.push(client_expr);
                 client_type = Some(match client_type {
                     None => typ,
-                    Some(prev) => union_types(&self.type_defs, span, &prev, &typ)?,
+                    Some(prev) => {
+                        union_types(&self.type_defs, span, &prev, &typ).unwrap_or_else(|e| {
+                            emit(e);
+                            Type::Fail(span.clone())
+                        })
+                    }
                 });
             }
 
             let mut client_type = client_type.expect("clients is not empty");
             loop {
-                let next = client_type.expand_definition(&self.type_defs)?;
+                let next = client_type
+                    .expand_definition(&self.type_defs)
+                    .unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
                 if next == client_type {
                     break;
                 }
@@ -1753,10 +2072,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 display_hint,
             } = client_type.clone()
             else {
-                return Err(TypeError::PollClientMustBeRecursive(
+                emit(TypeError::PollClientMustBeRecursive(
                     span.clone(),
                     client_type,
                 ));
+                return (
+                    Arc::new(Process::Unreachable(span.clone())),
+                    Type::Fail(span.clone()),
+                );
             };
 
             let pool_type = client_type.clone();
@@ -1772,7 +2095,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 display_hint: display_hint.clone(),
             };
 
-            name_typ = Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())?;
+            name_typ = Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())
+                .unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                });
 
             then_ctx = base.clone();
             let prev_poll = then_ctx.poll.take();
@@ -1795,9 +2122,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             });
         }
 
-        then_ctx.put(span, driver.clone(), Type::Continue(span.clone()))?;
-        then_ctx.put(span, name.clone(), name_typ.clone())?;
-        let (typed_then, then_type) = then_ctx.infer_process(then, inference_subject)?;
+        if let Err(e) = then_ctx.put(span, driver.clone(), Type::Continue(span.clone())) {
+            emit(e);
+        }
+        if let Err(e) = then_ctx.put(span, name.clone(), name_typ.clone()) {
+            emit(e);
+        }
+        let (typed_then, then_type) = then_ctx.infer_process(then, inference_subject, emit);
 
         base.blocks = then_ctx.blocks.clone();
 
@@ -1813,20 +2144,22 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             else_ctx.variables.shift_remove(&current.driver);
             let prev = else_ctx.poll_stash.pop().unwrap_or(None);
             if let Some(prev_poll) = &prev {
-                else_ctx.put(
+                if let Err(e) = else_ctx.put(
                     &prev_poll.token_span,
                     prev_poll.driver.clone(),
                     Type::Continue(prev_poll.token_span.clone()),
-                )?;
+                ) {
+                    emit(e);
+                }
             }
             else_ctx.poll = prev;
         }
 
-        let (typed_else, else_type) = else_ctx.infer_process(else_, inference_subject)?;
+        let (typed_else, else_type) = else_ctx.infer_process(else_, inference_subject, emit);
 
         self.variables.clear();
 
-        Ok((
+        (
             Arc::new(Process::Poll {
                 span: span.clone(),
                 kind: kind.clone(),
@@ -1839,8 +2172,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 then: typed_then,
                 else_: typed_else,
             }),
-            intersect_types(&self.type_defs, span, &then_type, &else_type)?,
-        ))
+            intersect_types(&self.type_defs, span, &then_type, &else_type).unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            }),
+        )
     }
 
     fn infer_process_submit(
@@ -1851,7 +2187,8 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         values: &[Arc<Expression<(), S>>],
         captures: &Captures,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         let (poll_pool_type, current_point_client_type, poll_point_client_type, preserved_vars) =
             match self.poll.as_ref() {
                 Some(poll) => {
@@ -1876,11 +2213,20 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         preserved.preserved.clone(),
                     )
                 }
-                None => return Err(TypeError::SubmitOutsidePoll(span.clone())),
+                None => {
+                    emit(TypeError::SubmitOutsidePoll(span.clone()));
+                    return (
+                        Arc::new(Process::Unreachable(span.clone())),
+                        Type::Fail(span.clone()),
+                    );
+                }
             };
 
-        if !current_point_client_type.is_assignable_to(&poll_point_client_type, &self.type_defs)? {
-            return Err(TypeError::SubmitCannotTargetPollPoint(
+        if !current_point_client_type
+            .is_assignable_to(&poll_point_client_type, &self.type_defs)
+            .unwrap_or(true)
+        {
+            emit(TypeError::SubmitCannotTargetPollPoint(
                 span.clone(),
                 current_point_client_type,
                 poll_point_client_type.clone(),
@@ -1889,37 +2235,50 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
 
         let mut typed_values = Vec::with_capacity(values.len());
         for value in values {
-            let (typed, typ) = self.infer_expression(Some(inference_subject), value)?;
+            let (typed, typ) = self.infer_expression(Some(inference_subject), value, emit);
             let mut typ = typ;
             loop {
-                let next = typ.expand_definition(&self.type_defs)?;
+                let next = typ.expand_definition(&self.type_defs).unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                });
                 if next == typ {
                     break;
                 }
                 typ = next;
             }
-            if !typ.is_assignable_to(&poll_pool_type, &self.type_defs)? {
-                return Err(TypeError::SubmittedClientNotAssignableToPoll(
+            if !typ
+                .is_assignable_to(&poll_pool_type, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::SubmittedClientNotAssignableToPoll(
                     span.clone(),
                     typ.clone(),
                     poll_pool_type.clone(),
                 ));
             }
-            if !typ.is_assignable_to(&poll_point_client_type, &self.type_defs)? {
-                return Err(TypeError::SubmittedClientDoesNotDescend(span.clone()));
+            if !typ
+                .is_assignable_to(&poll_point_client_type, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::SubmittedClientDoesNotDescend(span.clone()));
             }
             typed_values.push(typed);
         }
 
         for (var, type_at_poll) in preserved_vars.iter() {
             let Some(current_type) = self.get_variable(var) else {
-                return Err(TypeError::PollVariableNotPreserved(
+                emit(TypeError::PollVariableNotPreserved(
                     span.clone(),
                     var.clone(),
                 ));
+                continue;
             };
-            if !current_type.is_assignable_to(type_at_poll, &self.type_defs)? {
-                return Err(TypeError::PollVariableChangedType(
+            if !current_type
+                .is_assignable_to(type_at_poll, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::PollVariableChangedType(
                     span.clone(),
                     var.clone(),
                     current_type,
@@ -1929,13 +2288,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         }
 
         if self.get_variable(driver).is_none() {
-            return Err(TypeError::SubmitOutsidePoll(span.clone()));
+            emit(TypeError::SubmitOutsidePoll(span.clone()));
         }
 
-        self.cannot_have_obligations(span)?;
+        if let Err(e) = self.cannot_have_obligations(span) {
+            emit(e);
+        }
         self.variables.clear();
 
-        Ok((
+        (
             Arc::new(Process::Submit {
                 span: span.clone(),
                 driver: driver.clone(),
@@ -1944,13 +2305,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 captures: captures.clone(),
             }),
             Type::choice(vec![]),
-        ))
+        )
     }
 
     fn infer_process_unreachable(
         &mut self,
         span: &Span,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         let impossible = Type::either(vec![]);
         let mut exhaustive = false;
         for typ in self.variables.values() {
@@ -1960,17 +2322,19 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     break;
                 }
                 Ok(false) => {}
-                Err(e) => return Err(e),
+                Err(e) => {
+                    emit(e);
+                }
             }
         }
         if !exhaustive {
-            return Err(TypeError::NonExhaustiveIf(span.clone()));
+            emit(TypeError::NonExhaustiveIf(span.clone()));
         }
         self.variables.clear();
-        Ok((
+        (
             Arc::new(Process::Unreachable(span.clone())),
             Type::choice(vec![]),
-        ))
+        )
     }
 
     fn infer_process_block(
@@ -1980,11 +2344,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         body: &Arc<Process<(), S>>,
         then: &Arc<Process<(), S>>,
         inference_subject: &LocalName,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         if self.blocks.insert(index, Vec::new()).is_some() {
             panic!("block {} already defined", index);
         }
-        let (typed_then, then_type) = self.infer_process(then, inference_subject)?;
+        let (typed_then, then_type) = self.infer_process(then, inference_subject, emit);
         let contexts = self
             .blocks
             .shift_remove(&index)
@@ -2000,19 +2365,23 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 ctx
             })
             .collect();
-        let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free)?;
+        let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free, emit);
 
         let saved = self.variables.clone();
         self.variables = merged;
-        let (typed_body, body_type) = self.infer_process(body, inference_subject)?;
+        let (typed_body, body_type) = self.infer_process(body, inference_subject, emit);
         self.variables = saved;
 
-        let final_type = intersect_types(&self.type_defs, span, &then_type, &body_type)?;
+        let final_type = intersect_types(&self.type_defs, span, &then_type, &body_type)
+            .unwrap_or_else(|e| {
+                emit(e);
+                Type::Fail(span.clone())
+            });
 
-        Ok((
+        (
             Arc::new(Process::Block(span.clone(), index, typed_body, typed_then)),
             final_type,
-        ))
+        )
     }
 
     fn infer_process_goto(
@@ -2020,14 +2389,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         index: usize,
         caps: &Captures,
-    ) -> Result<(Arc<Process<Type<S>, S>>, Type<S>), TypeError<S>> {
+        _emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         let entry = self.blocks.get_mut(&index).unwrap();
         entry.push(self.variables.clone());
         self.variables.clear();
-        Ok((
+        (
             Arc::new(Process::Goto(span.clone(), index, caps.clone())),
             Type::choice(vec![]),
-        ))
+        )
     }
 
     pub(crate) fn infer_command(
@@ -2035,39 +2405,47 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         subject: &LocalName,
         command: &Command<(), S>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
         match command {
-            Command::Link(expression) => self.infer_command_link(span, subject, expression),
+            Command::Link(expression) => self.infer_command_link(span, subject, expression, emit),
             Command::Send(argument, process) => {
-                self.infer_command_send(span, subject, argument, process)
+                self.infer_command_send(span, subject, argument, process, emit)
             }
-            Command::Receive(parameter, annotation, (), process, vars) => {
-                self.infer_command_receive(span, subject, parameter, annotation, process, vars)
-            }
+            Command::Receive(parameter, annotation, (), process, vars) => self
+                .infer_command_receive(span, subject, parameter, annotation, process, vars, emit),
             Command::Signal(chosen, process) => {
-                self.infer_command_signal(span, subject, chosen, process)
+                self.infer_command_signal(span, subject, chosen, process, emit)
             }
             Command::Case(branches, processes, else_process) => {
-                self.infer_command_case(span, subject, branches, processes, else_process)
+                self.infer_command_case(span, subject, branches, processes, else_process, emit)
             }
             Command::Break => {
-                self.cannot_have_obligations(span)?;
-                Ok((Command::Break, Type::Continue(span.clone())))
+                if let Err(e) = self.cannot_have_obligations(span) {
+                    emit(e);
+                }
+                (Command::Break, Type::Continue(span.clone()))
             }
-            Command::Continue(process) => self.infer_command_continue(span, process),
-            Command::Begin { .. } => Err(TypeError::TypeMustBeKnownAtThisPoint(
-                span.clone(),
-                subject.clone(),
-            )),
+            Command::Continue(process) => self.infer_command_continue(span, process, emit),
+            Command::Begin { .. } => {
+                emit(TypeError::TypeMustBeKnownAtThisPoint(
+                    span.clone(),
+                    subject.clone(),
+                ));
+                (Command::Break, Type::Fail(span.clone()))
+            }
             Command::Loop(label, driver, captures) => {
-                self.infer_command_loop(span, label, driver, captures)
+                self.infer_command_loop(span, label, driver, captures, emit)
             }
-            Command::SendType(_, _) => Err(TypeError::TypeMustBeKnownAtThisPoint(
-                span.clone(),
-                subject.clone(),
-            )),
+            Command::SendType(_, _) => {
+                emit(TypeError::TypeMustBeKnownAtThisPoint(
+                    span.clone(),
+                    subject.clone(),
+                ));
+                (Command::Break, Type::Fail(span.clone()))
+            }
             Command::ReceiveType(parameter, process) => {
-                self.infer_command_receive_type(span, subject, parameter, process)
+                self.infer_command_receive_type(span, subject, parameter, process, emit)
             }
         }
     }
@@ -2077,10 +2455,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         subject: &LocalName,
         expression: &Arc<Expression<(), S>>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
-        let (expression, typ) = self.infer_expression(Some(subject), expression)?;
-        self.cannot_have_obligations(span)?;
-        Ok((Command::Link(expression), typ.dual(Span::None)))
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
+        let (expression, typ) = self.infer_expression(Some(subject), expression, emit);
+        if let Err(e) = self.cannot_have_obligations(span) {
+            emit(e);
+        }
+        (Command::Link(expression), typ.dual(Span::None))
     }
 
     fn infer_command_send(
@@ -2089,10 +2470,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         subject: &LocalName,
         argument: &Arc<Expression<(), S>>,
         process: &Arc<Process<(), S>>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
-        let (argument, arg_type) = self.infer_expression(Some(subject), argument)?;
-        let (process, then_type) = self.infer_process(process, subject)?;
-        Ok((
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
+        let (argument, arg_type) = self.infer_expression(Some(subject), argument, emit);
+        let (process, then_type) = self.infer_process(process, subject, emit);
+        (
             Command::Send(argument, process),
             Type::Function(
                 span.clone(),
@@ -2100,7 +2482,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 Box::new(then_type),
                 vec![],
             ),
-        ))
+        )
     }
 
     fn infer_command_receive(
@@ -2111,20 +2493,24 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
         vars: &[LocalName],
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
         for var in vars.iter() {
             self.type_defs.vars.insert(var.clone());
         }
         let Some(param_type) = annotation else {
-            return Err(TypeError::ParameterTypeMustBeKnown(
+            emit(TypeError::ParameterTypeMustBeKnown(
                 span.clone(),
                 parameter.clone(),
             ));
+            return (Command::Break, Type::Fail(span.clone()));
         };
-        self.put(span, parameter.clone(), param_type.clone())?;
+        if let Err(e) = self.put(span, parameter.clone(), param_type.clone()) {
+            emit(e);
+        }
         self.type_defs.vars.extend(vars.iter().cloned());
-        let (process, then_type) = self.infer_process(process, subject)?;
-        Ok((
+        let (process, then_type) = self.infer_process(process, subject, emit);
+        (
             Command::Receive(
                 parameter.clone(),
                 annotation.clone(),
@@ -2138,7 +2524,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 Box::new(then_type),
                 vars.to_vec(),
             ),
-        ))
+        )
     }
 
     fn infer_command_signal(
@@ -2147,12 +2533,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         subject: &LocalName,
         chosen: &LocalName,
         process: &Arc<Process<(), S>>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
-        let (process, then_type) = self.infer_process(process, subject)?;
-        Ok((
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
+        let (process, then_type) = self.infer_process(process, subject, emit);
+        (
             Command::Signal(chosen.clone(), process),
             Type::Choice(span.clone(), BTreeMap::from([(chosen.clone(), then_type)])),
-        ))
+        )
     }
 
     fn infer_command_case(
@@ -2162,12 +2549,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         branches: &Arc<[LocalName]>,
         processes: &Box<[Arc<Process<(), S>>]>,
         else_process: &Option<Arc<Process<(), S>>>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
         if else_process.is_some() {
-            return Err(TypeError::TypeMustBeKnownAtThisPoint(
+            emit(TypeError::TypeMustBeKnownAtThisPoint(
                 span.clone(),
                 subject.clone(),
             ));
+            return (Command::Break, Type::Fail(span.clone()));
         }
 
         let mut original_context = self.clone();
@@ -2176,25 +2565,26 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
 
         for (branch, process) in branches.iter().zip(processes.iter()) {
             *self = original_context.clone();
-            let (process, typ) = self.infer_process(process, subject)?;
+            let (process, typ) = self.infer_process(process, subject, emit);
             typed_processes.push(process);
             branch_types.insert(branch.clone(), typ);
             original_context.blocks = self.blocks.clone();
         }
 
-        Ok((
+        (
             Command::Case(Arc::clone(branches), Box::from(typed_processes), None),
             Type::Either(span.clone(), branch_types),
-        ))
+        )
     }
 
     fn infer_command_continue(
         &mut self,
         span: &Span,
         process: &Arc<Process<(), S>>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
-        let process = self.check_process(process)?;
-        Ok((Command::Continue(process), Type::Break(span.clone())))
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
+        let process = self.check_process(process, emit);
+        (Command::Continue(process), Type::Break(span.clone()))
     }
 
     fn infer_command_loop(
@@ -2203,20 +2593,26 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         label: &Option<LocalName>,
         driver: &LocalName,
         captures: &Captures,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
         let Some((driver_type, variables)) = self.loop_points.get(label).cloned() else {
-            return Err(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
+            emit(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
+            return (Command::Break, Type::Fail(span.clone()));
         };
 
         for (var, type_at_begin) in variables.as_ref() {
             let Some(current_type) = self.get_variable(var) else {
-                return Err(TypeError::LoopVariableNotPreserved(
+                emit(TypeError::LoopVariableNotPreserved(
                     span.clone(),
                     var.clone(),
                 ));
+                continue;
             };
-            if !current_type.is_assignable_to(type_at_begin, &self.type_defs)? {
-                return Err(TypeError::LoopVariableChangedType(
+            if !current_type
+                .is_assignable_to(type_at_begin, &self.type_defs)
+                .unwrap_or(true)
+            {
+                emit(TypeError::LoopVariableChangedType(
                     span.clone(),
                     var.clone(),
                     current_type,
@@ -2224,12 +2620,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 ));
             }
         }
-        self.cannot_have_obligations(span)?;
+        if let Err(e) = self.cannot_have_obligations(span) {
+            emit(e);
+        }
 
-        Ok((
+        (
             Command::Loop(label.clone(), driver.clone(), captures.clone()),
             driver_type,
-        ))
+        )
     }
 
     fn infer_command_receive_type(
@@ -2238,13 +2636,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         subject: &LocalName,
         parameter: &LocalName,
         process: &Arc<Process<(), S>>,
-    ) -> Result<(Command<Type<S>, S>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Command<Type<S>, S>, Type<S>) {
         self.type_defs.vars.insert(parameter.clone());
-        let (process, then_type) = self.infer_process(process, subject)?;
-        Ok((
+        let (process, then_type) = self.infer_process(process, subject, emit);
+        (
             Command::ReceiveType(parameter.clone(), process),
             Type::Exists(span.clone(), parameter.clone(), Box::new(then_type)),
-        ))
+        )
     }
 
     pub(crate) fn check_expression(
@@ -2252,20 +2651,27 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         inference_subject: Option<&LocalName>,
         expression: &Expression<(), S>,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
         match expression {
             Expression::Global(span, name, ()) => {
-                self.check_expression_global(span, name, target_type)
+                self.check_expression_global(span, name, target_type, emit)
             }
-            Expression::Variable(span, name, (), usage) => {
-                self.check_expression_variable(span, name, usage, inference_subject, target_type)
-            }
+            Expression::Variable(span, name, (), usage) => self.check_expression_variable(
+                span,
+                name,
+                usage,
+                inference_subject,
+                target_type,
+                emit,
+            ),
             Expression::Box(span, captures, expression, ()) => self.check_expression_box(
                 span,
                 captures,
                 expression,
                 inference_subject,
                 target_type,
+                emit,
             ),
             Expression::Chan {
                 span,
@@ -2282,11 +2688,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 process,
                 inference_subject,
                 target_type,
+                emit,
             ),
             Expression::Primitive(span, value, ()) => {
-                self.check_expression_primitive(span, value, target_type)
+                self.check_expression_primitive(span, value, target_type, emit)
             }
-            Expression::External(f, ()) => self.check_expression_external(f, target_type),
+            Expression::External(f, ()) => self.check_expression_external(f, target_type, emit),
         }
     }
 
@@ -2294,14 +2701,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         &mut self,
         inference_subject: Option<&LocalName>,
         expression: &Expression<(), S>,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
         match expression {
-            Expression::Global(span, name, ()) => self.infer_expression_global(span, name),
+            Expression::Global(span, name, ()) => self.infer_expression_global(span, name, emit),
             Expression::Variable(span, name, (), usage) => {
-                self.infer_expression_variable(span, name, usage, inference_subject)
+                self.infer_expression_variable(span, name, usage, inference_subject, emit)
             }
             Expression::Box(span, captures, expression, ()) => {
-                self.infer_expression_box(span, captures, expression, inference_subject)
+                self.infer_expression_box(span, captures, expression, inference_subject, emit)
             }
             Expression::Chan {
                 span,
@@ -2317,9 +2725,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 annotation,
                 process,
                 inference_subject,
+                emit,
             ),
-            Expression::Primitive(span, value, ()) => self.infer_expression_primitive(span, value),
-            Expression::External(_f, ()) => self.infer_expression_external(),
+            Expression::Primitive(span, value, ()) => {
+                self.infer_expression_primitive(span, value, emit)
+            }
+            Expression::External(_f, ()) => self.infer_expression_external(emit),
         }
     }
 
@@ -2328,14 +2739,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         name: &super::super::language::GlobalName<S>,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
-        let typ = self.get_global(span, name)?;
-        typ.check_assignable(span, target_type, &self.type_defs)?;
-        Ok(Arc::new(Expression::Global(
-            span.clone(),
-            name.clone(),
-            typ.clone(),
-        )))
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
+        let typ = self.get_global(span, name, emit);
+        if let Err(e) = typ.check_assignable(span, target_type, &self.type_defs) {
+            emit(e);
+        }
+        Arc::new(Expression::Global(span.clone(), name.clone(), typ.clone()))
     }
 
     fn check_expression_variable(
@@ -2345,25 +2755,39 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         usage: &VariableUsage,
         inference_subject: Option<&LocalName>,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
         if Some(name) == inference_subject {
-            return Err(TypeError::TypeMustBeKnownAtThisPoint(
+            emit(TypeError::TypeMustBeKnownAtThisPoint(
                 span.clone(),
                 name.clone(),
             ));
+            return Arc::new(Expression::Variable(
+                span.clone(),
+                name.clone(),
+                Type::Fail(span.clone()),
+                usage.clone(),
+            ));
         }
 
-        let typ = self.get_variable_or_error(span, name)?;
-        typ.check_assignable(span, target_type, &self.type_defs)?;
-        if !typ.is_linear(&self.type_defs)? {
-            self.put(span, name.clone(), typ.clone())?;
+        let typ = self.get_variable_or_error(span, name).unwrap_or_else(|e| {
+            emit(e);
+            Type::Fail(span.clone())
+        });
+        if let Err(e) = typ.check_assignable(span, target_type, &self.type_defs) {
+            emit(e);
         }
-        Ok(Arc::new(Expression::Variable(
+        if !typ.is_linear(&self.type_defs).unwrap_or(false) {
+            if let Err(e) = self.put(span, name.clone(), typ.clone()) {
+                emit(e);
+            }
+        }
+        Arc::new(Expression::Variable(
             span.clone(),
             name.clone(),
             typ.clone(),
             usage.clone(),
-        )))
+        ))
     }
 
     fn check_expression_box(
@@ -2373,20 +2797,38 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         expression: &Arc<Expression<(), S>>,
         inference_subject: Option<&LocalName>,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
         if let Some(inference_subject) = inference_subject {
             if captures.names.contains_key(inference_subject) {
-                return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                emit(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
                     inference_subject.clone(),
+                ));
+                return Arc::new(Expression::Box(
+                    span.clone(),
+                    captures.clone(),
+                    Arc::new(Expression::Primitive(
+                        span.clone(),
+                        par_runtime::primitive::Primitive::Int(num_bigint::BigInt::ZERO),
+                        Type::Fail(span.clone()),
+                    )),
+                    target_type.clone(),
                 ));
             }
         }
         let mut context = self.split();
-        self.capture(inference_subject, captures, true, &mut context)?;
+        if let Err(e) = self.capture(inference_subject, captures, true, &mut context) {
+            emit(e);
+        }
         let mut target_inner_type = target_type.clone();
         loop {
-            match target_inner_type.expand_definition(&self.type_defs)? {
+            match target_inner_type
+                .expand_definition(&self.type_defs)
+                .unwrap_or_else(|e| {
+                    emit(e);
+                    Type::Fail(span.clone())
+                }) {
                 Type::Box(_, inner) => target_inner_type = *inner,
                 Type::Recursive {
                     span: _,
@@ -2396,34 +2838,42 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     display_hint,
                 } => {
                     target_inner_type =
-                        Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())?;
+                        Type::expand_recursive(&asc, &label, &body, display_hint.0.as_ref())
+                            .unwrap_or_else(|e| {
+                                emit(e);
+                                Type::Fail(span.clone())
+                            });
                 }
                 Type::Iterative {
-                    span,
+                    span: iter_span,
                     asc,
                     label,
                     body,
                     display_hint,
                 } => {
                     target_inner_type = Type::expand_iterative(
-                        &span,
+                        &iter_span,
                         &asc,
                         &label,
                         &body,
                         display_hint.0.as_ref(),
-                    )?;
+                    )
+                    .unwrap_or_else(|e| {
+                        emit(e);
+                        Type::Fail(span.clone())
+                    });
                 }
                 _ => break,
             }
         }
         let expression =
-            self.check_expression(inference_subject, expression, &target_inner_type)?;
-        Ok(Arc::new(Expression::Box(
+            self.check_expression(inference_subject, expression, &target_inner_type, emit);
+        Arc::new(Expression::Box(
             span.clone(),
             captures.clone(),
             expression,
             target_type.clone(),
-        )))
+        ))
     }
 
     fn check_expression_chan(
@@ -2435,21 +2885,31 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         process: &Arc<Process<(), S>>,
         inference_subject: Option<&LocalName>,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
         let target_dual = target_type.clone().dual(Span::None);
         let (chan_type, expr_type) = match annotation {
             Some(annotated_type) => {
-                self.type_defs.validate_type(annotated_type)?;
-                annotated_type.check_assignable(span, &target_dual, &self.type_defs)?;
+                if let Err(e) = self.type_defs.validate_type(annotated_type) {
+                    emit(e);
+                }
+                if let Err(e) = annotated_type.check_assignable(span, &target_dual, &self.type_defs)
+                {
+                    emit(e);
+                }
                 (annotated_type.clone(), target_type)
             }
             None => (target_dual, target_type),
         };
         let mut context = self.split();
-        self.capture(inference_subject, captures, false, &mut context)?;
-        context.put(span, channel.clone(), chan_type.clone())?;
-        let process = context.check_process(process)?;
-        Ok(Arc::new(Expression::Chan {
+        if let Err(e) = self.capture(inference_subject, captures, false, &mut context) {
+            emit(e);
+        }
+        if let Err(e) = context.put(span, channel.clone(), chan_type.clone()) {
+            emit(e);
+        }
+        let process = context.check_process(process, emit);
+        Arc::new(Expression::Chan {
             span: span.clone(),
             captures: captures.clone(),
             chan_name: channel.clone(),
@@ -2457,7 +2917,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             chan_type,
             expr_type: expr_type.clone(),
             process,
-        }))
+        })
     }
 
     fn check_expression_primitive(
@@ -2465,37 +2925,35 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         value: &par_runtime::primitive::Primitive,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
         let typ = get_primitive_type(value);
-        typ.check_assignable(span, target_type, &self.type_defs)?;
-        Ok(Arc::new(Expression::Primitive(
-            span.clone(),
-            value.clone(),
-            typ,
-        )))
+        if let Err(e) = typ.check_assignable(span, target_type, &self.type_defs) {
+            emit(e);
+        }
+        Arc::new(Expression::Primitive(span.clone(), value.clone(), typ))
     }
 
     fn check_expression_external(
         &mut self,
         f: &par_runtime::linker::Unlinked,
         target_type: &Type<S>,
-    ) -> Result<Arc<Expression<Type<S>, S>>, TypeError<S>> {
-        Ok(Arc::new(Expression::External(
-            f.clone(),
-            target_type.clone(),
-        )))
+        _emit: &mut impl FnMut(TypeError<S>),
+    ) -> Arc<Expression<Type<S>, S>> {
+        Arc::new(Expression::External(f.clone(), target_type.clone()))
     }
 
     fn infer_expression_global(
         &mut self,
         span: &Span,
         name: &super::super::language::GlobalName<S>,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
-        let typ = self.get_global(span, name)?;
-        Ok((
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
+        let typ = self.get_global(span, name, emit);
+        (
             Arc::new(Expression::Global(span.clone(), name.clone(), typ.clone())),
             typ.clone(),
-        ))
+        )
     }
 
     fn infer_expression_variable(
@@ -2504,18 +2962,33 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         name: &LocalName,
         usage: &VariableUsage,
         inference_subject: Option<&LocalName>,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
         if Some(name) == inference_subject {
-            return Err(TypeError::TypeMustBeKnownAtThisPoint(
+            emit(TypeError::TypeMustBeKnownAtThisPoint(
                 span.clone(),
                 name.clone(),
             ));
+            return (
+                Arc::new(Expression::Variable(
+                    span.clone(),
+                    name.clone(),
+                    Type::Fail(span.clone()),
+                    usage.clone(),
+                )),
+                Type::Fail(span.clone()),
+            );
         }
-        let typ = self.get_variable_or_error(span, name)?;
-        if !typ.is_linear(&self.type_defs)? {
-            self.put(span, name.clone(), typ.clone())?;
+        let typ = self.get_variable_or_error(span, name).unwrap_or_else(|e| {
+            emit(e);
+            Type::Fail(span.clone())
+        });
+        if !typ.is_linear(&self.type_defs).unwrap_or(false) {
+            if let Err(e) = self.put(span, name.clone(), typ.clone()) {
+                emit(e);
+            }
         }
-        Ok((
+        (
             Arc::new(Expression::Variable(
                 span.clone(),
                 name.clone(),
@@ -2523,7 +2996,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 usage.clone(),
             )),
             typ,
-        ))
+        )
     }
 
     fn infer_expression_box(
@@ -2532,20 +3005,36 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         captures: &Captures,
         expression: &Arc<Expression<(), S>>,
         inference_subject: Option<&LocalName>,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
         if let Some(inference_subject) = inference_subject {
             if captures.names.contains_key(inference_subject) {
-                return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                emit(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
                     inference_subject.clone(),
                 ));
+                return (
+                    Arc::new(Expression::Box(
+                        span.clone(),
+                        captures.clone(),
+                        Arc::new(Expression::Primitive(
+                            span.clone(),
+                            par_runtime::primitive::Primitive::Int(num_bigint::BigInt::ZERO),
+                            Type::Fail(span.clone()),
+                        )),
+                        Type::Fail(span.clone()),
+                    )),
+                    Type::Fail(span.clone()),
+                );
             }
         }
         let mut context = self.split();
-        self.capture(inference_subject, captures, true, &mut context)?;
-        let (expression, typ) = self.infer_expression(inference_subject, expression)?;
+        if let Err(e) = self.capture(inference_subject, captures, true, &mut context) {
+            emit(e);
+        }
+        let (expression, typ) = self.infer_expression(inference_subject, expression, emit);
         let typ = Type::Box(span.clone(), Box::new(typ.clone()));
-        Ok((
+        (
             Arc::new(Expression::Box(
                 span.clone(),
                 captures.clone(),
@@ -2553,7 +3042,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 typ.clone(),
             )),
             typ,
-        ))
+        )
     }
 
     fn infer_expression_chan(
@@ -2564,19 +3053,26 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
         inference_subject: Option<&LocalName>,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
         let mut context = self.split();
-        self.capture(inference_subject, captures, false, &mut context)?;
+        if let Err(e) = self.capture(inference_subject, captures, false, &mut context) {
+            emit(e);
+        }
         let (process, typ) = match annotation {
             Some(typ) => {
-                self.type_defs.validate_type(typ)?;
-                context.put(span, channel.clone(), typ.clone())?;
-                (context.check_process(process)?, typ.clone())
+                if let Err(e) = self.type_defs.validate_type(typ) {
+                    emit(e);
+                }
+                if let Err(e) = context.put(span, channel.clone(), typ.clone()) {
+                    emit(e);
+                }
+                (context.check_process(process, emit), typ.clone())
             }
-            None => context.infer_process(process, channel)?,
+            None => context.infer_process(process, channel, emit),
         };
         let dual = typ.clone().dual(Span::None);
-        Ok((
+        (
             Arc::new(Expression::Chan {
                 span: span.clone(),
                 captures: captures.clone(),
@@ -2587,32 +3083,42 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 process,
             }),
             dual,
-        ))
+        )
     }
 
     fn infer_expression_primitive(
         &mut self,
         span: &Span,
         value: &par_runtime::primitive::Primitive,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
+        _emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
         let typ = get_primitive_type(value);
-        Ok((
+        (
             Arc::new(Expression::Primitive(
                 span.clone(),
                 value.clone(),
                 typ.clone(),
             )),
             typ,
-        ))
+        )
     }
 
     fn infer_expression_external(
         &mut self,
-    ) -> Result<(Arc<Expression<Type<S>, S>>, Type<S>), TypeError<S>> {
-        Err(TypeError::TypeMustBeKnownAtThisPoint(
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> (Arc<Expression<Type<S>, S>>, Type<S>) {
+        emit(TypeError::TypeMustBeKnownAtThisPoint(
             Span::None,
             LocalName::error(),
-        ))
+        ));
+        (
+            Arc::new(Expression::Primitive(
+                Span::None,
+                par_runtime::primitive::Primitive::Int(num_bigint::BigInt::ZERO),
+                Type::Fail(Span::None),
+            )),
+            Type::Fail(Span::None),
+        )
     }
 }
 
@@ -2621,7 +3127,8 @@ fn merge_path_contexts<S: Clone + Eq + std::hash::Hash>(
     span: &Span,
     paths: &Vec<IndexMap<LocalName, Type<S>>>,
     free_vars: &IndexSet<LocalName>,
-) -> Result<IndexMap<LocalName, Type<S>>, TypeError<S>> {
+    emit: &mut impl FnMut(TypeError<S>),
+) -> IndexMap<LocalName, Type<S>> {
     // Collect all variable names present in any path.
     let mut all_names: IndexSet<LocalName> = IndexSet::new();
     for map in paths {
@@ -2657,7 +3164,8 @@ fn merge_path_contexts<S: Clone + Eq + std::hash::Hash>(
 
         // Variable used or linear: must be present everywhere.
         if missing {
-            return Err(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+            emit(TypeError::MergeVariableMissing(span.clone(), name.clone()));
+            continue;
         }
 
         let mut acc = present_types
@@ -2668,16 +3176,17 @@ fn merge_path_contexts<S: Clone + Eq + std::hash::Hash>(
             acc = match union_types(typedefs, span, &acc, next) {
                 Ok(t) => t,
                 Err(_) => {
-                    return Err(TypeError::MergeVariableTypesCannotBeUnified(
+                    emit(TypeError::MergeVariableTypesCannotBeUnified(
                         span.clone(),
                         name.clone(),
                         acc.clone(),
                         next.clone(),
                     ));
+                    acc
                 }
             };
         }
         merged_variables.insert(name.clone(), acc);
     }
-    Ok(merged_variables)
+    merged_variables
 }

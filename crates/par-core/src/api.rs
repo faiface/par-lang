@@ -78,7 +78,10 @@ pub mod frontend {
 
     pub fn type_check(
         module: &LowLevelModule,
-    ) -> Result<CheckedModule<language::Universal>, TypeError<language::Universal>> {
+    ) -> (
+        CheckedModule<language::Universal>,
+        Vec<TypeError<language::Universal>>,
+    ) {
         module.type_check()
     }
 

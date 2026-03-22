@@ -30,7 +30,7 @@ pub struct Instance {
     file: FileName,
     dirty: bool,
     checked: Option<Arc<CheckedWorkspace>>,
-    error: Option<CompileError>,
+    errors: Vec<CompileError>,
     io: IO,
 }
 
@@ -41,7 +41,7 @@ impl Instance {
             uri,
             dirty: true,
             checked: None,
-            error: None,
+            errors: Vec::new(),
             io,
         }
     }
@@ -289,9 +289,9 @@ impl Instance {
         }))
     }
 
-    /// Last compile/type error, if any
-    pub fn last_error(&self) -> Option<CompileError> {
-        self.error.clone()
+    /// Last compile/type errors, if any
+    pub fn last_errors(&self) -> &[CompileError] {
+        &self.errors
     }
 
     pub fn run_in_playground(&self, def_name: &str) -> Option<serde_json::Value> {
@@ -326,7 +326,7 @@ impl Instance {
         }
         let Some(code) = self.io.read(&self.uri) else {
             self.checked = None;
-            self.error = None;
+            self.errors = Vec::new();
             self.dirty = false;
             return;
         };
@@ -352,13 +352,13 @@ impl Instance {
         };
 
         match result {
-            Ok(checked) => {
+            Ok((checked, errors)) => {
                 self.checked = Some(checked);
-                self.error = None;
+                self.errors = errors;
             }
             Err(error) => {
                 self.checked = None;
-                self.error = Some(error);
+                self.errors = vec![error];
             }
         }
         tracing::info!("Compiled!");
@@ -370,7 +370,10 @@ impl Instance {
         self.dirty = true;
     }
 
-    fn compile_single_file(&self, code: &str) -> Result<Arc<CheckedWorkspace>, CompileError> {
+    fn compile_single_file(
+        &self,
+        code: &str,
+    ) -> Result<(Arc<CheckedWorkspace>, Vec<CompileError>), CompileError> {
         let file_path = uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
         let relative_path_from_src = file_path
             .file_name()
@@ -384,8 +387,10 @@ impl Instance {
         .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
         let sources = workspace.sources().clone();
-        let checked = Arc::new(workspace.type_check().map_err(|error| {
-            CompileError::Type {
+        let (checked, type_errors) = workspace.type_check();
+        let errors = type_errors
+            .into_iter()
+            .map(|error| CompileError::Type {
                 file_scope: error
                     .spans()
                     .0
@@ -393,15 +398,15 @@ impl Instance {
                     .and_then(|file| workspace.import_scope(&file).cloned()),
                 error,
                 sources: sources.clone(),
-            }
-        })?);
-        Ok(checked)
+            })
+            .collect();
+        Ok((Arc::new(checked), errors))
     }
 
     fn compile_package_with_overlays(
         &self,
         file_path: &Path,
-    ) -> Result<Arc<CheckedWorkspace>, CompileError> {
+    ) -> Result<(Arc<CheckedWorkspace>, Vec<CompileError>), CompileError> {
         let layout = find_package_layout(file_path)
             .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let mut files = collect_source_files(&layout)
@@ -428,8 +433,10 @@ impl Instance {
             .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
         let sources = workspace.sources().clone();
-        let checked = Arc::new(workspace.type_check().map_err(|error| {
-            CompileError::Type {
+        let (checked, type_errors) = workspace.type_check();
+        let errors = type_errors
+            .into_iter()
+            .map(|error| CompileError::Type {
                 file_scope: error
                     .spans()
                     .0
@@ -437,9 +444,9 @@ impl Instance {
                     .and_then(|file| workspace.import_scope(&file).cloned()),
                 error,
                 sources: sources.clone(),
-            }
-        })?);
-        Ok(checked)
+            })
+            .collect();
+        Ok((Arc::new(checked), errors))
     }
 }
 
@@ -526,8 +533,9 @@ mod tests {
         let mut instance = Instance::new(main_uri.clone(), io);
         instance.compile();
 
-        let error = instance.last_error().expect("compile should fail");
-        let (diagnostic_uri, diagnostic) = diagnostic_for_error(&error, &main_uri);
+        let errors = instance.last_errors();
+        assert!(!errors.is_empty(), "compile should fail");
+        let (diagnostic_uri, diagnostic) = diagnostic_for_error(&errors[0], &main_uri);
         assert_eq!(diagnostic_uri, other_uri);
         assert_eq!(diagnostic.range.start.line, 2);
     }

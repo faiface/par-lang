@@ -200,6 +200,11 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
             return Ok(Compatible);
         }
 
+        // Fail is compatible with everything — prevents cascading errors.
+        if matches!(type1, Type::Fail(_)) || matches!(type2, Type::Fail(_)) {
+            return Ok(Compatible);
+        }
+
         let pair = (type1, type2);
 
         if let Some(result) = Type::is_subtype_cycle(&pair, &ctx)? {
