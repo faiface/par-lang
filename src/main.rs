@@ -40,11 +40,6 @@ mod tokio_factory;
 mod wasm_spawn;
 mod workspace_support;
 
-#[cfg(target_family = "wasm")]
-unsafe extern "C" {
-    fn __wasm_call_ctors();
-}
-
 const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
 #[derive(Debug, Clone)]
@@ -270,10 +265,6 @@ fn main() -> ExitCode {
 
 #[cfg(target_family = "wasm")]
 fn main() {
-    unsafe {
-        __wasm_call_ctors();
-    }
-
     use eframe::wasm_bindgen::JsCast as _;
 
     // Redirect `log` message to `console.log` and friends:
