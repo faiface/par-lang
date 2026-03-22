@@ -349,8 +349,6 @@ impl<S> Default for FileHovers<S> {
     }
 }
 
-pub type TypeOnHover<S> = HoverIndex<S>;
-
 impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
     pub fn new(program: &CheckedModule<S>, docs: &Docs<S>) -> Self {
         let mut files = HashMap::<_, FileHovers<S>>::new();

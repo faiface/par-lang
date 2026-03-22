@@ -825,7 +825,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Command<Type<S>, S> {
                 body.types_at_spans(program, docs, consume);
             }
             Self::Loop(_, _, _) => {}
-            Self::SendType(_, process) => {
+            Self::SendType(typ, process) => {
+                typ.types_at_spans(&program.type_defs, docs, consume);
                 process.types_at_spans(program, docs, consume);
             }
             Self::ReceiveType(_, process) => {
