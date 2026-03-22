@@ -120,7 +120,7 @@ fn build_checked_package(
     package_path: &PathBuf,
 ) -> Result<(CheckedWorkspace, Vec<ModulePath>, SourceLookup), BuildError> {
     let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
-    let sources = workspace.sources.clone();
+    let sources = workspace.sources().clone();
     let checked = workspace.type_check().map_err(|error| BuildError::Type {
         file_scope: error
             .spans()
@@ -130,7 +130,7 @@ fn build_checked_package(
         error,
         sources: sources.clone(),
     })?;
-    let root_modules = checked.root_modules();
+    let root_modules = checked.workspace().root_modules();
     Ok((checked, root_modules, sources))
 }
 

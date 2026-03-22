@@ -94,7 +94,7 @@ fn build_for_run(
     max_interactions: u32,
 ) -> Result<(CheckedWorkspace, Compiled<Linked>, Vec<ModulePath>), BuildError> {
     let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
-    let sources = workspace.sources.clone();
+    let sources = workspace.sources().clone();
     let checked = workspace.type_check().map_err(|error| BuildError::Type {
         file_scope: error
             .spans()
@@ -111,7 +111,7 @@ fn build_for_run(
             error,
             sources: sources.clone(),
         })?;
-    Ok((checked.clone(), compiled, checked.root_modules()))
+    Ok((checked.clone(), compiled, checked.workspace().root_modules()))
 }
 
 #[derive(Debug)]

@@ -24,37 +24,16 @@ use std::sync::Arc;
 
 use par_core::frontend::language::Unresolved;
 use par_core::frontend::{Module, TypeDef, get_external_type_defs, process};
-use par_core::workspace::{LoadedPackageFile, ParsedPackage, parse_loaded_files};
+use par_core::source::FileName;
+use par_core::workspace::{LoadedPackageFile, ModulePath, ParsedPackage, parse_loaded_files};
 use par_runtime::registry::PackageRef;
 
 pub type BuiltinModule = Module<Arc<process::Expression<(), Unresolved>>, Unresolved>;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BuiltinModulePath {
-    pub directories: Vec<String>,
-    pub module: String,
-}
-
-impl BuiltinModulePath {
-    pub fn new(
-        directories: impl IntoIterator<Item = impl Into<String>>,
-        module: impl Into<String>,
-    ) -> Self {
-        Self {
-            directories: directories.into_iter().map(Into::into).collect(),
-            module: module.into(),
-        }
-    }
-
-    pub fn root(module: impl Into<String>) -> Self {
-        Self::new(Vec::<String>::new(), module)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct BuiltinPackage {
     pub parsed: ParsedPackage,
-    pub externals: BTreeMap<BuiltinModulePath, BuiltinModule>,
+    pub externals: BTreeMap<ModulePath, BuiltinModule>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,12 +71,6 @@ fn basic_builtin_package() -> BuiltinPackage {
     package.load_external_type_defs("basic");
 
     package
-}
-
-fn builtin_package_root(package_name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("packages")
-        .join(package_name)
 }
 
 struct BuiltinSourceFile {
@@ -204,11 +177,10 @@ fn parse_builtin_package(
     package_name: &str,
     source_files: &[BuiltinSourceFile],
 ) -> ParsedPackage {
-    let root = builtin_package_root(package_name);
     let files = source_files
         .iter()
         .map(|file| LoadedPackageFile {
-            absolute_path: root.join("src").join(file.relative_path_from_src),
+            name: FileName::from(format!("par:{}/{}", package_name, file.relative_path_from_src).as_str()),
             relative_path_from_src: PathBuf::from(file.relative_path_from_src),
             source: file.source.to_owned(),
         })
@@ -217,7 +189,7 @@ fn parse_builtin_package(
 }
 
 impl BuiltinPackage {
-    fn append_external(&mut self, module_path: BuiltinModulePath, module: BuiltinModule) {
+    fn append_external(&mut self, module_path: ModulePath, module: BuiltinModule) {
         match self.externals.entry(module_path) {
             Entry::Vacant(vacant) => {
                 vacant.insert(module);
@@ -230,15 +202,15 @@ impl BuiltinPackage {
 
     fn load_external_type_defs(&mut self, name: &str) {
         for type_def in get_external_type_defs(&PackageRef::Package(name)) {
-            let builtin_path = BuiltinModulePath {
+            let module_path = ModulePath {
                 directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
                 module: type_def.path.module.into(),
             };
-            if !self.externals.contains_key(&builtin_path) {
-                self.append_external(builtin_path.clone(), BuiltinModule::default());
+            if !self.externals.contains_key(&module_path) {
+                self.append_external(module_path.clone(), BuiltinModule::default());
             }
             self.externals
-                .get_mut(&builtin_path)
+                .get_mut(&module_path)
                 .unwrap()
                 .type_defs
                 .push(TypeDef::external(

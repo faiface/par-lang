@@ -33,7 +33,7 @@ pub struct PackageLayout {
 
 #[derive(Debug, Clone)]
 pub struct LoadedPackageFile {
-    pub absolute_path: PathBuf,
+    pub name: FileName,
     pub relative_path_from_src: PathBuf,
     pub source: String,
 }
@@ -68,7 +68,7 @@ impl Display for ModulePath {
 
 #[derive(Debug, Clone)]
 pub struct ParsedPackageFile {
-    pub absolute_path: PathBuf,
+    pub name: FileName,
     pub relative_path_from_src: PathBuf,
     pub source: Arc<str>,
     pub module_part_suffix: Option<String>,
@@ -119,23 +119,23 @@ pub enum PackageLoadError {
         path: PathBuf,
     },
     ParseError {
-        path: PathBuf,
+        file: FileName,
         source: Arc<str>,
         error: SyntaxError,
     },
     MissingModuleDeclaration {
-        path: PathBuf,
+        file: FileName,
     },
     FileNameModuleMismatch {
-        path: PathBuf,
+        file: FileName,
         declared_module: String,
         file_module_name: String,
     },
     ConflictingModuleNameCasing {
         module_path: String,
-        first_path: PathBuf,
+        first_file: FileName,
         first_declared_name: String,
-        second_path: PathBuf,
+        second_file: FileName,
         second_declared_name: String,
     },
 }
@@ -186,18 +186,18 @@ impl Display for PackageLoadError {
                     path.display()
                 )
             }
-            Self::ParseError { path, .. } => {
-                write!(f, "Failed to parse source file {}", path.display())
+            Self::ParseError { file, .. } => {
+                write!(f, "Failed to parse source file {}", file.0)
             }
-            Self::MissingModuleDeclaration { path } => {
+            Self::MissingModuleDeclaration { file } => {
                 write!(
                     f,
                     "Source file is missing `module` declaration: {}",
-                    path.display()
+                    file.0
                 )
             }
             Self::FileNameModuleMismatch {
-                path,
+                file,
                 declared_module,
                 file_module_name,
             } => {
@@ -206,14 +206,14 @@ impl Display for PackageLoadError {
                     "Module declaration `{}` does not match source file name `{}` in {}",
                     declared_module,
                     file_module_name,
-                    path.display()
+                    file.0
                 )
             }
             Self::ConflictingModuleNameCasing {
                 module_path,
-                first_path,
+                first_file,
                 first_declared_name,
-                second_path,
+                second_file,
                 second_declared_name,
             } => {
                 write!(
@@ -221,9 +221,9 @@ impl Display for PackageLoadError {
                     "Module `{}` has inconsistent declaration casing (`{}` in {}, `{}` in {})",
                     module_path,
                     first_declared_name,
-                    first_path.display(),
+                    first_file.0,
                     second_declared_name,
-                    second_path.display()
+                    second_file.0
                 )
             }
         }
@@ -236,7 +236,7 @@ impl std::error::Error for PackageLoadError {}
 pub enum WorkspaceError {
     Load(PackageLoadError),
     LowerError {
-        path: PathBuf,
+        file: FileName,
         source: Arc<str>,
         error: CompileError,
     },
@@ -282,8 +282,8 @@ impl Display for WorkspaceError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Load(error) => write!(f, "{error}"),
-            Self::LowerError { path, .. } => {
-                write!(f, "Failed to lower source file {}", path.display())
+            Self::LowerError { file, .. } => {
+                write!(f, "Failed to lower source file {}", file.0)
             }
             Self::UnknownDependency { dependency, .. } => {
                 write!(f, "Unknown dependency alias `@{dependency}`")
@@ -335,7 +335,6 @@ pub struct WorkspacePackage {
     pub parsed: ParsedPackage,
     pub dependencies: BTreeMap<String, PackageId>,
     pub externals: BTreeMap<ModulePath, ExternalModule>,
-    pub collect_sources: bool,
 }
 
 impl WorkspacePackage {
@@ -345,12 +344,7 @@ impl WorkspacePackage {
             parsed,
             dependencies: BTreeMap::new(),
             externals: BTreeMap::new(),
-            collect_sources: true,
         }
-    }
-
-    pub fn from_parsed(id: PackageId, parsed: ParsedPackage) -> Self {
-        Self::new(id, parsed)
     }
 
     pub fn from_path(id: PackageId, start: impl AsRef<Path>) -> Result<Self, PackageLoadError> {
@@ -386,48 +380,8 @@ impl WorkspacePackage {
         }
         self
     }
-
-    pub fn collect_sources(mut self, collect_sources: bool) -> Self {
-        self.collect_sources = collect_sources;
-        self
-    }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct WorkspaceInput {
-    packages: Vec<WorkspacePackage>,
-    root_packages: Vec<PackageId>,
-}
-
-impl WorkspaceInput {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_root_package(mut self, package: WorkspacePackage) -> Self {
-        self.root_packages.push(package.id.clone());
-        self.packages.push(package);
-        self
-    }
-
-    pub fn add_root_package(&mut self, package: WorkspacePackage) {
-        self.root_packages.push(package.id.clone());
-        self.packages.push(package);
-    }
-
-    pub fn with_package(mut self, package: WorkspacePackage) -> Self {
-        self.packages.push(package);
-        self
-    }
-
-    pub fn add_package(&mut self, package: WorkspacePackage) {
-        self.packages.push(package);
-    }
-
-    pub fn build(self) -> Result<Workspace, WorkspaceError> {
-        load_workspace(self)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct FileImportScope<S> {
@@ -440,9 +394,8 @@ pub struct Workspace {
     lowered: Module<Arc<process::Expression<(), Universal>>, Universal>,
     docs: Docs<Universal>,
     package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
-    root_packages: Vec<PackageId>,
     file_scopes: HashMap<FileName, FileImportScope<Universal>>,
-    pub sources: HashMap<FileName, Arc<str>>,
+    sources: HashMap<FileName, Arc<str>>,
 }
 
 impl Workspace {
@@ -458,15 +411,8 @@ impl Workspace {
         self.package_modules.keys().cloned().collect()
     }
 
-    pub fn root_packages(&self) -> &[PackageId] {
-        &self.root_packages
-    }
-
     pub fn root_modules(&self) -> Vec<ModulePath> {
-        self.root_packages
-            .iter()
-            .flat_map(|package| self.modules_in_package(package).iter().cloned())
-            .collect()
+        self.modules_in_package(&PackageId::Local).to_vec()
     }
 
     pub fn modules_in_package(&self, package: &PackageId) -> &[ModulePath] {
@@ -478,6 +424,10 @@ impl Workspace {
 
     pub fn import_scope(&self, file: &FileName) -> Option<&FileImportScope<Universal>> {
         self.file_scopes.get(file)
+    }
+
+    pub fn sources(&self) -> &HashMap<FileName, Arc<str>> {
+        &self.sources
     }
 
     pub fn type_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
@@ -490,97 +440,33 @@ impl Workspace {
 
     pub fn type_check(&self) -> Result<CheckedWorkspace, TypeError<Universal>> {
         let checked = self.lowered.type_check()?;
-        Ok(CheckedWorkspace::new(
+        let hover_index = HoverIndex::new(&checked, &self.docs);
+        Ok(CheckedWorkspace {
+            workspace: self.clone(),
             checked,
-            self.docs.clone(),
-            self.package_modules.clone(),
-            self.root_packages.clone(),
-            self.file_scopes.clone(),
-            self.sources.clone(),
-        ))
+            hover_index,
+        })
     }
 }
 
 #[derive(Clone)]
 pub struct CheckedWorkspace {
+    workspace: Workspace,
     checked: CheckedModule<Universal>,
-    docs: Docs<Universal>,
-    package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
-    root_packages: Vec<PackageId>,
-    file_scopes: HashMap<FileName, FileImportScope<Universal>>,
-    pub sources: HashMap<FileName, Arc<str>>,
     hover_index: HoverIndex<Universal>,
 }
 
 impl CheckedWorkspace {
-    fn new(
-        checked: CheckedModule<Universal>,
-        docs: Docs<Universal>,
-        package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
-        root_packages: Vec<PackageId>,
-        file_scopes: HashMap<FileName, FileImportScope<Universal>>,
-        sources: HashMap<FileName, Arc<str>>,
-    ) -> Self {
-        let hover_index = HoverIndex::new(&checked, &docs);
-        Self {
-            checked,
-            docs,
-            package_modules,
-            root_packages,
-            file_scopes,
-            sources,
-            hover_index,
-        }
+    pub fn workspace(&self) -> &Workspace {
+        &self.workspace
     }
 
     pub fn checked_module(&self) -> &CheckedModule<Universal> {
         &self.checked
     }
 
-    pub fn docs(&self) -> &Docs<Universal> {
-        &self.docs
-    }
-
-    pub fn packages(&self) -> Vec<PackageId> {
-        self.package_modules.keys().cloned().collect()
-    }
-
-    pub fn root_packages(&self) -> &[PackageId] {
-        &self.root_packages
-    }
-
-    pub fn root_modules(&self) -> Vec<ModulePath> {
-        self.root_packages
-            .iter()
-            .flat_map(|package| self.modules_in_package(package).iter().cloned())
-            .collect()
-    }
-
-    pub fn modules_in_package(&self, package: &PackageId) -> &[ModulePath] {
-        self.package_modules
-            .get(package)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-    }
-
-    pub fn import_scope(&self, file: &FileName) -> Option<&FileImportScope<Universal>> {
-        self.file_scopes.get(file)
-    }
-
-    pub fn type_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
-        self.docs.type_doc(name)
-    }
-
-    pub fn declaration_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
-        self.docs.declaration_doc(name)
-    }
-
     pub fn hover_index(&self) -> &HoverIndex<Universal> {
         &self.hover_index
-    }
-
-    pub fn type_on_hover(&self) -> &HoverIndex<Universal> {
-        self.hover_index()
     }
 
     pub fn hover_at(
@@ -600,11 +486,11 @@ impl CheckedWorkspace {
     }
 
     pub fn render_global_in_file(&self, file: &FileName, name: &GlobalName<Universal>) -> String {
-        render_global_name_in_scope(self.import_scope(file), name)
+        render_global_name_in_scope(self.workspace.import_scope(file), name)
     }
 
     pub fn render_type_in_file(&self, file: &FileName, typ: &Type<Universal>) -> String {
-        render_type_in_scope(self.import_scope(file), typ)
+        render_type_in_scope(self.workspace.import_scope(file), typ)
     }
 
     pub fn render_hover_signature_in_file(
@@ -617,11 +503,11 @@ impl CheckedWorkspace {
             if let Some(global_name) = hover.global_name() {
                 let _ = write!(output, "type ");
                 let _ =
-                    write_global_name_in_file(&mut output, self.import_scope(file), global_name);
+                    write_global_name_in_file(&mut output, self.workspace.import_scope(file), global_name);
                 if let Some(header) = hover.type_header() {
                     let _ = write_type_hover_header_in_file(
                         &mut output,
-                        self.import_scope(file),
+                        self.workspace.import_scope(file),
                         header,
                     );
                 }
@@ -631,7 +517,7 @@ impl CheckedWorkspace {
             if let Some(global_name) = hover.global_name() {
                 let _ = write!(output, "dec ");
                 let _ =
-                    write_global_name_in_file(&mut output, self.import_scope(file), global_name);
+                    write_global_name_in_file(&mut output, self.workspace.import_scope(file), global_name);
                 let _ = write!(output, " : ");
             }
         } else if let Some(name) = hover.variable_name() {
@@ -639,20 +525,12 @@ impl CheckedWorkspace {
         }
         let _ = write_type_in_file_with_indent_and_preference(
             &mut output,
-            self.import_scope(file),
+            self.workspace.import_scope(file),
             hover.typ(),
             0,
             hover.prefer_display_hints(),
         );
         output
-    }
-
-    pub fn render_hover_in_file(
-        &self,
-        file: &FileName,
-        hover: &process::HoverInfo<Universal>,
-    ) -> String {
-        self.render_hover_signature_in_file(file, hover)
     }
 
     pub fn render_hover_markdown_in_file(
@@ -702,44 +580,21 @@ struct AbsoluteModuleLookupKey {
     module_lower: String,
 }
 
-#[derive(Debug, Clone)]
-struct PackageUnit {
-    id: PackageId,
-    parsed: ParsedPackage,
-    dependencies: BTreeMap<String, PackageId>,
-    externals: BTreeMap<ModulePath, ExternalModule>,
-    collect_sources: bool,
-}
-
-type ResolvedModulePath = Resolved;
-type UniversalModulePath = Universal;
-
-pub fn load_workspace(input: WorkspaceInput) -> Result<Workspace, WorkspaceError> {
-    let package_units = input
-        .packages
-        .into_iter()
-        .map(|package| PackageUnit {
-            id: package.id,
-            parsed: package.parsed,
-            dependencies: package.dependencies,
-            externals: package.externals,
-            collect_sources: package.collect_sources,
-        })
-        .collect::<Vec<_>>();
-    let module_lookup = build_module_lookup(&package_units);
-    let package_modules = package_module_paths(&package_units);
+pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, WorkspaceError> {
+    let module_lookup = build_module_lookup(&packages);
+    let package_modules = package_module_paths(&packages);
 
     let mut lowered = Module::default();
     let mut sources = HashMap::<FileName, Arc<str>>::new();
     let mut file_scopes = HashMap::<FileName, FileImportScope<Universal>>::new();
 
-    for package_unit in package_units {
-        load_package_unit(
+    for package in packages {
+        load_package(
             &mut lowered,
             &mut sources,
             &mut file_scopes,
             &module_lookup,
-            package_unit,
+            package,
         )?;
     }
 
@@ -748,7 +603,6 @@ pub fn load_workspace(input: WorkspaceInput) -> Result<Workspace, WorkspaceError
         lowered,
         docs,
         package_modules,
-        root_packages: input.root_packages,
         file_scopes,
         sources,
     })
@@ -815,9 +669,9 @@ pub fn parse_loaded_files(
         let (file_module_name, module_part_suffix) =
             parse_module_name_from_file_name(&file.relative_path_from_src)?;
         let source: Arc<str> = Arc::from(file.source.as_str());
-        let source_file = parse_source_file(&file.source, file.absolute_path.clone().into())
+        let source_file = parse_source_file(&file.source, file.name.clone())
             .map_err(|error| PackageLoadError::ParseError {
-                path: file.absolute_path.clone(),
+                file: file.name.clone(),
                 source: Arc::clone(&source),
                 error,
             })?;
@@ -827,12 +681,12 @@ pub fn parse_loaded_files(
             .as_ref()
             .map(|module_decl| module_decl.name.clone())
             .ok_or_else(|| PackageLoadError::MissingModuleDeclaration {
-                path: file.absolute_path.clone(),
+                file: file.name.clone(),
             })?;
 
         if !declared_module_name.eq_ignore_ascii_case(&file_module_name) {
             return Err(PackageLoadError::FileNameModuleMismatch {
-                path: file.absolute_path.clone(),
+                file: file.name.clone(),
                 declared_module: declared_module_name,
                 file_module_name,
             });
@@ -842,7 +696,7 @@ pub fn parse_loaded_files(
         let path_key = module_path.key();
 
         let parsed_file = ParsedPackageFile {
-            absolute_path: file.absolute_path,
+            name: file.name,
             relative_path_from_src: file.relative_path_from_src,
             source,
             module_part_suffix,
@@ -862,9 +716,9 @@ pub fn parse_loaded_files(
                     let first_file = &existing_module.files[0];
                     return Err(PackageLoadError::ConflictingModuleNameCasing {
                         module_path: existing_module.path.to_slash_path(),
-                        first_path: first_file.absolute_path.clone(),
+                        first_file: first_file.name.clone(),
                         first_declared_name: existing_module.path.module.clone(),
-                        second_path: parsed_file.absolute_path.clone(),
+                        second_file: parsed_file.name.clone(),
                         second_declared_name: module_path.module.clone(),
                     });
                 }
@@ -891,38 +745,32 @@ pub fn parse_package(start: impl AsRef<Path>) -> Result<ParsedPackage, PackageLo
 }
 
 fn build_module_lookup(
-    package_units: &[PackageUnit],
+    packages: &[WorkspacePackage],
 ) -> BTreeMap<AbsoluteModuleLookupKey, ModulePath> {
     let mut lookup = BTreeMap::new();
-    for package_unit in package_units {
-        add_package_modules_to_lookup(&mut lookup, package_unit);
+    for package in packages {
+        for module in &package.parsed.modules {
+            lookup.insert(
+                module_lookup_key(
+                    &package.id,
+                    &module.path.directories,
+                    &module.path.module,
+                ),
+                module.path.clone(),
+            );
+        }
     }
     lookup
 }
 
-fn add_package_modules_to_lookup(
-    lookup: &mut BTreeMap<AbsoluteModuleLookupKey, ModulePath>,
-    package_unit: &PackageUnit,
-) {
-    for module in &package_unit.parsed.modules {
-        lookup.insert(
-            module_lookup_key(
-                &package_unit.id,
-                &module.path.directories,
-                &module.path.module,
-            ),
-            module.path.clone(),
-        );
-    }
-}
-
-fn package_module_paths(package_units: &[PackageUnit]) -> BTreeMap<PackageId, Vec<ModulePath>> {
-    package_units
+fn package_module_paths(packages: &[WorkspacePackage]) -> BTreeMap<PackageId, Vec<ModulePath>> {
+    packages
         .iter()
-        .map(|unit| {
+        .map(|package| {
             (
-                unit.id.clone(),
-                unit.parsed
+                package.id.clone(),
+                package
+                    .parsed
                     .modules
                     .iter()
                     .map(|module| module.path.clone())
@@ -932,29 +780,26 @@ fn package_module_paths(package_units: &[PackageUnit]) -> BTreeMap<PackageId, Ve
         .collect()
 }
 
-fn load_package_unit(
+fn load_package(
     lowered: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
     sources: &mut HashMap<FileName, Arc<str>>,
     file_scopes: &mut HashMap<FileName, FileImportScope<Universal>>,
     module_lookup: &BTreeMap<AbsoluteModuleLookupKey, ModulePath>,
-    package_unit: PackageUnit,
+    package: WorkspacePackage,
 ) -> Result<(), WorkspaceError> {
-    let PackageUnit {
+    let WorkspacePackage {
         id,
         parsed,
         dependencies,
         mut externals,
-        collect_sources,
-    } = package_unit;
+    } = package;
 
     for parsed_module in &parsed.modules {
         let current_module_path =
             resolved_module_path(&parsed_module.path, ResolvedPackageRef::Local);
 
         for file in &parsed_module.files {
-            if collect_sources {
-                sources.insert(file.absolute_path.clone().into(), Arc::clone(&file.source));
-            }
+            sources.insert(file.name.clone(), Arc::clone(&file.source));
 
             let imports = build_file_import_aliases(
                 file,
@@ -970,12 +815,12 @@ fn load_package_unit(
                 &dependencies,
                 Arc::clone(&file.source),
             )?;
-            file_scopes.insert(file.absolute_path.clone().into(), file_scope);
+            file_scopes.insert(file.name.clone(), file_scope);
 
             let imported_aliases = imported_aliases(&imports, &current_module_path);
             let mut lowered_file = lower(file.source_file.body.clone()).map_err(|error| {
                 WorkspaceError::LowerError {
-                    path: file.absolute_path.clone(),
+                    file: file.name.clone(),
                     source: Arc::clone(&file.source),
                     error,
                 }
@@ -1014,11 +859,11 @@ fn load_package_unit(
 
 fn build_file_import_aliases(
     file: &ParsedPackageFile,
-    current_module_path: &ResolvedModulePath,
+    current_module_path: &Resolved,
     current_package: &PackageId,
     current_dependencies: &BTreeMap<String, PackageId>,
     module_lookup: &BTreeMap<AbsoluteModuleLookupKey, ModulePath>,
-) -> Result<BTreeMap<String, ResolvedModulePath>, WorkspaceError> {
+) -> Result<BTreeMap<String, Resolved>, WorkspaceError> {
     let mut aliases = BTreeMap::new();
     aliases.insert(
         current_module_path.module.clone(),
@@ -1056,8 +901,8 @@ fn build_file_import_aliases(
 }
 
 fn universalize_file_scope(
-    aliases: &BTreeMap<String, ResolvedModulePath>,
-    current_module_path: &ResolvedModulePath,
+    aliases: &BTreeMap<String, Resolved>,
+    current_module_path: &Resolved,
     current_package: &PackageId,
     dependencies: &BTreeMap<String, PackageId>,
     source: Arc<str>,
@@ -1081,11 +926,11 @@ fn universalize_file_scope(
 }
 
 fn universalize_module_path(
-    module: &ResolvedModulePath,
+    module: &Resolved,
     current_package: &PackageId,
     dependencies: &BTreeMap<String, PackageId>,
     file_source: Arc<str>,
-) -> Result<UniversalModulePath, WorkspaceError> {
+) -> Result<Universal, WorkspaceError> {
     let package = match &module.package {
         ResolvedPackageRef::Local => current_package.clone(),
         ResolvedPackageRef::Dependency(alias) => {
@@ -1100,7 +945,7 @@ fn universalize_module_path(
         }
     };
 
-    Ok(UniversalModulePath {
+    Ok(Universal {
         package,
         directories: module.directories.clone(),
         module: module.module.clone(),
@@ -1108,8 +953,8 @@ fn universalize_module_path(
 }
 
 fn imported_aliases(
-    aliases: &BTreeMap<String, ResolvedModulePath>,
-    current_module_path: &ResolvedModulePath,
+    aliases: &BTreeMap<String, Resolved>,
+    current_module_path: &Resolved,
 ) -> BTreeSet<String> {
     let mut imported = aliases.keys().cloned().collect::<BTreeSet<_>>();
     imported.remove(&current_module_path.module);
@@ -1157,7 +1002,7 @@ fn resolve_imported_module(
     current_package: &PackageId,
     current_dependencies: &BTreeMap<String, PackageId>,
     module_lookup: &BTreeMap<AbsoluteModuleLookupKey, ModulePath>,
-) -> Result<ResolvedModulePath, WorkspaceError> {
+) -> Result<Resolved, WorkspaceError> {
     let (resolved_package, absolute_package) = match import.path.dependency.as_deref() {
         None => (ResolvedPackageRef::Local, current_package.clone()),
         Some(alias) => {
@@ -1195,7 +1040,7 @@ fn resolve_imported_module(
                 import_path: format_import_path(&import.path),
             })?;
 
-    Ok(ResolvedModulePath {
+    Ok(Resolved {
         package: resolved_package,
         directories: canonical.directories.clone(),
         module: canonical.module.clone(),
@@ -1216,8 +1061,8 @@ fn format_import_path(path: &ImportPath) -> String {
 
 fn resolve_module(
     module: Module<Arc<process::Expression<(), Unresolved>>, Unresolved>,
-    imports: BTreeMap<String, ResolvedModulePath>,
-    current_module_path: &ResolvedModulePath,
+    imports: BTreeMap<String, Resolved>,
+    current_module_path: &Resolved,
     file_source: Arc<str>,
 ) -> Result<Module<Arc<process::Expression<(), Resolved>>, Resolved>, WorkspaceError> {
     module.map_global_names(|name| {
@@ -1248,8 +1093,8 @@ fn resolve_module_to_universal(
 
 fn resolve_name_to_resolved(
     mut name: GlobalName<Unresolved>,
-    imports: &BTreeMap<String, ResolvedModulePath>,
-    current_module_path: &ResolvedModulePath,
+    imports: &BTreeMap<String, Resolved>,
+    current_module_path: &Resolved,
     file_source: Arc<str>,
 ) -> Result<GlobalName<Resolved>, WorkspaceError> {
     if let Some(module_qualifier) = name.module.qualifier.take() {
@@ -1308,7 +1153,7 @@ fn resolve_name_to_universal(
 
     Ok(GlobalName::new(
         name.span,
-        UniversalModulePath {
+        Universal {
             package,
             directories: name.module.directories,
             module: name.module.module,
@@ -1329,8 +1174,8 @@ fn module_lookup_key(
     }
 }
 
-fn resolved_module_path(local: &ModulePath, package: ResolvedPackageRef) -> ResolvedModulePath {
-    ResolvedModulePath {
+fn resolved_module_path(local: &ModulePath, package: ResolvedPackageRef) -> Resolved {
+    Resolved {
         package,
         directories: local.directories.clone(),
         module: local.module.clone(),
@@ -1462,7 +1307,7 @@ fn collect_source_files_recursive(
             .unwrap_or_else(|_| path.clone());
 
         files.push(LoadedPackageFile {
-            absolute_path: path,
+            name: FileName::from(path.as_path()),
             relative_path_from_src,
             source,
         });
@@ -1894,14 +1739,12 @@ mod tests {
 
     fn checked_workspace_from_source(source: &str) -> CheckedWorkspace {
         let parsed = parse_loaded_files(vec![LoadedPackageFile {
-            absolute_path: PathBuf::from("Main.par"),
+            name: FileName::from("Main.par"),
             relative_path_from_src: PathBuf::from("Main.par"),
             source: source.to_string(),
         }])
         .unwrap();
-        WorkspaceInput::new()
-            .with_root_package(WorkspacePackage::from_parsed(PackageId::Local, parsed))
-            .build()
+        load_workspace(vec![WorkspacePackage::new(PackageId::Local, parsed)])
             .unwrap()
             .type_check()
             .unwrap()
@@ -1949,11 +1792,12 @@ def Run = external
             .unwrap();
 
         assert_eq!(
-            checked.type_doc(type_name).map(|doc| doc.markdown.as_str()),
+            checked.workspace().type_doc(type_name).map(|doc| doc.markdown.as_str()),
             Some("Type docs")
         );
         assert_eq!(
             checked
+                .workspace()
                 .declaration_doc(declaration_name)
                 .map(|doc| doc.markdown.as_str()),
             Some("Run docs")
@@ -1976,7 +1820,7 @@ dec Main : Item
 def Main = Run
 ";
         let checked = checked_workspace_from_source(source);
-        let file = checked.sources.keys().next().unwrap();
+        let file = checked.workspace().sources().keys().next().unwrap();
 
         let item_index = source.match_indices("Item").nth(1).unwrap().0;
         let (item_row, item_column) = row_and_column(source, item_index);
@@ -2019,7 +1863,7 @@ def Main =
   in value
 ";
         let checked = checked_workspace_from_source(source);
-        let file = checked.sources.keys().next().unwrap();
+        let file = checked.workspace().sources().keys().next().unwrap();
 
         let item_index = source.match_indices("Item").nth(1).unwrap().0;
         let (item_row, item_column) = row_and_column(source, item_index);
@@ -2060,7 +1904,7 @@ dec Main : !
 def Main = Item
 ";
         let checked = checked_workspace_from_source(source);
-        let file = checked.sources.keys().next().unwrap();
+        let file = checked.workspace().sources().keys().next().unwrap();
 
         let type_index = source.match_indices("Item").next().unwrap().0;
         let (type_row, type_column) = row_and_column(source, type_index);
@@ -2091,7 +1935,7 @@ dec Main : Producer<Event>
 def Main = external
 ";
         let checked = checked_workspace_from_source(source);
-        let file = checked.sources.keys().next().unwrap();
+        let file = checked.workspace().sources().keys().next().unwrap();
 
         let definition_index = source.match_indices("Producer<a>").next().unwrap().0;
         let (definition_row, definition_column) = row_and_column(source, definition_index);
@@ -2124,7 +1968,7 @@ dec Main : dual Producer<Event>
 def Main = external
 ";
         let checked = checked_workspace_from_source(source);
-        let file = checked.sources.keys().next().unwrap();
+        let file = checked.workspace().sources().keys().next().unwrap();
 
         let dual_index = source.match_indices("dual").next().unwrap().0;
         let (dual_row, dual_column) = row_and_column(source, dual_index);

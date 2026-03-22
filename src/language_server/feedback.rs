@@ -171,7 +171,9 @@ fn uri_for_error(err: &CompileError) -> Option<Uri> {
             uri_for_span(&span)
         }
         CompileError::Workspace(WorkspaceError::Load(error)) => uri_for_load_error(error),
-        CompileError::Workspace(WorkspaceError::LowerError { path, .. }) => path_to_uri(path),
+        CompileError::Workspace(WorkspaceError::LowerError { file, .. }) => {
+            file_name_to_uri(file)
+        }
         CompileError::Workspace(WorkspaceError::UnknownDependency { span, .. })
         | CompileError::Workspace(WorkspaceError::ImportedModuleNotFound { span, .. })
         | CompileError::Workspace(WorkspaceError::DuplicateImportAlias { span, .. })
@@ -189,12 +191,12 @@ fn uri_for_error(err: &CompileError) -> Option<Uri> {
 
 fn uri_for_load_error(error: &PackageLoadError) -> Option<Uri> {
     match error {
-        PackageLoadError::ParseError { path, .. }
-        | PackageLoadError::MissingModuleDeclaration { path }
-        | PackageLoadError::FileNameModuleMismatch { path, .. }
+        PackageLoadError::ParseError { file, .. }
+        | PackageLoadError::MissingModuleDeclaration { file }
+        | PackageLoadError::FileNameModuleMismatch { file, .. }
         | PackageLoadError::ConflictingModuleNameCasing {
-            first_path: path, ..
-        } => path_to_uri(path),
+            first_file: file, ..
+        } => file_name_to_uri(file),
         PackageLoadError::PackageRootNotFound { .. }
         | PackageLoadError::ManifestReadError { .. }
         | PackageLoadError::SrcDirectoryMissing { .. }

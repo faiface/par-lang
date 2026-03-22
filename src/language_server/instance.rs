@@ -371,20 +371,20 @@ impl Instance {
     }
 
     fn compile_single_file(&self, code: &str) -> Result<Arc<CheckedWorkspace>, CompileError> {
-        let absolute_path =
+        let file_path =
             uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
-        let relative_path_from_src = absolute_path
+        let relative_path_from_src = file_path
             .file_name()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
         let parsed = parse_loaded_files(vec![LoadedPackageFile {
-            absolute_path,
+            name: FileName::from(file_path.as_path()),
             relative_path_from_src,
             source: code.to_owned(),
         }])
         .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
-        let sources = workspace.sources.clone();
+        let sources = workspace.sources().clone();
         let checked = Arc::new(workspace.type_check().map_err(|error| {
             CompileError::Type {
                 file_scope: error
@@ -418,7 +418,7 @@ impl Instance {
             .collect::<HashMap<_, _>>();
 
         for file in &mut files {
-            if let Some(source) = overlay_sources.get(&normalized_path(&file.absolute_path)) {
+            if let Some(source) = overlay_sources.get(&file.name.0.to_lowercase().replace('\\', "/")) {
                 file.source = source.clone();
             }
         }
@@ -426,7 +426,7 @@ impl Instance {
         let parsed = parse_loaded_files(files)
             .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
         let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
-        let sources = workspace.sources.clone();
+        let sources = workspace.sources().clone();
         let checked = Arc::new(workspace.type_check().map_err(|error| {
             CompileError::Type {
                 file_scope: error

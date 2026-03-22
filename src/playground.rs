@@ -143,7 +143,7 @@ impl BuildResult {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("Main.par"));
         let parsed = match parse_loaded_files(vec![LoadedPackageFile {
-            absolute_path: file_path,
+            name: FileName::from(file_path.as_path()),
             relative_path_from_src,
             source: source.to_owned(),
         }]) {
@@ -192,7 +192,7 @@ impl BuildResult {
         };
         let active_key = normalized_path(active_file_path);
         for file in &mut files {
-            if normalized_path(&file.absolute_path) == active_key {
+            if file.name.0.to_lowercase().replace('\\', "/") == active_key {
                 file.source = active_source.to_owned();
             }
         }
@@ -876,6 +876,7 @@ impl Playground {
         exclude_module: Option<&ModulePath>,
     ) {
         let modules = program
+            .workspace()
             .modules_in_package(package)
             .iter()
             .filter(|module| exclude_module != Some(*module))
@@ -923,7 +924,7 @@ impl Playground {
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
     ) {
-        let current_scope = program.import_scope(&active_file);
+        let current_scope = program.workspace().import_scope(&active_file);
         let current_package = current_scope.map(|scope| scope.current_module.package.clone());
         let current_module = current_scope.map(|scope| scope.current_module.clone());
         let current_module_path = current_module.as_ref().map(|module| ModulePath {
@@ -931,6 +932,7 @@ impl Playground {
             module: module.module.clone(),
         });
         let other_packages = program
+            .workspace()
             .packages()
             .into_iter()
             .filter(|package| current_package.as_ref() != Some(package))
