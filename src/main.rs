@@ -487,7 +487,8 @@ fn run_definition_vm(binary_path: PathBuf, target: Option<String>, print_stats: 
             }
         };
 
-        let target = target.unwrap_or_else(|| "Main.Main".to_string());
+        let (module_target, definition_target) = parse_cli_target(target.as_deref());
+        let target = format!("{}.{}", module_target, definition_target);
 
         let start = Instant::now();
         let package_to_run = artifact
@@ -533,13 +534,9 @@ fn resolve_target_definition<'a>(
     checked: &'a CheckedWorkspace,
     local_modules: &[ModulePath],
 ) -> Option<&'a par_core::frontend::language::GlobalName<par_core::frontend::language::Universal>> {
-    let target = target.unwrap_or("Main.Main");
-    let parsed_target = parse_target(target);
-    let definition_target = parsed_target
-        .definition_name
-        .unwrap_or_else(|| "Main".to_string());
+    let (module_target, definition_target) = parse_cli_target(target);
 
-    let canonical_module = find_local_module(&parsed_target.module_path, local_modules)?;
+    let canonical_module = find_local_module(&module_target, local_modules)?;
     let module_name = canonical_module.to_slash_path();
 
     checked
@@ -551,6 +548,15 @@ fn resolve_target_definition<'a>(
                 && local_module_slash_path(&name.module).as_deref() == Some(module_name.as_str())
         })
         .map(|(name, _)| name)
+}
+
+fn parse_cli_target(target: Option<&str>) -> (String, String) {
+    let target = target.unwrap_or("Main.Main");
+    let parsed_target = parse_target(target);
+    let definition_target = parsed_target
+        .definition_name
+        .unwrap_or_else(|| "Main".to_string());
+    (parsed_target.module_path, definition_target)
 }
 
 fn check(package_path: PathBuf) -> Result<(), String> {
