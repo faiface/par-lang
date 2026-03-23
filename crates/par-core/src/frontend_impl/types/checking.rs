@@ -3300,7 +3300,12 @@ fn merge_path_contexts<S: Clone + Eq + std::hash::Hash>(
                 .unwrap_or(false)
         });
 
-        if !used && !is_linear && !is_absurd {
+        // If any present type is Fail and the variable is missing from some paths,
+        // its presence is unreliable due to error recovery — drop it to avoid
+        // cascading errors.
+        let is_fail = present_types.iter().any(|t| matches!(t, Type::Fail(_)));
+
+        if (!used && !is_linear && !is_absurd) || (is_fail && missing) {
             // Drop it.
             continue;
         }
