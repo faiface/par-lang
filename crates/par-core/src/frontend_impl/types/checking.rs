@@ -830,11 +830,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             ),
             Command::Break => {
                 let Type::Continue(_) = typ else {
-                    emit(TypeError::InvalidOperation(
-                        span.clone(),
-                        Operation::Break,
-                        typ.clone(),
-                    ));
+                    if !matches!(typ, Type::Fail(_)) {
+                        emit(TypeError::InvalidOperation(
+                            span.clone(),
+                            Operation::Break,
+                            typ.clone(),
+                        ));
+                    }
                     return (Command::Break, None);
                 };
                 if let Err(e) = self.cannot_have_obligations(span) {
@@ -907,12 +909,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Function(_, argument_type, then_type, vars) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Send,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Send,
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            let argument = self.check_expression(None, argument, &fail, emit);
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (Command::Send(argument, process), inferred);
         };
         if vars.is_empty() {
             self.check_command_send_plain(
@@ -1027,14 +1035,23 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Pair(_, param_type, then_type, type_names) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Receive {
-                    generics: type_parameters.len(),
-                },
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Receive {
+                        generics: type_parameters.len(),
+                    },
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            self.put(span, parameter.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (
+                Command::Receive(parameter.clone(), annotation.clone(), fail, process, type_parameters.to_vec()),
+                inferred,
+            );
         };
 
         if type_parameters.len() != type_names.len() {
@@ -1045,7 +1062,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 },
                 typ.clone(),
             ));
-            return (Command::Break, None);
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            self.put(span, parameter.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (
+                Command::Receive(parameter.clone(), annotation.clone(), fail, process, type_parameters.to_vec()),
+                inferred,
+            );
         }
 
         if type_names.is_empty() {
@@ -1209,20 +1233,30 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Choice(_, branches) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Signal,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Signal,
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (Command::Signal(chosen.clone(), process), inferred);
         };
         let Some(branch_type) = branches.get(chosen) else {
-            emit(TypeError::InvalidBranch(
-                span.clone(),
-                chosen.clone(),
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidBranch(
+                    span.clone(),
+                    chosen.clone(),
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (Command::Signal(chosen.clone(), process), inferred);
         };
         if let Err(e) = self.put(span, object.clone(), branch_type.clone()) {
             emit(e);
@@ -1243,12 +1277,33 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Either(_, branch_types) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Case,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Case,
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            let mut original_context = self.clone();
+            let mut typed_processes = Vec::new();
+            for process in processes.iter() {
+                *self = original_context.clone();
+                self.put(span, object.clone(), fail.clone()).ok();
+                let (typed, _) = self.analyze_process(process, mode, emit);
+                typed_processes.push(typed);
+                original_context.blocks = self.blocks.clone();
+            }
+            let typed_else = else_process.as_ref().map(|p| {
+                *self = original_context.clone();
+                self.put(span, object.clone(), fail.clone()).ok();
+                let (typed, _) = self.analyze_process(p, mode, emit);
+                typed
+            });
+            return (
+                Command::Case(branches.clone(), typed_processes.into_boxed_slice(), typed_else),
+                None,
+            );
         };
 
         let mut remaining_branches = branch_types.clone();
@@ -1387,12 +1442,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Break(_) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Continue,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Continue,
+                    typ.clone(),
+                ));
+            }
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (Command::Continue(process), inferred);
         };
         let (process, inferred_types) = self.analyze_process(process, mode, emit);
         (Command::Continue(process), inferred_types)
@@ -1416,7 +1474,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 span.clone(),
                 inference_subject.clone(),
             ));
-            return (Command::Break, None);
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (
+                Command::Begin { unfounded, label: label.clone(), captures: captures.clone(), body: process },
+                inferred,
+            );
         }
         let Type::Recursive {
             span: typ_span,
@@ -1426,12 +1490,20 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             display_hint,
         } = typ
         else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Begin,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Begin,
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (
+                Command::Begin { unfounded, label: label.clone(), captures: captures.clone(), body: process },
+                inferred,
+            );
         };
 
         let mut typ_asc = typ_asc.clone();
@@ -1493,12 +1565,14 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         if !matches!(typ, Type::Recursive { .. }) {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::Loop,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::Loop,
+                    typ.clone(),
+                ));
+            }
+            return (Command::Loop(label.clone(), driver.clone(), captures.clone()), None);
         }
         let Some((driver_type, variables)) = self.loop_points.get(label).cloned() else {
             emit(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
@@ -1568,12 +1642,17 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Forall(_, type_name, then_type) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::SendType,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::SendType,
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (Command::SendType(argument.clone(), process), inferred);
         };
         let then_type = then_type
             .clone()
@@ -1600,12 +1679,17 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         let Type::Exists(_, type_name, then_type) = typ else {
-            emit(TypeError::InvalidOperation(
-                span.clone(),
-                Operation::ReceiveType,
-                typ.clone(),
-            ));
-            return (Command::Break, None);
+            if !matches!(typ, Type::Fail(_)) {
+                emit(TypeError::InvalidOperation(
+                    span.clone(),
+                    Operation::ReceiveType,
+                    typ.clone(),
+                ));
+            }
+            let fail = Type::Fail(span.clone());
+            self.put(span, object.clone(), fail.clone()).ok();
+            let (process, inferred) = self.analyze_process(process, mode, emit);
+            return (Command::ReceiveType(parameter.clone(), process), inferred);
         };
         let then_type = then_type
             .clone()
@@ -2503,7 +2587,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 span.clone(),
                 parameter.clone(),
             ));
-            return (Command::Break, Type::Fail(span.clone()));
+            let fail = Type::Fail(span.clone());
+            if let Err(e) = self.put(span, parameter.clone(), fail.clone()) {
+                emit(e);
+            }
+            let (process, _then_type) = self.infer_process(process, subject, emit);
+            return (
+                Command::Receive(parameter.clone(), annotation.clone(), fail, process, vars.to_vec()),
+                Type::Fail(span.clone()),
+            );
         };
         if let Err(e) = self.put(span, parameter.clone(), param_type.clone()) {
             emit(e);
@@ -2556,7 +2648,23 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 span.clone(),
                 subject.clone(),
             ));
-            return (Command::Break, Type::Fail(span.clone()));
+            let mut original_context = self.clone();
+            let mut typed_processes = Vec::new();
+            for (_branch, process) in branches.iter().zip(processes.iter()) {
+                *self = original_context.clone();
+                let (process, _typ) = self.infer_process(process, subject, emit);
+                typed_processes.push(process);
+                original_context.blocks = self.blocks.clone();
+            }
+            let typed_else = else_process.as_ref().map(|p| {
+                *self = original_context.clone();
+                let (process, _) = self.infer_process(p, subject, emit);
+                process
+            });
+            return (
+                Command::Case(Arc::clone(branches), Box::from(typed_processes), typed_else),
+                Type::Fail(span.clone()),
+            );
         }
 
         let mut original_context = self.clone();
