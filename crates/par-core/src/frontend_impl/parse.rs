@@ -2493,7 +2493,6 @@ fn process(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
         proc_let,
         proc_catch,
         proc_throw,
-        proc_telltypes,
         global_command,
         command,
     ))
@@ -2568,19 +2567,6 @@ fn proc_throw(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
                 span.clone(),
                 Process::Throw(span, label, Box::new(expression)),
             )
-        })
-        .parse_next(input)
-}
-
-fn proc_telltypes(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
-    commit_after(t(TokenKind::Telltypes), opt(process))
-        .map(|(token, then_opt)| {
-            let span = token.span.clone();
-            let (full_span, then) = match then_opt {
-                Some((then_full_span, then)) => (token.span.join(then_full_span), Box::new(then)),
-                None => (span.clone(), Box::new(Process::Noop(token.span.only_end()))),
-            };
-            (full_span, Process::Telltypes(span, then))
         })
         .parse_next(input)
 }
@@ -3298,7 +3284,7 @@ fn cmd_pipe(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
 }
 
 fn pass_process(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
-    alt((proc_if, proc_let, proc_telltypes, global_command, command)).parse_next(input)
+    alt((proc_if, proc_let, global_command, command)).parse_next(input)
 }
 
 fn cmd_branch(input: &mut Input) -> Result<CommandBranch<Unresolved>> {

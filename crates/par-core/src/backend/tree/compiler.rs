@@ -644,8 +644,6 @@ impl Compiler {
                 command,
             } => self.compile_process_do(span, name, usage, typ, command),
 
-            Process::Telltypes(_, _) => unreachable!(),
-
             Process::Poll {
                 span: _span,
                 kind,

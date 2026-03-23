@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arcstr::ArcStr;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::location::{FileName, Point, Span, Spanning};
 
@@ -221,7 +221,7 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
     where
         S: Eq + std::hash::Hash,
     {
-        let mut errors: Vec<TypeError<S>> = Vec::new();
+        let mut errors: IndexSet<TypeError<S>> = IndexSet::new();
 
         let type_defs = match TypeDefs::new_with_validation(
             self.type_defs
@@ -230,7 +230,7 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
         ) {
             Ok(td) => td,
             Err(e) => {
-                errors.push(e);
+                errors.insert(e);
                 TypeDefs::default()
             }
         };
@@ -240,7 +240,7 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
             if let Some((span1, _)) =
                 unchecked_definitions.insert(name.clone(), (span.clone(), body.clone()))
             {
-                errors.push(TypeError::NameAlreadyDefined(
+                errors.insert(TypeError::NameAlreadyDefined(
                     span.clone(),
                     span1,
                     name.clone(),
@@ -254,11 +254,11 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
         } in &self.declarations
         {
             if !unchecked_definitions.contains_key(name) {
-                errors.push(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
+                errors.insert(TypeError::DeclaredButNotDefined(span.clone(), name.clone()));
             }
             if let Some((span1, _)) = declarations.insert(name.clone(), (span.clone(), typ.clone()))
             {
-                errors.push(TypeError::NameAlreadyDeclared(
+                errors.insert(TypeError::NameAlreadyDeclared(
                     span.clone(),
                     span1,
                     name.clone(),
@@ -273,7 +273,9 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
 
         let mut context = Context::new(type_defs, declarations, unchecked_definitions);
         for (span, name) in names_to_check {
-            context.check_definition(&span, &name, &mut |e| errors.push(e));
+            context.check_definition(&span, &name, &mut |e| {
+                errors.insert(e);
+            });
         }
 
         (
@@ -309,7 +311,7 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
                     })
                     .collect(),
             },
-            errors,
+            errors.into_iter().collect(),
         )
     }
 }

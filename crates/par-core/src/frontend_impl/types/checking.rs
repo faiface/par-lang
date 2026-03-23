@@ -92,8 +92,6 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 captures,
             } => self.check_process_submit(span, driver, point, values, captures, emit),
 
-            Process::Telltypes(span, _) => self.check_process_telltypes(span, emit),
-
             Process::Unreachable(span) => self.check_process_unreachable(span, emit),
 
             Process::Block(span, index, body, then) => {
@@ -590,15 +588,6 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             values: typed_values,
             captures: captures.clone(),
         })
-    }
-
-    fn check_process_telltypes(
-        &mut self,
-        span: &Span,
-        emit: &mut impl FnMut(TypeError<S>),
-    ) -> Arc<Process<Type<S>, S>> {
-        emit(TypeError::Telltypes(span.clone(), self.variables.clone()));
-        Arc::new(Process::Unreachable(span.clone()))
     }
 
     fn check_process_unreachable(
@@ -1825,14 +1814,6 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 inference_subject,
                 emit,
             ),
-
-            Process::Telltypes(span, _) => {
-                emit(TypeError::Telltypes(span.clone(), self.variables.clone()));
-                (
-                    Arc::new(Process::Unreachable(span.clone())),
-                    Type::Fail(span.clone()),
-                )
-            }
 
             Process::Unreachable(span) => self.infer_process_unreachable(span, emit),
 

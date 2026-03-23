@@ -385,7 +385,6 @@ pub enum Process<S> {
     },
     GlobalCommand(Span, GlobalName<S>, Command<S>),
     Command(Span, LocalName, Command<S>),
-    Telltypes(Span, Box<Self>),
     Noop(Span),
 }
 
@@ -2273,11 +2272,6 @@ impl Context {
                 })
             }
 
-            Process::Telltypes(span, process) => Arc::new(process::Process::Telltypes(
-                span.clone(),
-                self.compile_process(process)?,
-            )),
-
             Process::Noop(span) => match self.use_fallthrough(span) {
                 Some(process) => process,
                 None => Err(CompileError::MustEndProcess(span.clone()))?,
@@ -3052,7 +3046,6 @@ impl<S> Spanning for Process<S> {
             Self::If { span, .. } => span.clone(),
             Self::GlobalCommand(span, _, _) => span.clone(),
             Self::Command(span, _, _) => span.clone(),
-            Self::Telltypes(span, _) => span.clone(),
             Self::Noop(span) => span.clone(),
         }
     }

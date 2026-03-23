@@ -57,7 +57,6 @@ pub enum Process<Typ, S> {
         values: Vec<Arc<Expression<Typ, S>>>,
         captures: Captures,
     },
-    Telltypes(Span, Arc<Self>),
     Block(Span, usize, Arc<Self>, Arc<Self>),
     Goto(Span, usize, Captures),
     Unreachable(Span),
@@ -111,186 +110,6 @@ pub enum Expression<Typ, S> {
     External(Unlinked, Typ),
 }
 
-fn current_depth_from_children(children: impl IntoIterator<Item = usize>) -> usize {
-    1 + children.into_iter().max().unwrap_or(0)
-}
-
-fn flattened_depth_with_tail(
-    tail_depth: usize,
-    side_children: impl IntoIterator<Item = usize>,
-) -> usize {
-    match side_children.into_iter().max() {
-        Some(side_depth) => tail_depth.max(1 + side_depth),
-        None => tail_depth.max(1),
-    }
-}
-
-fn flattened_depth_from_side_children(children: impl IntoIterator<Item = usize>) -> usize {
-    match children.into_iter().max() {
-        Some(depth) => 1 + depth,
-        None => 1,
-    }
-}
-
-fn flattened_depth_from_branches(children: impl IntoIterator<Item = usize>) -> usize {
-    let mut deepest = 0;
-    let mut second_deepest = 0;
-    let mut saw_any = false;
-
-    for depth in children {
-        saw_any = true;
-        if depth >= deepest {
-            second_deepest = deepest;
-            deepest = depth;
-        } else if depth > second_deepest {
-            second_deepest = depth;
-        }
-    }
-
-    if !saw_any {
-        1
-    } else {
-        deepest.max(1 + second_deepest)
-    }
-}
-
-impl<Typ, S> Process<Typ, S> {
-    pub fn current_depth(&self) -> usize {
-        match self {
-            Self::Let { value, then, .. } => {
-                current_depth_from_children([value.current_depth(), then.current_depth()])
-            }
-            Self::Do { command, .. } => current_depth_from_children([command.current_depth()]),
-            Self::Poll {
-                clients,
-                then,
-                else_,
-                ..
-            } => current_depth_from_children(
-                clients
-                    .iter()
-                    .map(|client| client.current_depth())
-                    .chain([then.current_depth(), else_.current_depth()]),
-            ),
-            Self::Submit { values, .. } => {
-                current_depth_from_children(values.iter().map(|value| value.current_depth()))
-            }
-            Self::Telltypes(_, process) => current_depth_from_children([process.current_depth()]),
-            Self::Block(_, _, body, then) => {
-                current_depth_from_children([body.current_depth(), then.current_depth()])
-            }
-            Self::Goto(..) | Self::Unreachable(..) => 1,
-        }
-    }
-
-    pub fn flattened_depth(&self) -> usize {
-        match self {
-            Self::Let { value, then, .. } => {
-                flattened_depth_with_tail(then.flattened_depth(), [value.flattened_depth()])
-            }
-            Self::Do { command, .. } => command.flattened_depth(),
-            Self::Poll {
-                clients,
-                then,
-                else_,
-                ..
-            } => {
-                let branch_depth = flattened_depth_from_branches([
-                    then.flattened_depth(),
-                    else_.flattened_depth(),
-                ]);
-                let side_depth = clients.iter().map(|client| client.flattened_depth()).max();
-                match side_depth {
-                    Some(depth) => branch_depth.max(1 + depth),
-                    None => branch_depth,
-                }
-            }
-            Self::Submit { values, .. } => flattened_depth_from_side_children(
-                values.iter().map(|value| value.flattened_depth()),
-            ),
-            Self::Telltypes(_, process) => process.flattened_depth(),
-            Self::Block(_, _, body, then) => {
-                flattened_depth_with_tail(then.flattened_depth(), [body.flattened_depth()])
-            }
-            Self::Goto(..) | Self::Unreachable(..) => 1,
-        }
-    }
-}
-
-impl<Typ, S> Command<Typ, S> {
-    pub fn current_depth(&self) -> usize {
-        match self {
-            Self::Link(expression) => current_depth_from_children([expression.current_depth()]),
-            Self::Send(argument, process) => {
-                current_depth_from_children([argument.current_depth(), process.current_depth()])
-            }
-            Self::Receive(_, _, _, process, _) => {
-                current_depth_from_children([process.current_depth()])
-            }
-            Self::Signal(_, process) => current_depth_from_children([process.current_depth()]),
-            Self::Case(_, processes, else_process) => current_depth_from_children(
-                processes
-                    .iter()
-                    .map(|process| process.current_depth())
-                    .chain(else_process.iter().map(|process| process.current_depth())),
-            ),
-            Self::Break => 1,
-            Self::Continue(process) => current_depth_from_children([process.current_depth()]),
-            Self::Begin { body, .. } => current_depth_from_children([body.current_depth()]),
-            Self::Loop(..) => 1,
-            Self::SendType(_, process) => current_depth_from_children([process.current_depth()]),
-            Self::ReceiveType(_, process) => current_depth_from_children([process.current_depth()]),
-        }
-    }
-
-    pub fn flattened_depth(&self) -> usize {
-        match self {
-            Self::Link(expression) => {
-                flattened_depth_from_side_children([expression.flattened_depth()])
-            }
-            Self::Send(argument, process) => {
-                flattened_depth_with_tail(process.flattened_depth(), [argument.flattened_depth()])
-            }
-            Self::Receive(_, _, _, process, _) => process.flattened_depth(),
-            Self::Signal(_, process) => process.flattened_depth(),
-            Self::Case(_, processes, else_process) => flattened_depth_from_branches(
-                processes
-                    .iter()
-                    .map(|process| process.flattened_depth())
-                    .chain(else_process.iter().map(|process| process.flattened_depth())),
-            ),
-            Self::Break => 1,
-            Self::Continue(process) => process.flattened_depth(),
-            Self::Begin { body, .. } => body.flattened_depth(),
-            Self::Loop(..) => 1,
-            Self::SendType(_, process) => process.flattened_depth(),
-            Self::ReceiveType(_, process) => process.flattened_depth(),
-        }
-    }
-}
-
-impl<Typ, S> Expression<Typ, S> {
-    pub fn current_depth(&self) -> usize {
-        match self {
-            Self::Global(..) | Self::Variable(..) | Self::Primitive(..) | Self::External(..) => 1,
-            Self::Box(_, _, expression, _) => {
-                current_depth_from_children([expression.current_depth()])
-            }
-            Self::Chan { process, .. } => current_depth_from_children([process.current_depth()]),
-        }
-    }
-
-    pub fn flattened_depth(&self) -> usize {
-        match self {
-            Self::Global(..) | Self::Variable(..) | Self::Primitive(..) | Self::External(..) => 1,
-            Self::Box(_, _, expression, _) => expression.flattened_depth(),
-            Self::Chan { process, .. } => {
-                flattened_depth_from_side_children([process.flattened_depth()])
-            }
-        }
-    }
-}
-
 impl<Typ, S> Spanning for Process<Typ, S> {
     fn span(&self) -> Span {
         match self {
@@ -298,7 +117,6 @@ impl<Typ, S> Spanning for Process<Typ, S> {
             Self::Do { span, .. } => span.clone(),
             Self::Poll { span, .. } => span.clone(),
             Self::Submit { span, .. } => span.clone(),
-            Self::Telltypes(span, ..) => span.clone(),
             Self::Block(span, _, _, _) => span.clone(),
             Self::Goto(span, _, _) => span.clone(),
             Self::Unreachable(span) => span.clone(),
@@ -446,9 +264,6 @@ impl<S: Clone> Process<(), S> {
                 values: values.iter().map(|e| e.optimize()).collect(),
                 captures: captures.clone(),
             }),
-            Self::Telltypes(span, process) => {
-                Arc::new(Self::Telltypes(span.clone(), process.optimize()))
-            }
             Self::Block(span, index, body, process) => Arc::new(Self::Block(
                 span.clone(),
                 *index,
@@ -653,10 +468,6 @@ impl<S: Clone> Process<(), S> {
                     captures: captures.clone(),
                 })
             }
-            Self::Telltypes(span, process) => Arc::new(Self::Telltypes(
-                span.clone(),
-                process.optimize_subject(replace),
-            )),
             Self::Block(span, index, body, process) => Arc::new(Self::Block(
                 span.clone(),
                 *index,
@@ -733,9 +544,6 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
                 for value in values {
                     value.types_at_spans(program, docs, consume);
                 }
-            }
-            Process::Telltypes(_, process) => {
-                process.types_at_spans(program, docs, consume);
             }
             Process::Block(_, _, body, process) => {
                 body.types_at_spans(program, docs, consume);
@@ -1275,7 +1083,6 @@ impl<S: Clone> Process<(), S> {
                 values,
                 captures,
             } => Self::map_global_names_submit(span, driver, point, values, captures, f),
-            Process::Telltypes(span, process) => Self::map_global_names_telltypes(span, process, f),
             Process::Block(span, index, body, then) => {
                 Self::map_global_names_block(span, index, body, then, f)
             }
@@ -1359,14 +1166,6 @@ impl<S: Clone> Process<(), S> {
             values: map_expression_vec(values, f)?,
             captures,
         })
-    }
-
-    fn map_global_names_telltypes<T, E>(
-        span: Span,
-        process: Arc<Process<(), S>>,
-        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
-    ) -> Result<Process<(), T>, E> {
-        Ok(Process::Telltypes(span, map_arc_process(process, f)?))
     }
 
     fn map_global_names_block<T, E>(
@@ -1682,7 +1481,6 @@ impl<Typ, S> Process<Typ, S> {
                 }
                 vars
             }
-            Process::Telltypes(_, process) => process.free_variables(),
             Process::Block(_, _, _body, process) => process.free_variables(),
             Process::Goto(_, _, caps) => caps.names.keys().cloned().collect(),
             Process::Unreachable(_) => IndexSet::new(),
@@ -1882,12 +1680,6 @@ impl<Typ, S: Clone + std::fmt::Display> Process<Typ, S> {
                         process.pretty(f, indent)
                     }
                 }
-            }
-
-            Self::Telltypes(_, process) => {
-                indentation(f, indent)?;
-                write!(f, "telltypes")?;
-                process.pretty(f, indent)
             }
 
             Self::Block(_, index, body, process) => {

@@ -269,10 +269,6 @@ impl CaptureAnalysis {
                     caps,
                 )
             }
-            Process::Telltypes(span, process) => {
-                let (process, caps) = self.fix_process(process, env);
-                (Arc::new(Process::Telltypes(span.clone(), process)), caps)
-            }
             Process::Block(span, index, body, process) => {
                 let (process, caps) = self.fix_process(process, env);
                 let body_env = self.block_envs.get(index).cloned().unwrap_or_default();
@@ -583,9 +579,6 @@ impl BlockEnvAnalyzer {
                     self.visit_expression(value, env);
                 }
             }
-            Process::Telltypes(_, process) => {
-                self.visit_process(process, env);
-            }
             Process::Block(_, index, body, process) => {
                 self.blocks
                     .entry(*index)
@@ -830,7 +823,6 @@ impl<'a> CaptureCollector<'a> {
                 }
                 caps
             }
-            Process::Telltypes(_, process) => self.process_captures(process, env),
             Process::Block(_span, index, body, process) => {
                 let body_env = self.block_envs.get(index).cloned().unwrap_or_default();
                 let body_caps = self.process_captures(body, &body_env);

@@ -4,12 +4,11 @@ use crate::location::{Span, Spanning};
 use crate::workspace::{
     FileImportScope, render_global_name_in_scope, render_type_in_scope_with_indent,
 };
-use indexmap::IndexMap;
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeError<S> {
     TypeNameAlreadyDefined(Span, Span, GlobalName<S>),
     NameAlreadyDeclared(Span, Span, GlobalName<S>),
@@ -53,7 +52,6 @@ pub enum TypeError<S> {
     PollVariableChangedType(Span, LocalName, Type<S>, Type<S>),
     PollBranchMustSubmit(Span),
     CannotUseLinearVariableInBox(Span, LocalName),
-    Telltypes(Span, IndexMap<LocalName, Type<S>>),
     NonExhaustiveIf(Span),
 }
 
@@ -459,20 +457,6 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "Cannot use linear variable `{}` in a `box` expression.", name)
             }
-            Self::Telltypes(span, variables) => {
-                let labels = labels_from_span(code, span);
-                let mut buf = String::new();
-                for (name, typ) in variables {
-                    write!(&mut buf, "{}: ", name).unwrap();
-                    write!(&mut buf, "{}", render_type(typ, 0)).unwrap();
-                    write!(&mut buf, "\n\n").unwrap();
-                }
-                miette::miette! {
-                    labels = labels,
-                    "{}",
-                    buf
-                }
-            }
             Self::NonExhaustiveIf(span) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "Conditions are not exhaustive; an `else` branch is required here.")
@@ -547,7 +531,6 @@ impl<S: Clone + Eq + std::hash::Hash> TypeError<S> {
             | Self::PollVariableChangedType(span, _, _, _)
             | Self::PollBranchMustSubmit(span)
             | Self::CannotUseLinearVariableInBox(span, _)
-            | Self::Telltypes(span, _)
             | Self::NonExhaustiveIf(span)
             | Self::CannotUnrollAscendantIterative(span, _) => (span.clone(), None),
 

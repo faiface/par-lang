@@ -93,7 +93,7 @@ pub(crate) fn is_single_char(string: &str) -> bool {
     chars.next().is_some() && chars.next().is_none()
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Operation {
     Send,
     Receive {
