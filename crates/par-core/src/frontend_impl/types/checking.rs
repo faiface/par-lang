@@ -1049,7 +1049,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             self.put(span, parameter.clone(), fail.clone()).ok();
             let (process, inferred) = self.analyze_process(process, mode, emit);
             return (
-                Command::Receive(parameter.clone(), annotation.clone(), fail, process, type_parameters.to_vec()),
+                Command::Receive(
+                    parameter.clone(),
+                    annotation.clone(),
+                    fail,
+                    process,
+                    type_parameters.to_vec(),
+                ),
                 inferred,
             );
         };
@@ -1067,7 +1073,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             self.put(span, parameter.clone(), fail.clone()).ok();
             let (process, inferred) = self.analyze_process(process, mode, emit);
             return (
-                Command::Receive(parameter.clone(), annotation.clone(), fail, process, type_parameters.to_vec()),
+                Command::Receive(
+                    parameter.clone(),
+                    annotation.clone(),
+                    fail,
+                    process,
+                    type_parameters.to_vec(),
+                ),
                 inferred,
             );
         }
@@ -1301,7 +1313,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 typed
             });
             return (
-                Command::Case(branches.clone(), typed_processes.into_boxed_slice(), typed_else),
+                Command::Case(
+                    branches.clone(),
+                    typed_processes.into_boxed_slice(),
+                    typed_else,
+                ),
                 None,
             );
         };
@@ -1478,7 +1494,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             self.put(span, object.clone(), fail.clone()).ok();
             let (process, inferred) = self.analyze_process(process, mode, emit);
             return (
-                Command::Begin { unfounded, label: label.clone(), captures: captures.clone(), body: process },
+                Command::Begin {
+                    unfounded,
+                    label: label.clone(),
+                    captures: captures.clone(),
+                    body: process,
+                },
                 inferred,
             );
         }
@@ -1501,7 +1522,12 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             self.put(span, object.clone(), fail.clone()).ok();
             let (process, inferred) = self.analyze_process(process, mode, emit);
             return (
-                Command::Begin { unfounded, label: label.clone(), captures: captures.clone(), body: process },
+                Command::Begin {
+                    unfounded,
+                    label: label.clone(),
+                    captures: captures.clone(),
+                    body: process,
+                },
                 inferred,
             );
         };
@@ -1572,7 +1598,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     typ.clone(),
                 ));
             }
-            return (Command::Loop(label.clone(), driver.clone(), captures.clone()), None);
+            return (
+                Command::Loop(label.clone(), driver.clone(), captures.clone()),
+                None,
+            );
         }
         let Some((driver_type, variables)) = self.loop_points.get(label).cloned() else {
             emit(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
@@ -2593,7 +2622,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             }
             let (process, _then_type) = self.infer_process(process, subject, emit);
             return (
-                Command::Receive(parameter.clone(), annotation.clone(), fail, process, vars.to_vec()),
+                Command::Receive(
+                    parameter.clone(),
+                    annotation.clone(),
+                    fail,
+                    process,
+                    vars.to_vec(),
+                ),
                 Type::Fail(span.clone()),
             );
         };

@@ -1440,7 +1440,7 @@ fn expression_no_condition(input: &mut Input) -> Result<Expression<Unresolved>> 
         expr_box,
         expr_chan,
         application,
-        construction.map(Expression::Construction),
+        construction.map(|(span, construct)| Expression::Construction(span, construct)),
         expr_grouped,
     ))
     .parse_next(input)
@@ -1788,7 +1788,7 @@ fn expr_do(input: &mut Input) -> Result<Expression<Unresolved>> {
         |(pre, (open, process, (_close, _in_tok), expression))| Expression::Do {
             span: pre.span.join(expression.span()),
             process: match process {
-                Some(process) => Box::new(process),
+                Some((_, process)) => Box::new(process),
                 None => Box::new(Process::Noop(open.span.only_end())),
             },
             then: Box::new(expression),
@@ -1819,14 +1819,14 @@ fn expr_chan(input: &mut Input) -> Result<Expression<Unresolved>> {
         span: pre.span.join(close.span.clone()),
         pattern,
         process: match process {
-            Some(process) => Box::new(process),
+            Some((_, process)) => Box::new(process),
             None => Box::new(Process::Noop(open.span.only_end())),
         },
     })
     .parse_next(input)
 }
 
-fn construction(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     alt((
         cons_begin,
         cons_unfounded,
@@ -1845,7 +1845,7 @@ fn construction(input: &mut Input) -> Result<Construct<Unresolved>> {
     .parse_next(input)
 }
 
-fn cons_then(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_then(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     alt((
         expr_literal,
         expr_list,
@@ -1863,40 +1863,46 @@ fn cons_then(input: &mut Input) -> Result<Construct<Unresolved>> {
         application,
         expr_grouped,
     ))
-    .map(Box::new)
-    .map(Construct::Then)
+    .map(|expr| {
+        let span = expr.span();
+        (span, Construct::Then(Box::new(expr)))
+    })
     .parse_next(input)
 }
 
-fn cons_send(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), construction),
     )
-    .map(|(open, (args, _close, then))| {
-        let span = open.span.join(then.span());
-        args.into_iter().rfold(then, |then, arg| {
-            Construct::Send(span.clone(), Box::new(arg), Box::new(then))
-        })
+    .map(|(open, (args, close, (then_full_span, then)))| {
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let construct = args.into_iter().rfold(then, |then, arg| {
+            Construct::Send(short_span.clone(), Box::new(arg), Box::new(then))
+        });
+        (full_span, construct)
     })
     .parse_next(input)
 }
 
-fn cons_receive(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LBrack),
         (list1(pattern), t(TokenKind::RBrack), construction),
     )
-    .map(|(open, (patterns, _close, then))| {
-        let span = open.span.join(then.span());
-        patterns.into_iter().rfold(then, |then, pattern| {
-            Construct::Receive(span.clone(), pattern, Box::new(then), vec![])
-        })
+    .map(|(open, (patterns, close, (then_full_span, then)))| {
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let construct = patterns.into_iter().rfold(then, |then, pattern| {
+            Construct::Receive(short_span.clone(), pattern, Box::new(then), vec![])
+        });
+        (full_span, construct)
     })
     .parse_next(input)
 }
 
-fn cons_generic_receive(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_generic_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -1909,101 +1915,139 @@ fn cons_generic_receive(input: &mut Input) -> Result<Construct<Unresolved>> {
         ),
     )
     .map(
-        |(vars_open, (vars, _vars_close, _pattern_open, arg, _pattern_close, rest))| {
-            let span = vars_open.span.join(rest.span());
-            Construct::Receive(span.clone(), arg, Box::new(rest), vars)
+        |(
+            vars_open,
+            (vars, _vars_close, _pattern_open, arg, pattern_close, (then_full_span, rest)),
+        )| {
+            let short_span = vars_open.span.join(pattern_close.span());
+            let full_span = vars_open.span.join(then_full_span);
+            (
+                full_span,
+                Construct::Receive(short_span, arg, Box::new(rest), vars),
+            )
         },
     )
     .parse_next(input)
 }
 
-fn cons_signal(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_signal(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     // Note this can't be a commit_after because its possible that this is not a signal construction, and instead a branch of an either.
     (t(TokenKind::Dot), (local_name, construction))
-        .map(|(pre, (chosen, construct))| {
-            Construct::Signal(pre.span.join(construct.span()), chosen, Box::new(construct))
+        .map(|(pre, (chosen, (then_full_span, construct)))| {
+            let short_span = pre.span.join(chosen.span());
+            let full_span = pre.span.join(then_full_span);
+            (
+                full_span,
+                Construct::Signal(short_span, chosen, Box::new(construct)),
+            )
         })
         .parse_next(input)
 }
 
-fn cons_case(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_case(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(t(TokenKind::Case), branches_body(cons_branch))
         .map(|(pre, (branches_span, branches, else_branch))| {
-            Construct::Case(
-                pre.span.join(branches_span),
-                ConstructBranches(branches),
-                else_branch,
+            let full_span = pre.span.join(branches_span);
+            let short_span = pre.span();
+            (
+                full_span,
+                Construct::Case(short_span, ConstructBranches(branches), else_branch),
             )
         })
         .parse_next(input)
 }
 
-fn cons_break(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_break(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     t(TokenKind::Bang)
-        .map(|token| Construct::Break(token.span()))
+        .map(|token| {
+            let span = token.span();
+            (span.clone(), Construct::Break(span))
+        })
         .parse_next(input)
 }
 
-fn cons_begin(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_begin(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(t(TokenKind::Begin), (label, construction))
-        .map(|(unfounded, (label, construct))| Construct::Begin {
-            span: unfounded.span.join(construct.span()),
-            unfounded: false,
-            label,
-            then: Box::new(construct),
+        .map(|(begin_kw, (label, (then_full_span, construct)))| {
+            let short_span = match &label {
+                Some(label) => begin_kw.span.join(label.span()),
+                None => begin_kw.span(),
+            };
+            let full_span = begin_kw.span.join(then_full_span);
+            (
+                full_span,
+                Construct::Begin {
+                    span: short_span,
+                    unfounded: false,
+                    label,
+                    then: Box::new(construct),
+                },
+            )
         })
         .parse_next(input)
 }
 
-fn cons_unfounded(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_unfounded(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(t(TokenKind::Unfounded), (label, construction))
-        .map(|(unfounded, (label, construct))| Construct::Begin {
-            span: unfounded.span.join(construct.span()),
-            unfounded: true,
-            label,
-            then: Box::new(construct),
+        .map(|(unfounded_kw, (label, (then_full_span, construct)))| {
+            let short_span = match &label {
+                Some(label) => unfounded_kw.span.join(label.span()),
+                None => unfounded_kw.span(),
+            };
+            let full_span = unfounded_kw.span.join(then_full_span);
+            (
+                full_span,
+                Construct::Begin {
+                    span: short_span,
+                    unfounded: true,
+                    label,
+                    then: Box::new(construct),
+                },
+            )
         })
         .parse_next(input)
 }
 
-fn cons_loop(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_loop(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(t(TokenKind::Loop), label)
         .map(|(token, label)| {
-            Construct::Loop(
-                match &label {
-                    Some(label) => token.span.join(label.span()),
-                    None => token.span(),
-                },
-                label,
-            )
+            let span = match &label {
+                Some(label) => token.span.join(label.span()),
+                None => token.span(),
+            };
+            (span.clone(), Construct::Loop(span, label))
         })
         .parse_next(input)
 }
 
-fn cons_send_type(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_send_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(typ), t(TokenKind::RParen), construction),
     )
-    .map(|((open, _), (types, _close, then))| {
-        let span = open.span.join(then.span());
-        types.into_iter().rfold(then, |then, typ| {
-            Construct::SendType(span.clone(), typ, Box::new(then))
-        })
+    .map(|((open, _), (types, close, (then_full_span, then)))| {
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let construct = types.into_iter().rfold(then, |then, typ| {
+            Construct::SendType(short_span.clone(), typ, Box::new(then))
+        });
+        (full_span, construct)
     })
     .parse_next(input)
 }
 
-fn cons_recv_type(input: &mut Input) -> Result<Construct<Unresolved>> {
+fn cons_recv_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
         (list1(local_name), t(TokenKind::RBrack), construction),
     )
-    .map(|((open, _), (names, _close, then))| {
-        let span = open.span.join(then.span());
-        names.into_iter().rfold(then, |then, name| {
-            Construct::ReceiveType(span.clone(), name, Box::new(then))
-        })
+    .map(|((open, _), (names, close, (then_full_span, then)))| {
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let construct = names.into_iter().rfold(then, |then, name| {
+            Construct::ReceiveType(short_span.clone(), name, Box::new(then))
+        });
+        (full_span, construct)
     })
     .parse_next(input)
 }
@@ -2085,8 +2129,8 @@ fn application(input: &mut Input) -> Result<Expression<Unresolved>> {
         apply,
     )
         .map(|(expr, apply)| match apply {
-            Some(apply) => {
-                Expression::Application(expr.span().join(apply.span()), Box::new(expr), apply)
+            Some((full_span, apply)) => {
+                Expression::Application(expr.span().join(full_span), Box::new(expr), apply)
             }
             None => expr,
         })
@@ -2094,7 +2138,7 @@ fn application(input: &mut Input) -> Result<Expression<Unresolved>> {
         .parse_next(input)
 }
 
-fn apply(input: &mut Input) -> Result<Option<Apply<Unresolved>>> {
+fn apply(input: &mut Input) -> Result<Option<(Span, Apply<Unresolved>)>> {
     opt(alt((
         apply_begin,
         apply_unfounded,
@@ -2110,132 +2154,182 @@ fn apply(input: &mut Input) -> Result<Option<Apply<Unresolved>>> {
     .parse_next(input)
 }
 
-fn apply_send(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_send(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), apply),
     )
     .map(|(open, (args, close, then))| {
-        let then = match then {
-            Some(apply) => apply,
-            None => Apply::Noop(close.span.only_end()),
+        let (then_full_span, then) = match then {
+            Some((span, apply)) => (span, apply),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), Apply::Noop(s))
+            }
         };
-        let span = open.span.join(then.span());
-        args.into_iter().rfold(then, |then, arg| {
-            Apply::Send(span.clone(), Box::new(arg), Box::new(then))
-        })
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let apply = args.into_iter().rfold(then, |then, arg| {
+            Apply::Send(short_span.clone(), Box::new(arg), Box::new(then))
+        });
+        (full_span, apply)
     })
     .parse_next(input)
 }
 
-fn apply_signal(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_signal(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     (t(TokenKind::Dot), (local_name, apply))
         .map(|(pre, (chosen, then))| {
-            let then = match then {
-                Some(then) => then,
-                None => Apply::Noop(chosen.span.only_end()),
+            let (then_full_span, then) = match then {
+                Some((span, apply)) => (span, apply),
+                None => {
+                    let s = chosen.span.only_end();
+                    (s.clone(), Apply::Noop(s))
+                }
             };
-            Apply::Signal(pre.span.join(then.span()), chosen, Box::new(then))
+            let short_span = pre.span.join(chosen.span());
+            let full_span = pre.span.join(then_full_span);
+            (full_span, Apply::Signal(short_span, chosen, Box::new(then)))
         })
         .parse_next(input)
 }
 
-fn apply_case(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_case(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Case)),
         branches_body(apply_branch),
     )
-    .map(|((pre, _), (branches_span, branches, else_branch))| {
-        Apply::Case(
-            pre.span.join(branches_span),
-            ApplyBranches(branches),
-            else_branch,
+    .map(|((pre, case_kw), (branches_span, branches, else_branch))| {
+        let full_span = pre.span.join(branches_span);
+        let short_span = pre.span.join(case_kw.span());
+        (
+            full_span,
+            Apply::Case(short_span, ApplyBranches(branches), else_branch),
         )
     })
     .parse_next(input)
 }
 
-fn apply_begin(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_begin(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (label, apply))
-        .map(|((pre, _), (label, then))| {
-            let then = match (&label, then) {
-                (_, Some(then)) => then,
-                (Some(label), None) => Apply::Noop(label.span.only_end()),
-                (None, None) => Apply::Noop(pre.span.only_end()),
+        .map(|((pre, begin_kw), (label, then))| {
+            let (then_full_span, then) = match (&label, then) {
+                (_, Some((span, apply))) => (span, apply),
+                (Some(label), None) => {
+                    let s = label.span.only_end();
+                    (s.clone(), Apply::Noop(s))
+                }
+                (None, None) => {
+                    let s = begin_kw.span.only_end();
+                    (s.clone(), Apply::Noop(s))
+                }
             };
-            Apply::Begin {
-                span: pre.span.join(then.span()),
-                unfounded: false,
-                label,
-                then: Box::new(then),
-            }
-        })
-        .parse_next(input)
-}
-
-fn apply_unfounded(input: &mut Input) -> Result<Apply<Unresolved>> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, apply))
-        .map(|((pre, _), (label, then))| {
-            let then = match (&label, then) {
-                (_, Some(then)) => then,
-                (Some(label), None) => Apply::Noop(label.span.only_end()),
-                (None, None) => Apply::Noop(pre.span.only_end()),
+            let short_span = match &label {
+                Some(label) => pre.span.join(label.span()),
+                None => pre.span.join(begin_kw.span()),
             };
-            Apply::Begin {
-                span: pre.span.join(then.span()),
-                unfounded: true,
-                label,
-                then: Box::new(then),
-            }
-        })
-        .parse_next(input)
-}
-
-fn apply_loop(input: &mut Input) -> Result<Apply<Unresolved>> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
-        .map(|((pre1, pre2), label)| {
-            Apply::Loop(
-                match &label {
-                    Some(label) => pre1.span.join(label.span()),
-                    None => pre1.span.join(pre2.span()),
+            let full_span = pre.span.join(then_full_span);
+            (
+                full_span,
+                Apply::Begin {
+                    span: short_span,
+                    unfounded: false,
+                    label,
+                    then: Box::new(then),
                 },
-                label,
             )
         })
         .parse_next(input)
 }
 
-fn apply_send_type(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_unfounded(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, apply))
+        .map(|((pre, unfounded_kw), (label, then))| {
+            let (then_full_span, then) = match (&label, then) {
+                (_, Some((span, apply))) => (span, apply),
+                (Some(label), None) => {
+                    let s = label.span.only_end();
+                    (s.clone(), Apply::Noop(s))
+                }
+                (None, None) => {
+                    let s = unfounded_kw.span.only_end();
+                    (s.clone(), Apply::Noop(s))
+                }
+            };
+            let short_span = match &label {
+                Some(label) => pre.span.join(label.span()),
+                None => pre.span.join(unfounded_kw.span()),
+            };
+            let full_span = pre.span.join(then_full_span);
+            (
+                full_span,
+                Apply::Begin {
+                    span: short_span,
+                    unfounded: true,
+                    label,
+                    then: Box::new(then),
+                },
+            )
+        })
+        .parse_next(input)
+}
+
+fn apply_loop(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
+        .map(|((pre1, pre2), label)| {
+            let span = match &label {
+                Some(label) => pre1.span.join(label.span()),
+                None => pre1.span.join(pre2.span()),
+            };
+            (span.clone(), Apply::Loop(span, label))
+        })
+        .parse_next(input)
+}
+
+fn apply_send_type(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(typ), t(TokenKind::RParen), apply),
     )
     .map(|((open, _), (types, close, then))| {
-        let then = match then {
-            Some(apply) => apply,
-            None => Apply::Noop(close.span.only_end()),
+        let (then_full_span, then) = match then {
+            Some((span, apply)) => (span, apply),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), Apply::Noop(s))
+            }
         };
-        let span = open.span.join(then.span());
-        types.into_iter().rfold(then, |then, typ| {
-            Apply::SendType(span.clone(), typ, Box::new(then))
-        })
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let apply = types.into_iter().rfold(then, |then, typ| {
+            Apply::SendType(short_span.clone(), typ, Box::new(then))
+        });
+        (full_span, apply)
     })
     .parse_next(input)
 }
 
-fn apply_try(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_try(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Try)), (label, apply))
-        .map(|((_, pre), (label, then))| {
-            let then = match then {
-                Some(apply) => apply,
-                None => Apply::Noop(pre.span.only_end()),
+        .map(|((dot, pre), (label, then))| {
+            let (then_full_span, then) = match then {
+                Some((span, apply)) => (span, apply),
+                None => {
+                    let s = pre.span.only_end();
+                    (s.clone(), Apply::Noop(s))
+                }
             };
-            Apply::Try(pre.span.join(then.span()), label, Box::new(then))
+            let short_span = match &label {
+                Some(label) => dot.span.join(label.span()),
+                None => dot.span.join(pre.span()),
+            };
+            let full_span = dot.span.join(then_full_span);
+            (full_span, Apply::Try(short_span, label, Box::new(then)))
         })
         .parse_next(input)
 }
 
-fn apply_default(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_default(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Default)),
         (
@@ -2245,17 +2339,25 @@ fn apply_default(input: &mut Input) -> Result<Apply<Unresolved>> {
             apply,
         ),
     )
-    .map(|((_, pre), (_, expr, close, then))| {
-        let then = match then {
-            Some(apply) => apply,
-            None => Apply::Noop(close.span.only_end()),
+    .map(|((dot, _pre), (_, expr, close, then))| {
+        let (then_full_span, then) = match then {
+            Some((span, apply)) => (span, apply),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), Apply::Noop(s))
+            }
         };
-        Apply::Default(pre.span.join(then.span()), Box::new(expr), Box::new(then))
+        let short_span = dot.span.join(close.span());
+        let full_span = dot.span.join(then_full_span);
+        (
+            full_span,
+            Apply::Default(short_span, Box::new(expr), Box::new(then)),
+        )
     })
     .parse_next(input)
 }
 
-fn apply_pipe(input: &mut Input) -> Result<Apply<Unresolved>> {
+fn apply_pipe(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after(
         t(TokenKind::ThinArrow),
         (
@@ -2268,14 +2370,18 @@ fn apply_pipe(input: &mut Input) -> Result<Apply<Unresolved>> {
         ),
     )
     .map(|(pre, (function, then))| {
-        let then = match then {
-            Some(apply) => apply,
-            None => Apply::Noop(function.span().only_end()),
+        let (then_full_span, then) = match then {
+            Some((span, apply)) => (span, apply),
+            None => {
+                let s = function.span().only_end();
+                (s.clone(), Apply::Noop(s))
+            }
         };
-        Apply::Pipe(
-            pre.span.join(then.span()),
-            Box::new(function),
-            Box::new(then),
+        let short_span = pre.span.join(function.span());
+        let full_span = pre.span.join(then_full_span);
+        (
+            full_span,
+            Apply::Pipe(short_span, Box::new(function), Box::new(then)),
         )
     })
     .parse_next(input)
@@ -2378,7 +2484,7 @@ fn apply_branch_default(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     .parse_next(input)
 }
 
-fn process(input: &mut Input) -> Result<Process<Unresolved>> {
+fn process(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     alt((
         proc_if,
         proc_poll,
@@ -2395,24 +2501,34 @@ fn process(input: &mut Input) -> Result<Process<Unresolved>> {
     .parse_next(input)
 }
 
-fn proc_let(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_let(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(
         t(TokenKind::Let),
         (pattern, t(TokenKind::Eq), expression, opt(process)),
     )
-    .map(|(pre, (pattern, _, expression, process))| Process::Let {
-        span: pre.span.join(expression.span()),
-        pattern,
-        then: match process {
-            Some(process) => Box::new(process),
-            None => Box::new(Process::Noop(expression.span().only_end())),
-        },
-        value: Box::new(expression),
+    .map(|(pre, (pattern, _, expression, then_opt))| {
+        let span = pre.span.join(expression.span());
+        let (full_span, then) = match then_opt {
+            Some((then_full_span, then)) => (pre.span.join(then_full_span), Box::new(then)),
+            None => (
+                span.clone(),
+                Box::new(Process::Noop(expression.span().only_end())),
+            ),
+        };
+        (
+            full_span,
+            Process::Let {
+                span,
+                pattern,
+                then,
+                value: Box::new(expression),
+            },
+        )
     })
     .parse_next(input)
 }
 
-fn proc_catch(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_catch(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(
         t(TokenKind::Catch),
         (
@@ -2426,44 +2542,50 @@ fn proc_catch(input: &mut Input) -> Result<Process<Unresolved>> {
         ),
     )
     .map(
-        |(pre, (label, pattern, _, _, block, _, then))| Process::Catch {
-            span: pre.span.join(block.span()),
-            label,
-            pattern,
-            block: Box::new(block),
-            then: Box::new(then),
+        |(pre, (label, pattern, _, _, (_block_full_span, block), _, (then_full_span, then)))| {
+            let span = pre.span.join(block.span());
+            let full_span = pre.span.join(then_full_span);
+            (
+                full_span,
+                Process::Catch {
+                    span,
+                    label,
+                    pattern,
+                    block: Box::new(block),
+                    then: Box::new(then),
+                },
+            )
         },
     )
     .parse_next(input)
 }
 
-fn proc_throw(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_throw(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(t(TokenKind::Throw), (label, expression))
         .map(|(pre, (label, expression))| {
-            Process::Throw(
-                pre.span.join(expression.span()),
-                label,
-                Box::new(expression),
+            let span = pre.span.join(expression.span());
+            (
+                span.clone(),
+                Process::Throw(span, label, Box::new(expression)),
             )
         })
         .parse_next(input)
 }
 
-fn proc_telltypes(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_telltypes(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(t(TokenKind::Telltypes), opt(process))
-        .map(|(token, process)| {
-            Process::Telltypes(
-                token.span.clone(),
-                match process {
-                    Some(process) => Box::new(process),
-                    None => Box::new(Process::Noop(token.span.only_end())),
-                },
-            )
+        .map(|(token, then_opt)| {
+            let span = token.span.clone();
+            let (full_span, then) = match then_opt {
+                Some((then_full_span, then)) => (token.span.join(then_full_span), Box::new(then)),
+                None => (span.clone(), Box::new(Process::Noop(token.span.only_end()))),
+            };
+            (full_span, Process::Telltypes(span, then))
         })
         .parse_next(input)
 }
 
-fn proc_poll(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_poll(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(
         t(TokenKind::Poll),
         (
@@ -2509,23 +2631,30 @@ fn proc_poll(input: &mut Input) -> Result<Process<Unresolved>> {
                 close,
             ),
         )| {
-            let then = then.unwrap_or(Process::Noop(body_open.span.join(body_close.span())));
-            let else_body =
-                else_body.unwrap_or(Process::Noop(else_open.span.join(else_close.span())));
-            Process::Poll {
-                span: kw.span.join(close.span()),
-                label,
-                clients,
-                name,
-                then: Box::new(then),
-                else_: Box::new(else_body),
-            }
+            let then = then
+                .map(|(_, p)| p)
+                .unwrap_or(Process::Noop(body_open.span.join(body_close.span())));
+            let else_body = else_body
+                .map(|(_, p)| p)
+                .unwrap_or(Process::Noop(else_open.span.join(else_close.span())));
+            let span = kw.span.join(close.span());
+            (
+                span.clone(),
+                Process::Poll {
+                    span,
+                    label,
+                    clients,
+                    name,
+                    then: Box::new(then),
+                    else_: Box::new(else_body),
+                },
+            )
         },
     )
     .parse_next(input)
 }
 
-fn proc_repoll(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_repoll(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(
         t(TokenKind::Repoll),
         (
@@ -2571,23 +2700,30 @@ fn proc_repoll(input: &mut Input) -> Result<Process<Unresolved>> {
                 close,
             ),
         )| {
-            let then = then.unwrap_or(Process::Noop(body_open.span.join(body_close.span())));
-            let else_body =
-                else_body.unwrap_or(Process::Noop(else_open.span.join(else_close.span())));
-            Process::Repoll {
-                span: kw.span.join(close.span()),
-                label,
-                clients,
-                name,
-                then: Box::new(then),
-                else_: Box::new(else_body),
-            }
+            let then = then
+                .map(|(_, p)| p)
+                .unwrap_or(Process::Noop(body_open.span.join(body_close.span())));
+            let else_body = else_body
+                .map(|(_, p)| p)
+                .unwrap_or(Process::Noop(else_open.span.join(else_close.span())));
+            let span = kw.span.join(close.span());
+            (
+                span.clone(),
+                Process::Repoll {
+                    span,
+                    label,
+                    clients,
+                    name,
+                    then: Box::new(then),
+                    else_: Box::new(else_body),
+                },
+            )
         },
     )
     .parse_next(input)
 }
 
-fn proc_submit(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_submit(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(
         t(TokenKind::Submit),
         (
@@ -2597,19 +2733,25 @@ fn proc_submit(input: &mut Input) -> Result<Process<Unresolved>> {
             t(TokenKind::RParen),
         ),
     )
-    .map(|(kw, (label, _open, values, close))| Process::Submit {
-        span: kw.span.join(close.span()),
-        label,
-        values,
+    .map(|(kw, (label, _open, values, close))| {
+        let span = kw.span.join(close.span());
+        (
+            span.clone(),
+            Process::Submit {
+                span,
+                label,
+                values,
+            },
+        )
     })
     .parse_next(input)
 }
 
-fn proc_if(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_if(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     alt((proc_if_inline, proc_if_block)).parse_next(input)
 }
 
-fn proc_if_block(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_if_block(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     commit_after(
         (t(TokenKind::If), t(TokenKind::LCurly)),
         (
@@ -2623,15 +2765,24 @@ fn proc_if_block(input: &mut Input) -> Result<Process<Unresolved>> {
             opt(pass_process),
         ),
     )
-    .map(
-        |((kw, open), (branches, else_body, close, then_process))| Process::If {
-            span: kw.span.join(close.span()),
-            branches,
-            else_: else_body
-                .map(|(_, body, _)| Box::new(body.unwrap_or(Process::Noop(open.span.only_end())))),
-            then: then_process.map(Box::new),
-        },
-    )
+    .map(|((kw, open), (branches, else_body, close, then_process))| {
+        let span = kw.span.join(close.span());
+        let full_span = match &then_process {
+            Some((then_full_span, _)) => kw.span.join(then_full_span.clone()),
+            None => span.clone(),
+        };
+        (
+            full_span,
+            Process::If {
+                span,
+                branches,
+                else_: else_body.map(|(_, body, _)| {
+                    Box::new(body.unwrap_or(Process::Noop(open.span.only_end())))
+                }),
+                then: then_process.map(|(_, p)| Box::new(p)),
+            },
+        )
+    })
     .parse_next(input)
 }
 
@@ -2647,7 +2798,8 @@ fn proc_if_branch(input: &mut Input) -> Result<(Condition<Unresolved>, Process<U
         .map(|(condition, _, open, body, close, _)| {
             (
                 condition,
-                body.unwrap_or(Process::Noop(open.span.join(close.span()))),
+                body.map(|(_, p)| p)
+                    .unwrap_or(Process::Noop(open.span.join(close.span()))),
             )
         })
         .parse_next(input)
@@ -2660,12 +2812,15 @@ fn proc_if_else_body(input: &mut Input) -> Result<Option<Process<Unresolved>>> {
         opt(process),
         t(TokenKind::RCurly),
     )
-        .map(|(_, open, body, close)| body.unwrap_or(Process::Noop(open.span.join(close.span()))))
+        .map(|(_, open, body, close)| {
+            body.map(|(_, p)| p)
+                .unwrap_or(Process::Noop(open.span.join(close.span())))
+        })
         .map(Some)
         .parse_next(input)
 }
 
-fn proc_if_inline(input: &mut Input) -> Result<Process<Unresolved>> {
+fn proc_if_inline(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     (
         t(TokenKind::If),
         alt((
@@ -2680,39 +2835,66 @@ fn proc_if_inline(input: &mut Input) -> Result<Process<Unresolved>> {
         opt(pass_process),
     )
         .map(|(kw, condition, _, open, then_proc, close, else_process)| {
-            let tail_proc = else_process.unwrap_or(Process::Noop(close.span().only_end()));
-            Process::If {
-                span: kw.span.join(tail_proc.span()),
-                branches: vec![(
-                    condition,
-                    then_proc.unwrap_or(Process::Noop(open.span.join(close.span()))),
-                )],
-                else_: Some(Box::new(Process::Noop(close.span().only_end()))),
-                then: Some(Box::new(tail_proc)),
-            }
+            let (tail_full_span, tail_proc) = match else_process {
+                Some((full_span, p)) => (full_span, p),
+                None => {
+                    let s = close.span().only_end();
+                    (s.clone(), Process::Noop(s))
+                }
+            };
+            let span = kw.span.join(tail_proc.span());
+            let full_span = kw.span.join(tail_full_span);
+            (
+                full_span,
+                Process::If {
+                    span,
+                    branches: vec![(
+                        condition,
+                        then_proc
+                            .map(|(_, p)| p)
+                            .unwrap_or(Process::Noop(open.span.join(close.span()))),
+                    )],
+                    else_: Some(Box::new(Process::Noop(close.span().only_end()))),
+                    then: Some(Box::new(tail_proc)),
+                },
+            )
         })
         .parse_next(input)
 }
 
-fn global_command(input: &mut Input) -> Result<Process<Unresolved>> {
+fn global_command(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     (global_name, cmd)
         .map(|(name, cmd)| match cmd {
-            Some(cmd) => Process::GlobalCommand(name, cmd),
+            Some((full_span, cmd)) => {
+                let span = name.span.join(full_span);
+                (span.clone(), Process::GlobalCommand(span, name, cmd))
+            }
             None => {
+                let span = name.span();
                 let noop_span = name.span.only_end();
-                Process::GlobalCommand(name, noop_cmd(noop_span))
+                (
+                    span.clone(),
+                    Process::GlobalCommand(span, name, noop_cmd(noop_span)),
+                )
             }
         })
         .parse_next(input)
 }
 
-fn command(input: &mut Input) -> Result<Process<Unresolved>> {
+fn command(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     (local_name, cmd)
         .map(|(name, cmd)| match cmd {
-            Some(cmd) => Process::Command(name, cmd),
+            Some((full_span, cmd)) => {
+                let span = name.span.join(full_span);
+                (span.clone(), Process::Command(span, name, cmd))
+            }
             None => {
+                let span = name.span();
                 let noop_span = name.span.only_end();
-                Process::Command(name, noop_cmd(noop_span))
+                (
+                    span.clone(),
+                    Process::Command(span, name, noop_cmd(noop_span)),
+                )
             }
         })
         .parse_next(input)
@@ -2722,7 +2904,7 @@ fn noop_cmd(span: Span) -> Command<Unresolved> {
     Command::Then(Box::new(Process::Noop(span)))
 }
 
-fn cmd(input: &mut Input) -> Result<Option<Command<Unresolved>>> {
+fn cmd(input: &mut Input) -> Result<Option<(Span, Command<Unresolved>)>> {
     alt((
         alt((
             cmd_link,
@@ -2749,57 +2931,70 @@ fn cmd(input: &mut Input) -> Result<Option<Command<Unresolved>>> {
     .parse_next(input)
 }
 
-fn cmd_then(input: &mut Input) -> Result<Option<Command<Unresolved>>> {
+fn cmd_then(input: &mut Input) -> Result<Option<(Span, Command<Unresolved>)>> {
     (opt(t(TokenKind::Semicolon)), opt(process))
-        .map(|(_, opt)| opt.map(|process| Command::Then(Box::new(process))))
-        .parse_next(input)
-}
-
-fn cmd_link(input: &mut Input) -> Result<Command<Unresolved>> {
-    commit_after(t(TokenKind::Link), expression)
-        .map(|(token, expression)| {
-            Command::Link(token.span.join(expression.span()), Box::new(expression))
+        .map(|(_, opt)| {
+            opt.map(|(full_span, process)| (full_span, Command::Then(Box::new(process))))
         })
         .parse_next(input)
 }
 
-fn cmd_send(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_link(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
+    commit_after(t(TokenKind::Link), expression)
+        .map(|(token, expression)| {
+            let span = token.span.join(expression.span());
+            (span.clone(), Command::Link(span, Box::new(expression)))
+        })
+        .parse_next(input)
+}
+
+fn cmd_send(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), cmd),
     )
     .map(|(open, (expressions, close, cmd))| {
-        let cmd = match cmd {
-            Some(cmd) => cmd,
-            None => noop_cmd(close.span.only_end()),
+        let (cmd_full_span, cmd) = match cmd {
+            Some((span, cmd)) => (span, cmd),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), noop_cmd(s))
+            }
         };
-        let span = open.span.join(cmd.span());
-        expressions.into_iter().rfold(cmd, |cmd, expression| {
-            Command::Send(span.clone(), expression, Box::new(cmd))
-        })
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(cmd_full_span);
+        let cmd = expressions.into_iter().rfold(cmd, |cmd, expression| {
+            Command::Send(short_span.clone(), expression, Box::new(cmd))
+        });
+        (full_span, cmd)
     })
     .parse_next(input)
 }
 
-fn cmd_receive(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_receive(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         t(TokenKind::LBrack),
         (list1(pattern), t(TokenKind::RBrack), cmd),
     )
     .map(|(open, (patterns, close, cmd))| {
-        let cmd = match cmd {
-            Some(cmd) => cmd,
-            None => noop_cmd(close.span.only_end()),
+        let (cmd_full_span, cmd) = match cmd {
+            Some((span, cmd)) => (span, cmd),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), noop_cmd(s))
+            }
         };
-        let span = open.span.join(cmd.span());
-        patterns.into_iter().rfold(cmd, |cmd, pattern| {
-            Command::Receive(span.clone(), pattern, Box::new(cmd), vec![])
-        })
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(cmd_full_span);
+        let cmd = patterns.into_iter().rfold(cmd, |cmd, pattern| {
+            Command::Receive(short_span.clone(), pattern, Box::new(cmd), vec![])
+        });
+        (full_span, cmd)
     })
     .parse_next(input)
 }
 
-fn cmd_generic_receive(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_generic_receive(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         t(TokenKind::Lt),
         (
@@ -2813,161 +3008,237 @@ fn cmd_generic_receive(input: &mut Input) -> Result<Command<Unresolved>> {
     )
     .map(
         |(vars_open, (vars, _vars_close, _pattern_open, arg, pattern_close, cmd))| {
-            let cmd = match cmd {
-                Some(cmd) => cmd,
-                None => noop_cmd(pattern_close.span.only_end()),
+            let (cmd_full_span, cmd) = match cmd {
+                Some((span, cmd)) => (span, cmd),
+                None => {
+                    let s = pattern_close.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
             };
-            let span = vars_open.span.join(cmd.span());
-            Command::Receive(span.clone(), arg, Box::new(cmd), vars)
+            let short_span = vars_open.span.join(pattern_close.span());
+            let full_span = vars_open.span.join(cmd_full_span);
+            (
+                full_span,
+                Command::Receive(short_span, arg, Box::new(cmd), vars),
+            )
         },
     )
     .parse_next(input)
 }
 
-fn cmd_signal(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_signal(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     (t(TokenKind::Dot), (local_name, cmd))
         .map(|(pre, (name, cmd))| {
-            let cmd = match cmd {
-                Some(cmd) => cmd,
-                None => noop_cmd(name.span.only_end()),
+            let (cmd_full_span, cmd) = match cmd {
+                Some((span, cmd)) => (span, cmd),
+                None => {
+                    let s = name.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
             };
-            Command::Signal(pre.span.join(cmd.span()), name, Box::new(cmd))
+            let short_span = pre.span.join(name.span());
+            let full_span = pre.span.join(cmd_full_span);
+            (full_span, Command::Signal(short_span, name, Box::new(cmd)))
         })
         .parse_next(input)
 }
 
-fn cmd_case(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_case(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Case)),
         (branches_body(cmd_branch), opt(pass_process)),
     )
     .map(
-        |((pre, _), ((branches_span, branches, else_branch), pass_process))| {
-            Command::Case(
-                pre.span.join(branches_span),
-                CommandBranches(branches),
-                else_branch,
-                pass_process.map(Box::new),
+        |((pre, case_kw), ((branches_span, branches, else_branch), pass_process))| {
+            let full_span = match &pass_process {
+                Some((ps_full_span, _)) => pre.span.join(ps_full_span.clone()),
+                None => pre.span.join(branches_span),
+            };
+            let short_span = pre.span.join(case_kw.span());
+            (
+                full_span,
+                Command::Case(
+                    short_span,
+                    CommandBranches(branches),
+                    else_branch,
+                    pass_process.map(|(_, p)| Box::new(p)),
+                ),
             )
         },
     )
     .parse_next(input)
 }
 
-fn cmd_break(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_break(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     t(TokenKind::Bang)
-        .map(|token| Command::Break(token.span()))
+        .map(|token| {
+            let span = token.span();
+            (span.clone(), Command::Break(span))
+        })
         .parse_next(input)
 }
 
-fn cmd_continue(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_continue(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     (t(TokenKind::Quest), opt(process))
         .map(|(token, process)| match process {
-            Some(process) => Command::Continue(token.span.join(process.span()), Box::new(process)),
-            None => Command::Continue(token.span(), Box::new(Process::Noop(token.span.only_end()))),
+            Some((full_span, process)) => {
+                let span = token.span.join(full_span);
+                (span.clone(), Command::Continue(span, Box::new(process)))
+            }
+            None => {
+                let span = token.span();
+                (
+                    span.clone(),
+                    Command::Continue(span, Box::new(Process::Noop(token.span.only_end()))),
+                )
+            }
         })
         .parse_next(input)
 }
 
-fn cmd_begin(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_begin(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (label, cmd))
-        .map(|((pre, _), (label, cmd))| {
-            let cmd = match (&label, cmd) {
-                (_, Some(cmd)) => cmd,
-                (Some(label), None) => noop_cmd(label.span.only_end()),
-                (None, None) => noop_cmd(pre.span.only_end()),
+        .map(|((pre, begin_kw), (label, cmd))| {
+            let (cmd_full_span, cmd) = match (&label, cmd) {
+                (_, Some((span, cmd))) => (span, cmd),
+                (Some(label), None) => {
+                    let s = label.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
+                (None, None) => {
+                    let s = begin_kw.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
             };
-            Command::Begin {
-                span: pre.span.join(cmd.span()),
-                unfounded: false,
-                label,
-                then: Box::new(cmd),
-            }
-        })
-        .parse_next(input)
-}
-
-fn cmd_unfounded(input: &mut Input) -> Result<Command<Unresolved>> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, cmd))
-        .map(|((pre, _), (label, cmd))| {
-            let cmd = match (&label, cmd) {
-                (_, Some(cmd)) => cmd,
-                (Some(label), None) => noop_cmd(label.span.only_end()),
-                (None, None) => noop_cmd(pre.span.only_end()),
+            let short_span = match &label {
+                Some(label) => pre.span.join(label.span()),
+                None => pre.span.join(begin_kw.span()),
             };
-            Command::Begin {
-                span: pre.span.join(cmd.span()),
-                unfounded: true,
-                label,
-                then: Box::new(cmd),
-            }
-        })
-        .parse_next(input)
-}
-
-fn cmd_loop(input: &mut Input) -> Result<Command<Unresolved>> {
-    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
-        .map(|((pre1, pre2), label)| {
-            Command::Loop(
-                match &label {
-                    Some(label) => pre1.span.join(label.span()),
-                    None => pre1.span.join(pre2.span()),
+            let full_span = pre.span.join(cmd_full_span);
+            (
+                full_span,
+                Command::Begin {
+                    span: short_span,
+                    unfounded: false,
+                    label,
+                    then: Box::new(cmd),
                 },
-                label,
             )
         })
         .parse_next(input)
 }
 
-fn cmd_send_type(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_unfounded(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Unfounded)), (label, cmd))
+        .map(|((pre, unfounded_kw), (label, cmd))| {
+            let (cmd_full_span, cmd) = match (&label, cmd) {
+                (_, Some((span, cmd))) => (span, cmd),
+                (Some(label), None) => {
+                    let s = label.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
+                (None, None) => {
+                    let s = unfounded_kw.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
+            };
+            let short_span = match &label {
+                Some(label) => pre.span.join(label.span()),
+                None => pre.span.join(unfounded_kw.span()),
+            };
+            let full_span = pre.span.join(cmd_full_span);
+            (
+                full_span,
+                Command::Begin {
+                    span: short_span,
+                    unfounded: true,
+                    label,
+                    then: Box::new(cmd),
+                },
+            )
+        })
+        .parse_next(input)
+}
+
+fn cmd_loop(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), label)
+        .map(|((pre1, pre2), label)| {
+            let span = match &label {
+                Some(label) => pre1.span.join(label.span()),
+                None => pre1.span.join(pre2.span()),
+            };
+            (span.clone(), Command::Loop(span, label))
+        })
+        .parse_next(input)
+}
+
+fn cmd_send_type(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         tn!("(type": TokenKind::LParen, TokenKind::Type),
         (list1(typ), t(TokenKind::RParen), cmd),
     )
     .map(|((open, _), (types, close, cmd))| {
-        let cmd = match cmd {
-            Some(cmd) => cmd,
-            None => noop_cmd(close.span.only_end()),
+        let (cmd_full_span, cmd) = match cmd {
+            Some((span, cmd)) => (span, cmd),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), noop_cmd(s))
+            }
         };
-        let span = open.span.join(cmd.span());
-        types.into_iter().rfold(cmd, |cmd, typ| {
-            Command::SendType(span.clone(), typ, Box::new(cmd))
-        })
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(cmd_full_span);
+        let cmd = types.into_iter().rfold(cmd, |cmd, typ| {
+            Command::SendType(short_span.clone(), typ, Box::new(cmd))
+        });
+        (full_span, cmd)
     })
     .parse_next(input)
 }
 
-fn cmd_recv_type(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_recv_type(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         tn!("[type": TokenKind::LBrack, TokenKind::Type),
         (list1(local_name), t(TokenKind::RBrack), cmd),
     )
     .map(|((open, _), (names, close, cmd))| {
-        let cmd = match cmd {
-            Some(cmd) => cmd,
-            None => noop_cmd(close.span.only_end()),
+        let (cmd_full_span, cmd) = match cmd {
+            Some((span, cmd)) => (span, cmd),
+            None => {
+                let s = close.span.only_end();
+                (s.clone(), noop_cmd(s))
+            }
         };
-        let span = open.span.join(cmd.span());
-        names.into_iter().rfold(cmd, |cmd, name| {
-            Command::ReceiveType(span.clone(), name, Box::new(cmd))
-        })
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(cmd_full_span);
+        let cmd = names.into_iter().rfold(cmd, |cmd, name| {
+            Command::ReceiveType(short_span.clone(), name, Box::new(cmd))
+        });
+        (full_span, cmd)
     })
     .parse_next(input)
 }
 
-fn cmd_try(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_try(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     (t(TokenKind::Dot), (t(TokenKind::Try), label, cmd))
-        .map(|(_, (try_kw, label, cmd))| {
-            let cmd = match cmd {
-                Some(cmd) => cmd,
-                None => noop_cmd(try_kw.span.only_end()),
+        .map(|(dot, (try_kw, label, cmd))| {
+            let (cmd_full_span, cmd) = match cmd {
+                Some((span, cmd)) => (span, cmd),
+                None => {
+                    let s = try_kw.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
             };
-            Command::Try(try_kw.span.join(cmd.span()), label, Box::new(cmd))
+            let short_span = match &label {
+                Some(label) => dot.span.join(label.span()),
+                None => dot.span.join(try_kw.span()),
+            };
+            let full_span = dot.span.join(cmd_full_span);
+            (full_span, Command::Try(short_span, label, Box::new(cmd)))
         })
         .parse_next(input)
 }
 
-fn cmd_default(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_default(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     (
         t(TokenKind::Dot),
         (
@@ -2978,17 +3249,25 @@ fn cmd_default(input: &mut Input) -> Result<Command<Unresolved>> {
             cmd,
         ),
     )
-        .map(|(_, (kw, _, expr, close, cmd))| {
-            let cmd = match cmd {
-                Some(cmd) => cmd,
-                None => noop_cmd(close.span.only_end()),
+        .map(|(dot, (_, _, expr, close, cmd))| {
+            let (cmd_full_span, cmd) = match cmd {
+                Some((span, cmd)) => (span, cmd),
+                None => {
+                    let s = close.span.only_end();
+                    (s.clone(), noop_cmd(s))
+                }
             };
-            Command::Default(kw.span.join(cmd.span()), Box::new(expr), Box::new(cmd))
+            let short_span = dot.span.join(close.span());
+            let full_span = dot.span.join(cmd_full_span);
+            (
+                full_span,
+                Command::Default(short_span, Box::new(expr), Box::new(cmd)),
+            )
         })
         .parse_next(input)
 }
 
-fn cmd_pipe(input: &mut Input) -> Result<Command<Unresolved>> {
+fn cmd_pipe(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         t(TokenKind::ThinArrow),
         (
@@ -3001,16 +3280,24 @@ fn cmd_pipe(input: &mut Input) -> Result<Command<Unresolved>> {
         ),
     )
     .map(|(pre, (function, cmd))| {
-        let cmd = match cmd {
-            Some(cmd) => cmd,
-            None => noop_cmd(function.span().only_end()),
+        let (cmd_full_span, cmd) = match cmd {
+            Some((span, cmd)) => (span, cmd),
+            None => {
+                let s = function.span().only_end();
+                (s.clone(), noop_cmd(s))
+            }
         };
-        Command::Pipe(pre.span.join(cmd.span()), Box::new(function), Box::new(cmd))
+        let short_span = pre.span.join(function.span());
+        let full_span = pre.span.join(cmd_full_span);
+        (
+            full_span,
+            Command::Pipe(short_span, Box::new(function), Box::new(cmd)),
+        )
     })
     .parse_next(input)
 }
 
-fn pass_process(input: &mut Input) -> Result<Process<Unresolved>> {
+fn pass_process(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
     alt((proc_if, proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
 
@@ -3037,7 +3324,7 @@ fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
         CommandBranch::Then(
             pre.span.join(close.span()),
             match process {
-                Some(process) => process,
+                Some((_, process)) => process,
                 None => Process::Noop(open.span.only_end()),
             },
         )
@@ -3058,7 +3345,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> 
                 pre.span.join(close.span()),
                 name,
                 match process {
-                    Some(process) => process,
+                    Some((_, process)) => process,
                     None => Process::Noop(open.span.only_end()),
                 },
             )
@@ -3115,7 +3402,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
         CommandBranch::Continue(
             token.span.join(close.span()),
             match process {
-                Some(process) => process,
+                Some((_, process)) => process,
                 None => Process::Noop(open.span.only_end()),
             },
         )

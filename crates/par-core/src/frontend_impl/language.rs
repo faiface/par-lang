@@ -1,4 +1,4 @@
-﻿// why not rename this file to ast.rs?
+// why not rename this file to ast.rs?
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -270,7 +270,7 @@ pub enum Expression<S> {
         pattern: Pattern<S>,
         process: Box<Process<S>>,
     },
-    Construction(Construct<S>),
+    Construction(Span, Construct<S>),
     Application(Span, Box<Self>, Apply<S>),
 }
 
@@ -383,8 +383,8 @@ pub enum Process<S> {
         else_: Option<Box<Process<S>>>,
         then: Option<Box<Process<S>>>,
     },
-    GlobalCommand(GlobalName<S>, Command<S>),
-    Command(LocalName, Command<S>),
+    GlobalCommand(Span, GlobalName<S>, Command<S>),
+    Command(Span, LocalName, Command<S>),
     Telltypes(Span, Box<Self>),
     Noop(Span),
 }
@@ -1651,12 +1651,12 @@ impl Context {
                 self.compile_pattern_chan(pattern, span, proc)?
             }
 
-            Expression::Construction(construct) => {
+            Expression::Construction(span, construct) => {
                 self.disable_catches(CatchDisabledReason::ValuePartiallyConstructed);
                 let process = self.compile_construct(construct)?;
                 self.enable_catches();
                 Arc::new(process::Expression::Chan {
-                    span: construct.span().clone(),
+                    span: span.clone(),
                     captures: Captures::new(),
                     chan_name: LocalName::result(),
                     chan_annotation: None,
@@ -2224,7 +2224,7 @@ impl Context {
                 })
             }
 
-            Process::GlobalCommand(global_name, command) => {
+            Process::GlobalCommand(_, global_name, command) => {
                 let span = global_name.span.clone();
                 let local_name = LocalName {
                     span: span.clone(),
@@ -2240,7 +2240,7 @@ impl Context {
                 })
             }
 
-            Process::Command(name, command) => {
+            Process::Command(_, name, command) => {
                 let None = self.original_object_name else {
                     // this should never happen. If it did it means we forgot to exit the alias-mode.
                     unreachable!(
@@ -2976,9 +2976,8 @@ impl<S> Spanning for Expression<S> {
             | Self::Do { span, .. }
             | Self::Box(span, _)
             | Self::Chan { span, .. }
-            | Self::Application(span, _, _) => span.clone(),
-
-            Self::Construction(construction) => construction.span(),
+            | Self::Application(span, _, _)
+            | Self::Construction(span, _) => span.clone(),
         }
     }
 }
@@ -3051,8 +3050,8 @@ impl<S> Spanning for Process<S> {
             Self::Catch { span, .. } => span.clone(),
             Self::Throw(span, _, _) => span.clone(),
             Self::If { span, .. } => span.clone(),
-            Self::GlobalCommand(_, command) => command.span(),
-            Self::Command(_, command) => command.span(),
+            Self::GlobalCommand(span, _, _) => span.clone(),
+            Self::Command(span, _, _) => span.clone(),
             Self::Telltypes(span, _) => span.clone(),
             Self::Noop(span) => span.clone(),
         }
@@ -3109,13 +3108,15 @@ fn pattern_to_expression(pattern: &Pattern<Unresolved>) -> Option<Expression<Unr
         Pattern::Receive(span, first, rest, _vars) => {
             let first_expr = pattern_to_expression(first)?;
             let then = construct_from_pattern(rest)?;
-            Some(Expression::Construction(Construct::Send(
+            Some(Expression::Construction(
                 span.clone(),
-                Box::new(first_expr),
-                Box::new(then),
-            )))
+                Construct::Send(span.clone(), Box::new(first_expr), Box::new(then)),
+            ))
         }
-        Pattern::Continue(span) => Some(Expression::Construction(Construct::Break(span.clone()))),
+        Pattern::Continue(span) => Some(Expression::Construction(
+            span.clone(),
+            Construct::Break(span.clone()),
+        )),
         Pattern::ReceiveType(_, _, _) | Pattern::Try(_, _, _) | Pattern::Default(_, _, _) => None,
     }
 }
@@ -3150,11 +3151,10 @@ fn reconstruction_for_is(
         return None;
     };
     let payload = construct_from_pattern(pattern)?;
-    let reconstruction = Expression::Construction(Construct::Signal(
+    let reconstruction = Expression::Construction(
         span.clone(),
-        variant.clone(),
-        Box::new(payload),
-    ));
+        Construct::Signal(span.clone(), variant.clone(), Box::new(payload)),
+    );
     Some(Restoration {
         span: span.clone(),
         name: name.clone(),
@@ -3184,8 +3184,10 @@ fn collect_restorations(condition: &Condition<Unresolved>) -> Vec<Restoration> {
 }
 
 fn link_process_from_expr(expr: &Expression<Unresolved>) -> Process<Unresolved> {
+    let span = expr.span();
     Process::Command(
+        span.clone(),
         LocalName::result(),
-        Command::Link(expr.span(), Box::new(expr.clone())),
+        Command::Link(span, Box::new(expr.clone())),
     )
 }
