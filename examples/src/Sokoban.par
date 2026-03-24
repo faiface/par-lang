@@ -1,14 +1,16 @@
 module Sokoban
 
-import @core/Bool
-import @core/Char
-import @core/Int
-import @core/List
-import @core/Map
-import @core/Nat
-import @core/Result
-import @core/String
-import @basic/Console
+import {
+  @core/Bool
+  @core/Char
+  @core/Int
+  @core/List
+  @core/Map
+  @core/Nat
+  @core/Result
+  @core/String
+  @basic/Console
+}
 
 def Main: ! = chan exit {
   let console = Console.Open

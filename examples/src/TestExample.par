@@ -1,8 +1,10 @@
 module TestExample
 
-import @core/Nat
-import @core/Test
-import @basic/Console
+import {
+  @core/Nat
+  @core/Test
+  @basic/Console
+}
 
 def Add: [Nat, Nat] Nat = [a, b]
   Nat.Add(a, b)

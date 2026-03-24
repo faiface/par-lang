@@ -1,6 +1,8 @@
 module HelloWorld
 
-import @basic/Console
+import {
+  @basic/Console
+}
 
 def Main = Console.Open
   .print("Hello, world!")

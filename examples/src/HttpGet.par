@@ -1,10 +1,12 @@
 module HttpGet
 
-import @core/Bytes
-import @core/Nat
-import @core/Url
-import @basic/Console
-import @basic/Http
+import {
+  @core/Bytes
+  @core/Nat
+  @core/Url
+  @basic/Console
+  @basic/Http
+}
 
 def Main: ! =
   let console = Console.Open in

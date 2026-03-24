@@ -1,9 +1,11 @@
 module StringManipulation
 
-import @core/Char
-import @core/List
-import @core/Result
-import @core/String
+import {
+  @core/Char
+  @core/List
+  @core/Result
+  @core/String
+}
 
 def TestTrim  = Trim("  Hello, world!    ", .whitespace!)
 //            = "Hello, world!"

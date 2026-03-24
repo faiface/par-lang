@@ -1,6 +1,8 @@
 module RockPaperScissors
 
-import @core/Nat
+import {
+  @core/Nat
+}
 
 dec StartGame : [Player, Player] Game
 

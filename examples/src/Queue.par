@@ -1,8 +1,10 @@
 module Queue
 
-import @core/List
-import @core/String
-import @basic/Time
+import {
+  @core/List
+  @core/String
+  @basic/Time
+}
 
 def PlayWithQueue: Queue<String> = Empty(type String)
 

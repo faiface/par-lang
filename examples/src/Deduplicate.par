@@ -1,8 +1,10 @@
 module Deduplicate
 
-import @core/Bool
-import @core/Int
-import @core/List
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
 
 type Eq<a> = box [a, a] Bool
 

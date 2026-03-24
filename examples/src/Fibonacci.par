@@ -1,7 +1,9 @@
 module Fibonacci
 
-import @core/Nat
-import @basic/Console
+import {
+  @core/Nat
+  @basic/Console
+}
 
 type Sequence<a> = iterative choice {
   .close => !

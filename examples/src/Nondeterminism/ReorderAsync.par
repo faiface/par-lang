@@ -1,8 +1,10 @@
 module ReorderAsync
 
-import @core/Cell
-import @core/List
-import @core/String
+import {
+  @core/Cell
+  @core/List
+  @core/String
+}
 
 // Try in the Playground!
 

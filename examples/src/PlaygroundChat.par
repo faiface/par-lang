@@ -1,8 +1,10 @@
 module PlaygroundChat
 
-import @core/List
-import @core/Map
-import @core/String
+import {
+  @core/List
+  @core/Map
+  @core/String
+}
 
 // A session type from the POV of the server, describing
 // a single chat client's behavior.

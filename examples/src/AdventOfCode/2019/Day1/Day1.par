@@ -1,13 +1,15 @@
 module Day1
 
-import @core/Char
-import @core/Int
-import @core/List
-import @core/Nat
-import @core/Result
-import @core/String
-import @basic/Console
-import @basic/Os
+import {
+  @core/Char
+  @core/Int
+  @core/List
+  @core/Nat
+  @core/Result
+  @core/String
+  @basic/Console
+  @basic/Os
+}
 
 // Helpers
 

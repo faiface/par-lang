@@ -1,8 +1,10 @@
 module Echo
 
-import @core/Bytes
-import @basic/Console
-import @basic/Os
+import {
+  @core/Bytes
+  @basic/Console
+  @basic/Os
+}
 
 def Main: ! = chan exit {
   let reader = Os.Stdin

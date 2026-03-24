@@ -1,18 +1,20 @@
 module Downloader
 
-import @core/BoxMap
-import @core/Bytes
-import @core/Cell
-import @core/Int
-import @core/List
-import @core/Map
-import @core/Nat
-import @core/String
-import @core/Url
-import @basic/Debug
-import @basic/Http
-import @basic/Os
-import @basic/Time
+import {
+  @core/BoxMap
+  @core/Bytes
+  @core/Cell
+  @core/Int
+  @core/List
+  @core/Map
+  @core/Nat
+  @core/String
+  @core/Url
+  @basic/Debug
+  @basic/Http
+  @basic/Os
+  @basic/Time
+}
 
 type Event = (Os.Path) either {  // destination
   .started Nat,                  // expected size

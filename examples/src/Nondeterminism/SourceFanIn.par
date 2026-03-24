@@ -1,8 +1,10 @@
 module SourceFanIn
 
-import @core/List
-import @core/Result
-import @core/String
+import {
+  @core/List
+  @core/Result
+  @core/String
+}
 
 dec PlayFanIn : [List<Source<!, String>>] Source<(!) List<!>, String>
 def PlayFanIn = [sources] SourceFanIn(sources)

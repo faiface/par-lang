@@ -1,14 +1,16 @@
 module WebServer
 
-import @core/Bytes
-import @core/List
-import @core/Result
-import @core/String
-import @core/Url
-import @basic/Console
-import @basic/Debug
-import @basic/Http
-import @basic/Os
+import {
+  @core/Bytes
+  @core/List
+  @core/Result
+  @core/String
+  @core/Url
+  @basic/Console
+  @basic/Debug
+  @basic/Http
+  @basic/Os
+}
 
 def Main: ! = chan exit {
   let console = Console.Open

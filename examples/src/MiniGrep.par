@@ -1,12 +1,14 @@
 module MiniGrep
 
-import @core/Bool
-import @core/List
-import @core/Nat
-import @core/Result
-import @core/String
-import @basic/Console
-import @basic/Os
+import {
+  @core/Bool
+  @core/List
+  @core/Nat
+  @core/Result
+  @core/String
+  @basic/Console
+  @basic/Os
+}
 
 def Main: ! = chan exit {
   let console = Console.Open
