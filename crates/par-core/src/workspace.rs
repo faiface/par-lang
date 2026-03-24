@@ -531,8 +531,8 @@ impl CheckedWorkspace {
         hover: &process::HoverInfo<Universal>,
     ) -> String {
         let mut output = String::new();
-        if let Some((_, types, declarations)) = hover.module_items() {
-            return self.render_module_signature_in_file(file, types, declarations);
+        if let Some((module, types, declarations)) = hover.module_items() {
+            return self.render_module_signature_in_file(file, module, types, declarations);
         }
         if hover.is_type() {
             if let Some(global_name) = hover.global_name() {
@@ -579,15 +579,16 @@ impl CheckedWorkspace {
     fn render_module_signature_in_file(
         &self,
         file: &FileName,
+        module: &Universal,
         types: &[(GlobalName<Universal>, Vec<LocalName>, Type<Universal>)],
         declarations: &[(GlobalName<Universal>, Type<Universal>)],
     ) -> String {
         let scope = self.workspace.import_scope(file);
         let mut output = String::new();
-        for (name, params, typ) in types {
-            if !output.is_empty() {
-                output.push('\n');
-            }
+        let _ = write!(output, "module ");
+        let _ = write_universal_module_in_file(&mut output, scope, module);
+        for (name, params, _typ) in types {
+            output.push('\n');
             let _ = write!(output, "type ");
             let _ = write_global_name_in_file(&mut output, scope, name);
             if !params.is_empty() {
@@ -601,18 +602,11 @@ impl CheckedWorkspace {
                         .join(", ")
                 );
             }
-            let _ = write!(output, " = ");
-            let _ =
-                write_type_in_file_with_indent_and_preference(&mut output, scope, typ, 0, false);
         }
-        for (name, typ) in declarations {
-            if !output.is_empty() {
-                output.push('\n');
-            }
+        for (name, _typ) in declarations {
+            output.push('\n');
             let _ = write!(output, "dec ");
             let _ = write_global_name_in_file(&mut output, scope, name);
-            let _ = write!(output, " : ");
-            let _ = write_type_in_file_with_indent_and_preference(&mut output, scope, typ, 0, true);
         }
         output
     }
@@ -1452,23 +1446,35 @@ fn write_global_name_in_file(
 
         for (alias, module) in &scope.aliases {
             if module == &name.module {
-                if alias == &name.primary && alias == &module.module {
-                    return write!(f, "{alias}");
-                }
                 if name.primary == module.module {
                     return write!(f, "{alias}");
                 }
-                return write!(f, "{}.{}", alias, name.primary);
             }
         }
     }
 
-    let module = name.module.to_string();
-    if module.is_empty() {
-        write!(f, "{}", name.primary)
-    } else {
-        write!(f, "{}.{}", module, name.primary)
+    write_universal_module_in_file(f, scope, &name.module)?;
+    write!(f, ".{}", name.primary)
+}
+
+fn write_universal_module_in_file(
+    f: &mut impl Write,
+    scope: Option<&FileImportScope<Universal>>,
+    module: &Universal,
+) -> fmt::Result {
+    if let Some(scope) = scope {
+        if module == &scope.current_module {
+            return write!(f, "{}", module.module);
+        }
+
+        for (alias, imported_module) in &scope.aliases {
+            if imported_module == module {
+                return write!(f, "{alias}");
+            }
+        }
     }
+
+    write!(f, "{module}")
 }
 
 fn write_type_in_file_with_indent_and_preference(
@@ -2211,8 +2217,11 @@ def Secret: ! = external
         let hover = checked.hover_at(&file, row, column).unwrap();
         let signature = checked.render_hover_signature_in_file(&file, &hover);
 
-        assert!(signature.contains("type Helper.Shared = !"));
-        assert!(signature.contains("dec Helper.Ping : !"));
+        assert!(signature.contains("module Helper"));
+        assert!(signature.contains("type Helper.Shared"));
+        assert!(signature.contains("dec Helper.Ping"));
+        assert!(!signature.contains(" = "));
+        assert!(!signature.contains(" : "));
         assert!(!signature.contains("Hidden"));
         assert!(!signature.contains("Secret"));
     }
