@@ -384,22 +384,29 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
         S: Ord,
     {
         let mut files = HashMap::<_, FileHovers<S>>::new();
+        let mut is_visible = |file: &FileName, hover: &HoverInfo<S>| match hover.global_name() {
+            Some(name) if hover.is_type() => is_type_visible(file, &name.module, name),
+            Some(name) if hover.is_declaration() => is_dec_visible(file, &name.module, name),
+            _ => true,
+        };
 
         for (name, (span, params, typ)) in program.type_defs.globals.iter() {
             let Some(file) = span.file() else { continue };
-            let file_hovers = files.entry(file).or_default();
-            file_hovers.push(
-                name.span(),
-                HoverInfo::type_definition(
-                    name.clone(),
-                    params.clone(),
-                    typ.clone(),
-                    docs.type_doc(name).cloned(),
-                    span.clone(),
-                ),
+            let file_hovers = files.entry(file.clone()).or_default();
+            let hover = HoverInfo::type_definition(
+                name.clone(),
+                params.clone(),
+                typ.clone(),
+                docs.type_doc(name).cloned(),
+                span.clone(),
             );
+            if is_visible(&file, &hover) {
+                file_hovers.push(name.span(), hover);
+            }
             typ.types_at_spans(&program.type_defs, docs, &mut |span, name_info| {
-                file_hovers.push(span, name_info)
+                if is_visible(&file, &name_info) {
+                    file_hovers.push(span, name_info);
+                }
             });
         }
 
@@ -407,24 +414,26 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
             let Some(file) = declaration.span.file() else {
                 continue;
             };
-            let file_hovers = files.entry(file).or_default();
+            let file_hovers = files.entry(file.clone()).or_default();
             let def_span = (program.definitions.get(name))
                 .map(|(def, _typ)| def.span.clone())
                 .unwrap_or_default();
-            file_hovers.push(
-                name.span(),
-                HoverInfo::declaration(
-                    name.clone(),
-                    declaration.typ.clone(),
-                    docs.declaration_doc(name).cloned(),
-                    def_span,
-                    declaration.span.clone(),
-                ),
+            let hover = HoverInfo::declaration(
+                name.clone(),
+                declaration.typ.clone(),
+                docs.declaration_doc(name).cloned(),
+                def_span,
+                declaration.span.clone(),
             );
+            if is_visible(&file, &hover) {
+                file_hovers.push(name.span(), hover);
+            }
             declaration
                 .typ
                 .types_at_spans(&program.type_defs, docs, &mut |span, name_info| {
-                    file_hovers.push(span, name_info)
+                    if is_visible(&file, &name_info) {
+                        file_hovers.push(span, name_info);
+                    }
                 });
         }
 
@@ -432,23 +441,25 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
             let Some(file) = definition.span.file() else {
                 continue;
             };
-            let file_hovers = files.entry(file).or_default();
+            let file_hovers = files.entry(file.clone()).or_default();
             let decl_span = (program.declarations.get(name))
                 .map(|decl| decl.span.clone())
                 .unwrap_or_default();
-            file_hovers.push(
-                name.span(),
-                HoverInfo::declaration(
-                    name.clone(),
-                    typ.clone(),
-                    docs.declaration_doc(name).cloned(),
-                    definition.span.clone(),
-                    decl_span,
-                ),
+            let hover = HoverInfo::declaration(
+                name.clone(),
+                typ.clone(),
+                docs.declaration_doc(name).cloned(),
+                definition.span.clone(),
+                decl_span,
             );
+            if is_visible(&file, &hover) {
+                file_hovers.push(name.span(), hover);
+            }
             if let DefinitionBody::Par(expr) = &definition.body {
                 expr.types_at_spans(program, docs, &mut |span, name_info| {
-                    file_hovers.push(span, name_info)
+                    if is_visible(&file, &name_info) {
+                        file_hovers.push(span, name_info);
+                    }
                 });
             }
         }
