@@ -291,6 +291,8 @@ pub struct Playground {
     element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (u32, u32),
     theme_mode: ThemeMode,
+    #[cfg(not(target_arch = "wasm32"))]
+    _rt: tokio::runtime::Runtime,
     spawner: Arc<dyn Spawn + Send + Sync + 'static>,
     cancel_token: Option<CancellationToken>,
     file_old_mtime: Option<SystemTime>,
@@ -409,6 +411,7 @@ impl Playground {
             element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
+            _rt: runtime,
             spawner,
             cancel_token: None,
             file_old_mtime: None,
