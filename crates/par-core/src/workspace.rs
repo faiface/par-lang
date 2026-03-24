@@ -9,9 +9,12 @@ use crate::frontend_impl::process;
 use crate::frontend_impl::program::{
     CheckedModule, DocComment, Docs, HoverIndex, ImportDecl, ImportPath, Module, SourceFile,
 };
-use crate::frontend_impl::types::{PrimitiveType, Type, TypeError};
+use crate::frontend_impl::types::{
+    PrimitiveType, Type, TypeError, VisibilityIndex, validate_visibility,
+};
 use crate::location::{FileName, Span};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
+use indexmap::IndexSet;
 use par_runtime::linker::Unlinked;
 use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
 use std::fmt::{self, Display, Formatter, Write};
@@ -386,6 +389,7 @@ pub struct FileImportScope<S> {
 pub struct Workspace {
     lowered: Module<Arc<process::Expression<(), Universal>>, Universal>,
     docs: Docs<Universal>,
+    visibility: VisibilityIndex,
     package_modules: BTreeMap<PackageId, Vec<ModulePath>>,
     file_scopes: HashMap<FileName, FileImportScope<Universal>>,
     import_spans: HashMap<FileName, Vec<(Span, Universal)>>,
@@ -437,15 +441,42 @@ impl Workspace {
     }
 
     pub fn type_check(&self) -> (CheckedWorkspace, Vec<TypeError<Universal>>) {
-        let (checked, errors) = self.lowered.type_check();
-        let hover_index = HoverIndex::new(&checked, &self.docs, &self.import_spans);
+        let mut errors = IndexSet::new();
+        errors.extend(validate_visibility(
+            &self.lowered,
+            &self.visibility,
+            &self.file_scopes,
+            &self.import_spans,
+        ));
+
+        let (checked, type_errors) = self.lowered.type_check();
+        errors.extend(type_errors);
+        let hover_index = HoverIndex::new(
+            &checked,
+            &self.docs,
+            &self.import_spans,
+            |file, _module, name| {
+                let Some(scope) = self.file_scopes.get(file) else {
+                    return true;
+                };
+                self.visibility
+                    .type_visible_from(&scope.current_module, name)
+            },
+            |file, _module, name| {
+                let Some(scope) = self.file_scopes.get(file) else {
+                    return true;
+                };
+                self.visibility
+                    .declaration_visible_from(&scope.current_module, name)
+            },
+        );
         (
             CheckedWorkspace {
                 workspace: self.clone(),
                 checked,
                 hover_index,
             },
-            errors,
+            errors.into_iter().collect(),
         )
     }
 }
@@ -638,6 +669,7 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
     let package_modules = package_module_paths(&packages);
 
     let mut lowered = Module::default();
+    let mut visibility = VisibilityIndex::default();
     let mut sources = HashMap::<FileName, Arc<str>>::new();
     let mut file_scopes = HashMap::<FileName, FileImportScope<Universal>>::new();
     let mut import_spans = HashMap::<FileName, Vec<(Span, Universal)>>::new();
@@ -645,6 +677,7 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
     for package in packages {
         load_package(
             &mut lowered,
+            &mut visibility,
             &mut sources,
             &mut file_scopes,
             &mut import_spans,
@@ -657,6 +690,7 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
     Ok(Workspace {
         lowered,
         docs,
+        visibility,
         package_modules,
         file_scopes,
         import_spans,
@@ -835,6 +869,7 @@ fn package_module_paths(packages: &[WorkspacePackage]) -> BTreeMap<PackageId, Ve
 
 fn load_package(
     lowered: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
+    visibility: &mut VisibilityIndex,
     sources: &mut HashMap<FileName, Arc<str>>,
     file_scopes: &mut HashMap<FileName, FileImportScope<Universal>>,
     import_spans: &mut HashMap<FileName, Vec<(Span, Universal)>>,
@@ -849,11 +884,30 @@ fn load_package(
     } = package;
 
     for parsed_module in &parsed.modules {
+        let current_universal_module = Universal {
+            package: id.clone(),
+            directories: parsed_module.path.directories.clone(),
+            module: parsed_module.path.module.clone(),
+        };
         let current_module_path =
             resolved_module_path(&parsed_module.path, ResolvedPackageRef::Local);
 
         for file in &parsed_module.files {
             sources.insert(file.name.clone(), Arc::clone(&file.source));
+            visibility.record_module_export(
+                &current_universal_module,
+                file.source_file
+                    .module_decl
+                    .as_ref()
+                    .expect("parsed package file missing module declaration")
+                    .span
+                    .clone(),
+                file.source_file
+                    .module_decl
+                    .as_ref()
+                    .expect("parsed package file missing module declaration")
+                    .exported,
+            );
 
             let imports = build_file_import_aliases(
                 file,
@@ -913,6 +967,7 @@ fn load_package(
                 &dependencies,
                 Arc::clone(&file.source),
             )?;
+            visibility.record_module(&universal_file);
             merge_module(lowered, universal_file);
         }
     }
@@ -1807,20 +1862,39 @@ fn write_indentation(f: &mut impl Write, indent: usize) -> fmt::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend_impl::types::Visibility;
 
-    fn checked_workspace_from_source(source: &str) -> CheckedWorkspace {
-        let parsed = parse_loaded_files(vec![LoadedPackageFile {
-            name: FileName::from("Main.par"),
-            relative_path_from_src: PathBuf::from("Main.par"),
-            source: source.to_string(),
-        }])
-        .unwrap();
+    fn parsed_package_from_files(root: &str, files: &[(&str, &str)]) -> ParsedPackage {
+        parse_loaded_files(
+            files
+                .iter()
+                .map(|(path, source)| LoadedPackageFile {
+                    name: FileName::from(format!("{root}/{path}")),
+                    relative_path_from_src: PathBuf::from(path),
+                    source: (*source).to_owned(),
+                })
+                .collect(),
+        )
+        .unwrap()
+    }
+
+    fn workspace_type_errors(packages: Vec<WorkspacePackage>) -> Vec<TypeError<Universal>> {
+        let (_checked, type_errors) = load_workspace(packages).unwrap().type_check();
+        type_errors
+    }
+
+    fn checked_workspace_from_files(root: &str, files: &[(&str, &str)]) -> CheckedWorkspace {
+        let parsed = parsed_package_from_files(root, files);
         let (checked, type_errors) =
             load_workspace(vec![WorkspacePackage::new(PackageId::Local, parsed)])
                 .unwrap()
                 .type_check();
         assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
         checked
+    }
+
+    fn checked_workspace_from_source(source: &str) -> CheckedWorkspace {
+        checked_workspace_from_files("local", &[("Main.par", source)])
     }
 
     fn row_and_column(source: &str, index: usize) -> (u32, u32) {
@@ -1921,5 +1995,225 @@ def Main = Run
             run_hover.global_name().map(|name| name.primary.as_str()),
             Some("Run")
         );
+    }
+
+    #[test]
+    fn same_package_can_use_package_visible_export() {
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            PackageId::Local,
+            parsed_package_from_files(
+                "local",
+                &[
+                    (
+                        "Hidden.par",
+                        "\
+module Hidden
+
+export {
+  type Shared = !
+}
+",
+                    ),
+                    (
+                        "Main.par",
+                        "\
+module Main
+import Hidden
+
+type Uses = Hidden.Shared
+",
+                    ),
+                ],
+            ),
+        )]);
+
+        assert!(errors.is_empty(), "unexpected type errors: {:?}", errors);
+    }
+
+    #[test]
+    fn same_package_cannot_use_module_private_name() {
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            PackageId::Local,
+            parsed_package_from_files(
+                "local",
+                &[
+                    (
+                        "Hidden.par",
+                        "\
+module Hidden
+
+type Secret = !
+",
+                    ),
+                    (
+                        "Main.par",
+                        "\
+module Main
+import Hidden
+
+type Uses = Hidden.Secret
+",
+                    ),
+                ],
+            ),
+        )]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::GlobalNameNotVisible(_, name, Visibility::Module)
+                if name.primary == "Secret" && name.module.module == "Hidden"
+        )));
+    }
+
+    #[test]
+    fn cross_package_import_requires_exported_module() {
+        let dependency_id = PackageId::Package("dep".to_owned());
+        let dependency = WorkspacePackage::new(
+            dependency_id.clone(),
+            parsed_package_from_files(
+                "dep",
+                &[(
+                    "Hidden.par",
+                    "\
+module Hidden
+",
+                )],
+            ),
+        );
+        let local = WorkspacePackage::new(
+            PackageId::Local,
+            parsed_package_from_files(
+                "local",
+                &[(
+                    "Main.par",
+                    "\
+module Main
+import @dep/Hidden
+",
+                )],
+            ),
+        )
+        .with_dependency("dep", dependency_id);
+
+        let errors = workspace_type_errors(vec![local, dependency]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::ImportedModuleNotExported(_, module)
+                if module.package == PackageId::Package("dep".to_owned())
+                    && module.module == "Hidden"
+        )));
+    }
+
+    #[test]
+    fn public_export_cannot_expose_package_private_type() {
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            PackageId::Package("dep".to_owned()),
+            parsed_package_from_files(
+                "dep",
+                &[
+                    (
+                        "Hidden.par",
+                        "\
+module Hidden
+
+export {
+  type HiddenType = !
+}
+",
+                    ),
+                    (
+                        "Api.par",
+                        "\
+export module Api
+import Hidden
+
+export {
+  type Wrapper = Hidden.HiddenType
+}
+",
+                    ),
+                ],
+            ),
+        )]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::VisibleItemExposesHiddenType(_, item, Visibility::Public, hidden, Visibility::Package)
+                if item.primary == "Wrapper"
+                    && item.module.module == "Api"
+                    && hidden.primary == "HiddenType"
+                    && hidden.module.module == "Hidden"
+        )));
+    }
+
+    #[test]
+    fn multi_file_modules_must_agree_on_export_module() {
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            PackageId::Local,
+            parsed_package_from_files(
+                "local",
+                &[
+                    (
+                        "Shared.par",
+                        "\
+export module Shared
+",
+                    ),
+                    (
+                        "Shared.Part.par",
+                        "\
+module Shared
+",
+                    ),
+                ],
+            ),
+        )]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::ModuleExportInconsistent(_, _, module)
+                if module.package == PackageId::Local && module.module == "Shared"
+        )));
+    }
+
+    #[test]
+    fn import_hover_hides_module_private_items() {
+        let main_source = "\
+module Main
+import Helper
+";
+        let checked = checked_workspace_from_files(
+            "local",
+            &[
+                (
+                    "Helper.par",
+                    "\
+module Helper
+
+export {
+  type Shared = !
+  dec Ping : !
+}
+
+type Hidden = !
+def Ping = external
+def Secret: ! = external
+",
+                ),
+                ("Main.par", main_source),
+            ],
+        );
+        let file = FileName::from("local/Main.par");
+
+        let helper_index = main_source.match_indices("Helper").last().unwrap().0;
+        let (row, column) = row_and_column(main_source, helper_index);
+        let hover = checked.hover_at(&file, row, column).unwrap();
+        let signature = checked.render_hover_signature_in_file(&file, &hover);
+
+        assert!(signature.contains("type Helper.Shared = !"));
+        assert!(signature.contains("dec Helper.Ping : !"));
+        assert!(!signature.contains("Hidden"));
+        assert!(!signature.contains("Secret"));
     }
 }

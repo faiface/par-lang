@@ -1,36 +1,92 @@
-module List
+export module List
 
-import Bool
-import Nat
-import Option
-import Ordering
-import Result
-
-// A finite, ordered sequence of values.
-//
-// ```par
-// *(1, 2, 3)  // syntax sugar for .item(1) .item(2) .item(3) .end!
-// ```
-type List<a> = recursive either {
-  .end!,
-  .item(a) self,
+import {
+  Bool
+  Nat
+  Option
+  Ordering
+  Result
 }
 
-// An incremental list builder. Add items with `.add`, then finalize with `.build`.
-type Builder<a> = iterative choice {
-  .add(a) => self,
-  .build => List<a>,
+export {
+  // A finite, ordered sequence of values.
+  //
+  // ```par
+  // *(1, 2, 3)  // syntax sugar for .item(1) .item(2) .item(3) .end!
+  // ```
+  type List<a> = recursive either {
+    .end!,
+    .item(a) self,
+  }
+
+  // An incremental list builder. Add items with `.add`, then finalize with `.build`.
+  type Builder<a> = iterative choice {
+    .add(a) => self,
+    .build => List<a>,
+  }
+
+  // A list that may end with an error (`.end .err e`) instead of successfully (`.end .ok!`).
+  // Used for streaming sources that can fail partway through.
+  type Fallible<e, a> = recursive either {
+    .end Result<e, !>,
+    .item(a) self,
+  }
+
+  // Creates a new list `Builder`.
+  dec Builder : [type a] Builder<a>
+
+  // Transforms each element of a list using a function.
+  //
+  // ```par
+  // {*(1, 2, 3)}->List.Map(type Int)(box [n] Int.Mul(n, 2))
+  // // = *(2, 4, 6)
+  // ```
+  dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
+
+  // Maps each element to a list and flattens the results into a single list.
+  dec FlatMap : <a>[List<a>] [type b] [box [a] List<b>] List<b>
+
+  // Keeps only the elements for which the predicate returns `.true!`.
+  dec Filter : <a>[List<box a>] [box [a] Bool] List<a>
+
+  // Reduces a list to a single value by repeatedly applying a function.
+  //
+  // ```par
+  // {*(1, 2, 3)}->List.Fold(0, box [sum, n] Nat.Add(sum, n))
+  // // = 6
+  // ```
+  dec Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
+
+  // Returns the number of elements in a list.
+  dec Length : <a>[List<box a>] Nat
+
+  // Flattens a list of lists into a single list.
+  dec Concat : <a>[List<List<a>>] List<a>
+
+  // Yields all items from a source list onto a destination channel, consuming the source.
+  dec Copy : <a>[dual List<a>] [List<a>] dual List<a>
+
+  // Zips two lists into a list of pairs. Stops at the shorter list.
+  dec Zip : <a>[List<box a>] <b>[List<box b>] List<(a) b>
+
+  // Splits a list of pairs into a pair of lists.
+  dec Unzip : <a, b>[List<(a) b>] (List<a>) List<b>
+
+  // Returns `.true!` if the predicate holds for all elements.
+  // Short-circuits on the first `.false!`.
+  dec All : <a>[List<box a>] [box [a] Bool] Bool
+
+  // Returns `.true!` if the predicate holds for at least one element.
+  // Short-circuits on the first `.true!`.
+  dec Any : <a>[List<box a>] [box [a] Bool] Bool
+
+  // Returns the first `n` elements of a list.
+  dec Take : <a>[List<box a>] [Nat] List<a>
+
+  // Drops the first `n` elements of a list and returns the rest.
+  dec Drop : <a>[List<box a>] [Nat] List<a>
 }
 
-// A list that may end with an error (`.end .err e`) instead of successfully (`.end .ok!`).
-// Used for streaming sources that can fail partway through.
-type Fallible<e, a> = recursive either {
-  .end Result<e, !>,
-  .item(a) self,
-}
-
-// Creates a new list `Builder`.
-dec Builder : [type a] Builder<a>
 def Builder = [type a]
   let append: [List<a>] List<a> = [xs] xs
   in begin case {
@@ -38,20 +94,11 @@ def Builder = [type a]
     .build => append(.end!),
   }
 
-// Transforms each element of a list using a function.
-//
-// ```par
-// {*(1, 2, 3)}->List.Map(type Int)(box [n] Int.Mul(n, 2))
-// // = *(2, 4, 6)
-// ```
-dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
 def Map = <a>[list] [type b] [f] list.begin.case {
   .end! => .end!
   .item(v) list => .item(f(v)) list.loop,
 }
 
-// Maps each element to a list and flattens the results into a single list.
-dec FlatMap : <a>[List<a>] [type b] [box [a] List<b>] List<b>
 def FlatMap = <a>[list] [type b] [f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).begin@flat.case {
@@ -60,8 +107,6 @@ def FlatMap = <a>[list] [type b] [f] list.begin.case {
   },
 }
 
-// Keeps only the elements for which the predicate returns `.true!`.
-dec Filter : <a>[List<box a>] [box [a] Bool] List<a>
 def Filter = <a>[list] [f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).case {
@@ -70,20 +115,11 @@ def Filter = <a>[list] [f] list.begin.case {
   },
 }
 
-// Reduces a list to a single value by repeatedly applying a function.
-//
-// ```par
-// {*(1, 2, 3)}->List.Fold(0, box [sum, n] Nat.Add(sum, n))
-// // = 6
-// ```
-dec Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
 def Fold = <a>[list] <r>[result] [f] list.begin.case {
   .end! => result,
   .item(v) list => let result = f(result, v) in list.loop,
 }
 
-// Returns the number of elements in a list.
-dec Length : <a>[List<box a>] Nat
 def Length = <a>[list]
   let len = 0 in
   list.begin.case {
@@ -91,8 +127,6 @@ def Length = <a>[list]
     .item(_) list => do { len->Nat.Add(1) } in list.loop,
   }
 
-// Flattens a list of lists into a single list.
-dec Concat : <a>[List<List<a>>] List<a>
 def Concat = <a>[lists] chan yield {
   lists.begin.case {
     .item(list) => {
@@ -105,8 +139,6 @@ def Concat = <a>[lists] chan yield {
   }
 }
 
-// Yields all items from a source list onto a destination channel, consuming the source.
-dec Copy : <a>[dual List<a>] [List<a>] dual List<a>
 def Copy = <a>[dst] [src] do {
   src.begin.case {
     .end! => {},
@@ -117,8 +149,6 @@ def Copy = <a>[dst] [src] do {
   }
 } in dst
 
-// Zips two lists into a list of pairs. Stops at the shorter list.
-dec Zip : <a>[List<box a>] <b>[List<box b>] List<(a) b>
 def Zip = <a>[list1] <b>[list2] chan yield {
   list1.begin.case {
     .end! => { yield.end! },
@@ -134,8 +164,6 @@ def Zip = <a>[list1] <b>[list2] chan yield {
   }
 }
 
-// Splits a list of pairs into a pair of lists.
-dec Unzip : <a, b>[List<(a) b>] (List<a>) List<b>
 def Unzip = <a, b>[list] list.begin.case {
   .end! => (.end!) .end!,
   .item((x) y) xys => do {
@@ -143,9 +171,6 @@ def Unzip = <a, b>[list] list.begin.case {
   } in (.item(x) xs) .item(y) ys
 }
 
-// Returns `.true!` if the predicate holds for all elements.
-// Short-circuits on the first `.false!`.
-dec All : <a>[List<box a>] [box [a] Bool] Bool
 def All = <a>[list] [f]
   list.begin.case {
     .end! => .true!,
@@ -155,13 +180,8 @@ def All = <a>[list] [f]
     },
   }
 
-// Returns `.true!` if the predicate holds for at least one element.
-// Short-circuits on the first `.true!`.
-dec Any : <a>[List<box a>] [box [a] Bool] Bool
 def Any = <a>[list] [f] {not list->All(box [v] {not f(v)})}
 
-// Returns the first `n` elements of a list.
-dec Take : <a>[List<box a>] [Nat] List<a>
 def Take = <a>[list] [n]
   Nat.Repeat(n).begin.case {
     .end! => .end!,
@@ -171,8 +191,6 @@ def Take = <a>[list] [n]
     }
   }
 
-// Drops the first `n` elements of a list and returns the rest.
-dec Drop : <a>[List<box a>] [Nat] List<a>
 def Drop = <a>[list] [n]
   Nat.Repeat(n).begin.case {
     .end! => list,

@@ -1,6 +1,9 @@
-module Bench
+export module Bench
 
-// Identity function that prevents the compiler from optimizing away its argument.
-// Useful in benchmarks to ensure a computation actually runs.
-dec BlackBox : [type a] [a] a
+export {
+  // Identity function that prevents the compiler from optimizing away its argument.
+  // Useful in benchmarks to ensure a computation actually runs.
+  dec BlackBox : [type a] [a] a
+}
+
 def BlackBox = external

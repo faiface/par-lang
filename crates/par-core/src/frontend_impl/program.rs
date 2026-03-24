@@ -24,6 +24,7 @@ pub struct Module<Expr, S> {
 #[derive(Clone, Debug)]
 pub struct ModuleDecl {
     pub span: Span,
+    pub exported: bool,
     pub name: String,
 }
 
@@ -59,6 +60,7 @@ pub struct CheckedModule<S> {
 #[derive(Clone, Debug)]
 pub struct TypeDef<S> {
     pub span: Span,
+    pub exported: bool,
     pub doc: Option<DocComment>,
     pub name: GlobalName<S>,
     pub params: Vec<LocalName>,
@@ -68,6 +70,7 @@ pub struct TypeDef<S> {
 #[derive(Clone, Debug)]
 pub struct Declaration<S> {
     pub span: Span,
+    pub exported: bool,
     pub doc: Option<DocComment>,
     pub name: GlobalName<S>,
     pub typ: Type<S>,
@@ -120,6 +123,7 @@ impl TypeDef<Unresolved> {
     pub fn external(name: &'static str, params: &[&'static str], typ: Type<Unresolved>) -> Self {
         Self {
             span: Default::default(),
+            exported: true,
             doc: None,
             name: GlobalName::<Unresolved>::external(None, name),
             params: params
@@ -164,6 +168,7 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
                 .map(
                     |TypeDef {
                          span,
+                         exported,
                          doc,
                          name,
                          params,
@@ -171,6 +176,7 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
                      }| {
                         Ok(TypeDef {
                             span,
+                            exported,
                             doc,
                             name: map_name(name)?,
                             params,
@@ -185,12 +191,14 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
                 .map(
                     |Declaration {
                          span,
+                         exported,
                          doc,
                          name,
                          typ,
                      }| {
                         Ok(Declaration {
                             span,
+                            exported,
                             doc,
                             name: map_name(name)?,
                             typ: typ.map_global_names(&mut map_name)?,
@@ -285,17 +293,17 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
                     .get_declarations()
                     .into_iter()
                     .map(|(name, (span, typ))| {
-                        let doc = self
-                            .declarations
-                            .iter()
-                            .find(|declaration| {
-                                declaration.name == name && declaration.span == span
-                            })
-                            .and_then(|declaration| declaration.doc.clone());
+                        let source_declaration = self.declarations.iter().find(|declaration| {
+                            declaration.name == name && declaration.span == span
+                        });
+                        let doc =
+                            source_declaration.and_then(|declaration| declaration.doc.clone());
                         (
                             name.clone(),
                             Declaration {
                                 span,
+                                exported: source_declaration
+                                    .is_some_and(|declaration| declaration.exported),
                                 doc,
                                 name,
                                 typ,
@@ -369,6 +377,8 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
         program: &CheckedModule<S>,
         docs: &Docs<S>,
         import_spans: &HashMap<FileName, Vec<(Span, S)>>,
+        mut is_type_visible: impl FnMut(&FileName, &S, &GlobalName<S>) -> bool,
+        mut is_dec_visible: impl FnMut(&FileName, &S, &GlobalName<S>) -> bool,
     ) -> Self
     where
         S: Ord,
@@ -449,7 +459,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
             for (span, module) in spans {
                 let mut types = Vec::new();
                 for (name, (_, params, typ)) in program.type_defs.globals.iter() {
-                    if &name.module == module {
+                    if &name.module == module && is_type_visible(file, module, name) {
                         types.push((name.clone(), params.clone(), typ.clone()));
                     }
                 }
@@ -458,17 +468,24 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
                 let mut declarations = Vec::new();
                 // Collect from declarations
                 for (name, decl) in &program.declarations {
-                    if &name.module == module {
+                    if &name.module == module && is_dec_visible(file, module, name) {
                         declarations.push((name.clone(), decl.typ.clone()));
                     }
                 }
                 // Collect from definitions that don't have a separate declaration
                 for (name, (_def, typ)) in &program.definitions {
-                    if &name.module == module && !program.declarations.contains_key(name) {
+                    if &name.module == module
+                        && !program.declarations.contains_key(name)
+                        && is_dec_visible(file, module, name)
+                    {
                         declarations.push((name.clone(), typ.clone()));
                     }
                 }
                 declarations.sort_by(|(a, _), (b, _)| a.primary.cmp(&b.primary));
+
+                if types.is_empty() && declarations.is_empty() {
+                    continue;
+                }
 
                 file_hovers.push(
                     span.clone(),

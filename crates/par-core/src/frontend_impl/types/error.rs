@@ -8,12 +8,18 @@ use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;
 use std::sync::Arc;
 
+use super::Visibility;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeError<S> {
     TypeNameAlreadyDefined(Span, Span, GlobalName<S>),
     NameAlreadyDeclared(Span, Span, GlobalName<S>),
     NameAlreadyDefined(Span, Span, GlobalName<S>),
     DeclaredButNotDefined(Span, GlobalName<S>),
+    ModuleExportInconsistent(Span, Span, S),
+    ImportedModuleNotExported(Span, S),
+    GlobalNameNotVisible(Span, GlobalName<S>, Visibility),
+    VisibleItemExposesHiddenType(Span, GlobalName<S>, Visibility, GlobalName<S>, Visibility),
     NoMatchingRecursiveOrIterative(Span),
     SelfUsedInNegativePosition(Span),
     UnguardedRecursiveSelf(Span),
@@ -142,6 +148,56 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                     labels = labels,
                     "`{}` is declared, but is missing a corresponding definition.",
                     name
+                )
+            }
+            Self::ModuleExportInconsistent(span1, span2, module) => {
+                miette::miette!(
+                    labels = two_labels_from_two_spans(
+                        code,
+                        span1,
+                        span2,
+                        "this file marks the module differently".to_owned(),
+                        "than this file".to_owned(),
+                    ),
+                    "Module `{}` has inconsistent `export module` markings across its files.",
+                    module,
+                )
+            }
+            Self::ImportedModuleNotExported(span, module) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "Module `{}` is not exported from its package.",
+                    module,
+                )
+            }
+            Self::GlobalNameNotVisible(span, name, visibility) => {
+                let labels = labels_from_span(code, span);
+                let name = render_name(name);
+                miette::miette!(
+                    labels = labels,
+                    "`{}` is not visible from here.\n\nIt is only {}.",
+                    name,
+                    visibility,
+                )
+            }
+            Self::VisibleItemExposesHiddenType(
+                span,
+                item_name,
+                item_visibility,
+                type_name,
+                type_visibility,
+            ) => {
+                let labels = labels_from_span(code, span);
+                let item_name = render_name(item_name);
+                let type_name = render_name(type_name);
+                miette::miette!(
+                    labels = labels,
+                    "`{}` is {} but its type mentions `{}`, which is only {}.",
+                    item_name,
+                    item_visibility,
+                    type_name,
+                    type_visibility,
                 )
             }
             Self::NoMatchingRecursiveOrIterative(span) => {
@@ -492,9 +548,15 @@ impl<S: Clone + Eq + std::hash::Hash> TypeError<S> {
         match self {
             Self::TypeNameAlreadyDefined(span1, span2, _)
             | Self::NameAlreadyDeclared(span1, span2, _)
-            | Self::NameAlreadyDefined(span1, span2, _) => (span1.clone(), Some(span2.clone())),
+            | Self::NameAlreadyDefined(span1, span2, _)
+            | Self::ModuleExportInconsistent(span1, span2, _) => {
+                (span1.clone(), Some(span2.clone()))
+            }
 
             Self::DeclaredButNotDefined(span, _)
+            | Self::ImportedModuleNotExported(span, _)
+            | Self::GlobalNameNotVisible(span, _, _)
+            | Self::VisibleItemExposesHiddenType(span, _, _, _, _)
             | Self::NoMatchingRecursiveOrIterative(span)
             | Self::SelfUsedInNegativePosition(span)
             | Self::UnguardedRecursiveSelf(span)

@@ -1,94 +1,111 @@
-module Os
+export module Os
 
-import @core/BoxMap
-import @core/Bytes
-import @core/List
-import @core/Option
-import @core/Result
-import @core/String
-
-// Error type for OS operations (a human-readable message).
-type Error  = String
-
-// A byte reader for OS I/O, with `Os.Error` as the error type.
-type Reader = Bytes.Reader<Error>
-
-// A byte writer for OS I/O, with `Os.Error` as the error type.
-type Writer = Bytes.Writer<Error>
-
-// A file system path. Boxed and supports both navigation and inspection.
-//
-// - `.name` — get the file name component as bytes.
-// - `.absolute` — get the absolute path as bytes.
-// - `.parts` — get all path components as a list of byte sequences.
-// - `.parent` — get the parent path, or `.err!` if at root.
-// - `.append(segment)` — append a path segment, returning a new path.
-type Path = iterative@append recursive@parent box choice {
-  .name => Bytes,
-  .absolute => Bytes,
-  .parts => List<Bytes>,
-
-  .parent => Option<self@parent>,
-  .append(Bytes) => self@append,
+import {
+  @core/BoxMap
+  @core/Bytes
+  @core/List
+  @core/Option
+  @core/Result
+  @core/String
 }
 
-// Creates a `Path` from a byte sequence.
-dec Path : [Bytes] Path
+export {
+  // Error type for OS operations (a human-readable message).
+  type Error  = String
+
+  // A byte reader for OS I/O, with `Os.Error` as the error type.
+  type Reader = Bytes.Reader<Error>
+
+  // A byte writer for OS I/O, with `Os.Error` as the error type.
+  type Writer = Bytes.Writer<Error>
+
+  // A file system path. Boxed and supports both navigation and inspection.
+  //
+  // - `.name` — get the file name component as bytes.
+  // - `.absolute` — get the absolute path as bytes.
+  // - `.parts` — get all path components as a list of byte sequences.
+  // - `.parent` — get the parent path, or `.err!` if at root.
+  // - `.append(segment)` — append a path segment, returning a new path.
+  type Path = iterative@append recursive@parent box choice {
+    .name => Bytes,
+    .absolute => Bytes,
+    .parts => List<Bytes>,
+
+    .parent => Option<self@parent>,
+    .append(Bytes) => self@append,
+  }
+
+  // Creates a `Path` from a byte sequence.
+  dec Path : [Bytes] Path
+
+  // Standard input as a byte reader.
+  dec Stdin : Reader
+
+  // Standard output as a byte writer.
+  dec Stdout : Writer
+
+  // Standard error as a byte writer.
+  dec Stderr : Writer
+
+  // Opens a file for reading.
+  dec OpenFile : [Path] Result<Error, Reader>
+
+  // Creates or replaces a file for writing. Truncates if the file already exists.
+  dec CreateOrReplaceFile : [Path] Result<Error, Writer>
+
+  // Creates a new file for writing. Fails if the file already exists.
+  dec CreateNewFile : [Path] Result<Error, Writer>
+
+  // Opens an existing file for appending. Fails if the file does not exist.
+  dec AppendToFile : [Path] Result<Error, Writer>
+
+  // Opens or creates a file for appending.
+  dec CreateOrAppendToFile : [Path] Result<Error, Writer>
+
+  // Creates a directory and all necessary parent directories.
+  dec CreateDir : [Path] Result<Error, !>
+
+  // Lists the entries of a directory, returning a list of paths sorted by name.
+  dec ListDir : [Path] Result<Error, List<Path>>
+
+  // Recursively traverses a directory tree, returning a nested structure of files and
+  // subdirectories sorted by name.
+  //
+  // - `.end!` — no more entries.
+  // - `.file(path) rest` — a file, followed by more entries.
+  // - `.dir(path, children) rest` — a subdirectory with its nested contents, followed by more entries.
+  dec TraverseDir : [Path] Result<Error, recursive either {
+    .end!,
+    .file(Path) self,
+    .dir(Path, self) self,
+  }>
+
+  // Read-only view of the process environment variables, keyed by byte sequences.
+  dec Env : BoxMap.Readonly<Bytes, Bytes>
+}
+
 def Path = external
 
-// Standard input as a byte reader.
-dec Stdin : Reader
 def Stdin = external
 
-// Standard output as a byte writer.
-dec Stdout : Writer
 def Stdout = external
 
-// Standard error as a byte writer.
-dec Stderr : Writer
 def Stderr = external
 
-// Opens a file for reading.
-dec OpenFile : [Path] Result<Error, Reader>
 def OpenFile = external
 
-// Creates or replaces a file for writing. Truncates if the file already exists.
-dec CreateOrReplaceFile : [Path] Result<Error, Writer>
 def CreateOrReplaceFile = external
 
-// Creates a new file for writing. Fails if the file already exists.
-dec CreateNewFile : [Path] Result<Error, Writer>
 def CreateNewFile = external
 
-// Opens an existing file for appending. Fails if the file does not exist.
-dec AppendToFile : [Path] Result<Error, Writer>
 def AppendToFile = external
 
-// Opens or creates a file for appending.
-dec CreateOrAppendToFile : [Path] Result<Error, Writer>
 def CreateOrAppendToFile = external
 
-// Creates a directory and all necessary parent directories.
-dec CreateDir : [Path] Result<Error, !>
 def CreateDir = external
 
-// Lists the entries of a directory, returning a list of paths sorted by name.
-dec ListDir : [Path] Result<Error, List<Path>>
 def ListDir = external
 
-// Recursively traverses a directory tree, returning a nested structure of files and
-// subdirectories sorted by name.
-//
-// - `.end!` — no more entries.
-// - `.file(path) rest` — a file, followed by more entries.
-// - `.dir(path, children) rest` — a subdirectory with its nested contents, followed by more entries.
-dec TraverseDir : [Path] Result<Error, recursive either {
-  .end!,
-  .file(Path) self,
-  .dir(Path, self) self,
-}>
 def TraverseDir = external
 
-// Read-only view of the process environment variables, keyed by byte sequences.
-dec Env : BoxMap.Readonly<Bytes, Bytes>
 def Env = external

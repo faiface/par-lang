@@ -1,7 +1,9 @@
-module Bool
+export module Bool
 
-// A boolean value.
-type Bool = either {
-  .false!,
-  .true!,
+export {
+  // A boolean value.
+  type Bool = either {
+    .false!,
+    .true!,
+  }
 }

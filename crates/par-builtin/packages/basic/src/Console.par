@@ -1,31 +1,36 @@
-module Console
+export module Console
 
-import @core/Option
-import @core/String
-
-// An interactive console for terminal I/O.
-//
-// - `.close` — close the console.
-// - `.print(s)` — print a string followed by a newline.
-// - `.prompt(s)` — print a prompt string (no newline), read a line from stdin.
-//   Returns `.ok` with the input (trailing newline stripped), or `.err!` on EOF.
-//
-// ```par
-// let console = Console.Open
-// console.print("Hello!")
-// console.prompt("Name: ")[name]
-// name.case {
-//   .ok name => console.print(name),
-//   .err! => {},
-// }
-// console.close
-// ```
-type Console = iterative choice {
-  .close => !,
-  .print(String) => self,
-  .prompt(String) => (Option<String>) self,
+import {
+  @core/Option
+  @core/String
 }
 
-// Opens a new `Console` connected to stdin/stdout.
-dec Open : Console
+export {
+  // An interactive console for terminal I/O.
+  //
+  // - `.close` — close the console.
+  // - `.print(s)` — print a string followed by a newline.
+  // - `.prompt(s)` — print a prompt string (no newline), read a line from stdin.
+  //   Returns `.ok` with the input (trailing newline stripped), or `.err!` on EOF.
+  //
+  // ```par
+  // let console = Console.Open
+  // console.print("Hello!")
+  // console.prompt("Name: ")[name]
+  // name.case {
+  //   .ok name => console.print(name),
+  //   .err! => {},
+  // }
+  // console.close
+  // ```
+  type Console = iterative choice {
+    .close => !,
+    .print(String) => self,
+    .prompt(String) => (Option<String>) self,
+  }
+
+  // Opens a new `Console` connected to stdin/stdout.
+  dec Open : Console
+}
+
 def Open = external

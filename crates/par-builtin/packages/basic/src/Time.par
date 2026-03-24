@@ -1,7 +1,12 @@
-module Time
+export module Time
 
-import @core/Nat
+import {
+  @core/Nat
+}
 
-// Returns the current time as milliseconds since the Unix epoch.
-dec Now : [!] Nat
+export {
+  // Returns the current time as milliseconds since the Unix epoch.
+  dec Now : [!] Nat
+}
+
 def Now = external

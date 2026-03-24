@@ -1,7 +1,12 @@
-module Debug
+export module Debug
 
-import @core/String
+import {
+  @core/String
+}
 
-// Logs a string to stderr. Useful for debugging.
-dec Log : [String] !
+export {
+  // Logs a string to stderr. Useful for debugging.
+  dec Log : [String] !
+}
+
 def Log = external

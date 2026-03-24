@@ -2,6 +2,9 @@ pub(crate) mod core;
 pub(crate) use core::LoopId;
 pub use core::{Operation, PrimitiveType, Type};
 
+pub(crate) mod visibility;
+pub(crate) use visibility::{Visibility, VisibilityIndex, validate_visibility};
+
 pub(crate) mod error;
 pub use error::TypeError;
 

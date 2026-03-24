@@ -1,134 +1,160 @@
-module String
+export module String
 
-import Bool
-import Bytes
-import Char
-import List
-import Nat
-import Ordering
-import Result
-
-// An incremental string builder. Add strings with `.add`, then finalize with `.build`.
-//
-// ```par
-// String.Builder.add("Hello").add(", ").add("world!").build
-// // = "Hello, world!"
-// ```
-type Builder = iterative choice {
-  .add(String) => self,
-  .build => String,
+import {
+  Bool
+  Bytes
+  Char
+  List
+  Nat
+  Ordering
+  Result
 }
 
-// A streaming string parser, parameterized by an error type `e`.
-//
-// The error type comes from the underlying source: `either {}` (impossible) when parsing
-// a plain string, or the reader's error type when parsing from a `Bytes.Reader`.
-//
-// Operations:
-// - `.close` — close the parser, returning any source error.
-// - `.remainder` — consume the parser and return all remaining unparsed input.
-// - `.char` — read the next character. Returns `.end` if input is exhausted,
-//   or `.char(c)` with the character.
-// - `.match(prefix, suffix)` — find the leftmost split where `prefix` matches the left part
-//   and `suffix` matches the longest possible right part. Returns `.match(prefix_str, suffix_str)`
-//   on success, `.fail` if no match (parser position unchanged), or `.end` if input is empty.
-// - `.matchEnd(prefix, suffix)` — like `.match`, but the suffix extends to the end of input.
-//   Terminates the parser on success.
-//
-// Use `.begin`/`.loop` (from the `recursive` wrapper) to iterate over multiple matches.
-//
-// ```par
-// let r = String.Parser("Hello, world!")
-// r.match(.str "Hello", .str ", ").case {
-//   .match(hello, comma) r => ...
-//   .fail r => ...
-//   .end _ => ...
-// }
-// ```
-type Parser<e> = recursive iterative@attempt choice {
-  .close => Result<e, !>,
-  .remainder => Result<e, String>,
-  .char => either {
-    .end Result<e, !>,
-    .char(Char) self,
-  },
-  .match(Pattern, Pattern) => either {
-    .end Result<e, !>,
-    .fail self@attempt,
-    .match(String, String) self,
-  },
-  .matchEnd(Pattern, Pattern) => either {
-    .end Result<e, !>,
-    .fail self@attempt,
-    .match(String, String)!,
-  },
+export {
+  // An incremental string builder. Add strings with `.add`, then finalize with `.build`.
+  //
+  // ```par
+  // String.Builder.add("Hello").add(", ").add("world!").build
+  // // = "Hello, world!"
+  // ```
+  type Builder = iterative choice {
+    .add(String) => self,
+    .build => String,
+  }
+
+  // A streaming string parser, parameterized by an error type `e`.
+  //
+  // The error type comes from the underlying source: `either {}` (impossible) when parsing
+  // a plain string, or the reader's error type when parsing from a `Bytes.Reader`.
+  //
+  // Operations:
+  // - `.close` — close the parser, returning any source error.
+  // - `.remainder` — consume the parser and return all remaining unparsed input.
+  // - `.char` — read the next character. Returns `.end` if input is exhausted,
+  //   or `.char(c)` with the character.
+  // - `.match(prefix, suffix)` — find the leftmost split where `prefix` matches the left part
+  //   and `suffix` matches the longest possible right part. Returns `.match(prefix_str, suffix_str)`
+  //   on success, `.fail` if no match (parser position unchanged), or `.end` if input is empty.
+  // - `.matchEnd(prefix, suffix)` — like `.match`, but the suffix extends to the end of input.
+  //   Terminates the parser on success.
+  //
+  // Use `.begin`/`.loop` (from the `recursive` wrapper) to iterate over multiple matches.
+  //
+  // ```par
+  // let r = String.Parser("Hello, world!")
+  // r.match(.str "Hello", .str ", ").case {
+  //   .match(hello, comma) r => ...
+  //   .fail r => ...
+  //   .end _ => ...
+  // }
+  // ```
+  type Parser<e> = recursive iterative@attempt choice {
+    .close => Result<e, !>,
+    .remainder => Result<e, String>,
+    .char => either {
+      .end Result<e, !>,
+      .char(Char) self,
+    },
+    .match(Pattern, Pattern) => either {
+      .end Result<e, !>,
+      .fail self@attempt,
+      .match(String, String) self,
+    },
+    .matchEnd(Pattern, Pattern) => either {
+      .end Result<e, !>,
+      .fail self@attempt,
+      .match(String, String)!,
+    },
+  }
+
+  // A pattern for matching within strings.
+  //
+  // Atomic patterns:
+  // - `.empty!` — matches the empty string.
+  // - `.str s` — matches a literal string.
+  // - `.one class` — matches a single character of the given `Char.Class`.
+  // - `.non class` — matches a single character NOT in the given `Char.Class`.
+  // - `.min n` — matches at least `n` characters (any).
+  // - `.max n` — matches at most `n` characters (any).
+  //
+  // Combinators:
+  // - `.repeat p` — matches zero or more repetitions of pattern `p`.
+  // - `.repeat1 p` — matches one or more repetitions of pattern `p`.
+  // - `.concat ps` — matches a sequence of patterns in order.
+  // - `.and ps` — matches only if all patterns match the same input.
+  // - `.or ps` — matches if any of the patterns match.
+  //
+  // Common idiom: `.repeat.one.any!` matches any number of any characters.
+  type Pattern = recursive either {
+    .empty!,
+    .str String,
+    .one Char.Class,
+    .non Char.Class,
+    .min Nat,
+    .max Nat,
+    .repeat self,
+    .repeat1 self,
+    .concat List<self>,
+    .and List<self>,
+    .or List<self>,
+  }
+
+  // Wraps a string in quotes with escape sequences (e.g. `\n`, `\t`, `\\`).
+  dec Quote : [String] String
+
+  // Decodes bytes as UTF-8 into a string, replacing invalid sequences with the
+  // Unicode replacement character.
+  dec FromBytes : [Bytes] String
+
+  // Tests two strings for equality.
+  dec Equals : [String, String] Bool
+
+  // Compares two strings lexicographically, returning their `Ordering`.
+  dec Compare : [String, String] Ordering
+
+  // Creates a new string `Builder`.
+  dec Builder : Builder
+
+  // Creates a `Parser` from a string. The error type is `either {}` (impossible).
+  dec Parser : [String] Parser<either {}>
+
+  // Creates a string `Parser` from a `Bytes.Reader`.
+  // The error type matches the reader's error type.
+  dec ParserFromReader : <e>[Bytes.Reader<e>] Parser<e>
+
+  // Splits a parser's remaining input into lines (separated by `\n`).
+  // Returns a fallible list that may end with a source error.
+  dec Lines : <e>[Parser<e>] List.Fallible<e, String>
+
+  // Joins a list of strings with a separator between each element.
+  //
+  // ```par
+  // String.Join(*("a", "b", "c"), ", ")  // = "a, b, c"
+  // ```
+  dec Join : [List<String>, String] String
+
+  // Concatenates a list of strings into a single string.
+  //
+  // ```par
+  // String.Concat(*("Hello", ", ", "world!"))  // = "Hello, world!"
+  // ```
+  dec Concat : [List<String>] String
 }
 
-// A pattern for matching within strings.
-//
-// Atomic patterns:
-// - `.empty!` — matches the empty string.
-// - `.str s` — matches a literal string.
-// - `.one class` — matches a single character of the given `Char.Class`.
-// - `.non class` — matches a single character NOT in the given `Char.Class`.
-// - `.min n` — matches at least `n` characters (any).
-// - `.max n` — matches at most `n` characters (any).
-//
-// Combinators:
-// - `.repeat p` — matches zero or more repetitions of pattern `p`.
-// - `.repeat1 p` — matches one or more repetitions of pattern `p`.
-// - `.concat ps` — matches a sequence of patterns in order.
-// - `.and ps` — matches only if all patterns match the same input.
-// - `.or ps` — matches if any of the patterns match.
-//
-// Common idiom: `.repeat.one.any!` matches any number of any characters.
-type Pattern = recursive either {
-  .empty!,
-  .str String,
-  .one Char.Class,
-  .non Char.Class,
-  .min Nat,
-  .max Nat,
-  .repeat self,
-  .repeat1 self,
-  .concat List<self>,
-  .and List<self>,
-  .or List<self>,
-}
-
-// Wraps a string in quotes with escape sequences (e.g. `\n`, `\t`, `\\`).
-dec Quote : [String] String
 def Quote = external
 
-// Decodes bytes as UTF-8 into a string, replacing invalid sequences with the
-// Unicode replacement character.
-dec FromBytes : [Bytes] String
 def FromBytes = external
 
-// Tests two strings for equality.
-dec Equals : [String, String] Bool
 def Equals = external
 
-// Compares two strings lexicographically, returning their `Ordering`.
-dec Compare : [String, String] Ordering
 def Compare = external
 
-// Creates a new string `Builder`.
-dec Builder : Builder
 def Builder = external
 
-// Creates a `Parser` from a string. The error type is `either {}` (impossible).
-dec Parser : [String] Parser<either {}>
 def Parser = external
 
-// Creates a string `Parser` from a `Bytes.Reader`.
-// The error type matches the reader's error type.
-dec ParserFromReader : <e>[Bytes.Reader<e>] Parser<e>
 def ParserFromReader = external
 
-// Splits a parser's remaining input into lines (separated by `\n`).
-// Returns a fallible list that may end with a source error.
-dec Lines : <e>[Parser<e>] List.Fallible<e, String>
 def Lines = <e>[parser]
   catch e => .end .err e in
   parser.begin.match(.repeat.one.any!, .str "\n").case {
@@ -137,12 +163,6 @@ def Lines = <e>[parser]
     .match(line, _) parser => .item(line) parser.loop,
   }
 
-// Joins a list of strings with a separator between each element.
-//
-// ```par
-// String.Join(*("a", "b", "c"), ", ")  // = "a, b, c"
-// ```
-dec Join : [List<String>, String] String
 def Join = [list, sep]
   let builder = Builder in
   list.case {
@@ -157,12 +177,6 @@ def Join = [list, sep]
     },
   }
 
-// Concatenates a list of strings into a single string.
-//
-// ```par
-// String.Concat(*("Hello", ", ", "world!"))  // = "Hello, world!"
-// ```
-dec Concat : [List<String>] String
 def Concat = [list]
   let builder = Builder in
   list.begin.case {

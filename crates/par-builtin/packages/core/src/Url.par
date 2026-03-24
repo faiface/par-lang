@@ -1,34 +1,39 @@
-module Url
+export module Url
 
-import List
-import Result
-import String
-
-// Error type for URL parsing failures.
-type Error = String
-
-// A parsed URL that can be inspected and modified.
-//
-// - `.full` — get the full URL string.
-// - `.protocol` — get the scheme (e.g. `"http"`, `"https"`).
-// - `.host` — get the host, including port if present.
-// - `.path` — get the decoded path.
-// - `.query` — get the query parameters as a list of `(key) value` pairs.
-// - `.appendPath(segment)` — append a path segment.
-// - `.addQuery(key, value)` — add a query parameter.
-//
-// The `Url` is boxed, so it can be used multiple times.
-// `.appendPath` and `.addQuery` return a new `Url` with the modification applied.
-type Url = iterative box choice {
-  .full => String,
-  .protocol => String,
-  .host => String,
-  .path => String,
-  .query => List<(String) String>,
-  .appendPath(String) => self,
-  .addQuery(String, String) => self,
+import {
+  List
+  Result
+  String
 }
 
-// Parses a string into a `Url`. Returns `.err` with an error message if invalid.
-dec FromString : [String] Result<Error, Url>
+export {
+  // Error type for URL parsing failures.
+  type Error = String
+
+  // A parsed URL that can be inspected and modified.
+  //
+  // - `.full` — get the full URL string.
+  // - `.protocol` — get the scheme (e.g. `"http"`, `"https"`).
+  // - `.host` — get the host, including port if present.
+  // - `.path` — get the decoded path.
+  // - `.query` — get the query parameters as a list of `(key) value` pairs.
+  // - `.appendPath(segment)` — append a path segment.
+  // - `.addQuery(key, value)` — add a query parameter.
+  //
+  // The `Url` is boxed, so it can be used multiple times.
+  // `.appendPath` and `.addQuery` return a new `Url` with the modification applied.
+  type Url = iterative box choice {
+    .full => String,
+    .protocol => String,
+    .host => String,
+    .path => String,
+    .query => List<(String) String>,
+    .appendPath(String) => self,
+    .addQuery(String, String) => self,
+  }
+
+  // Parses a string into a `Url`. Returns `.err` with an error message if invalid.
+  dec FromString : [String] Result<Error, Url>
+}
+
 def FromString = external

@@ -1,98 +1,117 @@
-module Nat
+export module Nat
 
-import Bool
-import Int
-import List
-import Ordering
-import String
-
-// Adds two natural numbers.
-dec Add : [Nat, Nat] Nat
-def Add = external
-
-// Subtracts an integer from a natural number, clamping the result at 0.
-//
-// ```par
-// Nat.Sub(5, 3)   // = 2
-// Nat.Sub(2, 5)   // = 0
-// Nat.Sub(3, -1)  // = 4
-// ```
-dec Sub : [Nat, Int] Nat
-def Sub = external
-
-// Multiplies two natural numbers.
-dec Mul : [Nat, Nat] Nat
-def Mul = external
-
-// Natural number division. Returns 0 when the divisor is 0.
-dec Div : [Nat, Nat] Nat
-def Div = external
-
-// Remainder after division. Returns 0 when the divisor is 0.
-dec Mod : [Nat, Nat] Nat
-def Mod = external
-
-// Returns the smaller of two natural numbers.
-dec Min : [Nat, Nat] Nat
-def Min = external
-
-// Returns the larger value, taking an `Int` as the second argument.
-// The result is always a natural number.
-dec Max : [Nat, Int] Nat
-def Max = external
-
-// Clamps an integer to the range `[min, max]`, returning a natural number.
-dec Clamp : [Int] [Nat, Nat] Nat
-def Clamp = external
-
-// Tests two natural numbers for equality.
-dec Equals : [Nat, Nat] Bool
-def Equals = external
-
-// Compares two natural numbers, returning their `Ordering`.
-dec Compare : [Nat, Nat] Ordering
-def Compare = external
-
-// Produces `n` repetitions of `.step`, followed by `.end!`.
-//
-// ```par
-// Nat.Repeat(3).begin.case {
-//   .end! => "done",
-//   .step next => ... next.loop,
-// }
-// ```
-dec Repeat : [Nat] recursive either {
-  .end!,
-  .step self,
+import {
+  Bool
+  Int
+  List
+  Ordering
+  String
 }
-def Repeat = external
 
-// Like `Repeat`, but each step is lazily evaluated behind a `box`.
-// Use when not every step may be needed.
-dec RepeatLazy : [Nat] recursive either {
-  .end!,
-  .step box choice {
-    .next => self,
+export {
+  // Adds two natural numbers.
+  dec Add : [Nat, Nat] Nat
+
+  // Subtracts an integer from a natural number, clamping the result at 0.
+  //
+  // ```par
+  // Nat.Sub(5, 3)   // = 2
+  // Nat.Sub(2, 5)   // = 0
+  // Nat.Sub(3, -1)  // = 4
+  // ```
+  dec Sub : [Nat, Int] Nat
+
+  // Multiplies two natural numbers.
+  dec Mul : [Nat, Nat] Nat
+
+  // Natural number division. Returns 0 when the divisor is 0.
+  dec Div : [Nat, Nat] Nat
+
+  // Remainder after division. Returns 0 when the divisor is 0.
+  dec Mod : [Nat, Nat] Nat
+
+  // Returns the smaller of two natural numbers.
+  dec Min : [Nat, Nat] Nat
+
+  // Returns the larger value, taking an `Int` as the second argument.
+  // The result is always a natural number.
+  dec Max : [Nat, Int] Nat
+
+  // Clamps an integer to the range `[min, max]`, returning a natural number.
+  dec Clamp : [Int] [Nat, Nat] Nat
+
+  // Tests two natural numbers for equality.
+  dec Equals : [Nat, Nat] Bool
+
+  // Compares two natural numbers, returning their `Ordering`.
+  dec Compare : [Nat, Nat] Ordering
+
+  // Produces `n` repetitions of `.step`, followed by `.end!`.
+  //
+  // ```par
+  // Nat.Repeat(3).begin.case {
+  //   .end! => "done",
+  //   .step next => ... next.loop,
+  // }
+  // ```
+  dec Repeat : [Nat] recursive either {
+    .end!,
+    .step self,
+  }
+
+  // Like `Repeat`, but each step is lazily evaluated behind a `box`.
+  // Use when not every step may be needed.
+  dec RepeatLazy : [Nat] recursive either {
+    .end!,
+    .step box choice {
+      .next => self,
+    }
+  }
+
+  // Produces a list of natural numbers from `lo` (inclusive) to `hi` (exclusive).
+  //
+  // ```par
+  // Nat.Range(0, 4)  // = *(0, 1, 2, 3)
+  // ```
+  dec Range : [Nat, Nat] List<Nat>
+
+  // Converts a natural number to its decimal string representation.
+  dec ToString : [Nat] String
+
+  // Parses a decimal string into a natural number.
+  // Returns `.err!` if the string is not a valid non-negative integer.
+  dec FromString : [String] either {
+    .ok Nat,
+    .err!,
   }
 }
+
+def Add = external
+
+def Sub = external
+
+def Mul = external
+
+def Div = external
+
+def Mod = external
+
+def Min = external
+
+def Max = external
+
+def Clamp = external
+
+def Equals = external
+
+def Compare = external
+
+def Repeat = external
+
 def RepeatLazy = external
 
-// Produces a list of natural numbers from `lo` (inclusive) to `hi` (exclusive).
-//
-// ```par
-// Nat.Range(0, 4)  // = *(0, 1, 2, 3)
-// ```
-dec Range : [Nat, Nat] List<Nat>
 def Range = external
 
-// Converts a natural number to its decimal string representation.
-dec ToString : [Nat] String
 def ToString = external
 
-// Parses a decimal string into a natural number.
-// Returns `.err!` if the string is not a valid non-negative integer.
-dec FromString : [String] either {
-  .ok Nat,
-  .err!,
-}
 def FromString = external

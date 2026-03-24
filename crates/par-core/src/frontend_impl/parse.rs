@@ -202,9 +202,15 @@ fn global_binding_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
 }
 
 fn module_decl(input: &mut Input) -> Result<ModuleDecl> {
-    commit_after(t(TokenKind::Module), uppercase_identifier)
-        .map(|(module_kw, (name_span, name))| ModuleDecl {
-            span: module_kw.span.join(name_span),
+    (
+        opt(t(TokenKind::Export)),
+        commit_after(t(TokenKind::Module), uppercase_identifier),
+    )
+        .map(|(export_kw, (module_kw, (name_span, name)))| ModuleDecl {
+            span: export_kw
+                .map(|export_kw| export_kw.span.join(name_span.clone()))
+                .unwrap_or_else(|| module_kw.span.join(name_span)),
+            exported: export_kw.is_some(),
             name,
         })
         .parse_next(input)
@@ -312,6 +318,92 @@ fn import_statement(input: &mut Input) -> Result<Vec<ImportDecl>> {
     .parse_next(input)
 }
 
+#[derive(Clone)]
+enum ModuleItem<Expr> {
+    TypeDef(TypeDef<Unresolved>),
+    Declaration(Declaration<Unresolved>),
+    Definition(Definition<Expr, Unresolved>, Option<Type<Unresolved>>),
+}
+
+fn mark_exported_type_def(
+    mut type_def: TypeDef<Unresolved>,
+    export_span: Option<Span>,
+) -> TypeDef<Unresolved> {
+    type_def.exported = true;
+    if let Some(export_span) = export_span {
+        type_def.span = export_span.join(type_def.span);
+    }
+    type_def
+}
+
+fn mark_exported_declaration(
+    mut declaration: Declaration<Unresolved>,
+    export_span: Option<Span>,
+) -> Declaration<Unresolved> {
+    declaration.exported = true;
+    if let Some(export_span) = export_span {
+        declaration.span = export_span.join(declaration.span);
+    }
+    declaration
+}
+
+fn export_block_item(input: &mut Input) -> Result<ModuleItem<Expression<Unresolved>>> {
+    alt((
+        type_def.map(|type_def| ModuleItem::TypeDef(mark_exported_type_def(type_def, None))),
+        declaration.map(|declaration| {
+            ModuleItem::Declaration(mark_exported_declaration(declaration, None))
+        }),
+    ))
+    .context(StrContext::Label("exported item"))
+    .parse_next(input)
+}
+
+fn export_statement(input: &mut Input) -> Result<Vec<ModuleItem<Expression<Unresolved>>>> {
+    enum ExportStatement {
+        Block(Vec<ModuleItem<Expression<Unresolved>>>),
+        TypeDef(TypeDef<Unresolved>),
+        Declaration(Declaration<Unresolved>),
+    }
+
+    commit_after(
+        t(TokenKind::Export),
+        alt((
+            commit_after(
+                t(TokenKind::LCurly),
+                (repeat(0.., export_block_item), t(TokenKind::RCurly)),
+            )
+            .map(|(_lcurly, (items, _rcurly))| ExportStatement::Block(items)),
+            type_def.map(ExportStatement::TypeDef),
+            declaration.map(ExportStatement::Declaration),
+        )),
+    )
+    .map(|(export_kw, statement)| match statement {
+        ExportStatement::Block(items) => items,
+        ExportStatement::TypeDef(type_def) => vec![ModuleItem::TypeDef(mark_exported_type_def(
+            type_def,
+            Some(export_kw.span.clone()),
+        ))],
+        ExportStatement::Declaration(declaration) => {
+            vec![ModuleItem::Declaration(mark_exported_declaration(
+                declaration,
+                Some(export_kw.span.clone()),
+            ))]
+        }
+    })
+    .context(StrContext::Label("export statement"))
+    .parse_next(input)
+}
+
+fn module_item_statement(input: &mut Input) -> Result<Vec<ModuleItem<Expression<Unresolved>>>> {
+    alt((
+        export_statement,
+        type_def.map(|type_def| vec![ModuleItem::TypeDef(type_def)]),
+        declaration.map(|declaration| vec![ModuleItem::Declaration(declaration)]),
+        definition.map(|(definition, typ)| vec![ModuleItem::Definition(definition, typ)]),
+    ))
+    .parse_next(input)
+}
+
 struct ProgramParseError {
     offset: usize,
     error: ParseContextError,
@@ -328,41 +420,33 @@ impl ProgramParseError {
 fn source_file(
     mut input: Input,
 ) -> std::result::Result<SourceFile<Expression<Unresolved>>, ProgramParseError> {
-    enum Item<Expr> {
-        TypeDef(TypeDef<Unresolved>),
-        Declaration(Declaration<Unresolved>),
-        Definition(Definition<Expr, Unresolved>, Option<Type<Unresolved>>),
-    }
-
     let parser = repeat(
         0..,
-        alt((
-            type_def.map(Item::TypeDef),
-            declaration.map(Item::Declaration),
-            definition.map(|(def, typ)| Item::Definition(def, typ)),
-        ))
-        .context(StrContext::Label("item")),
+        module_item_statement.context(StrContext::Label("item")),
     )
     .fold(Module::default, |mut acc, item| {
-        match item {
-            Item::TypeDef(type_def) => {
-                acc.type_defs.push(type_def);
-            }
-            Item::Declaration(dec) => {
-                acc.declarations.push(dec);
-            }
-            Item::Definition(Definition { span, name, body }, annotation) => {
-                if let Some(typ) = annotation {
-                    acc.declarations.push(Declaration {
-                        span: span.clone(),
-                        doc: None,
-                        name: name.clone(),
-                        typ,
-                    });
+        for item in item {
+            match item {
+                ModuleItem::TypeDef(type_def) => {
+                    acc.type_defs.push(type_def);
                 }
-                acc.definitions.push(Definition { span, name, body });
+                ModuleItem::Declaration(dec) => {
+                    acc.declarations.push(dec);
+                }
+                ModuleItem::Definition(Definition { span, name, body }, annotation) => {
+                    if let Some(typ) = annotation {
+                        acc.declarations.push(Declaration {
+                            span: span.clone(),
+                            exported: false,
+                            doc: None,
+                            name: name.clone(),
+                            typ,
+                        });
+                    }
+                    acc.definitions.push(Definition { span, name, body });
+                }
             }
-        };
+        }
         acc
     });
 
@@ -378,6 +462,9 @@ fn source_file(
         winnow::combinator::eof
             .context(StrContext::Expected(StrContextValue::StringLiteral(
                 "module",
+            )))
+            .context(StrContext::Expected(StrContextValue::StringLiteral(
+                "export",
             )))
             .context(StrContext::Expected(StrContextValue::StringLiteral(
                 "import",
@@ -615,6 +702,9 @@ fn attach_doc_comments(
 }
 
 fn is_explicit_declaration(source: &str, declaration: &Declaration<Unresolved>) -> bool {
+    if declaration.exported {
+        return true;
+    }
     declaration
         .span
         .start()
@@ -715,6 +805,7 @@ fn type_def(input: &mut Input) -> Result<TypeDef<Unresolved>> {
     )
     .map(|(pre, (name, type_params, _, typ))| TypeDef {
         span: pre.span.join(typ.span()),
+        exported: false,
         doc: None,
         name,
         params: type_params.map_or_else(Vec::new, |(_, params)| params),
@@ -731,6 +822,7 @@ fn declaration(input: &mut Input) -> Result<Declaration<Unresolved>> {
     )
     .map(|(pre, (name, _, typ))| Declaration {
         span: pre.span.join(typ.span()),
+        exported: false,
         doc: None,
         name,
         typ,

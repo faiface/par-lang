@@ -1,51 +1,59 @@
-module BoxMap
+export module BoxMap
 
-import Bytes
-import Int
-import List
-import Nat
-import Option
-import String
-
-// A persistent ordered map that can be immutably shared across multiple references.
-// `.put` and `.delete` efficiently produce new shareable instances without copying the
-// whole map.
-//
-// - `.size` — get the number of entries.
-// - `.keys` — get a list of all keys.
-// - `.list` — get all entries as a list of `(key) box value` pairs.
-// - `.get(key)` — look up a key, returning `Option<box v>`.
-// - `.put(key, value)` — insert or update an entry, returning a new instance.
-// - `.delete(key)` — remove an entry, returning a new instance.
-type BoxMap<k, v> = iterative box choice {
-  .size => Nat,
-  .keys => List<k>,
-  .list => List<(k) box v>,
-  .get(k) => Option<box v>,
-  .put(k, box v) => self,
-  .delete(k) => self,
+import {
+  Bytes
+  Int
+  List
+  Nat
+  Option
+  String
 }
 
-// A read-only view of a `BoxMap`. Supports `.size`, `.keys`, `.list`, and `.get`.
-type Readonly<k, v> = box choice {
-  .size => Nat,
-  .keys => List<k>,
-  .list => List<(k) box v>,
-  .get(k) => Option<box v>,
+export {
+  // A persistent ordered map that can be immutably shared across multiple references.
+  // `.put` and `.delete` efficiently produce new shareable instances without copying the
+  // whole map.
+  //
+  // - `.size` — get the number of entries.
+  // - `.keys` — get a list of all keys.
+  // - `.list` — get all entries as a list of `(key) box value` pairs.
+  // - `.get(key)` — look up a key, returning `Option<box v>`.
+  // - `.put(key, value)` — insert or update an entry, returning a new instance.
+  // - `.delete(key)` — remove an entry, returning a new instance.
+  type BoxMap<k, v> = iterative box choice {
+    .size => Nat,
+    .keys => List<k>,
+    .list => List<(k) box v>,
+    .get(k) => Option<box v>,
+    .put(k, box v) => self,
+    .delete(k) => self,
+  }
+
+  // A read-only view of a `BoxMap`. Supports `.size`, `.keys`, `.list`, and `.get`.
+  type Readonly<k, v> = box choice {
+    .size => Nat,
+    .keys => List<k>,
+    .list => List<(k) box v>,
+    .get(k) => Option<box v>,
+  }
+
+  // Creates a `BoxMap` with `String` keys from a list of `(key) value` pairs.
+  dec OfString : [type v] [List<(String) box v>] BoxMap<String, v>
+
+  // Creates a `BoxMap` with `Bytes` keys from a list of `(key) value` pairs.
+  dec OfBytes : [type v] [List<(Bytes) box v>] BoxMap<Bytes, v>
+
+  // Creates a `BoxMap` with `Int` keys from a list of `(key) value` pairs.
+  dec OfInt : [type v] [List<(Int) box v>] BoxMap<Int, v>
+
+  // Creates a `BoxMap` with `Nat` keys from a list of `(key) value` pairs.
+  dec OfNat : [type v] [List<(Nat) box v>] BoxMap<Nat, v>
 }
 
-// Creates a `BoxMap` with `String` keys from a list of `(key) value` pairs.
-dec OfString : [type v] [List<(String) box v>] BoxMap<String, v>
 def OfString = external
 
-// Creates a `BoxMap` with `Bytes` keys from a list of `(key) value` pairs.
-dec OfBytes : [type v] [List<(Bytes) box v>] BoxMap<Bytes, v>
 def OfBytes = external
 
-// Creates a `BoxMap` with `Int` keys from a list of `(key) value` pairs.
-dec OfInt : [type v] [List<(Int) box v>] BoxMap<Int, v>
 def OfInt = external
 
-// Creates a `BoxMap` with `Nat` keys from a list of `(key) value` pairs.
-dec OfNat : [type v] [List<(Nat) box v>] BoxMap<Nat, v>
 def OfNat = external
