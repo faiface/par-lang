@@ -8,7 +8,7 @@ use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "Url",
         name: "FromString"

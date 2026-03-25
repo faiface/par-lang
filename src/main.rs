@@ -1,10 +1,10 @@
 use crate::package_utils::{
-    SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
-    parse_target, source_for_fallback, source_for_type_error,
+    SourceLookup, find_local_module, format_with_source_span, parse_target, root_module_slash_path,
+    source_for_fallback, source_for_type_error,
 };
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
-use crate::workspace_support::default_workspace_from_path;
+use crate::workspace_support::{assemble_default_workspace, default_workspace_packages_from_path};
 use clap::{Command, arg, command, value_parser};
 use colored::Colorize;
 #[cfg(feature = "playground")]
@@ -13,7 +13,9 @@ use par_core::frontend::language::Universal;
 use par_core::{
     frontend::{Type, TypeError, set_miette_hook},
     runtime::RuntimeCompilerError,
-    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
+    workspace::{
+        CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceDiscoveryError, WorkspaceError,
+    },
 };
 use tokio::time::Instant;
 
@@ -46,6 +48,7 @@ const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
 
 #[derive(Debug, Clone)]
 enum BuildError {
+    Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
         errors: Vec<TypeError<Universal>>,
@@ -60,7 +63,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self) -> String {
         match self {
-            Self::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
+            Self::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
                 source,
                 error,
                 ..
@@ -68,6 +71,7 @@ impl BuildError {
                 "{:?}",
                 miette::Report::from(error.to_owned()).with_source_code(source.clone())
             ),
+            Self::Discovery(error) => error.to_string(),
             Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
@@ -107,6 +111,7 @@ impl BuildError {
 impl Display for BuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Discovery(error) => write!(f, "{error}"),
             Self::Workspace(error) => write!(f, "{error}"),
             Self::Type { errors, .. } => {
                 for error in errors {
@@ -122,7 +127,9 @@ impl Display for BuildError {
 fn build_checked_package(
     package_path: &PathBuf,
 ) -> Result<(CheckedWorkspace, Vec<ModulePath>, SourceLookup), BuildError> {
-    let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
+    let packages =
+        default_workspace_packages_from_path(package_path, None).map_err(BuildError::Discovery)?;
+    let workspace = assemble_default_workspace(packages).map_err(BuildError::Workspace)?;
     let sources = workspace.sources().clone();
     let (checked, type_errors) = workspace.type_check();
     if !type_errors.is_empty() {
@@ -544,7 +551,9 @@ fn resolve_target_definition<'a>(
         .iter()
         .find(|(name, _)| {
             name.primary == definition_target
-                && local_module_slash_path(&name.module).as_deref() == Some(module_name.as_str())
+                && root_module_slash_path(checked.workspace().root_package(), &name.module)
+                    .as_deref()
+                    == Some(module_name.as_str())
         })
         .map(|(name, _)| name)
 }

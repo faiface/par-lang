@@ -36,7 +36,7 @@ use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("basic"),
+        package: PackageRef::Special("basic"),
         path: &[],
         module: "Http",
         name: "Fetch"
@@ -46,7 +46,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("basic"),
+        package: PackageRef::Special("basic"),
         path: &[],
         module: "Http",
         name: "Listen"

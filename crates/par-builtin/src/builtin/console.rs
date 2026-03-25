@@ -49,7 +49,7 @@ async fn console_open(mut handle: Handle) {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("basic"),
+        package: PackageRef::Special("basic"),
         path: &[],
         module: "Console",
         name: "Open"

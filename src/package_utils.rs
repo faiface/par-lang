@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
@@ -51,8 +50,8 @@ pub fn format_with_source_span(
     )
 }
 
-pub fn local_module_slash_path(module: &Universal) -> Option<String> {
-    if module.package != PackageId::Local {
+pub fn root_module_slash_path(root_package: &PackageId, module: &Universal) -> Option<String> {
+    if &module.package != root_package {
         return None;
     }
     if module.directories.is_empty() {
@@ -134,8 +133,4 @@ pub fn find_local_module<'a>(
     local_modules.iter().find(|candidate| {
         candidate.directories == directories && candidate.module.eq_ignore_ascii_case(module_name)
     })
-}
-
-pub fn normalized_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/").to_lowercase()
 }

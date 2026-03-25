@@ -14,19 +14,22 @@ use par_core::{
     },
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
-    workspace::{CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceError},
+    workspace::{
+        CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceDiscoveryError, WorkspaceError,
+    },
 };
 use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
 
 use crate::package_utils::{
-    SourceLookup, find_local_module, format_with_source_span, local_module_slash_path,
-    parse_target, source_for_fallback, source_for_type_error,
+    SourceLookup, find_local_module, format_with_source_span, parse_target, root_module_slash_path,
+    source_for_fallback, source_for_type_error,
 };
-use crate::workspace_support::default_workspace_from_path;
+use crate::workspace_support::{assemble_default_workspace, default_workspace_packages_from_path};
 
 #[derive(Debug, Clone)]
 enum BuildError {
+    Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
         errors: Vec<TypeError<Universal>>,
@@ -41,7 +44,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self) -> String {
         match self {
-            Self::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
+            Self::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
                 source,
                 error,
                 ..
@@ -49,6 +52,7 @@ impl BuildError {
                 "{:?}",
                 miette::Report::from(error.to_owned()).with_source_code(source.clone())
             ),
+            Self::Discovery(error) => error.to_string(),
             Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
@@ -89,7 +93,9 @@ fn build_for_run(
     package_path: &Path,
     max_interactions: u32,
 ) -> Result<(CheckedWorkspace, Compiled<Linked>, Vec<ModulePath>), BuildError> {
-    let workspace = default_workspace_from_path(package_path).map_err(BuildError::Workspace)?;
+    let packages =
+        default_workspace_packages_from_path(package_path, None).map_err(BuildError::Discovery)?;
+    let workspace = assemble_default_workspace(packages).map_err(BuildError::Workspace)?;
     let sources = workspace.sources().clone();
     let (checked, type_errors) = workspace.type_check();
     if !type_errors.is_empty() {
@@ -222,8 +228,8 @@ pub fn run_tests(
         if result.status.is_passed() {
             passed_tests += 1;
         }
-        let module =
-            local_module_slash_path(&name.module).unwrap_or_else(|| "<unknown>".to_string());
+        let module = root_module_slash_path(checked.workspace().root_package(), &name.module)
+            .unwrap_or_else(|| "<unknown>".to_string());
         grouped_results.entry(module).or_default().push(result);
     }
 
@@ -255,7 +261,7 @@ fn collect_test_definitions(
         .definitions
         .iter()
         .filter_map(|(name, _)| {
-            let module = local_module_slash_path(&name.module)?;
+            let module = root_module_slash_path(checked.workspace().root_package(), &name.module)?;
             if !is_local_module(module.as_str(), local_modules) {
                 return None;
             }

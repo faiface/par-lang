@@ -6,8 +6,11 @@ use std::{
     time::SystemTime,
 };
 
-use crate::package_utils::{format_with_source_span, normalized_path};
-use crate::workspace_support::default_workspace_from_parsed;
+use crate::package_utils::format_with_source_span;
+use crate::workspace_support::{
+    assemble_default_workspace, default_workspace_packages_from_parsed,
+    default_workspace_packages_from_path,
+};
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use futures::task::{Spawn, SpawnExt};
@@ -25,8 +28,8 @@ use par_core::{
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
     workspace::{
-        CheckedWorkspace, LoadedPackageFile, ModulePath, PackageLoadError, WorkspaceError,
-        collect_source_files, find_package_layout, parse_loaded_files,
+        CheckedWorkspace, LoadedPackageFile, ModulePath, PackageLoadError, WorkspaceDiscoveryError,
+        WorkspaceError, parse_loaded_files,
     },
 };
 use par_runtime::linker::Linked;
@@ -36,6 +39,7 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
 enum BuildError {
+    Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type(Vec<TypeError<Universal>>),
     InetCompile(RuntimeCompilerError),
@@ -44,7 +48,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self, code: Arc<str>) -> String {
         match self {
-            Self::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
+            Self::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
                 source,
                 error,
                 ..
@@ -52,6 +56,7 @@ impl BuildError {
                 "{:?}",
                 miette::Report::from(error.to_owned()).with_source_code(source.clone())
             ),
+            Self::Discovery(error) => error.to_string(),
             Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
                 format!("{:?}", error.to_report(source.clone()))
             }
@@ -83,6 +88,9 @@ impl BuildError {
 #[derive(Clone)]
 enum BuildResult {
     None,
+    DiscoveryError {
+        error: WorkspaceDiscoveryError,
+    },
     WorkspaceError {
         error: WorkspaceError,
     },
@@ -107,6 +115,7 @@ impl BuildResult {
     fn error(&self) -> Option<BuildError> {
         match self {
             Self::None => None,
+            Self::DiscoveryError { error } => Some(BuildError::Discovery(error.clone())),
             Self::WorkspaceError { error } => Some(BuildError::Workspace(error.clone())),
             Self::TypeError { errors, .. } => Some(BuildError::Type(errors.clone())),
             Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
@@ -119,7 +128,7 @@ impl BuildResult {
             Self::TypeError { pretty, .. }
             | Self::InetError { pretty, .. }
             | Self::Ok { pretty, .. } => Some(pretty),
-            Self::None | Self::WorkspaceError { .. } => None,
+            Self::None | Self::DiscoveryError { .. } | Self::WorkspaceError { .. } => None,
         }
     }
 
@@ -128,7 +137,7 @@ impl BuildResult {
             Self::TypeError { checked, .. }
             | Self::InetError { checked, .. }
             | Self::Ok { checked, .. } => Some(Arc::clone(checked)),
-            Self::None | Self::WorkspaceError { .. } => None,
+            Self::None | Self::DiscoveryError { .. } | Self::WorkspaceError { .. } => None,
         }
     }
 
@@ -136,6 +145,7 @@ impl BuildResult {
         match self {
             Self::Ok { rt_compiled, .. } => Some(rt_compiled),
             Self::None
+            | Self::DiscoveryError { .. }
             | Self::WorkspaceError { .. }
             | Self::TypeError { .. }
             | Self::InetError { .. } => None,
@@ -154,13 +164,14 @@ impl BuildResult {
         }]) {
             Ok(parsed) => parsed,
             Err(error) => {
-                return Self::WorkspaceError {
-                    error: WorkspaceError::Load(error),
+                return Self::DiscoveryError {
+                    error: WorkspaceDiscoveryError::Load(error),
                 };
             }
         };
 
-        let workspace = match default_workspace_from_parsed(parsed) {
+        let workspace_packages = default_workspace_packages_from_parsed(parsed);
+        let workspace = match assemble_default_workspace(workspace_packages) {
             Ok(workspace) => workspace,
             Err(error) => return Self::WorkspaceError { error },
         };
@@ -172,50 +183,27 @@ impl BuildResult {
         active_source: &str,
         max_interactions: u32,
     ) -> Self {
-        let layout = match find_package_layout(active_file_path) {
-            Ok(layout) => layout,
-            Err(PackageLoadError::PackageRootNotFound { .. }) => {
-                return Self::from_single_file_package(
-                    active_source,
-                    active_file_path.to_path_buf(),
-                    max_interactions,
-                );
-            }
-            Err(error) => {
-                return Self::WorkspaceError {
-                    error: WorkspaceError::Load(error),
-                };
-            }
-        };
-        let mut files = match collect_source_files(&layout) {
-            Ok(files) => files,
-            Err(error) => {
-                return Self::WorkspaceError {
-                    error: WorkspaceError::Load(error),
-                };
-            }
-        };
-        let active_key = normalized_path(active_file_path);
-        for file in &mut files {
-            if file.name.0.to_lowercase().replace('\\', "/") == active_key {
-                file.source = active_source.to_owned();
-            }
-        }
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert(active_file_path.to_path_buf(), active_source.to_owned());
 
-        let parsed = match parse_loaded_files(files) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                return Self::WorkspaceError {
-                    error: WorkspaceError::Load(error),
-                };
-            }
-        };
-
-        let workspace = match default_workspace_from_parsed(parsed) {
+        let workspace_packages =
+            match default_workspace_packages_from_path(active_file_path, Some(&overrides)) {
+                Ok(workspace_packages) => workspace_packages,
+                Err(WorkspaceDiscoveryError::PackageRootNotFound { .. }) => {
+                    return Self::from_single_file_package(
+                        active_source,
+                        active_file_path.to_path_buf(),
+                        max_interactions,
+                    );
+                }
+                Err(error) => {
+                    return Self::DiscoveryError { error };
+                }
+            };
+        let workspace = match assemble_default_workspace(workspace_packages) {
             Ok(workspace) => workspace,
             Err(error) => return Self::WorkspaceError { error },
         };
-
         Self::from_workspace(workspace, max_interactions)
     }
 
@@ -905,10 +893,13 @@ impl Playground {
         );
     }
 
-    fn package_label(package: &PackageId) -> String {
+    fn package_label(root_package: &PackageId, package: &PackageId) -> String {
+        if package == root_package {
+            return String::from("This package");
+        }
+
         match package {
-            PackageId::Local => String::from("This package"),
-            PackageId::Package(name) => format!("@{name}"),
+            PackageId::Special(name) | PackageId::Package(name) => format!("@{name}"),
         }
     }
 
@@ -942,19 +933,22 @@ impl Playground {
             }
 
             for package in &other_packages {
-                ui.menu_button(Self::package_label(&package), |ui| {
-                    Self::show_package_modules(
-                        spawner.clone(),
-                        cancel_token,
-                        element,
-                        ui,
-                        program.clone(),
-                        compiled,
-                        name_to_ty,
-                        package,
-                        None,
-                    );
-                });
+                ui.menu_button(
+                    Self::package_label(program.workspace().root_package(), package),
+                    |ui| {
+                        Self::show_package_modules(
+                            spawner.clone(),
+                            cancel_token,
+                            element,
+                            ui,
+                            program.clone(),
+                            compiled,
+                            name_to_ty,
+                            package,
+                            None,
+                        );
+                    },
+                );
             }
         });
 

@@ -21,6 +21,7 @@ mod url;
 use std::collections::{BTreeMap, btree_map::Entry};
 use std::path::PathBuf;
 
+use arcstr::literal;
 use par_core::frontend::language::PackageId;
 use par_core::frontend::{TypeDef, get_external_type_defs};
 use par_core::source::FileName;
@@ -42,15 +43,15 @@ pub fn builtin_packages() -> Vec<WorkspacePackage> {
 fn core_package() -> WorkspacePackage {
     let parsed = parse_builtin_sources("core", CORE_SOURCE_FILES);
     let externals = load_external_type_defs("core");
-    WorkspacePackage::new(PackageId::Package("core".to_string()), parsed).with_externals(externals)
+    WorkspacePackage::new(PackageId::Special(literal!("core")), parsed).with_externals(externals)
 }
 
 #[cfg(not(target_family = "wasm"))]
 fn basic_package() -> WorkspacePackage {
     let parsed = parse_builtin_sources("basic", BASIC_SOURCE_FILES);
     let externals = load_external_type_defs("basic");
-    WorkspacePackage::new(PackageId::Package("basic".to_string()), parsed)
-        .with_dependency("core", PackageId::Package("core".to_string()))
+    WorkspacePackage::new(PackageId::Special(literal!("basic")), parsed)
+        .with_dependency("core", PackageId::Special(literal!("core")))
         .with_externals(externals)
 }
 
@@ -173,7 +174,7 @@ fn parse_builtin_sources(
 
 fn load_external_type_defs(name: &str) -> BTreeMap<ModulePath, ExternalModule> {
     let mut externals = BTreeMap::<ModulePath, ExternalModule>::new();
-    for type_def in get_external_type_defs(&PackageRef::Package(name)) {
+    for type_def in get_external_type_defs(&PackageRef::Special(name)) {
         let module_path = ModulePath {
             directories: type_def.path.path.iter().map(|s| s.to_string()).collect(),
             module: type_def.path.module.into(),

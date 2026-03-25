@@ -20,3 +20,5 @@ unescaper = "0.1.6"
 bytes = "1.6.1"
 im = "15"
 inventory = "0.3.22"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.8"

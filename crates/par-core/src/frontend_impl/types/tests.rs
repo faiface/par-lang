@@ -4,7 +4,7 @@ mod tests {
     use crate::frontend_impl::types::{Type, TypeDefs};
     use crate::location::Span;
     use crate::workspace::render_type_in_scope;
-    use arcstr::ArcStr;
+    use arcstr::{ArcStr, literal};
 
     fn alias_preserving_type_defs() -> (TypeDefs<Universal>, GlobalName<Universal>) {
         let span = Span::None;
@@ -19,7 +19,7 @@ mod tests {
         let map_name = GlobalName::new(
             Span::None,
             Universal {
-                package: PackageId::Local,
+                package: PackageId::Special(literal!("__test__")),
                 directories: vec![],
                 module: "Main".to_string(),
             },
@@ -176,7 +176,7 @@ mod tests {
 
         assert_eq!(
             format!("{expanded}"),
-            "choice {.delete => Main.Map<String, Int>,.put => [Int] Main.Map<String, Int>,}"
+            "choice {.delete => @__test__/Main.Map<String, Int>,.put => [Int] @__test__/Main.Map<String, Int>,}"
         );
     }
 
@@ -193,8 +193,8 @@ mod tests {
             render_type_in_scope(None, &expanded),
             "\
 choice {
-  .delete => Main.Map<String, Int>,
-  .put => [Int] Main.Map<String, Int>,
+  .delete => @__test__/Main.Map<String, Int>,
+  .put => [Int] @__test__/Main.Map<String, Int>,
 }"
         );
     }

@@ -12,7 +12,7 @@ use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "BoxMap",
         name: "OfString"
@@ -22,7 +22,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "BoxMap",
         name: "OfBytes"
@@ -32,7 +32,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "BoxMap",
         name: "OfInt"
@@ -42,7 +42,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "BoxMap",
         name: "OfNat"

@@ -17,7 +17,7 @@ use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalTypeDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "String"
@@ -27,7 +27,7 @@ inventory::submit!(ExternalTypeDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "Builder"
@@ -37,7 +37,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "Parser"
@@ -47,7 +47,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "ParserFromReader"
@@ -57,7 +57,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "Quote"
@@ -67,7 +67,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "FromBytes"
@@ -77,7 +77,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "Equals"
@@ -87,7 +87,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "String",
         name: "Compare"

@@ -326,8 +326,8 @@ impl Compiler {
                 DefinitionBody::External(_) => {
                     let def_ref = Unlinked {
                         package: match &name.module.package {
-                            PackageId::Local => PackageID::Local,
-                            PackageId::Package(name) => PackageID::Package(name.clone()),
+                            PackageId::Special(name) => PackageID::Special(name.to_string()),
+                            PackageId::Package(name) => PackageID::Package(name.to_string()),
                         },
                         path: name.module.directories.clone(),
                         module: name.module.module.clone(),

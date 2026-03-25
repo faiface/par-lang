@@ -1,10 +1,10 @@
-use crate::registry::PackageRef::Package;
+use crate::registry::PackageRef::Special;
 use crate::registry::{DefinitionRef, ExternalDef};
 use arcstr::ArcStr;
 use std::pin::Pin;
 
 pub static POLL_TOKEN: DefinitionRef = DefinitionRef {
-    package: Package("#internal"),
+    package: Special("#internal"),
     path: &[],
     module: "",
     name: "#poll_token",
@@ -84,7 +84,7 @@ async fn poll_token_server(mut handle: crate::readback::Handle) {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: Package("#internal"),
+        package: Special("#internal"),
         path: &[],
         module: "",
         name: "#poll_token",

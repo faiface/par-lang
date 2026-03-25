@@ -14,7 +14,7 @@ async fn time_now(mut handle: Handle) {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("basic"),
+        package: PackageRef::Special("basic"),
         path: &[],
         module: "Time",
         name: "Now"

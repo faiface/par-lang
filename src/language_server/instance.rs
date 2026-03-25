@@ -1,23 +1,26 @@
 use super::io::IO;
 use crate::language_server::data::ToLspPosition;
-use crate::package_utils::{SourceLookup, normalized_path};
-use crate::workspace_support::default_workspace_from_parsed;
+use crate::package_utils::SourceLookup;
+use crate::workspace_support::{
+    assemble_default_workspace, default_workspace_packages_from_parsed,
+    default_workspace_packages_from_path,
+};
 use indexmap::IndexMap;
 use lsp_types::{self as lsp, Uri};
 use par_core::frontend::TypeError;
 use par_core::frontend::language::{GlobalName, Universal};
 use par_core::source::{FileName, Span};
 use par_core::workspace::{
-    CheckedWorkspace, FileImportScope, LoadedPackageFile, PackageLoadError, WorkspaceError,
-    collect_source_files, find_package_layout, parse_loaded_files,
+    CheckedWorkspace, FileImportScope, LoadedPackageFile, SourceOverrides, WorkspaceDiscoveryError,
+    WorkspaceError, parse_loaded_files,
 };
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
+    Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
         error: TypeError<Universal>,
@@ -342,18 +345,18 @@ impl Instance {
             let package_result = uri_to_path(&self.uri)
                 .map(|path| self.compile_package_with_overlays(&path))
                 .unwrap_or_else(|| {
-                    Err(CompileError::Workspace(WorkspaceError::Load(
-                        PackageLoadError::PackageRootNotFound {
+                    Err(CompileError::Discovery(
+                        WorkspaceDiscoveryError::PackageRootNotFound {
                             start: PathBuf::from(self.uri.as_str()),
                         },
-                    )))
+                    ))
                 });
 
             match package_result {
                 Ok(result) => Ok(result),
-                Err(CompileError::Workspace(WorkspaceError::Load(
-                    PackageLoadError::PackageRootNotFound { .. },
-                ))) => self.compile_single_file(&code),
+                Err(CompileError::Discovery(WorkspaceDiscoveryError::PackageRootNotFound {
+                    ..
+                })) => self.compile_single_file(&code),
                 Err(error) => Err(error),
             }
         };
@@ -391,8 +394,10 @@ impl Instance {
             relative_path_from_src,
             source: code.to_owned(),
         }])
-        .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
-        let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
+        .map_err(|error| CompileError::Discovery(WorkspaceDiscoveryError::Load(error)))?;
+        let workspace_packages = default_workspace_packages_from_parsed(parsed);
+        let workspace =
+            assemble_default_workspace(workspace_packages).map_err(CompileError::Workspace)?;
         let sources = workspace.sources().clone();
         let (checked, type_errors) = workspace.type_check();
         let errors = type_errors
@@ -414,31 +419,18 @@ impl Instance {
         &self,
         file_path: &Path,
     ) -> Result<(Arc<CheckedWorkspace>, Vec<CompileError>), CompileError> {
-        let layout = find_package_layout(file_path)
-            .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
-        let mut files = collect_source_files(&layout)
-            .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
-
-        let overlay_sources = self
+        let overlay_sources: SourceOverrides = self
             .io
             .snapshot()
             .into_iter()
-            .filter_map(|(uri, source)| {
-                uri_to_path(&uri).map(|path| (normalized_path(&path), source))
-            })
-            .collect::<HashMap<_, _>>();
+            .filter_map(|(uri, source)| uri_to_path(&uri).map(|path| (path, source)))
+            .collect();
 
-        for file in &mut files {
-            if let Some(source) =
-                overlay_sources.get(&file.name.0.to_lowercase().replace('\\', "/"))
-            {
-                file.source = source.clone();
-            }
-        }
-
-        let parsed = parse_loaded_files(files)
-            .map_err(|error| CompileError::Workspace(WorkspaceError::Load(error)))?;
-        let workspace = default_workspace_from_parsed(parsed).map_err(CompileError::Workspace)?;
+        let workspace_packages =
+            default_workspace_packages_from_path(file_path, Some(&overlay_sources))
+                .map_err(CompileError::Discovery)?;
+        let workspace =
+            assemble_default_workspace(workspace_packages).map_err(CompileError::Workspace)?;
         let sources = workspace.sources().clone();
         let (checked, type_errors) = workspace.type_check();
         let errors = type_errors
@@ -491,6 +483,7 @@ fn file_name_to_uri(file: &FileName) -> Option<Uri> {
 mod tests {
     use super::*;
     use crate::language_server::feedback::diagnostic_for_error;
+    use std::collections::HashMap;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -526,7 +519,7 @@ mod tests {
     fn diagnostics_target_the_file_that_owns_the_error() {
         let (root, uris) = temp_package(&[
             ("src/Main.par", "module Main\n\ndef Main = 0\n"),
-            ("src/Other.par", "module Other\n\ndef Broken = missing\n"),
+            ("src/Other.par", "module Other\n\ndef Broken = (\n"),
         ]);
         let main_uri = uris["src/Main.par"].clone();
         let other_uri = uris["src/Other.par"].clone();

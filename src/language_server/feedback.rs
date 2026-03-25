@@ -3,7 +3,7 @@ use crate::package_utils::{format_with_source_span, source_for_type_error};
 use lsp_types::{self as lsp, Uri};
 use miette::Diagnostic;
 use par_core::source::{FileName, Span, Spanning};
-use par_core::workspace::{PackageLoadError, WorkspaceError};
+use par_core::workspace::{PackageLoadError, WorkspaceDiscoveryError, WorkspaceError};
 use std::collections::HashMap;
 use std::path::Path;
 use url::Url;
@@ -78,7 +78,7 @@ pub fn diagnostic_for_error(err: &CompileError, fallback_uri: &Uri) -> (Uri, lsp
                 related_span.into_iter().collect(),
             )
         }
-        CompileError::Workspace(WorkspaceError::Load(PackageLoadError::ParseError {
+        CompileError::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
             source,
             error,
             ..
@@ -91,6 +91,7 @@ pub fn diagnostic_for_error(err: &CompileError, fallback_uri: &Uri) -> (Uri, lsp
             error.help().map(|s| s.to_string()),
             vec![],
         ),
+        CompileError::Discovery(error) => (Span::None, error.to_string(), None, vec![]),
         CompileError::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
             let span = error.span();
             let report = error.to_report(source.clone());
@@ -170,7 +171,7 @@ fn uri_for_error(err: &CompileError) -> Option<Uri> {
             let (span, _) = error.spans();
             uri_for_span(&span)
         }
-        CompileError::Workspace(WorkspaceError::Load(error)) => uri_for_load_error(error),
+        CompileError::Discovery(error) => uri_for_discovery_error(error),
         CompileError::Workspace(WorkspaceError::LowerError { file, .. }) => file_name_to_uri(file),
         CompileError::Workspace(WorkspaceError::UnknownDependency { span, .. })
         | CompileError::Workspace(WorkspaceError::ImportedModuleNotFound { span, .. })
@@ -187,6 +188,13 @@ fn uri_for_error(err: &CompileError) -> Option<Uri> {
     }
 }
 
+fn uri_for_discovery_error(error: &WorkspaceDiscoveryError) -> Option<Uri> {
+    match error {
+        WorkspaceDiscoveryError::Load(error) => uri_for_load_error(error),
+        _ => None,
+    }
+}
+
 fn uri_for_load_error(error: &PackageLoadError) -> Option<Uri> {
     match error {
         PackageLoadError::ParseError { file, .. }
@@ -195,10 +203,7 @@ fn uri_for_load_error(error: &PackageLoadError) -> Option<Uri> {
         | PackageLoadError::ConflictingModuleNameCasing {
             first_file: file, ..
         } => file_name_to_uri(file),
-        PackageLoadError::PackageRootNotFound { .. }
-        | PackageLoadError::ManifestReadError { .. }
-        | PackageLoadError::SrcDirectoryMissing { .. }
-        | PackageLoadError::DirectoryReadError { .. }
+        PackageLoadError::DirectoryReadError { .. }
         | PackageLoadError::FileReadError { .. }
         | PackageLoadError::InvalidSourceFilePath { .. }
         | PackageLoadError::InvalidSourceFileName { .. } => None,

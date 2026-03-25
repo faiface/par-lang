@@ -8,7 +8,7 @@ use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalTypeDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "Char",
         name: "Char"
@@ -18,7 +18,7 @@ inventory::submit!(ExternalTypeDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "Char",
         name: "Equals"
@@ -28,7 +28,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "Char",
         name: "Code"
@@ -38,7 +38,7 @@ inventory::submit!(ExternalDef {
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
-        package: PackageRef::Package("core"),
+        package: PackageRef::Special("core"),
         path: &[],
         module: "Char",
         name: "Is"

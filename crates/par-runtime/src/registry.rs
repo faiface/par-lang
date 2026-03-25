@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PackageRef<'a> {
-    Local,
+    Special(&'a str),
     Package(&'a str),
 }
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]

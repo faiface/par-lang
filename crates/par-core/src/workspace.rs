@@ -14,8 +14,10 @@ use crate::frontend_impl::types::{
 };
 use crate::location::{FileName, Span};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
+use arcstr::ArcStr;
 use indexmap::IndexSet;
 use par_runtime::linker::Unlinked;
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
@@ -32,6 +34,41 @@ pub struct PackageLayout {
     pub root_dir: PathBuf,
     pub manifest_path: PathBuf,
     pub src_dir: PathBuf,
+}
+
+pub type SourceOverrides = HashMap<PathBuf, String>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencySpec {
+    Local(PathBuf),
+    Remote(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageManifest {
+    pub name: String,
+    pub url: Option<String>,
+    pub dependencies: BTreeMap<String, DependencySpec>,
+}
+
+impl PackageManifest {
+    fn package_id(&self) -> PackageId {
+        let canonical_id = self.url.as_deref().unwrap_or(self.name.as_str());
+        PackageId::Package(ArcStr::from(canonical_id))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestToml {
+    package: ManifestPackageToml,
+    #[serde(default)]
+    dependencies: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestPackageToml {
+    name: String,
+    url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,16 +134,6 @@ struct ModulePathKey {
 
 #[derive(Debug, Clone)]
 pub enum PackageLoadError {
-    PackageRootNotFound {
-        start: PathBuf,
-    },
-    ManifestReadError {
-        path: PathBuf,
-        message: String,
-    },
-    SrcDirectoryMissing {
-        path: PathBuf,
-    },
     DirectoryReadError {
         path: PathBuf,
         message: String,
@@ -146,23 +173,6 @@ pub enum PackageLoadError {
 impl Display for PackageLoadError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PackageRootNotFound { start } => {
-                write!(
-                    f,
-                    "Could not find `{MANIFEST_FILE}` when searching from {}",
-                    start.display()
-                )
-            }
-            Self::ManifestReadError { path, message } => {
-                write!(f, "Failed to read manifest {}: {}", path.display(), message)
-            }
-            Self::SrcDirectoryMissing { path } => {
-                write!(
-                    f,
-                    "Package source directory does not exist: {}",
-                    path.display()
-                )
-            }
             Self::DirectoryReadError { path, message } => {
                 write!(
                     f,
@@ -230,8 +240,139 @@ impl Display for PackageLoadError {
 impl std::error::Error for PackageLoadError {}
 
 #[derive(Debug, Clone)]
-pub enum WorkspaceError {
+pub enum WorkspaceDiscoveryError {
+    PackageRootNotFound {
+        start: PathBuf,
+    },
+    ManifestReadError {
+        path: PathBuf,
+        message: String,
+    },
+    ManifestParseError {
+        path: PathBuf,
+        message: String,
+    },
+    SrcDirectoryMissing {
+        path: PathBuf,
+    },
+    PathCanonicalizationError {
+        path: PathBuf,
+        message: String,
+    },
     Load(PackageLoadError),
+    MissingDependencyPackage {
+        manifest_path: PathBuf,
+        alias: String,
+        path: PathBuf,
+    },
+    UnsupportedRemoteDependency {
+        manifest_path: PathBuf,
+        alias: String,
+        dependency: String,
+    },
+    DependencyAliasCollision {
+        package: PackageId,
+        alias: String,
+    },
+    DuplicatePackageId {
+        package: PackageId,
+        first_root: PathBuf,
+        second_root: PathBuf,
+    },
+    PackageCycle {
+        cycle: Vec<PathBuf>,
+    },
+}
+
+impl Display for WorkspaceDiscoveryError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PackageRootNotFound { start } => {
+                write!(
+                    f,
+                    "Could not find `{MANIFEST_FILE}` when searching from {}",
+                    start.display()
+                )
+            }
+            Self::ManifestReadError { path, message } => {
+                write!(f, "Failed to read manifest {}: {}", path.display(), message)
+            }
+            Self::ManifestParseError { path, message } => {
+                write!(
+                    f,
+                    "Failed to parse manifest {}: {}",
+                    path.display(),
+                    message
+                )
+            }
+            Self::SrcDirectoryMissing { path } => {
+                write!(
+                    f,
+                    "Package source directory does not exist: {}",
+                    path.display()
+                )
+            }
+            Self::PathCanonicalizationError { path, message } => {
+                write!(
+                    f,
+                    "Failed to canonicalize package path {}: {}",
+                    path.display(),
+                    message
+                )
+            }
+            Self::Load(error) => write!(f, "{error}"),
+            Self::MissingDependencyPackage {
+                manifest_path,
+                alias,
+                path,
+            } => write!(
+                f,
+                "Manifest {} declares dependency `@{}` at {}, but no package was found there",
+                manifest_path.display(),
+                alias,
+                path.display()
+            ),
+            Self::UnsupportedRemoteDependency {
+                manifest_path,
+                alias,
+                dependency,
+            } => write!(
+                f,
+                "Manifest {} declares unsupported remote dependency `{}` for alias `@{}`",
+                manifest_path.display(),
+                dependency,
+                alias
+            ),
+            Self::DependencyAliasCollision { package, alias } => write!(
+                f,
+                "Package `{package}` has a dependency alias collision for `@{alias}`"
+            ),
+            Self::DuplicatePackageId {
+                package,
+                first_root,
+                second_root,
+            } => write!(
+                f,
+                "Duplicate package identity `{package}` for {} and {}",
+                first_root.display(),
+                second_root.display()
+            ),
+            Self::PackageCycle { cycle } => {
+                let cycle = cycle
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                write!(f, "Package dependency cycle detected: {cycle}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WorkspaceDiscoveryError {}
+
+#[derive(Debug, Clone)]
+pub enum WorkspaceError {
     LowerError {
         file: FileName,
         source: Arc<str>,
@@ -278,7 +419,6 @@ pub enum WorkspaceError {
 impl Display for WorkspaceError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Load(error) => write!(f, "{error}"),
             Self::LowerError { file, .. } => {
                 write!(f, "Failed to lower source file {}", file.0)
             }
@@ -317,7 +457,7 @@ impl Display for WorkspaceError {
                 module_path,
             } => write!(
                 f,
-                "External module `{}` was not attached to any parsed module in package `{:?}`",
+                "External module `{}` was not attached to any parsed module in package `{}`",
                 module_path, package
             ),
         }
@@ -344,7 +484,10 @@ impl WorkspacePackage {
         }
     }
 
-    pub fn from_path(id: PackageId, start: impl AsRef<Path>) -> Result<Self, PackageLoadError> {
+    pub fn from_path(
+        id: PackageId,
+        start: impl AsRef<Path>,
+    ) -> Result<Self, WorkspaceDiscoveryError> {
         parse_package(start).map(|parsed| Self::new(id, parsed))
     }
 
@@ -380,6 +523,12 @@ impl WorkspacePackage {
 }
 
 #[derive(Debug, Clone)]
+pub struct WorkspacePackages {
+    pub root_package: PackageId,
+    pub packages: Vec<WorkspacePackage>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FileImportScope<S> {
     pub current_module: S,
     pub aliases: BTreeMap<String, S>,
@@ -387,6 +536,7 @@ pub struct FileImportScope<S> {
 
 #[derive(Debug, Clone)]
 pub struct Workspace {
+    root_package: PackageId,
     lowered: Module<Arc<process::Expression<(), Universal>>, Universal>,
     docs: Docs<Universal>,
     visibility: VisibilityIndex,
@@ -409,8 +559,12 @@ impl Workspace {
         self.package_modules.keys().cloned().collect()
     }
 
+    pub fn root_package(&self) -> &PackageId {
+        &self.root_package
+    }
+
     pub fn root_modules(&self) -> Vec<ModulePath> {
-        self.modules_in_package(&PackageId::Local).to_vec()
+        self.modules_in_package(&self.root_package).to_vec()
     }
 
     pub fn modules_in_package(&self, package: &PackageId) -> &[ModulePath] {
@@ -658,7 +812,13 @@ struct AbsoluteModuleLookupKey {
     module_lower: String,
 }
 
-pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, WorkspaceError> {
+pub fn assemble_workspace(
+    workspace_packages: WorkspacePackages,
+) -> Result<Workspace, WorkspaceError> {
+    let WorkspacePackages {
+        root_package,
+        packages,
+    } = workspace_packages;
     let module_lookup = build_module_lookup(&packages);
     let package_modules = package_module_paths(&packages);
 
@@ -682,6 +842,7 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
 
     let docs = lowered.docs();
     Ok(Workspace {
+        root_package,
         lowered,
         docs,
         visibility,
@@ -692,7 +853,9 @@ pub fn load_workspace(packages: Vec<WorkspacePackage>) -> Result<Workspace, Work
     })
 }
 
-pub fn find_package_layout(start: impl AsRef<Path>) -> Result<PackageLayout, PackageLoadError> {
+pub fn find_package_layout(
+    start: impl AsRef<Path>,
+) -> Result<PackageLayout, WorkspaceDiscoveryError> {
     let start = start.as_ref();
     let mut cursor = if start.is_dir() {
         start.to_path_buf()
@@ -706,10 +869,9 @@ pub fn find_package_layout(start: impl AsRef<Path>) -> Result<PackageLayout, Pac
 
     loop {
         let manifest_path = cursor.join(MANIFEST_FILE);
-        if manifest_path.exists() {
-            let manifest_read_result = fs::read_to_string(&manifest_path);
-            if let Err(error) = manifest_read_result {
-                return Err(PackageLoadError::ManifestReadError {
+        if manifest_path.is_file() {
+            if let Err(error) = fs::read_to_string(&manifest_path) {
+                return Err(WorkspaceDiscoveryError::ManifestReadError {
                     path: manifest_path,
                     message: error.to_string(),
                 });
@@ -717,7 +879,7 @@ pub fn find_package_layout(start: impl AsRef<Path>) -> Result<PackageLayout, Pac
 
             let src_dir = cursor.join(SOURCE_DIRECTORY);
             if !src_dir.is_dir() {
-                return Err(PackageLoadError::SrcDirectoryMissing { path: src_dir });
+                return Err(WorkspaceDiscoveryError::SrcDirectoryMissing { path: src_dir });
             }
 
             return Ok(PackageLayout {
@@ -728,7 +890,7 @@ pub fn find_package_layout(start: impl AsRef<Path>) -> Result<PackageLayout, Pac
         }
 
         if !cursor.pop() {
-            return Err(PackageLoadError::PackageRootNotFound {
+            return Err(WorkspaceDiscoveryError::PackageRootNotFound {
                 start: original_start,
             });
         }
@@ -738,8 +900,28 @@ pub fn find_package_layout(start: impl AsRef<Path>) -> Result<PackageLayout, Pac
 pub fn collect_source_files(
     layout: &PackageLayout,
 ) -> Result<Vec<LoadedPackageFile>, PackageLoadError> {
+    collect_source_files_with_overrides(layout, None)
+}
+
+fn collect_source_files_with_overrides(
+    layout: &PackageLayout,
+    overrides: Option<&SourceOverrides>,
+) -> Result<Vec<LoadedPackageFile>, PackageLoadError> {
     let mut files = Vec::new();
     collect_source_files_recursive(&layout.src_dir, &layout.src_dir, &mut files)?;
+    if let Some(overrides) = overrides {
+        let normalized_overrides = overrides
+            .iter()
+            .map(|(path, source)| (normalized_path_key(path), source))
+            .collect::<HashMap<_, _>>();
+        for file in &mut files {
+            let file_path = Path::new(file.name.0.as_str());
+            let Some(source) = normalized_overrides.get(&normalized_path_key(file_path)) else {
+                continue;
+            };
+            file.source = (*source).clone();
+        }
+    }
     files.sort_by(|a, b| a.relative_path_from_src.cmp(&b.relative_path_from_src));
     Ok(files)
 }
@@ -823,10 +1005,228 @@ pub fn parse_loaded_files(
     Ok(ParsedPackage { modules })
 }
 
-pub fn parse_package(start: impl AsRef<Path>) -> Result<ParsedPackage, PackageLoadError> {
+pub fn parse_package(start: impl AsRef<Path>) -> Result<ParsedPackage, WorkspaceDiscoveryError> {
     let layout = find_package_layout(start)?;
-    let files = collect_source_files(&layout)?;
-    parse_loaded_files(files)
+    parse_package_with_overrides(&layout, None)
+}
+
+pub fn discover_workspace_packages_from_path(
+    start: impl AsRef<Path>,
+    overrides: Option<&SourceOverrides>,
+) -> Result<WorkspacePackages, WorkspaceDiscoveryError> {
+    let layout = find_package_layout(start)?;
+    let root_dir = canonicalize_path(&layout.root_dir)?;
+    let mut discovery = PackageDiscovery::new(overrides);
+    let root_package = discovery.discover(layout, root_dir)?;
+    Ok(discovery.finish(root_package))
+}
+
+fn parse_package_with_overrides(
+    layout: &PackageLayout,
+    overrides: Option<&SourceOverrides>,
+) -> Result<ParsedPackage, WorkspaceDiscoveryError> {
+    let files = collect_source_files_with_overrides(layout, overrides)
+        .map_err(WorkspaceDiscoveryError::Load)?;
+    parse_loaded_files(files).map_err(WorkspaceDiscoveryError::Load)
+}
+
+fn parse_manifest(manifest_path: &Path) -> Result<PackageManifest, WorkspaceDiscoveryError> {
+    let source = fs::read_to_string(manifest_path).map_err(|error| {
+        WorkspaceDiscoveryError::ManifestReadError {
+            path: manifest_path.to_path_buf(),
+            message: error.to_string(),
+        }
+    })?;
+    let manifest = toml::from_str::<ManifestToml>(&source).map_err(|error| {
+        WorkspaceDiscoveryError::ManifestParseError {
+            path: manifest_path.to_path_buf(),
+            message: error.to_string(),
+        }
+    })?;
+
+    Ok(PackageManifest {
+        name: manifest.package.name,
+        url: manifest.package.url,
+        dependencies: manifest
+            .dependencies
+            .into_iter()
+            .map(|(alias, dependency)| {
+                let spec = if dependency.starts_with("./") || dependency.starts_with("../") {
+                    DependencySpec::Local(PathBuf::from(dependency))
+                } else {
+                    DependencySpec::Remote(dependency)
+                };
+                (alias, spec)
+            })
+            .collect(),
+    })
+}
+
+fn canonicalize_path(path: &Path) -> Result<PathBuf, WorkspaceDiscoveryError> {
+    fs::canonicalize(path).map_err(|error| WorkspaceDiscoveryError::PathCanonicalizationError {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })
+}
+
+fn find_dependency_package_layout(
+    dependency_path: &Path,
+    declaring_manifest_path: &Path,
+    alias: &str,
+) -> Result<PackageLayout, WorkspaceDiscoveryError> {
+    if !dependency_path.exists() {
+        return Err(WorkspaceDiscoveryError::MissingDependencyPackage {
+            manifest_path: declaring_manifest_path.to_path_buf(),
+            alias: alias.to_string(),
+            path: dependency_path.to_path_buf(),
+        });
+    }
+
+    let root_dir = if dependency_path.is_dir() {
+        dependency_path.to_path_buf()
+    } else {
+        dependency_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| dependency_path.to_path_buf())
+    };
+    let dependency_manifest_path = root_dir.join(MANIFEST_FILE);
+    if !dependency_manifest_path.is_file() {
+        return Err(WorkspaceDiscoveryError::MissingDependencyPackage {
+            manifest_path: declaring_manifest_path.to_path_buf(),
+            alias: alias.to_string(),
+            path: dependency_path.to_path_buf(),
+        });
+    }
+    if let Err(error) = fs::read_to_string(&dependency_manifest_path) {
+        return Err(WorkspaceDiscoveryError::ManifestReadError {
+            path: dependency_manifest_path,
+            message: error.to_string(),
+        });
+    }
+
+    let src_dir = root_dir.join(SOURCE_DIRECTORY);
+    if !src_dir.is_dir() {
+        return Err(WorkspaceDiscoveryError::SrcDirectoryMissing { path: src_dir });
+    }
+
+    Ok(PackageLayout {
+        root_dir,
+        manifest_path: dependency_manifest_path,
+        src_dir,
+    })
+}
+
+fn normalized_path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+struct PackageDiscovery<'a> {
+    overrides: Option<&'a SourceOverrides>,
+    visiting: Vec<PathBuf>,
+    package_ids_by_root: BTreeMap<PathBuf, PackageId>,
+    roots_by_package_id: BTreeMap<PackageId, PathBuf>,
+    packages_by_root: BTreeMap<PathBuf, WorkspacePackage>,
+}
+
+impl<'a> PackageDiscovery<'a> {
+    fn new(overrides: Option<&'a SourceOverrides>) -> Self {
+        Self {
+            overrides,
+            visiting: Vec::new(),
+            package_ids_by_root: BTreeMap::new(),
+            roots_by_package_id: BTreeMap::new(),
+            packages_by_root: BTreeMap::new(),
+        }
+    }
+
+    fn finish(self, root_package: PackageId) -> WorkspacePackages {
+        let packages = self.packages_by_root.into_values().collect();
+        WorkspacePackages {
+            root_package,
+            packages,
+        }
+    }
+
+    fn discover(
+        &mut self,
+        layout: PackageLayout,
+        canonical_root: PathBuf,
+    ) -> Result<PackageId, WorkspaceDiscoveryError> {
+        if let Some(package_id) = self.package_ids_by_root.get(&canonical_root) {
+            return Ok(package_id.clone());
+        }
+
+        if let Some(index) = self
+            .visiting
+            .iter()
+            .position(|path| path == &canonical_root)
+        {
+            let mut cycle = self.visiting[index..].to_vec();
+            cycle.push(canonical_root);
+            return Err(WorkspaceDiscoveryError::PackageCycle { cycle });
+        }
+
+        self.visiting.push(canonical_root.clone());
+        let result = self.discover_uncached(layout, canonical_root);
+        self.visiting.pop();
+        result
+    }
+
+    fn discover_uncached(
+        &mut self,
+        layout: PackageLayout,
+        canonical_root: PathBuf,
+    ) -> Result<PackageId, WorkspaceDiscoveryError> {
+        let manifest = parse_manifest(&layout.manifest_path)?;
+        let package_id = manifest.package_id();
+
+        if let Some(first_root) = self.roots_by_package_id.get(&package_id) {
+            if first_root != &canonical_root {
+                return Err(WorkspaceDiscoveryError::DuplicatePackageId {
+                    package: package_id,
+                    first_root: first_root.clone(),
+                    second_root: canonical_root,
+                });
+            }
+        } else {
+            self.roots_by_package_id
+                .insert(package_id.clone(), canonical_root.clone());
+        }
+
+        let parsed = parse_package_with_overrides(&layout, self.overrides)?;
+        let mut dependencies = BTreeMap::new();
+
+        for (alias, dependency) in manifest.dependencies {
+            match dependency {
+                DependencySpec::Local(relative_path) => {
+                    let dependency_path = layout.root_dir.join(relative_path);
+                    let dependency_layout = find_dependency_package_layout(
+                        &dependency_path,
+                        &layout.manifest_path,
+                        &alias,
+                    )?;
+                    let dependency_root = canonicalize_path(&dependency_layout.root_dir)?;
+                    let dependency_id = self.discover(dependency_layout, dependency_root)?;
+                    dependencies.insert(alias, dependency_id);
+                }
+                DependencySpec::Remote(dependency) => {
+                    return Err(WorkspaceDiscoveryError::UnsupportedRemoteDependency {
+                        manifest_path: layout.manifest_path.clone(),
+                        alias,
+                        dependency,
+                    });
+                }
+            }
+        }
+
+        let package =
+            WorkspacePackage::new(package_id.clone(), parsed).with_dependencies(dependencies);
+        self.package_ids_by_root
+            .insert(canonical_root.clone(), package_id.clone());
+        self.packages_by_root.insert(canonical_root, package);
+        Ok(package_id)
+    }
 }
 
 fn build_module_lookup(
@@ -1869,6 +2269,13 @@ fn write_indentation(f: &mut impl Write, indent: usize) -> fmt::Result {
 mod tests {
     use super::*;
     use crate::frontend_impl::types::Visibility;
+    use arcstr::literal;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_package_id() -> PackageId {
+        PackageId::Special(literal!("__test__"))
+    }
 
     fn parsed_package_from_files(root: &str, files: &[(&str, &str)]) -> ParsedPackage {
         parse_loaded_files(
@@ -1885,16 +2292,27 @@ mod tests {
     }
 
     fn workspace_type_errors(packages: Vec<WorkspacePackage>) -> Vec<TypeError<Universal>> {
-        let (_checked, type_errors) = load_workspace(packages).unwrap().type_check();
+        let root_package = packages
+            .first()
+            .map(|package| package.id.clone())
+            .unwrap_or_else(test_package_id);
+        let (_checked, type_errors) = assemble_workspace(WorkspacePackages {
+            root_package,
+            packages,
+        })
+        .unwrap()
+        .type_check();
         type_errors
     }
 
     fn checked_workspace_from_files(root: &str, files: &[(&str, &str)]) -> CheckedWorkspace {
         let parsed = parsed_package_from_files(root, files);
-        let (checked, type_errors) =
-            load_workspace(vec![WorkspacePackage::new(PackageId::Local, parsed)])
-                .unwrap()
-                .type_check();
+        let (checked, type_errors) = assemble_workspace(WorkspacePackages {
+            root_package: test_package_id(),
+            packages: vec![WorkspacePackage::new(test_package_id(), parsed)],
+        })
+        .unwrap()
+        .type_check();
         assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
         checked
     }
@@ -1914,6 +2332,28 @@ mod tests {
             }
         }
         (row, column)
+    }
+
+    fn temp_package_root(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("par-core-{prefix}-{unique}"));
+        fs::create_dir_all(&root).expect("failed to create temp package root");
+        root
+    }
+
+    fn write_package(root: &Path, manifest: &str, files: &[(&str, &str)]) {
+        fs::create_dir_all(root.join("src")).expect("failed to create src directory");
+        fs::write(root.join("Par.toml"), manifest).expect("failed to write manifest");
+        for (relative_path, source) in files {
+            let path = root.join(relative_path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("failed to create parent directory");
+            }
+            fs::write(path, source).expect("failed to write source file");
+        }
     }
 
     #[test]
@@ -2038,7 +2478,7 @@ def Main : ! = do {
 } in !
 ";
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
-            PackageId::Local,
+            test_package_id(),
             parsed_package_from_files("local", &[("Main.par", source)]),
         )]);
 
@@ -2051,7 +2491,7 @@ def Main : ! = do {
     #[test]
     fn same_package_can_use_package_visible_export() {
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
-            PackageId::Local,
+            test_package_id(),
             parsed_package_from_files(
                 "local",
                 &[
@@ -2084,7 +2524,7 @@ type Uses = Hidden.Shared
     #[test]
     fn same_package_cannot_use_module_private_name() {
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
-            PackageId::Local,
+            test_package_id(),
             parsed_package_from_files(
                 "local",
                 &[
@@ -2118,7 +2558,7 @@ type Uses = Hidden.Secret
 
     #[test]
     fn cross_package_import_requires_exported_module() {
-        let dependency_id = PackageId::Package("dep".to_owned());
+        let dependency_id = PackageId::Package(literal!("dep"));
         let dependency = WorkspacePackage::new(
             dependency_id.clone(),
             parsed_package_from_files(
@@ -2132,7 +2572,7 @@ module Hidden
             ),
         );
         let local = WorkspacePackage::new(
-            PackageId::Local,
+            test_package_id(),
             parsed_package_from_files(
                 "local",
                 &[(
@@ -2151,7 +2591,7 @@ import @dep/Hidden
         assert!(errors.iter().any(|error| matches!(
             error,
             TypeError::ImportedModuleNotExported(_, module)
-                if module.package == PackageId::Package("dep".to_owned())
+                if module.package == PackageId::Package(literal!("dep"))
                     && module.module == "Hidden"
         )));
     }
@@ -2159,7 +2599,7 @@ import @dep/Hidden
     #[test]
     fn public_export_cannot_expose_package_private_type() {
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
-            PackageId::Package("dep".to_owned()),
+            PackageId::Package(literal!("dep")),
             parsed_package_from_files(
                 "dep",
                 &[
@@ -2201,7 +2641,7 @@ export {
     #[test]
     fn multi_file_modules_must_agree_on_export_module() {
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
-            PackageId::Local,
+            test_package_id(),
             parsed_package_from_files(
                 "local",
                 &[
@@ -2224,8 +2664,311 @@ module Shared
         assert!(errors.iter().any(|error| matches!(
             error,
             TypeError::ModuleExportInconsistent(_, _, module)
-                if module.package == PackageId::Local && module.module == "Shared"
+                if module.package == test_package_id() && module.module == "Shared"
         )));
+    }
+
+    #[test]
+    fn discovery_uses_manifest_url_for_root_package_id_and_root_modules() {
+        let root = temp_package_root("manifest-url");
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+url = \"dev/root\"
+",
+            &[(
+                "src/Main.par",
+                "\
+module Main
+
+dec Main : !
+def Main = !
+",
+            )],
+        );
+
+        let workspace_packages = discover_workspace_packages_from_path(&root, None).unwrap();
+        assert_eq!(
+            workspace_packages.root_package,
+            PackageId::Package(literal!("dev/root"))
+        );
+
+        let workspace = assemble_workspace(workspace_packages).unwrap();
+        assert_eq!(
+            workspace.root_package(),
+            &PackageId::Package(literal!("dev/root"))
+        );
+        assert_eq!(
+            workspace
+                .root_modules()
+                .into_iter()
+                .map(|module| module.to_slash_path())
+                .collect::<Vec<_>>(),
+            vec![String::from("Main")]
+        );
+    }
+
+    #[test]
+    fn local_path_dependency_import_works() {
+        let root = temp_package_root("local-dependency");
+        let helper = root.join("helper");
+        write_package(
+            &helper,
+            "\
+[package]
+name = \"helper\"
+",
+            &[(
+                "src/Util.par",
+                "\
+export module Util
+
+export {
+  dec Run : !
+}
+
+def Run = !
+",
+            )],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"./helper\"
+",
+            &[(
+                "src/Main.par",
+                "\
+module Main
+import @helper/Util
+
+dec Main : !
+def Main = Util.Run
+",
+            )],
+        );
+
+        let workspace =
+            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
+                .unwrap();
+        let (_checked, type_errors) = workspace.type_check();
+        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
+        assert_eq!(
+            workspace
+                .root_modules()
+                .into_iter()
+                .map(|module| module.to_slash_path())
+                .collect::<Vec<_>>(),
+            vec![String::from("Main")]
+        );
+    }
+
+    #[test]
+    fn transitive_local_path_dependencies_work() {
+        let root = temp_package_root("transitive-dependency");
+        let package_a = root.join("a");
+        let package_b = root.join("b");
+
+        write_package(
+            &package_b,
+            "\
+[package]
+name = \"b\"
+",
+            &[(
+                "src/B.par",
+                "\
+export module B
+
+export {
+  dec Run : !
+}
+
+def Run = !
+",
+            )],
+        );
+        write_package(
+            &package_a,
+            "\
+[package]
+name = \"a\"
+
+[dependencies]
+b = \"../b\"
+",
+            &[(
+                "src/A.par",
+                "\
+export module A
+import @b/B
+
+export {
+  dec Run : !
+}
+
+def Run = B.Run
+",
+            )],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+a = \"./a\"
+",
+            &[(
+                "src/Main.par",
+                "\
+module Main
+import @a/A
+
+dec Main : !
+def Main = A.Run
+",
+            )],
+        );
+
+        let workspace =
+            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
+                .unwrap();
+        let (_checked, type_errors) = workspace.type_check();
+        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
+    }
+
+    #[test]
+    fn local_dependency_cycle_is_rejected_during_discovery() {
+        let root = temp_package_root("cycle");
+        let package_a = root.join("a");
+
+        write_package(
+            &package_a,
+            "\
+[package]
+name = \"a\"
+
+[dependencies]
+root = \"../\"
+",
+            &[("src/A.par", "module A\n")],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+a = \"./a\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let error = discover_workspace_packages_from_path(&root, None).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceDiscoveryError::PackageCycle { .. }
+        ));
+    }
+
+    #[test]
+    fn missing_local_dependency_path_is_reported_explicitly() {
+        let root = temp_package_root("missing-dependency");
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"./missing-helper\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let error = discover_workspace_packages_from_path(&root, None).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceDiscoveryError::MissingDependencyPackage { alias, .. } if alias == "helper"
+        ));
+    }
+
+    #[test]
+    fn remote_dependencies_are_rejected_during_discovery() {
+        let root = temp_package_root("remote-dependency");
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"example.com/helper\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let error = discover_workspace_packages_from_path(&root, None).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceDiscoveryError::UnsupportedRemoteDependency {
+                alias,
+                dependency,
+                ..
+            } if alias == "helper" && dependency == "example.com/helper"
+        ));
+    }
+
+    #[test]
+    fn duplicate_real_package_ids_are_rejected_during_discovery() {
+        let root = temp_package_root("duplicate-package-id");
+        let package_a = root.join("a");
+        let package_b = root.join("b");
+
+        write_package(
+            &package_a,
+            "\
+[package]
+name = \"duplicate\"
+",
+            &[("src/A.par", "module A\n")],
+        );
+        write_package(
+            &package_b,
+            "\
+[package]
+name = \"duplicate\"
+",
+            &[("src/B.par", "module B\n")],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+a = \"./a\"
+b = \"./b\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let error = discover_workspace_packages_from_path(&root, None).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceDiscoveryError::DuplicatePackageId { package, .. }
+                if package == PackageId::Package(literal!("duplicate"))
+        ));
     }
 
     #[test]
