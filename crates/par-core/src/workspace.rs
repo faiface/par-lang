@@ -265,6 +265,12 @@ pub enum WorkspaceDiscoveryError {
         alias: String,
         path: PathBuf,
     },
+    InvalidDependencyPath {
+        manifest_path: PathBuf,
+        alias: String,
+        path: String,
+        message: String,
+    },
     UnsupportedRemoteDependency {
         manifest_path: PathBuf,
         alias: String,
@@ -331,6 +337,19 @@ impl Display for WorkspaceDiscoveryError {
                 manifest_path.display(),
                 alias,
                 path.display()
+            ),
+            Self::InvalidDependencyPath {
+                manifest_path,
+                alias,
+                path,
+                message,
+            } => write!(
+                f,
+                "Manifest {} declares invalid local dependency path `{}` for alias `@{}`: {}",
+                manifest_path.display(),
+                path,
+                alias,
+                message
             ),
             Self::UnsupportedRemoteDependency {
                 manifest_path,
@@ -1051,7 +1070,10 @@ fn parse_manifest(manifest_path: &Path) -> Result<PackageManifest, WorkspaceDisc
             .dependencies
             .into_iter()
             .map(|(alias, dependency)| {
-                let spec = if dependency.starts_with("./") || dependency.starts_with("../") {
+                let spec = if dependency.starts_with('.')
+                    || dependency.starts_with('~')
+                    || dependency.starts_with('$')
+                {
                     DependencySpec::Local(PathBuf::from(dependency))
                 } else {
                     DependencySpec::Remote(dependency)
@@ -1114,6 +1136,75 @@ fn find_dependency_package_layout(
         root_dir,
         manifest_path: dependency_manifest_path,
         src_dir,
+    })
+}
+
+fn resolve_local_dependency_path(
+    declaring_package_root: &Path,
+    raw_path: &Path,
+    manifest_path: &Path,
+    alias: &str,
+) -> Result<PathBuf, WorkspaceDiscoveryError> {
+    let raw = raw_path.to_string_lossy();
+    let raw_owned = raw.to_string();
+
+    if raw.starts_with('.') {
+        return Ok(declaring_package_root.join(raw_path));
+    }
+
+    if raw == "~" || raw.starts_with("~/") {
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+        let Some(home) = home else {
+            return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+                manifest_path: manifest_path.to_path_buf(),
+                alias: alias.to_string(),
+                path: raw_owned,
+                message: String::from("HOME is not set"),
+            });
+        };
+        let mut resolved = PathBuf::from(home);
+        if let Some(tail) = raw.strip_prefix("~/") {
+            resolved.push(tail);
+        }
+        return Ok(resolved);
+    }
+
+    if let Some(rest) = raw.strip_prefix('$') {
+        let (variable, tail) = match rest.split_once('/') {
+            Some((variable, tail)) => (variable, Some(tail)),
+            None => (rest, None),
+        };
+        if variable.is_empty() {
+            return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+                manifest_path: manifest_path.to_path_buf(),
+                alias: alias.to_string(),
+                path: raw_owned,
+                message: String::from("missing environment variable name after `$`"),
+            });
+        }
+        let Some(value) = std::env::var_os(variable) else {
+            return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+                manifest_path: manifest_path.to_path_buf(),
+                alias: alias.to_string(),
+                path: raw_owned,
+                message: format!("environment variable `{variable}` is not set"),
+            });
+        };
+
+        let mut resolved = PathBuf::from(value);
+        if let Some(tail) = tail
+            && !tail.is_empty()
+        {
+            resolved.push(tail);
+        }
+        return Ok(resolved);
+    }
+
+    Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+        manifest_path: manifest_path.to_path_buf(),
+        alias: alias.to_string(),
+        path: raw_owned,
+        message: String::from("expected a local path starting with `.`, `~`, or `$`"),
     })
 }
 
@@ -1200,7 +1291,12 @@ impl<'a> PackageDiscovery<'a> {
         for (alias, dependency) in manifest.dependencies {
             match dependency {
                 DependencySpec::Local(relative_path) => {
-                    let dependency_path = layout.root_dir.join(relative_path);
+                    let dependency_path = resolve_local_dependency_path(
+                        &layout.root_dir,
+                        &relative_path,
+                        &layout.manifest_path,
+                        &alias,
+                    )?;
                     let dependency_layout = find_dependency_package_layout(
                         &dependency_path,
                         &layout.manifest_path,
@@ -2344,6 +2440,16 @@ mod tests {
         root
     }
 
+    fn temp_package_root_in(base: &Path, prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        let root = base.join(format!("par-core-{prefix}-{unique}"));
+        fs::create_dir_all(&root).expect("failed to create temp package root");
+        root
+    }
+
     fn write_package(root: &Path, manifest: &str, files: &[(&str, &str)]) {
         fs::create_dir_all(root.join("src")).expect("failed to create src directory");
         fs::write(root.join("Par.toml"), manifest).expect("failed to write manifest");
@@ -2767,6 +2873,126 @@ def Main = Util.Run
                 .collect::<Vec<_>>(),
             vec![String::from("Main")]
         );
+    }
+
+    #[test]
+    fn tilde_local_dependency_import_works() {
+        let root = temp_package_root("tilde-dependency-root");
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME should be set for test"));
+        let helper = temp_package_root_in(&home, "tilde-helper");
+
+        write_package(
+            &helper,
+            "\
+[package]
+name = \"helper\"
+",
+            &[(
+                "src/Util.par",
+                "\
+export module Util
+
+export {
+  dec Run : !
+}
+
+def Run = !
+",
+            )],
+        );
+        let helper_suffix = helper
+            .strip_prefix(&home)
+            .expect("helper should live under home directory")
+            .to_string_lossy()
+            .replace('\\', "/");
+        write_package(
+            &root,
+            &format!(
+                "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"~/{helper_suffix}\"
+"
+            ),
+            &[(
+                "src/Main.par",
+                "\
+module Main
+import @helper/Util
+
+dec Main : !
+def Main = Util.Run
+",
+            )],
+        );
+
+        let workspace =
+            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
+                .unwrap();
+        let (_checked, type_errors) = workspace.type_check();
+        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
+    }
+
+    #[test]
+    fn env_var_local_dependency_import_works() {
+        let root = temp_package_root("env-dependency-root");
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME should be set for test"));
+        let helper = temp_package_root_in(&home, "env-helper");
+
+        write_package(
+            &helper,
+            "\
+[package]
+name = \"helper\"
+",
+            &[(
+                "src/Util.par",
+                "\
+export module Util
+
+export {
+  dec Run : !
+}
+
+def Run = !
+",
+            )],
+        );
+        let helper_suffix = helper
+            .strip_prefix(&home)
+            .expect("helper should live under home directory")
+            .to_string_lossy()
+            .replace('\\', "/");
+        write_package(
+            &root,
+            &format!(
+                "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"$HOME/{helper_suffix}\"
+"
+            ),
+            &[(
+                "src/Main.par",
+                "\
+module Main
+import @helper/Util
+
+dec Main : !
+def Main = Util.Run
+",
+            )],
+        );
+
+        let workspace =
+            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
+                .unwrap();
+        let (_checked, type_errors) = workspace.type_check();
+        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
     }
 
     #[test]
