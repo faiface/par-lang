@@ -551,6 +551,7 @@ pub struct WorkspacePackages {
 pub struct FileImportScope<S> {
     pub current_module: S,
     pub aliases: BTreeMap<String, S>,
+    pub package_aliases: BTreeMap<PackageId, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1529,6 +1530,12 @@ fn universalize_file_scope(
             universalize_module_path(module, current_package, dependencies, Arc::clone(&source))?,
         );
     }
+    let mut package_aliases = BTreeMap::new();
+    for (alias, package_id) in dependencies {
+        package_aliases
+            .entry(package_id.clone())
+            .or_insert_with(|| alias.clone());
+    }
     Ok(FileImportScope {
         current_module: universalize_module_path(
             current_module_path,
@@ -1537,6 +1544,7 @@ fn universalize_file_scope(
             source,
         )?,
         aliases: universal_aliases,
+        package_aliases,
     })
 }
 
@@ -1968,9 +1976,34 @@ fn write_universal_module_in_file(
                 return write!(f, "{alias}");
             }
         }
+
+        if module.package == scope.current_module.package {
+            return write_local_module_path(f, module);
+        }
+
+        if let Some(package_alias) = scope.package_aliases.get(&module.package) {
+            return write_package_relative_module_path(f, package_alias, module);
+        }
     }
 
     write!(f, "{module}")
+}
+
+fn write_local_module_path(f: &mut impl Write, module: &Universal) -> fmt::Result {
+    if module.directories.is_empty() {
+        write!(f, "{}", module.module)
+    } else {
+        write!(f, "{}/{}", module.directories.join("/"), module.module)
+    }
+}
+
+fn write_package_relative_module_path(
+    f: &mut impl Write,
+    package_alias: &str,
+    module: &Universal,
+) -> fmt::Result {
+    write!(f, "@{package_alias}/")?;
+    write_local_module_path(f, module)
 }
 
 fn write_type_in_file_with_indent_and_preference(

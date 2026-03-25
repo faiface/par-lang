@@ -176,7 +176,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                 let name = render_name(name);
                 miette::miette!(
                     labels = labels,
-                    "`{}` is not visible from here.\n\nIt is only {}.",
+                    "`{}` is not visible from here.\n\nIt is {}.",
                     name,
                     visibility,
                 )

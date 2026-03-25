@@ -19,9 +19,9 @@ pub enum Visibility {
 impl Display for Visibility {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Module => write!(f, "visible only inside its module"),
-            Self::Package => write!(f, "visible only inside its package"),
-            Self::Public => write!(f, "public"),
+            Self::Module => write!(f, "available only inside its module"),
+            Self::Package => write!(f, "exported, but only inside its package"),
+            Self::Public => write!(f, "exported from its package"),
         }
     }
 }
