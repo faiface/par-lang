@@ -385,7 +385,7 @@ pub enum Process<S> {
     },
     GlobalCommand(Span, GlobalName<S>, Command<S>),
     Command(Span, LocalName, Command<S>),
-    Noop(Span),
+    Fallthrough(Span),
 }
 
 #[derive(Clone, Debug)]
@@ -2280,7 +2280,7 @@ impl Context {
                 })
             }
 
-            Process::Noop(span) => match self.use_fallthrough(span) {
+            Process::Fallthrough(span) => match self.use_fallthrough(span) {
                 Some(process) => process,
                 None => Err(CompileError::MustEndProcess(span.clone()))?,
             },
@@ -3054,7 +3054,7 @@ impl<S> Spanning for Process<S> {
             Self::If { span, .. } => span.clone(),
             Self::GlobalCommand(span, _, _) => span.clone(),
             Self::Command(span, _, _) => span.clone(),
-            Self::Noop(span) => span.clone(),
+            Self::Fallthrough(span) => span.clone(),
         }
     }
 }

@@ -1881,7 +1881,7 @@ fn expr_do(input: &mut Input) -> Result<Expression<Unresolved>> {
             span: pre.span.join(expression.span()),
             process: match process {
                 Some((_, process)) => Box::new(process),
-                None => Box::new(Process::Noop(open.span.only_end())),
+                None => Box::new(Process::Fallthrough(open.span.only_end())),
             },
             then: Box::new(expression),
         },
@@ -1912,7 +1912,7 @@ fn expr_chan(input: &mut Input) -> Result<Expression<Unresolved>> {
         pattern,
         process: match process {
             Some((_, process)) => Box::new(process),
-            None => Box::new(Process::Noop(open.span.only_end())),
+            None => Box::new(Process::Fallthrough(open.span.only_end())),
         },
     })
     .parse_next(input)
@@ -2603,7 +2603,7 @@ fn proc_let(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
             Some((then_full_span, then)) => (pre.span.join(then_full_span), Box::new(then)),
             None => (
                 span.clone(),
-                Box::new(Process::Noop(expression.span().only_end())),
+                Box::new(Process::Fallthrough(expression.span().only_end())),
             ),
         };
         (
@@ -2711,10 +2711,10 @@ fn proc_poll(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
         )| {
             let then = then
                 .map(|(_, p)| p)
-                .unwrap_or(Process::Noop(body_open.span.join(body_close.span())));
+                .unwrap_or(Process::Fallthrough(body_open.span.join(body_close.span())));
             let else_body = else_body
                 .map(|(_, p)| p)
-                .unwrap_or(Process::Noop(else_open.span.join(else_close.span())));
+                .unwrap_or(Process::Fallthrough(else_open.span.join(else_close.span())));
             let span = kw.span.join(close.span());
             (
                 span.clone(),
@@ -2780,10 +2780,10 @@ fn proc_repoll(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
         )| {
             let then = then
                 .map(|(_, p)| p)
-                .unwrap_or(Process::Noop(body_open.span.join(body_close.span())));
+                .unwrap_or(Process::Fallthrough(body_open.span.join(body_close.span())));
             let else_body = else_body
                 .map(|(_, p)| p)
-                .unwrap_or(Process::Noop(else_open.span.join(else_close.span())));
+                .unwrap_or(Process::Fallthrough(else_open.span.join(else_close.span())));
             let span = kw.span.join(close.span());
             (
                 span.clone(),
@@ -2855,7 +2855,7 @@ fn proc_if_block(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
                 span,
                 branches,
                 else_: else_body.map(|(_, body, _)| {
-                    Box::new(body.unwrap_or(Process::Noop(open.span.only_end())))
+                    Box::new(body.unwrap_or(Process::Fallthrough(open.span.only_end())))
                 }),
                 then: then_process.map(|(_, p)| Box::new(p)),
             },
@@ -2877,7 +2877,7 @@ fn proc_if_branch(input: &mut Input) -> Result<(Condition<Unresolved>, Process<U
             (
                 condition,
                 body.map(|(_, p)| p)
-                    .unwrap_or(Process::Noop(open.span.join(close.span()))),
+                    .unwrap_or(Process::Fallthrough(open.span.join(close.span()))),
             )
         })
         .parse_next(input)
@@ -2892,7 +2892,7 @@ fn proc_if_else_body(input: &mut Input) -> Result<Option<Process<Unresolved>>> {
     )
         .map(|(_, open, body, close)| {
             body.map(|(_, p)| p)
-                .unwrap_or(Process::Noop(open.span.join(close.span())))
+                .unwrap_or(Process::Fallthrough(open.span.join(close.span())))
         })
         .map(Some)
         .parse_next(input)
@@ -2917,7 +2917,7 @@ fn proc_if_inline(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
                 Some((full_span, p)) => (full_span, p),
                 None => {
                     let s = close.span().only_end();
-                    (s.clone(), Process::Noop(s))
+                    (s.clone(), Process::Fallthrough(s))
                 }
             };
             let span = kw.span.join(tail_proc.span());
@@ -2930,9 +2930,9 @@ fn proc_if_inline(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
                         condition,
                         then_proc
                             .map(|(_, p)| p)
-                            .unwrap_or(Process::Noop(open.span.join(close.span()))),
+                            .unwrap_or(Process::Fallthrough(open.span.join(close.span()))),
                     )],
-                    else_: Some(Box::new(Process::Noop(close.span().only_end()))),
+                    else_: Some(Box::new(Process::Fallthrough(close.span().only_end()))),
                     then: Some(Box::new(tail_proc)),
                 },
             )
@@ -2979,7 +2979,7 @@ fn command(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
 }
 
 fn noop_cmd(span: Span) -> Command<Unresolved> {
-    Command::Then(Box::new(Process::Noop(span)))
+    Command::Then(Box::new(Process::Fallthrough(span)))
 }
 
 fn cmd(input: &mut Input) -> Result<Option<(Span, Command<Unresolved>)>> {
@@ -3167,7 +3167,7 @@ fn cmd_continue(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
                 let span = token.span();
                 (
                     span.clone(),
-                    Command::Continue(span, Box::new(Process::Noop(token.span.only_end()))),
+                    Command::Continue(span, Box::new(Process::Fallthrough(token.span.only_end()))),
                 )
             }
         })
@@ -3403,7 +3403,7 @@ fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
             pre.span.join(close.span()),
             match process {
                 Some((_, process)) => process,
-                None => Process::Noop(open.span.only_end()),
+                None => Process::Fallthrough(open.span.only_end()),
             },
         )
     })
@@ -3424,7 +3424,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> 
                 name,
                 match process {
                     Some((_, process)) => process,
-                    None => Process::Noop(open.span.only_end()),
+                    None => Process::Fallthrough(open.span.only_end()),
                 },
             )
         })
@@ -3481,7 +3481,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
             token.span.join(close.span()),
             match process {
                 Some((_, process)) => process,
-                None => Process::Noop(open.span.only_end()),
+                None => Process::Fallthrough(open.span.only_end()),
             },
         )
     })
