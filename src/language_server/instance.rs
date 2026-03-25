@@ -2,9 +2,10 @@ use super::io::IO;
 use crate::language_server::data::ToLspPosition;
 use crate::package_utils::{SourceLookup, normalized_path};
 use crate::workspace_support::default_workspace_from_parsed;
+use indexmap::IndexMap;
 use lsp_types::{self as lsp, Uri};
 use par_core::frontend::TypeError;
-use par_core::frontend::language::Universal;
+use par_core::frontend::language::{GlobalName, Universal};
 use par_core::source::{FileName, Span};
 use par_core::workspace::{
     CheckedWorkspace, FileImportScope, LoadedPackageFile, PackageLoadError, WorkspaceError,
@@ -23,6 +24,12 @@ pub enum CompileError {
         file_scope: Option<FileImportScope<Universal>>,
         sources: SourceLookup,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum SymbolKey<S> {
+    Type(GlobalName<S>),
+    Value(GlobalName<S>),
 }
 
 pub struct Instance {
@@ -89,7 +96,7 @@ impl Instance {
         let checked_module = checked.checked_module();
         let same_file = |span: &Span| span.file() == Some(self.file.clone());
 
-        let mut symbols = HashMap::new();
+        let mut symbols = IndexMap::new();
 
         /* kinds (maybe like this):
         CLASS: choice type
@@ -113,7 +120,7 @@ impl Instance {
                 (name.span.points(), span.points())
             {
                 symbols.insert(
-                    name,
+                    SymbolKey::Type(name.clone()),
                     lsp::DocumentSymbol {
                         name: checked.render_global_in_file(&self.file, name),
                         detail: None,
@@ -144,7 +151,7 @@ impl Instance {
                 (name.span.points(), declaration.span.points())
             {
                 symbols.insert(
-                    name,
+                    SymbolKey::Value(name.clone()),
                     lsp::DocumentSymbol {
                         name: checked.render_global_in_file(&self.file, name),
                         detail: Some(detail),
@@ -181,7 +188,7 @@ impl Instance {
                     end: name_end.to_lsp_position(),
                 };
                 symbols
-                    .entry(name)
+                    .entry(SymbolKey::Value(name.clone()))
                     .and_modify(|symbol| {
                         symbol.range = range;
                         symbol.selection_range = selection_range;
@@ -221,7 +228,7 @@ impl Instance {
         }
 
         Some(lsp::DocumentSymbolResponse::Nested(
-            symbols.into_iter().map(|(_, v)| v).collect(),
+            symbols.into_values().collect(),
         ))
     }
     pub fn handle_goto_declaration(
