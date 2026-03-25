@@ -299,6 +299,10 @@ impl CaptureAnalysis {
         env: &LoopEnv,
     ) -> (Command<(), Unresolved>, Captures) {
         match command {
+            Command::Noop(process) => {
+                let (process, caps) = self.fix_process(process, env);
+                (Command::Noop(process), caps)
+            }
             Command::Link(expression) => {
                 let (expression, caps) = self.fix_expression(expression, env, &Captures::new());
                 (Command::Link(expression), caps)
@@ -600,6 +604,9 @@ impl BlockEnvAnalyzer {
         env: &LoopEnv,
     ) {
         match command {
+            Command::Noop(process) => {
+                self.visit_process(process, env);
+            }
             Command::Link(expression) => self.visit_expression(expression, env),
             Command::Send(argument, process) => {
                 self.visit_expression(argument, env);
@@ -844,6 +851,7 @@ impl<'a> CaptureCollector<'a> {
         env: &LoopEnv,
     ) -> Captures {
         match command {
+            Command::Noop(process) => self.process_captures(process, env),
             Command::Link(expression) => self.expression_captures(expression, env),
             Command::Send(argument, process) => {
                 let mut caps = self.process_captures(process, env);

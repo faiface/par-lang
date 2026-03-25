@@ -388,6 +388,9 @@ fn validate_command_visibility(
     errors: &mut IndexSet<TypeError<Universal>>,
 ) {
     match command {
+        process::Command::Noop(process) => {
+            validate_process_visibility(current_module, process, visibility, errors);
+        }
         process::Command::Link(expression) => {
             validate_expression_visibility(current_module, expression, visibility, errors);
         }

@@ -2004,6 +2004,51 @@ def Main = Run
     }
 
     #[test]
+    fn hover_info_includes_type_for_empty_local_command_chain_before_continuation() {
+        let source = "\
+module Main
+
+def Main : ! = chan exit {
+  let x = !
+  x
+  exit!
+}
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.workspace().sources().keys().next().unwrap();
+
+        let x_index = source.match_indices("\n  x\n").next().unwrap().0 + 3;
+        let (row, column) = row_and_column(source, x_index);
+        let hover = checked.hover_at(file, row, column).unwrap();
+
+        assert_eq!(hover.variable_name(), Some("x"));
+        assert_eq!(
+            checked.render_hover_signature_in_file(file, &hover),
+            "x : !"
+        );
+    }
+
+    #[test]
+    fn empty_local_command_chain_reports_missing_variable() {
+        let source = "\
+module Main
+
+def Main : ! = do {
+  xyzw
+} in !
+";
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            PackageId::Local,
+            parsed_package_from_files("local", &[("Main.par", source)]),
+        )]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::VariableDoesNotExist(_, name) if name.string.as_str() == "xyzw"
+        )));
+    }
+
+    #[test]
     fn same_package_can_use_package_visible_export() {
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
             PackageId::Local,

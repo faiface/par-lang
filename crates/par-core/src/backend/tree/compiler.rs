@@ -686,6 +686,7 @@ impl Compiler {
         cmd: &Command<Type<Universal>, Universal>,
     ) -> Result<()> {
         match cmd {
+            Command::Noop(process) => self.compile_process(process)?,
             Command::Link(expr) => self.compile_command_link(&name, usage, expr)?,
             // types get erased.
             Command::SendType(_argument, process) => {

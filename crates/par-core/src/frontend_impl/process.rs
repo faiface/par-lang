@@ -64,6 +64,7 @@ pub enum Process<Typ, S> {
 
 #[derive(Clone, Debug)]
 pub enum Command<Typ, S> {
+    Noop(Arc<Process<Typ, S>>),
     Link(Arc<Expression<Typ, S>>),
     Send(Arc<Expression<Typ, S>>, Arc<Process<Typ, S>>),
     Receive(
@@ -154,6 +155,7 @@ impl<S: Clone> Process<(), S> {
                 typ: typ.clone(),
                 usage: usage.clone(),
                 command: match command {
+                    Command::Noop(process) => Command::Noop(process.optimize()),
                     Command::Link(expression) => {
                         let expression = expression.optimize();
                         match expression.optimize().as_ref() {
@@ -338,6 +340,7 @@ impl<S: Clone> Process<(), S> {
                     typ: typ.clone(),
                     usage: usage.clone(),
                     command: match command {
+                        Command::Noop(process) => Command::Noop(process.optimize_subject(replace)),
                         Command::Link(expression) => {
                             let expression = expression.optimize_subject(replace);
                             Command::Link(expression)
@@ -558,6 +561,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Process<Type<S>, S> {
 impl<Typ, S> Command<Typ, S> {
     pub fn free_variables(&self) -> IndexSet<LocalName> {
         match self {
+            Command::Noop(process) => process.free_variables(),
             Command::Link(expression) => expression.free_variables(),
             Command::Send(argument, process) => {
                 let mut vars = argument.free_variables();
@@ -600,6 +604,9 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> Command<Type<S>, S> {
         consume: &mut impl FnMut(Span, HoverInfo<S>),
     ) {
         match self {
+            Self::Noop(process) => {
+                process.types_at_spans(program, docs, consume);
+            }
             Self::Link(expression) => {
                 expression.types_at_spans(program, docs, consume);
             }
@@ -1190,6 +1197,7 @@ impl<S: Clone> Command<(), S> {
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Command<(), T>, E> {
         match self {
+            Command::Noop(process) => Self::map_global_names_noop(process, f),
             Command::Link(expression) => Self::map_global_names_link(expression, f),
             Command::Send(argument, process) => Self::map_global_names_send(argument, process, f),
             Command::Receive(parameter, annotation, (), process, vars) => {
@@ -1215,6 +1223,13 @@ impl<S: Clone> Command<(), S> {
                 Self::map_global_names_receive_type(parameter, process, f)
             }
         }
+    }
+
+    fn map_global_names_noop<T, E>(
+        process: Arc<Process<(), S>>,
+        f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
+    ) -> Result<Command<(), T>, E> {
+        Ok(Command::Noop(map_arc_process(process, f)?))
     }
 
     fn map_global_names_link<T, E>(
@@ -1579,6 +1594,7 @@ impl<Typ, S: Clone + std::fmt::Display> Process<Typ, S> {
                 write!(f, "{}", subject)?;
 
                 match command {
+                    Command::Noop(process) => process.pretty(f, indent),
                     Command::Link(expression) => {
                         write!(f, " <> ")?;
                         expression.pretty(f, indent)

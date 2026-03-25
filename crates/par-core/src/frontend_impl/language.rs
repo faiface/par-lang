@@ -2239,6 +2239,14 @@ impl Context {
                 })
             }
 
+            Process::Command(_, name, Command::Then(next)) => Arc::new(process::Process::Do {
+                span: name.span.clone(),
+                name: name.clone(),
+                usage: VariableUsage::Unknown,
+                typ: (),
+                command: process::Command::Noop(self.compile_process(next)?),
+            }),
+
             Process::Command(_, name, command) => {
                 let None = self.original_object_name else {
                     // this should never happen. If it did it means we forgot to exit the alias-mode.
