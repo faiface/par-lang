@@ -1996,7 +1996,7 @@ fn write_universal_module_in_file(
         }
     }
 
-    write!(f, "{module}")
+    write_package_source_module_path(f, &module.package, module)
 }
 
 fn write_local_module_path(f: &mut impl Write, module: &Universal) -> fmt::Result {
@@ -2013,6 +2013,27 @@ fn write_package_relative_module_path(
     module: &Universal,
 ) -> fmt::Result {
     write!(f, "@{package_alias}/")?;
+    write_local_module_path(f, module)
+}
+
+fn write_package_source_module_path(
+    f: &mut impl Write,
+    package: &PackageId,
+    module: &Universal,
+) -> fmt::Result {
+    write!(f, "\"")?;
+    match package {
+        PackageId::Special(name) | PackageId::Local(name) | PackageId::Remote(name) => {
+            for ch in name.chars() {
+                match ch {
+                    '\\' => write!(f, "\\\\")?,
+                    '"' => write!(f, "\\\"")?,
+                    _ => write!(f, "{ch}")?,
+                }
+            }
+        }
+    }
+    write!(f, "\"/")?;
     write_local_module_path(f, module)
 }
 

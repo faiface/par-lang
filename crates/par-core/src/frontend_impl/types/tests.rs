@@ -193,8 +193,8 @@ mod tests {
             render_type_in_scope(None, &expanded),
             "\
 choice {
-  .delete => @__test__/Main.Map<String, Int>,
-  .put => [Int] @__test__/Main.Map<String, Int>,
+  .delete => \"__test__\"/Main.Map<String, Int>,
+  .put => [Int] \"__test__\"/Main.Map<String, Int>,
 }"
         );
     }

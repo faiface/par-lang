@@ -7,6 +7,10 @@ version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/faiface/par-lang"
 
+[[bin]]
+name = "par"
+path = "src/main.rs"
+
 [features]
 default = ["playground"]
 playground = ["eframe", "egui_code_editor", "rfd", "par-core/playground", "par-runtime/playground"]
