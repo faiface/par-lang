@@ -899,7 +899,9 @@ impl Playground {
         }
 
         match package {
-            PackageId::Special(name) | PackageId::Package(name) => format!("@{name}"),
+            PackageId::Special(name) | PackageId::Local(name) | PackageId::Remote(name) => {
+                format!("@{name}")
+            }
         }
     }
 

@@ -327,7 +327,8 @@ impl Compiler {
                     let def_ref = Unlinked {
                         package: match &name.module.package {
                             PackageId::Special(name) => PackageID::Special(name.to_string()),
-                            PackageId::Package(name) => PackageID::Package(name.to_string()),
+                            PackageId::Local(name) => PackageID::Local(name.to_string()),
+                            PackageId::Remote(name) => PackageID::Remote(name.to_string()),
                         },
                         path: name.module.directories.clone(),
                         module: name.module.module.clone(),

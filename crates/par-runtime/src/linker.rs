@@ -14,7 +14,8 @@ pub type Linked = ExternalFn;
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PackageID {
     Special(String),
-    Package(String),
+    Local(String),
+    Remote(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -34,7 +35,8 @@ impl<'a> From<PackageRef<'a>> for PackageID {
     fn from(package: PackageRef) -> Self {
         match package {
             PackageRef::Special(name) => PackageID::Special(name.to_string()),
-            PackageRef::Package(name) => PackageID::Package(name.to_string()),
+            PackageRef::Local(name) => PackageID::Local(name.to_string()),
+            PackageRef::Remote(name) => PackageID::Remote(name.to_string()),
         }
     }
 }
@@ -53,7 +55,7 @@ impl<'a> From<DefinitionRef<'a>> for Unlinked {
 impl Display for PackageID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Special(name) | Self::Package(name) => write!(f, "@{name}"),
+            Self::Special(name) | Self::Local(name) | Self::Remote(name) => write!(f, "@{name}"),
         }
     }
 }
@@ -61,7 +63,9 @@ impl Display for PackageID {
 impl Display for Unlinked {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let package_prefix = match &self.package {
-            PackageID::Special(name) | PackageID::Package(name) => format!("@{name}/"),
+            PackageID::Special(name) | PackageID::Local(name) | PackageID::Remote(name) => {
+                format!("@{name}/")
+            }
         };
         let path_prefix = if self.path.is_empty() {
             String::new()

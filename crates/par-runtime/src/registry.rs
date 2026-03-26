@@ -6,7 +6,8 @@ use std::sync::LazyLock;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PackageRef<'a> {
     Special(&'a str),
-    Package(&'a str),
+    Local(&'a str),
+    Remote(&'a str),
 }
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct DefinitionRef<'a> {

@@ -41,10 +41,12 @@ fn inject_builtin_packages(
         .iter()
         .map(|package| match &package.id {
             PackageId::Special(name) => Ok((name.to_string(), package.id.clone())),
-            PackageId::Package(_) => Err(WorkspaceDiscoveryError::DependencyAliasCollision {
-                package: package.id.clone(),
-                alias: String::from("<builtin>"),
-            }),
+            PackageId::Local(_) | PackageId::Remote(_) => {
+                Err(WorkspaceDiscoveryError::DependencyAliasCollision {
+                    package: package.id.clone(),
+                    alias: String::from("<builtin>"),
+                })
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
 

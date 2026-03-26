@@ -46,7 +46,8 @@ pub struct Resolved {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PackageId {
     Special(ArcStr),
-    Package(ArcStr),
+    Local(ArcStr),
+    Remote(ArcStr),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -492,7 +493,9 @@ impl Display for Unresolved {
 impl Display for Universal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let package = match &self.package {
-            PackageId::Special(name) | PackageId::Package(name) => Some(format!("@{name}")),
+            PackageId::Special(name) | PackageId::Local(name) | PackageId::Remote(name) => {
+                Some(format!("@{name}"))
+            }
         };
         match (&package, self.directories.is_empty()) {
             (None, true) => write!(f, "{}", self.module),
@@ -513,7 +516,9 @@ impl Display for Universal {
 impl Display for PackageId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PackageId::Special(name) | PackageId::Package(name) => write!(f, "@{name}"),
+            PackageId::Special(name) | PackageId::Local(name) | PackageId::Remote(name) => {
+                write!(f, "@{name}")
+            }
         }
     }
 }

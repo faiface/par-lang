@@ -47,15 +47,7 @@ pub enum DependencySpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageManifest {
     pub name: String,
-    pub url: Option<String>,
     pub dependencies: BTreeMap<String, DependencySpec>,
-}
-
-impl PackageManifest {
-    fn package_id(&self) -> PackageId {
-        let canonical_id = self.url.as_deref().unwrap_or(self.name.as_str());
-        PackageId::Package(ArcStr::from(canonical_id))
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,7 +60,6 @@ struct ManifestToml {
 #[derive(Debug, Deserialize)]
 struct ManifestPackageToml {
     name: String,
-    url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1037,7 +1028,7 @@ pub fn discover_workspace_packages_from_path(
     let layout = find_package_layout(start)?;
     let root_dir = canonicalize_path(&layout.root_dir)?;
     let mut discovery = PackageDiscovery::new(overrides);
-    let root_package = discovery.discover(layout, root_dir)?;
+    let root_package = discovery.discover(layout, root_dir.clone(), local_package_id(&root_dir))?;
     Ok(discovery.finish(root_package))
 }
 
@@ -1066,7 +1057,6 @@ fn parse_manifest(manifest_path: &Path) -> Result<PackageManifest, WorkspaceDisc
 
     Ok(PackageManifest {
         name: manifest.package.name,
-        url: manifest.package.url,
         dependencies: manifest
             .dependencies
             .into_iter()
@@ -1077,7 +1067,7 @@ fn parse_manifest(manifest_path: &Path) -> Result<PackageManifest, WorkspaceDisc
                 {
                     DependencySpec::Local(PathBuf::from(dependency))
                 } else {
-                    DependencySpec::Remote(dependency)
+                    DependencySpec::Remote(normalize_remote_dependency_source(&dependency))
                 };
                 (alias, spec)
             })
@@ -1209,6 +1199,21 @@ fn resolve_local_dependency_path(
     })
 }
 
+fn normalized_package_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn local_package_id(path: &Path) -> PackageId {
+    PackageId::Local(ArcStr::from(normalized_package_path(path)))
+}
+
+fn normalize_remote_dependency_source(raw: &str) -> String {
+    raw.trim()
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .to_owned()
+}
+
 fn normalized_path_key(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/").to_lowercase()
 }
@@ -1244,6 +1249,7 @@ impl<'a> PackageDiscovery<'a> {
         &mut self,
         layout: PackageLayout,
         canonical_root: PathBuf,
+        package_id: PackageId,
     ) -> Result<PackageId, WorkspaceDiscoveryError> {
         if let Some(package_id) = self.package_ids_by_root.get(&canonical_root) {
             return Ok(package_id.clone());
@@ -1260,7 +1266,7 @@ impl<'a> PackageDiscovery<'a> {
         }
 
         self.visiting.push(canonical_root.clone());
-        let result = self.discover_uncached(layout, canonical_root);
+        let result = self.discover_uncached(layout, canonical_root, package_id);
         self.visiting.pop();
         result
     }
@@ -1269,9 +1275,9 @@ impl<'a> PackageDiscovery<'a> {
         &mut self,
         layout: PackageLayout,
         canonical_root: PathBuf,
+        package_id: PackageId,
     ) -> Result<PackageId, WorkspaceDiscoveryError> {
         let manifest = parse_manifest(&layout.manifest_path)?;
-        let package_id = manifest.package_id();
 
         if let Some(first_root) = self.roots_by_package_id.get(&package_id) {
             if first_root != &canonical_root {
@@ -1304,7 +1310,11 @@ impl<'a> PackageDiscovery<'a> {
                         &alias,
                     )?;
                     let dependency_root = canonicalize_path(&dependency_layout.root_dir)?;
-                    let dependency_id = self.discover(dependency_layout, dependency_root)?;
+                    let dependency_id = self.discover(
+                        dependency_layout,
+                        dependency_root.clone(),
+                        local_package_id(&dependency_root),
+                    )?;
                     dependencies.insert(alias, dependency_id);
                 }
                 DependencySpec::Remote(dependency) => {
@@ -2697,7 +2707,7 @@ type Uses = Hidden.Secret
 
     #[test]
     fn cross_package_import_requires_exported_module() {
-        let dependency_id = PackageId::Package(literal!("dep"));
+        let dependency_id = PackageId::Remote(literal!("dep"));
         let dependency = WorkspacePackage::new(
             dependency_id.clone(),
             parsed_package_from_files(
@@ -2730,7 +2740,7 @@ import @dep/Hidden
         assert!(errors.iter().any(|error| matches!(
             error,
             TypeError::ImportedModuleNotExported(_, module)
-                if module.package == PackageId::Package(literal!("dep"))
+                if module.package == PackageId::Remote(literal!("dep"))
                     && module.module == "Hidden"
         )));
     }
@@ -2738,7 +2748,7 @@ import @dep/Hidden
     #[test]
     fn public_export_cannot_expose_package_private_type() {
         let errors = workspace_type_errors(vec![WorkspacePackage::new(
-            PackageId::Package(literal!("dep")),
+            PackageId::Remote(literal!("dep")),
             parsed_package_from_files(
                 "dep",
                 &[
@@ -2808,14 +2818,13 @@ module Shared
     }
 
     #[test]
-    fn discovery_uses_manifest_url_for_root_package_id_and_root_modules() {
-        let root = temp_package_root("manifest-url");
+    fn discovery_uses_canonical_root_path_for_root_package_id_and_root_modules() {
+        let root = temp_package_root("root-package-id");
         write_package(
             &root,
             "\
 [package]
 name = \"root\"
-url = \"dev/root\"
 ",
             &[(
                 "src/Main.par",
@@ -2829,16 +2838,14 @@ def Main = !
         );
 
         let workspace_packages = discover_workspace_packages_from_path(&root, None).unwrap();
+        let canonical_root = canonicalize_path(&root).unwrap();
         assert_eq!(
             workspace_packages.root_package,
-            PackageId::Package(literal!("dev/root"))
+            local_package_id(&canonical_root)
         );
 
         let workspace = assemble_workspace(workspace_packages).unwrap();
-        assert_eq!(
-            workspace.root_package(),
-            &PackageId::Package(literal!("dev/root"))
-        );
+        assert_eq!(workspace.root_package(), &local_package_id(&canonical_root));
         assert_eq!(
             workspace
                 .root_modules()
@@ -3188,46 +3195,24 @@ helper = \"example.com/helper\"
     }
 
     #[test]
-    fn duplicate_real_package_ids_are_rejected_during_discovery() {
-        let root = temp_package_root("duplicate-package-id");
-        let package_a = root.join("a");
-        let package_b = root.join("b");
-
-        write_package(
-            &package_a,
-            "\
-[package]
-name = \"duplicate\"
-",
-            &[("src/A.par", "module A\n")],
-        );
-        write_package(
-            &package_b,
-            "\
-[package]
-name = \"duplicate\"
-",
-            &[("src/B.par", "module B\n")],
-        );
+    fn manifest_url_does_not_affect_local_package_identity() {
+        let root = temp_package_root("manifest-url-ignored");
         write_package(
             &root,
             "\
 [package]
 name = \"root\"
-
-[dependencies]
-a = \"./a\"
-b = \"./b\"
+url = \"github.com/example/root\"
 ",
             &[("src/Main.par", "module Main\n")],
         );
 
-        let error = discover_workspace_packages_from_path(&root, None).unwrap_err();
-        assert!(matches!(
-            error,
-            WorkspaceDiscoveryError::DuplicatePackageId { package, .. }
-                if package == PackageId::Package(literal!("duplicate"))
-        ));
+        let workspace_packages = discover_workspace_packages_from_path(&root, None).unwrap();
+        let canonical_root = canonicalize_path(&root).unwrap();
+        assert_eq!(
+            workspace_packages.root_package,
+            local_package_id(&canonical_root)
+        );
     }
 
     #[test]
