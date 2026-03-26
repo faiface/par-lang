@@ -22,11 +22,11 @@ use tokio::time::Instant;
 use par_runtime::linker::{Artifact, Linked, Unlinked};
 use par_runtime::spawn::TokioSpawn;
 use std::fmt::Display;
-use std::fs::File;
+use std::fs::{self, File};
 #[cfg(feature = "playground")]
 use std::io::Write;
 use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -45,6 +45,13 @@ mod wasm_spawn;
 mod workspace_support;
 
 const MAX_INTERACTIONS_DEFAULT: u32 = 10_000;
+const HELLO_WORLD_SOURCE: &str = "\
+module Main
+
+import @core/Debug
+
+def Main : ! = Debug.Log(\"Hello, World!\")
+";
 
 #[derive(Debug, Clone)]
 enum BuildError {
@@ -124,6 +131,58 @@ impl Display for BuildError {
     }
 }
 
+#[derive(Debug)]
+enum NewPackageError {
+    InvalidPackageName(String),
+    CurrentDirectory(String),
+    PathExistsAsFile(PathBuf),
+    DirectoryRead { path: PathBuf, message: String },
+    DirectoryNotEmpty(PathBuf),
+    DirectoryCreate { path: PathBuf, message: String },
+    FileWrite { path: PathBuf, message: String },
+}
+
+impl Display for NewPackageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPackageName(name) => write!(
+                f,
+                "`{name}` is not a valid package name. Package names must be lower-case identifiers and not reserved keywords."
+            ),
+            Self::CurrentDirectory(message) => {
+                write!(f, "Failed to determine current directory: {message}")
+            }
+            Self::PathExistsAsFile(path) => {
+                write!(
+                    f,
+                    "Path already exists and is not a directory: {}",
+                    path.display()
+                )
+            }
+            Self::DirectoryRead { path, message } => {
+                write!(f, "Failed to read directory {}: {message}", path.display())
+            }
+            Self::DirectoryNotEmpty(path) => {
+                write!(
+                    f,
+                    "Directory already exists and is not empty: {}",
+                    path.display()
+                )
+            }
+            Self::DirectoryCreate { path, message } => {
+                write!(
+                    f,
+                    "Failed to create directory {}: {message}",
+                    path.display()
+                )
+            }
+            Self::FileWrite { path, message } => {
+                write!(f, "Failed to write file {}: {message}", path.display())
+            }
+        }
+    }
+}
+
 fn build_checked_package(
     package_path: &PathBuf,
 ) -> Result<(CheckedWorkspace, Vec<ModulePath>, SourceLookup), BuildError> {
@@ -190,10 +249,132 @@ fn build_runtime_package(
     ))
 }
 
+fn is_reserved_package_name(name: &str) -> bool {
+    matches!(
+        name,
+        "begin"
+            | "box"
+            | "case"
+            | "catch"
+            | "chan"
+            | "choice"
+            | "dec"
+            | "def"
+            | "do"
+            | "dual"
+            | "either"
+            | "else"
+            | "export"
+            | "if"
+            | "import"
+            | "is"
+            | "in"
+            | "iterative"
+            | "let"
+            | "and"
+            | "as"
+            | "module"
+            | "or"
+            | "not"
+            | "loop"
+            | "poll"
+            | "repoll"
+            | "submit"
+            | "recursive"
+            | "self"
+            | "throw"
+            | "try"
+            | "default"
+            | "type"
+            | "unfounded"
+            | "external"
+    )
+}
+
+fn is_valid_package_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_lowercase() || first == '_') {
+        return false;
+    }
+    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return false;
+    }
+    !is_reserved_package_name(name)
+}
+
+fn create_new_package(package_name: &str) -> Result<PathBuf, NewPackageError> {
+    let current_dir = std::env::current_dir()
+        .map_err(|error| NewPackageError::CurrentDirectory(error.to_string()))?;
+    create_new_package_in(&current_dir, package_name)
+}
+
+fn create_new_package_in(base_dir: &Path, package_name: &str) -> Result<PathBuf, NewPackageError> {
+    if !is_valid_package_name(package_name) {
+        return Err(NewPackageError::InvalidPackageName(package_name.to_owned()));
+    }
+
+    let package_dir = base_dir.join(package_name);
+    if package_dir.exists() {
+        if !package_dir.is_dir() {
+            return Err(NewPackageError::PathExistsAsFile(package_dir));
+        }
+        let mut entries =
+            fs::read_dir(&package_dir).map_err(|error| NewPackageError::DirectoryRead {
+                path: package_dir.clone(),
+                message: error.to_string(),
+            })?;
+        if entries
+            .next()
+            .transpose()
+            .map_err(|error| NewPackageError::DirectoryRead {
+                path: package_dir.clone(),
+                message: error.to_string(),
+            })?
+            .is_some()
+        {
+            return Err(NewPackageError::DirectoryNotEmpty(package_dir));
+        }
+    } else {
+        fs::create_dir(&package_dir).map_err(|error| NewPackageError::DirectoryCreate {
+            path: package_dir.clone(),
+            message: error.to_string(),
+        })?;
+    }
+
+    let manifest_path = package_dir.join("Par.toml");
+    let manifest_source = format!("[package]\nname = \"{package_name}\"\n");
+    fs::write(&manifest_path, manifest_source).map_err(|error| NewPackageError::FileWrite {
+        path: manifest_path,
+        message: error.to_string(),
+    })?;
+
+    let src_dir = package_dir.join("src");
+    fs::create_dir(&src_dir).map_err(|error| NewPackageError::DirectoryCreate {
+        path: src_dir.clone(),
+        message: error.to_string(),
+    })?;
+
+    let main_path = src_dir.join("Main.par");
+    fs::write(&main_path, HELLO_WORLD_SOURCE).map_err(|error| NewPackageError::FileWrite {
+        path: main_path,
+        message: error.to_string(),
+    })?;
+
+    Ok(package_dir)
+}
+
 #[cfg(not(target_family = "wasm"))]
 fn main() -> ExitCode {
     let matches = command!()
         .subcommand_required(true)
+        .subcommand(
+            Command::new("new")
+                .about("Create a new Par package")
+                .arg(arg!(<package> "Package name to create")),
+        )
         .subcommand(
             Command::new("playground")
                 .about(if cfg!(feature = "playground") {
@@ -278,6 +459,18 @@ fn main() -> ExitCode {
         .get_matches_from(wild::args());
 
     match matches.subcommand() {
+        Some(("new", args)) => {
+            let package = args.get_one::<String>("package").unwrap();
+            match create_new_package(package) {
+                Ok(path) => {
+                    println!("{} {}", "Created package:".bright_green(), path.display());
+                }
+                Err(error) => {
+                    eprintln!("{}", error.to_string().bright_red());
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
         Some(("playground", args)) => {
             let file = args.get_one::<PathBuf>("file");
             let max_interactions = args
@@ -591,4 +784,68 @@ fn run_tests(
     max_interactions: u32,
 ) -> bool {
     test_runner::run_tests(package_path, target, filter, max_interactions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace_support::{
+        assemble_default_workspace, default_workspace_packages_from_path,
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("par-new-{prefix}-{unique}"));
+        fs::create_dir_all(&path).expect("failed to create temp dir");
+        path
+    }
+
+    #[test]
+    fn package_name_validation_matches_lowercase_identifier_rules() {
+        assert!(is_valid_package_name("hello"));
+        assert!(is_valid_package_name("hello_world123"));
+        assert!(is_valid_package_name("_internal"));
+
+        assert!(!is_valid_package_name(""));
+        assert!(!is_valid_package_name("Hello"));
+        assert!(!is_valid_package_name("123hello"));
+        assert!(!is_valid_package_name("hello-world"));
+        assert!(!is_valid_package_name("import"));
+    }
+
+    #[test]
+    fn create_new_package_scaffolds_a_valid_package() {
+        let root = temp_dir("scaffold");
+        let package_dir = create_new_package_in(&root, "hello_world").unwrap();
+
+        assert_eq!(package_dir, root.join("hello_world"));
+        assert_eq!(
+            fs::read_to_string(package_dir.join("Par.toml")).unwrap(),
+            "[package]\nname = \"hello_world\"\n"
+        );
+        assert_eq!(
+            fs::read_to_string(package_dir.join("src/Main.par")).unwrap(),
+            HELLO_WORLD_SOURCE
+        );
+
+        let packages = default_workspace_packages_from_path(&package_dir, None).unwrap();
+        let workspace = assemble_default_workspace(packages).unwrap();
+        let (_checked, type_errors) = workspace.type_check();
+        assert!(type_errors.is_empty(), "type errors: {type_errors:?}");
+    }
+
+    #[test]
+    fn create_new_package_rejects_non_empty_existing_directory() {
+        let root = temp_dir("non-empty");
+        let package_dir = root.join("hello");
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::write(package_dir.join("existing.txt"), "already here").unwrap();
+
+        let error = create_new_package_in(&root, "hello").unwrap_err();
+        assert!(matches!(error, NewPackageError::DirectoryNotEmpty(path) if path == package_dir));
+    }
 }
