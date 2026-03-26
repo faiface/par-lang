@@ -10,7 +10,7 @@ import {
   @core/Nat
   @core/String
   @core/Url
-  @basic/Debug
+  @core/Debug
   @basic/Http
   @basic/Os
   @basic/Time

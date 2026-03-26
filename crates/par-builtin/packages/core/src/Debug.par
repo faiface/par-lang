@@ -1,7 +1,7 @@
 export module Debug
 
 import {
-  @core/String
+  String
 }
 
 export {
