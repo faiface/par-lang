@@ -190,7 +190,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            render_type_in_scope(None, &expanded),
+            render_type_in_scope(None, &expanded, 0),
             "\
 choice {
   .delete => \"__test__\"/Main.Map<String, Int>,

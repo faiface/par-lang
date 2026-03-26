@@ -88,3 +88,25 @@ fn runtime_link_reports_missing_external_registration() {
         "unexpected error: {display}"
     );
 }
+
+#[test]
+fn check_reports_missing_fetched_remote_dependency() {
+    let package = temp_package("missing-remote", "module Main\n");
+    fs::write(
+        package.join("Par.toml"),
+        "\
+[package]
+name = \"tmp\"
+
+[dependencies]
+helper = \"github.com/example/helper\"
+",
+    )
+    .expect("failed to write manifest");
+
+    let error = check(package).expect_err("check should fail");
+    assert!(
+        error.contains("Run `par add` to fetch dependencies."),
+        "unexpected error: {error}"
+    );
+}

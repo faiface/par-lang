@@ -148,7 +148,7 @@ impl Instance {
             if !same_file(&declaration.span) {
                 continue;
             }
-            let detail = checked.render_type_in_file(&self.file, &declaration.typ);
+            let detail = checked.render_type_in_file(&self.file, &declaration.typ, 0);
 
             if let (Some((name_start, name_end)), Some((start, end))) =
                 (name.span.points(), declaration.span.points())
@@ -197,7 +197,7 @@ impl Instance {
                         symbol.selection_range = selection_range;
                     })
                     .or_insert({
-                        let detail = checked.render_type_in_file(&self.file, &typ);
+                        let detail = checked.render_type_in_file(&self.file, &typ, 0);
 
                         lsp::DocumentSymbol {
                             name: checked.render_global_in_file(&self.file, name),

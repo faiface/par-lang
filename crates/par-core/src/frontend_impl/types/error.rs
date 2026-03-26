@@ -1,9 +1,7 @@
 use crate::frontend_impl::language::{GlobalName, LocalName, Universal};
 use crate::frontend_impl::types::{LoopId, Operation, Type};
 use crate::location::{Span, Spanning};
-use crate::workspace::{
-    FileImportScope, render_global_name_in_scope, render_type_in_scope_with_indent,
-};
+use crate::workspace::{FileImportScope, render_global_name_in_scope, render_type_in_scope};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;
 use std::sync::Arc;
@@ -538,7 +536,7 @@ impl TypeError<Universal> {
         self.to_report_with(
             source_code,
             |name| render_global_name_in_scope(scope, name),
-            |typ, indent| render_type_in_scope_with_indent(scope, typ, indent),
+            |typ, indent| render_type_in_scope(scope, typ, indent),
         )
     }
 }

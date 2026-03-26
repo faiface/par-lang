@@ -1,3 +1,4 @@
+use crate::package_manager::AddedDependencyStatus;
 use crate::package_utils::{
     SourceLookup, find_local_module, format_with_source_span, parse_target, root_module_slash_path,
     source_for_fallback, source_for_type_error,
@@ -32,6 +33,7 @@ use std::sync::Arc;
 
 #[cfg(not(target_family = "wasm"))]
 mod language_server;
+mod package_manager;
 mod package_utils;
 #[cfg(feature = "playground")]
 mod playground;
@@ -390,6 +392,16 @@ fn main() -> ExitCode {
             .value_parser(value_parser!(u32))),
         )
         .subcommand(
+            Command::new("add")
+                .about("Fetch remote dependencies for a Par package")
+                .arg(
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
+                )
+                .arg(arg!([source] "Remote dependency source to add, such as `github.com/user/repo`")),
+        )
+        .subcommand(
             Command::new("run")
                 .about("Run a definition in a Par package")
                 .arg(arg!(--stats "Print statistics after running the definition"))
@@ -443,6 +455,15 @@ fn main() -> ExitCode {
                 .arg(arg!(--stdio "Run lsp over stdio (default behavior)")),
         )
         .subcommand(
+            Command::new("update")
+                .about("Refetch all remote dependencies for a Par package")
+                .arg(
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
+                ),
+        )
+        .subcommand(
             Command::new("test")
                 .about("Run Par tests")
                 .arg(
@@ -479,6 +500,13 @@ fn main() -> ExitCode {
                 .unwrap_or(MAX_INTERACTIONS_DEFAULT);
             run_playground(file.cloned(), max_interactions);
         }
+        Some(("add", args)) => {
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            let source = args.get_one::<String>("source").cloned();
+            if add_dependencies(package, source).is_err() {
+                return ExitCode::FAILURE;
+            }
+        }
         Some(("run", args)) => {
             let stats = *args.get_one::<bool>("stats").unwrap();
             let package = args.get_one::<PathBuf>("package").unwrap().clone();
@@ -510,6 +538,12 @@ fn main() -> ExitCode {
             }
         }
         Some(("lsp", _)) => run_language_server(),
+        Some(("update", args)) => {
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            if update_dependencies(package).is_err() {
+                return ExitCode::FAILURE;
+            }
+        }
         Some(("test", args)) => {
             let package = args.get_one::<PathBuf>("package").unwrap().clone();
             let target = args.get_one::<String>("target").cloned();
@@ -686,8 +720,11 @@ fn run_definition_vm(binary_path: PathBuf, target: Option<String>, print_stats: 
             }
         };
 
-        let (module_target, definition_target) = parse_cli_target(target.as_deref());
-        let target = format!("{}.{}", module_target, definition_target);
+        let parsed_target = parse_target(target.as_deref().unwrap_or("Main.Main"));
+        let definition_target = parsed_target
+            .definition_name
+            .unwrap_or_else(|| "Main".to_string());
+        let target = format!("{}.{}", parsed_target.module_path, definition_target);
 
         let start = Instant::now();
         let package_to_run = artifact
@@ -733,9 +770,12 @@ fn resolve_target_definition<'a>(
     checked: &'a CheckedWorkspace,
     local_modules: &[ModulePath],
 ) -> Option<&'a par_core::frontend::language::GlobalName<par_core::frontend::language::Universal>> {
-    let (module_target, definition_target) = parse_cli_target(target);
+    let parsed_target = parse_target(target.unwrap_or("Main.Main"));
+    let definition_target = parsed_target
+        .definition_name
+        .unwrap_or_else(|| "Main".to_string());
 
-    let canonical_module = find_local_module(&module_target, local_modules)?;
+    let canonical_module = find_local_module(&parsed_target.module_path, local_modules)?;
     let module_name = canonical_module.to_slash_path();
 
     checked
@@ -751,15 +791,6 @@ fn resolve_target_definition<'a>(
         .map(|(name, _)| name)
 }
 
-fn parse_cli_target(target: Option<&str>) -> (String, String) {
-    let target = target.unwrap_or("Main.Main");
-    let parsed_target = parse_target(target);
-    let definition_target = parsed_target
-        .definition_name
-        .unwrap_or_else(|| "Main".to_string());
-    (parsed_target.module_path, definition_target)
-}
-
 fn check(package_path: PathBuf) -> Result<(), String> {
     println!("Checking package: {}", package_path.display());
 
@@ -768,6 +799,65 @@ fn check(package_path: PathBuf) -> Result<(), String> {
         let error_string = error.display();
         eprintln!("{}", error_string.bright_red());
         return Err(error_string);
+    }
+    Ok(())
+}
+
+fn add_dependencies(package_path: PathBuf, source: Option<String>) -> Result<(), String> {
+    println!(
+        "Managing dependencies in package: {}",
+        package_path.display()
+    );
+    let result = package_manager::add(&package_path, source.as_deref())
+        .map_err(|error| error.to_string())?;
+
+    if let Some(status) = result.added_dependency {
+        match status {
+            AddedDependencyStatus::Added { alias, source } => {
+                println!(
+                    "{} @{} = {}",
+                    "Added dependency:".bright_green(),
+                    alias,
+                    source
+                );
+            }
+            AddedDependencyStatus::AlreadyPresent { alias, source } => {
+                println!(
+                    "{} @{} = {}",
+                    "Dependency already present:".yellow(),
+                    alias,
+                    source
+                );
+            }
+        }
+    }
+
+    if result.fetched_dependencies.is_empty() {
+        println!("{}", "Dependencies are up to date.".bright_green());
+    } else {
+        println!(
+            "{} {}",
+            "Fetched dependencies:".bright_green(),
+            result.fetched_dependencies.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn update_dependencies(package_path: PathBuf) -> Result<(), String> {
+    println!(
+        "Updating dependencies in package: {}",
+        package_path.display()
+    );
+    let result = package_manager::update(&package_path).map_err(|error| error.to_string())?;
+    if result.fetched_dependencies.is_empty() {
+        println!("{}", "No remote dependencies to update.".bright_green());
+    } else {
+        println!(
+            "{} {}",
+            "Refetched dependencies:".bright_green(),
+            result.fetched_dependencies.join(", ")
+        );
     }
     Ok(())
 }

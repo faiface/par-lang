@@ -17,7 +17,7 @@ use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 use arcstr::ArcStr;
 use indexmap::IndexSet;
 use par_runtime::linker::Unlinked;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
@@ -28,6 +28,7 @@ pub type ExternalModule = Module<Arc<process::Expression<(), Unresolved>>, Unres
 
 const MANIFEST_FILE: &str = "Par.toml";
 const SOURCE_DIRECTORY: &str = "src";
+pub const DEPENDENCIES_DIRECTORY: &str = "dependencies";
 
 #[derive(Debug, Clone)]
 pub struct PackageLayout {
@@ -36,30 +37,305 @@ pub struct PackageLayout {
     pub src_dir: PathBuf,
 }
 
+impl PackageLayout {
+    pub fn find_from(start: impl AsRef<Path>) -> Result<Self, WorkspaceDiscoveryError> {
+        let start = start.as_ref();
+        let mut cursor = if start.is_dir() {
+            start.to_path_buf()
+        } else {
+            start
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        };
+        let original_start = start.to_path_buf();
+
+        loop {
+            if let Some(layout) = Self::from_existing_root_dir(cursor.clone())? {
+                return Ok(layout);
+            }
+
+            if !cursor.pop() {
+                return Err(WorkspaceDiscoveryError::PackageRootNotFound {
+                    start: original_start,
+                });
+            }
+        }
+    }
+
+    fn from_existing_root_dir(root_dir: PathBuf) -> Result<Option<Self>, WorkspaceDiscoveryError> {
+        let manifest_path = root_dir.join(MANIFEST_FILE);
+        if !manifest_path.is_file() {
+            return Ok(None);
+        }
+        if let Err(error) = fs::read_to_string(&manifest_path) {
+            return Err(WorkspaceDiscoveryError::ManifestReadError {
+                path: manifest_path,
+                message: error.to_string(),
+            });
+        }
+
+        let src_dir = root_dir.join(SOURCE_DIRECTORY);
+        if !src_dir.is_dir() {
+            return Err(WorkspaceDiscoveryError::SrcDirectoryMissing { path: src_dir });
+        }
+
+        Ok(Some(Self {
+            root_dir,
+            manifest_path,
+            src_dir,
+        }))
+    }
+
+    fn find_existing_dependency_path(
+        dependency_path: &Path,
+    ) -> Result<Option<Self>, WorkspaceDiscoveryError> {
+        if !dependency_path.exists() {
+            return Ok(None);
+        }
+        let root_dir = if dependency_path.is_dir() {
+            dependency_path.to_path_buf()
+        } else {
+            dependency_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| dependency_path.to_path_buf())
+        };
+        Self::from_existing_root_dir(root_dir)
+    }
+
+    fn from_dependency_path(
+        dependency_path: &Path,
+        declaring_manifest_path: &Path,
+        alias: &str,
+    ) -> Result<Self, WorkspaceDiscoveryError> {
+        match Self::find_existing_dependency_path(dependency_path)? {
+            Some(layout) => Ok(layout),
+            None => Err(WorkspaceDiscoveryError::MissingDependencyPackage {
+                manifest_path: declaring_manifest_path.to_path_buf(),
+                alias: alias.to_string(),
+                path: dependency_path.to_path_buf(),
+            }),
+        }
+    }
+
+    fn resolve_local_dependency(
+        &self,
+        raw_path: &Path,
+        alias: &str,
+    ) -> Result<PathBuf, WorkspaceDiscoveryError> {
+        let raw = raw_path.to_string_lossy();
+        let raw_owned = raw.to_string();
+
+        if raw.starts_with('.') {
+            return Ok(self.root_dir.join(raw_path));
+        }
+
+        if raw == "~" || raw.starts_with("~/") {
+            let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+            let Some(home) = home else {
+                return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+                    manifest_path: self.manifest_path.clone(),
+                    alias: alias.to_string(),
+                    path: raw_owned,
+                    message: String::from("HOME is not set"),
+                });
+            };
+            let mut resolved = PathBuf::from(home);
+            if let Some(tail) = raw.strip_prefix("~/") {
+                resolved.push(tail);
+            }
+            return Ok(resolved);
+        }
+
+        if let Some(rest) = raw.strip_prefix('$') {
+            let (variable, tail) = match rest.split_once('/') {
+                Some((variable, tail)) => (variable, Some(tail)),
+                None => (rest, None),
+            };
+            if variable.is_empty() {
+                return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+                    manifest_path: self.manifest_path.clone(),
+                    alias: alias.to_string(),
+                    path: raw_owned,
+                    message: String::from("missing environment variable name after `$`"),
+                });
+            }
+            let Some(value) = std::env::var_os(variable) else {
+                return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+                    manifest_path: self.manifest_path.clone(),
+                    alias: alias.to_string(),
+                    path: raw_owned,
+                    message: format!("environment variable `{variable}` is not set"),
+                });
+            };
+
+            let mut resolved = PathBuf::from(value);
+            if let Some(tail) = tail
+                && !tail.is_empty()
+            {
+                resolved.push(tail);
+            }
+            return Ok(resolved);
+        }
+
+        Err(WorkspaceDiscoveryError::InvalidDependencyPath {
+            manifest_path: self.manifest_path.clone(),
+            alias: alias.to_string(),
+            path: raw_owned,
+            message: String::from("expected a local path starting with `.`, `~`, or `$`"),
+        })
+    }
+
+    pub fn managed_remote_dependency_path(&self, source: &RemoteDependencySource) -> PathBuf {
+        self.root_dir
+            .join(DEPENDENCIES_DIRECTORY)
+            .join(source.managed_subpath())
+    }
+}
+
 pub type SourceOverrides = HashMap<PathBuf, String>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencySpec {
     Local(PathBuf),
-    Remote(String),
+    Remote(RemoteDependencySource),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RemoteDependencySource(String);
+
+impl RemoteDependencySource {
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        let normalized = raw
+            .trim()
+            .trim_end_matches('/')
+            .trim_end_matches(".git")
+            .to_owned();
+        if normalized.is_empty() {
+            return Err(String::from("dependency source is empty"));
+        }
+        if normalized.contains("://") {
+            return Err(String::from(
+                "expected a host/path source without a URL scheme",
+            ));
+        }
+
+        for segment in normalized.split('/') {
+            if segment.is_empty() {
+                return Err(String::from("dependency path contains an empty segment"));
+            }
+            if matches!(segment, "." | "..") {
+                return Err(String::from("dependency path cannot contain `.` or `..`"));
+            }
+            if segment
+                .chars()
+                .any(|ch| ch == '\\' || ch == ':' || ch.is_whitespace() || ch.is_control())
+            {
+                return Err(format!("dependency path segment `{segment}` is invalid"));
+            }
+        }
+
+        Ok(Self(normalized))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn managed_subpath(&self) -> PathBuf {
+        self.0.split('/').collect()
+    }
+}
+
+impl Display for RemoteDependencySource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageManifest {
     pub name: String,
+    pub url: Option<String>,
     pub dependencies: BTreeMap<String, DependencySpec>,
 }
 
-#[derive(Debug, Deserialize)]
+impl PackageManifest {
+    pub fn read_from(manifest_path: &Path) -> Result<Self, WorkspaceDiscoveryError> {
+        let source = fs::read_to_string(manifest_path).map_err(|error| {
+            WorkspaceDiscoveryError::ManifestReadError {
+                path: manifest_path.to_path_buf(),
+                message: error.to_string(),
+            }
+        })?;
+        let manifest = toml::from_str::<ManifestToml>(&source).map_err(|error| {
+            WorkspaceDiscoveryError::ManifestParseError {
+                path: manifest_path.to_path_buf(),
+                message: error.to_string(),
+            }
+        })?;
+
+        Ok(Self {
+            name: manifest.package.name,
+            url: manifest.package.url,
+            dependencies: manifest
+                .dependencies
+                .into_iter()
+                .map(|(alias, dependency)| {
+                    let spec = if dependency.starts_with('.')
+                        || dependency.starts_with('~')
+                        || dependency.starts_with('$')
+                    {
+                        Ok(DependencySpec::Local(PathBuf::from(dependency)))
+                    } else {
+                        RemoteDependencySource::parse(&dependency)
+                            .map(DependencySpec::Remote)
+                            .map_err(|message| WorkspaceDiscoveryError::ManifestParseError {
+                                path: manifest_path.to_path_buf(),
+                                message: format!("invalid dependency `{alias}`: {message}"),
+                            })
+                    }?;
+                    Ok((alias, spec))
+                })
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    pub fn render(&self) -> String {
+        let manifest = ManifestToml {
+            package: ManifestPackageToml {
+                name: self.name.clone(),
+                url: self.url.clone(),
+            },
+            dependencies: self
+                .dependencies
+                .iter()
+                .map(|(alias, dependency)| {
+                    let source = match dependency {
+                        DependencySpec::Local(path) => normalized_package_path(path),
+                        DependencySpec::Remote(source) => source.to_string(),
+                    };
+                    (alias.clone(), source)
+                })
+                .collect(),
+        };
+        toml::to_string(&manifest).expect("package manifest should serialize to TOML")
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct ManifestToml {
     package: ManifestPackageToml,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     dependencies: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ManifestPackageToml {
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -262,10 +538,24 @@ pub enum WorkspaceDiscoveryError {
         path: String,
         message: String,
     },
-    UnsupportedRemoteDependency {
+    InvalidRemoteDependencySource {
+        manifest_path: PathBuf,
+        alias: String,
+        source: String,
+        message: String,
+    },
+    MissingRemoteDependencyPackage {
         manifest_path: PathBuf,
         alias: String,
         dependency: String,
+        path: PathBuf,
+    },
+    RemoteDependencyMaterializationError {
+        manifest_path: PathBuf,
+        alias: String,
+        dependency: String,
+        path: PathBuf,
+        message: String,
     },
     DependencyAliasCollision {
         package: PackageId,
@@ -342,16 +632,46 @@ impl Display for WorkspaceDiscoveryError {
                 alias,
                 message
             ),
-            Self::UnsupportedRemoteDependency {
+            Self::InvalidRemoteDependencySource {
+                manifest_path,
+                alias,
+                source,
+                message,
+            } => write!(
+                f,
+                "Manifest {} declares invalid remote dependency `{}` for alias `@{}`: {}",
+                manifest_path.display(),
+                source,
+                alias,
+                message
+            ),
+            Self::MissingRemoteDependencyPackage {
                 manifest_path,
                 alias,
                 dependency,
+                path,
             } => write!(
                 f,
-                "Manifest {} declares unsupported remote dependency `{}` for alias `@{}`",
+                "Manifest {} declares remote dependency `{}` for alias `@{}`, but no package was found at {}. Run `par add` to fetch dependencies.",
                 manifest_path.display(),
                 dependency,
-                alias
+                alias,
+                path.display()
+            ),
+            Self::RemoteDependencyMaterializationError {
+                manifest_path,
+                alias,
+                dependency,
+                path,
+                message,
+            } => write!(
+                f,
+                "Failed to materialize remote dependency `{}` for alias `@{}` declared in {} at {}: {}",
+                dependency,
+                alias,
+                manifest_path.display(),
+                path.display(),
+                message
             ),
             Self::DependencyAliasCollision { package, alias } => write!(
                 f,
@@ -494,13 +814,6 @@ impl WorkspacePackage {
         }
     }
 
-    pub fn from_path(
-        id: PackageId,
-        start: impl AsRef<Path>,
-    ) -> Result<Self, WorkspaceDiscoveryError> {
-        parse_package(start).map(|parsed| Self::new(id, parsed))
-    }
-
     pub fn with_dependency(mut self, alias: impl Into<String>, package: PackageId) -> Self {
         self.dependencies.insert(alias.into(), package);
         self
@@ -536,6 +849,20 @@ impl WorkspacePackage {
 pub struct WorkspacePackages {
     pub root_package: PackageId,
     pub packages: Vec<WorkspacePackage>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveredPackage {
+    pub id: PackageId,
+    pub layout: PackageLayout,
+    pub manifest: PackageManifest,
+    pub dependencies: BTreeMap<String, PackageId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageGraph {
+    pub root_package: PackageId,
+    pub packages: Vec<DiscoveredPackage>,
 }
 
 #[derive(Debug, Clone)]
@@ -686,8 +1013,13 @@ impl CheckedWorkspace {
         render_global_name_in_scope(self.workspace.import_scope(file), name)
     }
 
-    pub fn render_type_in_file(&self, file: &FileName, typ: &Type<Universal>) -> String {
-        render_type_in_scope(self.workspace.import_scope(file), typ)
+    pub fn render_type_in_file(
+        &self,
+        file: &FileName,
+        typ: &Type<Universal>,
+        indent: usize,
+    ) -> String {
+        render_type_in_scope(self.workspace.import_scope(file), typ, indent)
     }
 
     pub fn render_hover_signature_in_file(
@@ -802,13 +1134,6 @@ pub fn render_global_name_in_scope(
 pub fn render_type_in_scope(
     scope: Option<&FileImportScope<Universal>>,
     typ: &Type<Universal>,
-) -> String {
-    render_type_in_scope_with_indent(scope, typ, 0)
-}
-
-pub fn render_type_in_scope_with_indent(
-    scope: Option<&FileImportScope<Universal>>,
-    typ: &Type<Universal>,
     indent: usize,
 ) -> String {
     let mut output = String::new();
@@ -864,57 +1189,7 @@ pub fn assemble_workspace(
     })
 }
 
-pub fn find_package_layout(
-    start: impl AsRef<Path>,
-) -> Result<PackageLayout, WorkspaceDiscoveryError> {
-    let start = start.as_ref();
-    let mut cursor = if start.is_dir() {
-        start.to_path_buf()
-    } else {
-        start
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."))
-    };
-    let original_start = start.to_path_buf();
-
-    loop {
-        let manifest_path = cursor.join(MANIFEST_FILE);
-        if manifest_path.is_file() {
-            if let Err(error) = fs::read_to_string(&manifest_path) {
-                return Err(WorkspaceDiscoveryError::ManifestReadError {
-                    path: manifest_path,
-                    message: error.to_string(),
-                });
-            }
-
-            let src_dir = cursor.join(SOURCE_DIRECTORY);
-            if !src_dir.is_dir() {
-                return Err(WorkspaceDiscoveryError::SrcDirectoryMissing { path: src_dir });
-            }
-
-            return Ok(PackageLayout {
-                root_dir: cursor,
-                manifest_path,
-                src_dir,
-            });
-        }
-
-        if !cursor.pop() {
-            return Err(WorkspaceDiscoveryError::PackageRootNotFound {
-                start: original_start,
-            });
-        }
-    }
-}
-
-pub fn collect_source_files(
-    layout: &PackageLayout,
-) -> Result<Vec<LoadedPackageFile>, PackageLoadError> {
-    collect_source_files_with_overrides(layout, None)
-}
-
-fn collect_source_files_with_overrides(
+fn collect_source_files(
     layout: &PackageLayout,
     overrides: Option<&SourceOverrides>,
 ) -> Result<Vec<LoadedPackageFile>, PackageLoadError> {
@@ -1016,63 +1291,87 @@ pub fn parse_loaded_files(
     Ok(ParsedPackage { modules })
 }
 
-pub fn parse_package(start: impl AsRef<Path>) -> Result<ParsedPackage, WorkspaceDiscoveryError> {
-    let layout = find_package_layout(start)?;
-    parse_package_with_overrides(&layout, None)
+#[derive(Debug, Clone)]
+pub struct MissingRemotePackageRequest {
+    pub root_layout: PackageLayout,
+    pub declaring_layout: PackageLayout,
+    pub alias: String,
+    pub dependency: String,
+    pub destination: PathBuf,
+}
+
+pub trait MissingRemotePackageHandler {
+    fn handle_missing_remote(
+        &mut self,
+        request: &MissingRemotePackageRequest,
+    ) -> Result<(), WorkspaceDiscoveryError>;
+}
+
+struct NoopMissingRemotePackageHandler;
+
+impl MissingRemotePackageHandler for NoopMissingRemotePackageHandler {
+    fn handle_missing_remote(
+        &mut self,
+        _request: &MissingRemotePackageRequest,
+    ) -> Result<(), WorkspaceDiscoveryError> {
+        Ok(())
+    }
+}
+
+impl PackageGraph {
+    pub fn discover_from_path(start: impl AsRef<Path>) -> Result<Self, WorkspaceDiscoveryError> {
+        let mut handler = NoopMissingRemotePackageHandler;
+        Self::discover_from_path_with_handler(start, &mut handler)
+    }
+
+    pub fn discover_from_path_with_handler(
+        start: impl AsRef<Path>,
+        remote_handler: &mut impl MissingRemotePackageHandler,
+    ) -> Result<Self, WorkspaceDiscoveryError> {
+        let layout = PackageLayout::find_from(start)?;
+        let root_dir = canonicalize_path(&layout.root_dir)?;
+        let mut discovery = PackageGraphDiscovery::new(layout.clone(), remote_handler);
+        let root_package = discovery.discover(
+            layout,
+            root_dir.clone(),
+            PackageId::from_local_path(&root_dir)?,
+        )?;
+        Ok(discovery.finish(root_package))
+    }
+
+    pub fn into_workspace_packages(
+        self,
+        overrides: Option<&SourceOverrides>,
+    ) -> Result<WorkspacePackages, WorkspaceDiscoveryError> {
+        let packages = self
+            .packages
+            .into_iter()
+            .map(|package| {
+                let parsed = parse_package(&package.layout, overrides)?;
+                Ok(WorkspacePackage::new(package.id, parsed)
+                    .with_dependencies(package.dependencies))
+            })
+            .collect::<Result<Vec<_>, WorkspaceDiscoveryError>>()?;
+        Ok(WorkspacePackages {
+            root_package: self.root_package,
+            packages,
+        })
+    }
 }
 
 pub fn discover_workspace_packages_from_path(
     start: impl AsRef<Path>,
     overrides: Option<&SourceOverrides>,
 ) -> Result<WorkspacePackages, WorkspaceDiscoveryError> {
-    let layout = find_package_layout(start)?;
-    let root_dir = canonicalize_path(&layout.root_dir)?;
-    let mut discovery = PackageDiscovery::new(overrides);
-    let root_package = discovery.discover(layout, root_dir.clone(), local_package_id(&root_dir))?;
-    Ok(discovery.finish(root_package))
+    PackageGraph::discover_from_path(start)?.into_workspace_packages(overrides)
 }
 
-fn parse_package_with_overrides(
+fn parse_package(
     layout: &PackageLayout,
     overrides: Option<&SourceOverrides>,
 ) -> Result<ParsedPackage, WorkspaceDiscoveryError> {
-    let files = collect_source_files_with_overrides(layout, overrides)
-        .map_err(WorkspaceDiscoveryError::Load)?;
+    let files = collect_source_files(layout, overrides).map_err(WorkspaceDiscoveryError::Load)?;
     parse_loaded_files(files).map_err(WorkspaceDiscoveryError::Load)
-}
-
-fn parse_manifest(manifest_path: &Path) -> Result<PackageManifest, WorkspaceDiscoveryError> {
-    let source = fs::read_to_string(manifest_path).map_err(|error| {
-        WorkspaceDiscoveryError::ManifestReadError {
-            path: manifest_path.to_path_buf(),
-            message: error.to_string(),
-        }
-    })?;
-    let manifest = toml::from_str::<ManifestToml>(&source).map_err(|error| {
-        WorkspaceDiscoveryError::ManifestParseError {
-            path: manifest_path.to_path_buf(),
-            message: error.to_string(),
-        }
-    })?;
-
-    Ok(PackageManifest {
-        name: manifest.package.name,
-        dependencies: manifest
-            .dependencies
-            .into_iter()
-            .map(|(alias, dependency)| {
-                let spec = if dependency.starts_with('.')
-                    || dependency.starts_with('~')
-                    || dependency.starts_with('$')
-                {
-                    DependencySpec::Local(PathBuf::from(dependency))
-                } else {
-                    DependencySpec::Remote(normalize_remote_dependency_source(&dependency))
-                };
-                (alias, spec)
-            })
-            .collect(),
-    })
 }
 
 fn canonicalize_path(path: &Path) -> Result<PathBuf, WorkspaceDiscoveryError> {
@@ -1082,154 +1381,41 @@ fn canonicalize_path(path: &Path) -> Result<PathBuf, WorkspaceDiscoveryError> {
     })
 }
 
-fn find_dependency_package_layout(
-    dependency_path: &Path,
-    declaring_manifest_path: &Path,
-    alias: &str,
-) -> Result<PackageLayout, WorkspaceDiscoveryError> {
-    if !dependency_path.exists() {
-        return Err(WorkspaceDiscoveryError::MissingDependencyPackage {
-            manifest_path: declaring_manifest_path.to_path_buf(),
-            alias: alias.to_string(),
-            path: dependency_path.to_path_buf(),
-        });
-    }
-
-    let root_dir = if dependency_path.is_dir() {
-        dependency_path.to_path_buf()
-    } else {
-        dependency_path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| dependency_path.to_path_buf())
-    };
-    let dependency_manifest_path = root_dir.join(MANIFEST_FILE);
-    if !dependency_manifest_path.is_file() {
-        return Err(WorkspaceDiscoveryError::MissingDependencyPackage {
-            manifest_path: declaring_manifest_path.to_path_buf(),
-            alias: alias.to_string(),
-            path: dependency_path.to_path_buf(),
-        });
-    }
-    if let Err(error) = fs::read_to_string(&dependency_manifest_path) {
-        return Err(WorkspaceDiscoveryError::ManifestReadError {
-            path: dependency_manifest_path,
-            message: error.to_string(),
-        });
-    }
-
-    let src_dir = root_dir.join(SOURCE_DIRECTORY);
-    if !src_dir.is_dir() {
-        return Err(WorkspaceDiscoveryError::SrcDirectoryMissing { path: src_dir });
-    }
-
-    Ok(PackageLayout {
-        root_dir,
-        manifest_path: dependency_manifest_path,
-        src_dir,
-    })
-}
-
-fn resolve_local_dependency_path(
-    declaring_package_root: &Path,
-    raw_path: &Path,
-    manifest_path: &Path,
-    alias: &str,
-) -> Result<PathBuf, WorkspaceDiscoveryError> {
-    let raw = raw_path.to_string_lossy();
-    let raw_owned = raw.to_string();
-
-    if raw.starts_with('.') {
-        return Ok(declaring_package_root.join(raw_path));
-    }
-
-    if raw == "~" || raw.starts_with("~/") {
-        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
-        let Some(home) = home else {
-            return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
-                manifest_path: manifest_path.to_path_buf(),
-                alias: alias.to_string(),
-                path: raw_owned,
-                message: String::from("HOME is not set"),
-            });
-        };
-        let mut resolved = PathBuf::from(home);
-        if let Some(tail) = raw.strip_prefix("~/") {
-            resolved.push(tail);
-        }
-        return Ok(resolved);
-    }
-
-    if let Some(rest) = raw.strip_prefix('$') {
-        let (variable, tail) = match rest.split_once('/') {
-            Some((variable, tail)) => (variable, Some(tail)),
-            None => (rest, None),
-        };
-        if variable.is_empty() {
-            return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
-                manifest_path: manifest_path.to_path_buf(),
-                alias: alias.to_string(),
-                path: raw_owned,
-                message: String::from("missing environment variable name after `$`"),
-            });
-        }
-        let Some(value) = std::env::var_os(variable) else {
-            return Err(WorkspaceDiscoveryError::InvalidDependencyPath {
-                manifest_path: manifest_path.to_path_buf(),
-                alias: alias.to_string(),
-                path: raw_owned,
-                message: format!("environment variable `{variable}` is not set"),
-            });
-        };
-
-        let mut resolved = PathBuf::from(value);
-        if let Some(tail) = tail
-            && !tail.is_empty()
-        {
-            resolved.push(tail);
-        }
-        return Ok(resolved);
-    }
-
-    Err(WorkspaceDiscoveryError::InvalidDependencyPath {
-        manifest_path: manifest_path.to_path_buf(),
-        alias: alias.to_string(),
-        path: raw_owned,
-        message: String::from("expected a local path starting with `.`, `~`, or `$`"),
-    })
-}
-
 fn normalized_package_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn local_package_id(path: &Path) -> PackageId {
-    PackageId::Local(ArcStr::from(normalized_package_path(path)))
-}
+impl PackageId {
+    pub fn from_local_path(path: &Path) -> Result<Self, WorkspaceDiscoveryError> {
+        let canonical = canonicalize_path(path)?;
+        Ok(Self::Local(ArcStr::from(normalized_package_path(
+            &canonical,
+        ))))
+    }
 
-fn normalize_remote_dependency_source(raw: &str) -> String {
-    raw.trim()
-        .trim_end_matches('/')
-        .trim_end_matches(".git")
-        .to_owned()
+    pub fn from_remote_source(source: &RemoteDependencySource) -> Self {
+        Self::Remote(ArcStr::from(source.as_str()))
+    }
 }
 
 fn normalized_path_key(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/").to_lowercase()
 }
 
-struct PackageDiscovery<'a> {
-    overrides: Option<&'a SourceOverrides>,
+struct PackageGraphDiscovery<'a, H> {
+    root_layout: PackageLayout,
+    remote_handler: &'a mut H,
     visiting: Vec<PathBuf>,
     package_ids_by_root: BTreeMap<PathBuf, PackageId>,
     roots_by_package_id: BTreeMap<PackageId, PathBuf>,
-    packages_by_root: BTreeMap<PathBuf, WorkspacePackage>,
+    packages_by_root: BTreeMap<PathBuf, DiscoveredPackage>,
 }
 
-impl<'a> PackageDiscovery<'a> {
-    fn new(overrides: Option<&'a SourceOverrides>) -> Self {
+impl<'a, H: MissingRemotePackageHandler> PackageGraphDiscovery<'a, H> {
+    fn new(root_layout: PackageLayout, remote_handler: &'a mut H) -> Self {
         Self {
-            overrides,
+            root_layout,
+            remote_handler,
             visiting: Vec::new(),
             package_ids_by_root: BTreeMap::new(),
             roots_by_package_id: BTreeMap::new(),
@@ -1237,9 +1423,9 @@ impl<'a> PackageDiscovery<'a> {
         }
     }
 
-    fn finish(self, root_package: PackageId) -> WorkspacePackages {
+    fn finish(self, root_package: PackageId) -> PackageGraph {
         let packages = self.packages_by_root.into_values().collect();
-        WorkspacePackages {
+        PackageGraph {
             root_package,
             packages,
         }
@@ -1277,7 +1463,7 @@ impl<'a> PackageDiscovery<'a> {
         canonical_root: PathBuf,
         package_id: PackageId,
     ) -> Result<PackageId, WorkspaceDiscoveryError> {
-        let manifest = parse_manifest(&layout.manifest_path)?;
+        let manifest = PackageManifest::read_from(&layout.manifest_path)?;
 
         if let Some(first_root) = self.roots_by_package_id.get(&package_id) {
             if first_root != &canonical_root {
@@ -1292,43 +1478,74 @@ impl<'a> PackageDiscovery<'a> {
                 .insert(package_id.clone(), canonical_root.clone());
         }
 
-        let parsed = parse_package_with_overrides(&layout, self.overrides)?;
         let mut dependencies = BTreeMap::new();
 
-        for (alias, dependency) in manifest.dependencies {
+        for (alias, dependency) in &manifest.dependencies {
             match dependency {
                 DependencySpec::Local(relative_path) => {
-                    let dependency_path = resolve_local_dependency_path(
-                        &layout.root_dir,
-                        &relative_path,
-                        &layout.manifest_path,
-                        &alias,
-                    )?;
-                    let dependency_layout = find_dependency_package_layout(
+                    let dependency_path = layout.resolve_local_dependency(relative_path, alias)?;
+                    let dependency_layout = PackageLayout::from_dependency_path(
                         &dependency_path,
                         &layout.manifest_path,
-                        &alias,
+                        alias,
                     )?;
                     let dependency_root = canonicalize_path(&dependency_layout.root_dir)?;
                     let dependency_id = self.discover(
                         dependency_layout,
                         dependency_root.clone(),
-                        local_package_id(&dependency_root),
+                        PackageId::from_local_path(&dependency_root)?,
                     )?;
-                    dependencies.insert(alias, dependency_id);
+                    dependencies.insert(alias.clone(), dependency_id);
                 }
                 DependencySpec::Remote(dependency) => {
-                    return Err(WorkspaceDiscoveryError::UnsupportedRemoteDependency {
-                        manifest_path: layout.manifest_path.clone(),
-                        alias,
-                        dependency,
-                    });
+                    let dependency_path =
+                        self.root_layout.managed_remote_dependency_path(dependency);
+                    let dependency_layout =
+                        match PackageLayout::find_existing_dependency_path(&dependency_path)? {
+                            Some(layout) => layout,
+                            None => {
+                                let request = MissingRemotePackageRequest {
+                                    root_layout: self.root_layout.clone(),
+                                    declaring_layout: layout.clone(),
+                                    alias: alias.clone(),
+                                    dependency: dependency.to_string(),
+                                    destination: dependency_path.clone(),
+                                };
+                                self.remote_handler.handle_missing_remote(&request)?;
+                                match PackageLayout::find_existing_dependency_path(
+                                    &dependency_path,
+                                )? {
+                                    Some(layout) => layout,
+                                    None => {
+                                        return Err(
+                                        WorkspaceDiscoveryError::MissingRemoteDependencyPackage {
+                                            manifest_path: layout.manifest_path.clone(),
+                                            alias: alias.clone(),
+                                            dependency: dependency.to_string(),
+                                            path: dependency_path,
+                                        },
+                                    );
+                                    }
+                                }
+                            }
+                        };
+                    let dependency_root = canonicalize_path(&dependency_layout.root_dir)?;
+                    let dependency_id = self.discover(
+                        dependency_layout,
+                        dependency_root,
+                        PackageId::from_remote_source(dependency),
+                    )?;
+                    dependencies.insert(alias.clone(), dependency_id);
                 }
             }
         }
 
-        let package =
-            WorkspacePackage::new(package_id.clone(), parsed).with_dependencies(dependencies);
+        let package = DiscoveredPackage {
+            id: package_id.clone(),
+            layout,
+            manifest,
+            dependencies,
+        };
         self.package_ids_by_root
             .insert(canonical_root.clone(), package_id.clone());
         self.packages_by_root.insert(canonical_root, package);
@@ -2862,11 +3079,14 @@ def Main = !
         let canonical_root = canonicalize_path(&root).unwrap();
         assert_eq!(
             workspace_packages.root_package,
-            local_package_id(&canonical_root)
+            PackageId::from_local_path(&canonical_root).unwrap()
         );
 
         let workspace = assemble_workspace(workspace_packages).unwrap();
-        assert_eq!(workspace.root_package(), &local_package_id(&canonical_root));
+        assert_eq!(
+            workspace.root_package(),
+            &PackageId::from_local_path(&canonical_root).unwrap()
+        );
         assert_eq!(
             workspace
                 .root_modules()
@@ -3190,7 +3410,7 @@ helper = \"./missing-helper\"
     }
 
     #[test]
-    fn remote_dependencies_are_rejected_during_discovery() {
+    fn missing_remote_dependencies_are_reported_explicitly() {
         let root = temp_package_root("remote-dependency");
         write_package(
             &root,
@@ -3207,11 +3427,273 @@ helper = \"example.com/helper\"
         let error = discover_workspace_packages_from_path(&root, None).unwrap_err();
         assert!(matches!(
             error,
-            WorkspaceDiscoveryError::UnsupportedRemoteDependency {
+            WorkspaceDiscoveryError::MissingRemoteDependencyPackage {
                 alias,
                 dependency,
+                path,
                 ..
             } if alias == "helper" && dependency == "example.com/helper"
+                && path == root
+                    .join(DEPENDENCIES_DIRECTORY)
+                    .join("example.com")
+                    .join("helper")
+        ));
+    }
+
+    #[test]
+    fn materialized_remote_dependency_import_works() {
+        let root = temp_package_root("materialized-remote");
+        let helper = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("helper");
+        write_package(
+            &helper,
+            "\
+[package]
+name = \"helper\"
+",
+            &[(
+                "src/Util.par",
+                "\
+export module Util
+
+export {
+  dec Run : !
+}
+
+def Run = !
+",
+            )],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"example.com/helper\"
+",
+            &[(
+                "src/Main.par",
+                "\
+module Main
+import @helper/Util
+
+dec Main : !
+def Main = Util.Run
+",
+            )],
+        );
+
+        let workspace =
+            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
+                .unwrap();
+        let (_checked, type_errors) = workspace.type_check();
+        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
+    }
+
+    #[test]
+    fn graph_discovery_does_not_parse_broken_sources() {
+        let root = temp_package_root("graph-no-parse");
+        let helper = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("helper");
+        write_package(
+            &helper,
+            "\
+[package]
+name = \"helper\"
+",
+            &[("src/Util.par", "module Util\n")],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+helper = \"example.com/helper\"
+",
+            &[("src/Main.par", "this is not valid par\n")],
+        );
+
+        let graph = PackageGraph::discover_from_path(&root).unwrap();
+        assert_eq!(graph.packages.len(), 2);
+    }
+
+    #[test]
+    fn transitive_remote_dependencies_are_loaded_from_root_dependencies_directory() {
+        let root = temp_package_root("transitive-remote");
+        let package_a = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("a");
+        let package_b = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("b");
+
+        write_package(
+            &package_b,
+            "\
+[package]
+name = \"b\"
+",
+            &[("src/B.par", "export module B\n")],
+        );
+        write_package(
+            &package_a,
+            "\
+[package]
+name = \"a\"
+
+[dependencies]
+b = \"example.com/b\"
+",
+            &[("src/A.par", "export module A\n")],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+a = \"example.com/a\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let graph = PackageGraph::discover_from_path(&root).unwrap();
+        assert!(
+            graph
+                .packages
+                .iter()
+                .any(|package| package.id == PackageId::Remote(literal!("example.com/b")))
+        );
+    }
+
+    #[test]
+    fn shared_transitive_remote_dependencies_are_discovered_once() {
+        let root = temp_package_root("shared-remote");
+        let package_a = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("a");
+        let package_b = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("b");
+        let package_c = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("c");
+
+        write_package(
+            &package_b,
+            "\
+[package]
+name = \"b\"
+",
+            &[("src/B.par", "export module B\n")],
+        );
+        write_package(
+            &package_a,
+            "\
+[package]
+name = \"a\"
+
+[dependencies]
+b = \"example.com/b\"
+",
+            &[("src/A.par", "export module A\n")],
+        );
+        write_package(
+            &package_c,
+            "\
+[package]
+name = \"c\"
+
+[dependencies]
+b = \"example.com/b\"
+",
+            &[("src/C.par", "export module C\n")],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+a = \"example.com/a\"
+c = \"example.com/c\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let graph = PackageGraph::discover_from_path(&root).unwrap();
+        assert_eq!(
+            graph
+                .packages
+                .iter()
+                .filter(|package| package.id == PackageId::Remote(literal!("example.com/b")))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn mixed_local_and_remote_package_cycles_are_rejected() {
+        let root = temp_package_root("mixed-cycle");
+        let package_a = root.join("a");
+        let remote = root
+            .join(DEPENDENCIES_DIRECTORY)
+            .join("example.com")
+            .join("b");
+
+        write_package(
+            &remote,
+            "\
+[package]
+name = \"b\"
+
+[dependencies]
+root = \"../../../\"
+",
+            &[("src/B.par", "module B\n")],
+        );
+        write_package(
+            &package_a,
+            "\
+[package]
+name = \"a\"
+
+[dependencies]
+b = \"example.com/b\"
+",
+            &[("src/A.par", "module A\n")],
+        );
+        write_package(
+            &root,
+            "\
+[package]
+name = \"root\"
+
+[dependencies]
+a = \"./a\"
+",
+            &[("src/Main.par", "module Main\n")],
+        );
+
+        let error = PackageGraph::discover_from_path(&root).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceDiscoveryError::PackageCycle { .. }
         ));
     }
 
@@ -3232,7 +3714,7 @@ url = \"github.com/example/root\"
         let canonical_root = canonicalize_path(&root).unwrap();
         assert_eq!(
             workspace_packages.root_package,
-            local_package_id(&canonical_root)
+            PackageId::from_local_path(&canonical_root).unwrap()
         );
     }
 

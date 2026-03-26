@@ -17,15 +17,11 @@ pub fn source_for_fallback(sources: &SourceLookup) -> Arc<str> {
         .unwrap_or_else(|| Arc::from(""))
 }
 
-pub fn source_for_span(span: &Span, sources: &SourceLookup) -> Arc<str> {
+pub fn source_for_type_error(error: &TypeError<Universal>, sources: &SourceLookup) -> Arc<str> {
+    let (span, _related) = error.spans();
     span.file()
         .and_then(|file| sources.get(&file).cloned())
         .unwrap_or_else(|| source_for_fallback(sources))
-}
-
-pub fn source_for_type_error(error: &TypeError<Universal>, sources: &SourceLookup) -> Arc<str> {
-    let (span, _related) = error.spans();
-    source_for_span(&span, sources)
 }
 
 pub fn format_with_source_span(
