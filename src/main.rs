@@ -1,7 +1,6 @@
 use crate::package_manager::AddedDependencyStatus;
 use crate::package_utils::{
-    SourceLookup, find_local_module, format_with_source_span, parse_target, root_module_slash_path,
-    source_for_fallback,
+    SourceLookup, find_local_module, parse_target, root_module_slash_path, source_for_fallback,
 };
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
@@ -15,9 +14,7 @@ use eframe::egui;
 use par_core::{
     frontend::{Type, set_miette_hook},
     runtime::RuntimeCompilerError,
-    workspace::{
-        CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceDiscoveryError, WorkspaceError,
-    },
+    workspace::{CheckedWorkspace, ModulePath, WorkspaceDiscoveryError, WorkspaceError},
 };
 use tokio::time::Instant;
 
@@ -73,32 +70,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self) -> String {
         match self {
-            Self::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
-                source,
-                error,
-                ..
-            })) => format!(
-                "{:?}",
-                miette::Report::from(error.to_owned()).with_source_code(source.clone())
-            ),
             Self::Discovery(error) => error.to_string(),
-            Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
-                format!("{:?}", error.to_report(source.clone()))
-            }
-            Self::Workspace(WorkspaceError::UnknownDependency { source, span, .. })
-            | Self::Workspace(WorkspaceError::ImportedModuleNotFound { source, span, .. })
-            | Self::Workspace(WorkspaceError::DuplicateImportAlias { source, span, .. })
-            | Self::Workspace(WorkspaceError::BindingNameConflictsWithImportAlias {
-                source,
-                span,
-                ..
-            })
-            | Self::Workspace(WorkspaceError::UnknownModuleQualifier { source, span, .. })
-            | Self::Workspace(WorkspaceError::QualifiedCurrentModuleReference {
-                source,
-                span,
-                ..
-            }) => format_with_source_span(source.clone(), span, self.to_string()),
             Self::Workspace(error) => error.to_string(),
             Self::Type { errors, sources } => errors
                 .iter()
@@ -115,17 +87,7 @@ impl BuildError {
 
 impl Display for BuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Discovery(error) => write!(f, "{error}"),
-            Self::Workspace(error) => write!(f, "{error}"),
-            Self::Type { errors, .. } => {
-                for error in errors {
-                    writeln!(f, "{error:?}")?;
-                }
-                Ok(())
-            }
-            Self::InetCompile { error, .. } => write!(f, "{error:?}"),
-        }
+        write!(f, "{}", self.display())
     }
 }
 

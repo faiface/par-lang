@@ -9,9 +9,10 @@ use crate::frontend_impl::process;
 use crate::frontend_impl::program::{
     CheckedModule, DocComment, Docs, HoverIndex, ImportDecl, ImportPath, Module, SourceFile,
 };
+use crate::frontend_impl::types::error::labels_from_span;
 use crate::frontend_impl::types::display::{GlobalNameWriter, TypeRenderOptions};
 use crate::frontend_impl::types::{Type, TypeError, VisibilityIndex, validate_visibility};
-use crate::location::{FileName, Span};
+use crate::location::{FileName, Span, Spanning};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 use arcstr::ArcStr;
 use indexmap::IndexSet;
@@ -28,6 +29,24 @@ pub type ExternalModule = Module<Arc<process::Expression<(), Unresolved>>, Unres
 const MANIFEST_FILE: &str = "Par.toml";
 const SOURCE_DIRECTORY: &str = "src";
 pub const DEPENDENCIES_DIRECTORY: &str = "dependencies";
+
+fn message_report(message: impl Into<String>) -> miette::Report {
+    miette::miette!("{}", message.into())
+}
+
+fn report_with_source_span(
+    source: Arc<str>,
+    span: &Span,
+    message: impl Into<String>,
+) -> miette::Report {
+    let labels = labels_from_span(&source, span);
+    let code: Arc<str> = if labels.is_empty() {
+        "<UI>".into()
+    } else {
+        source
+    };
+    miette::miette!(labels = labels, "{}", message.into()).with_source_code(code)
+}
 
 #[derive(Debug, Clone)]
 pub struct PackageLayout {
@@ -439,6 +458,7 @@ pub enum PackageLoadError {
 impl Display for PackageLoadError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ParseError { .. } => write!(f, "{:?}", self.to_report()),
             Self::DirectoryReadError { path, message } => {
                 write!(
                     f,
@@ -464,9 +484,6 @@ impl Display for PackageLoadError {
                     "Invalid source file name (expected `Module.par` or `Module.*.par`): {}",
                     path.display()
                 )
-            }
-            Self::ParseError { file, .. } => {
-                write!(f, "Failed to parse source file {}", file.0)
             }
             Self::MissingModuleDeclaration { file } => {
                 write!(f, "Source file is missing `module` declaration: {}", file.0)
@@ -499,6 +516,36 @@ impl Display for PackageLoadError {
                     second_file.0
                 )
             }
+        }
+    }
+}
+
+impl PackageLoadError {
+    pub fn spans(&self) -> (Span, Vec<Span>) {
+        match self {
+            Self::ParseError { error, .. } => (error.span(), vec![]),
+            Self::DirectoryReadError { .. }
+            | Self::FileReadError { .. }
+            | Self::InvalidSourceFilePath { .. }
+            | Self::InvalidSourceFileName { .. }
+            | Self::MissingModuleDeclaration { .. }
+            | Self::FileNameModuleMismatch { .. }
+            | Self::ConflictingModuleNameCasing { .. } => (Span::None, vec![]),
+        }
+    }
+
+    pub fn to_report(&self) -> miette::Report {
+        match self {
+            Self::ParseError { source, error, .. } => {
+                miette::Report::from(error.to_owned()).with_source_code(source.clone())
+            }
+            Self::DirectoryReadError { .. }
+            | Self::FileReadError { .. }
+            | Self::InvalidSourceFilePath { .. }
+            | Self::InvalidSourceFileName { .. }
+            | Self::MissingModuleDeclaration { .. }
+            | Self::FileNameModuleMismatch { .. }
+            | Self::ConflictingModuleNameCasing { .. } => message_report(self.to_string()),
         }
     }
 }
@@ -573,6 +620,7 @@ pub enum WorkspaceDiscoveryError {
 impl Display for WorkspaceDiscoveryError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Load(error) => write!(f, "{error}"),
             Self::PackageRootNotFound { start } => {
                 write!(
                     f,
@@ -606,7 +654,6 @@ impl Display for WorkspaceDiscoveryError {
                     message
                 )
             }
-            Self::Load(error) => write!(f, "{error}"),
             Self::MissingDependencyPackage {
                 manifest_path,
                 alias,
@@ -698,6 +745,46 @@ impl Display for WorkspaceDiscoveryError {
     }
 }
 
+impl WorkspaceDiscoveryError {
+    pub fn spans(&self) -> (Span, Vec<Span>) {
+        match self {
+            Self::Load(error) => error.spans(),
+            Self::PackageRootNotFound { .. }
+            | Self::ManifestReadError { .. }
+            | Self::ManifestParseError { .. }
+            | Self::SrcDirectoryMissing { .. }
+            | Self::PathCanonicalizationError { .. }
+            | Self::MissingDependencyPackage { .. }
+            | Self::InvalidDependencyPath { .. }
+            | Self::InvalidRemoteDependencySource { .. }
+            | Self::MissingRemoteDependencyPackage { .. }
+            | Self::RemoteDependencyMaterializationError { .. }
+            | Self::DependencyAliasCollision { .. }
+            | Self::DuplicatePackageId { .. }
+            | Self::PackageCycle { .. } => (Span::None, vec![]),
+        }
+    }
+
+    pub fn to_report(&self) -> miette::Report {
+        match self {
+            Self::Load(error) => error.to_report(),
+            Self::PackageRootNotFound { .. }
+            | Self::ManifestReadError { .. }
+            | Self::ManifestParseError { .. }
+            | Self::SrcDirectoryMissing { .. }
+            | Self::PathCanonicalizationError { .. }
+            | Self::MissingDependencyPackage { .. }
+            | Self::InvalidDependencyPath { .. }
+            | Self::InvalidRemoteDependencySource { .. }
+            | Self::MissingRemoteDependencyPackage { .. }
+            | Self::RemoteDependencyMaterializationError { .. }
+            | Self::DependencyAliasCollision { .. }
+            | Self::DuplicatePackageId { .. }
+            | Self::PackageCycle { .. } => message_report(self.to_string()),
+        }
+    }
+}
+
 impl std::error::Error for WorkspaceDiscoveryError {}
 
 #[derive(Debug, Clone)]
@@ -748,47 +835,78 @@ pub enum WorkspaceError {
 impl Display for WorkspaceError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LowerError { file, .. } => {
-                write!(f, "Failed to lower source file {}", file.0)
-            }
+            Self::LowerError { .. }
+            | Self::UnknownDependency { .. }
+            | Self::ImportedModuleNotFound { .. }
+            | Self::DuplicateImportAlias { .. }
+            | Self::BindingNameConflictsWithImportAlias { .. }
+            | Self::UnknownModuleQualifier { .. }
+            | Self::QualifiedCurrentModuleReference { .. } => write!(f, "{:?}", self.to_report()),
+            Self::UnattachedExternalModule { .. } => write!(f, "{}", self.plain_message()),
+        }
+    }
+}
+
+impl WorkspaceError {
+    fn plain_message(&self) -> String {
+        match self {
+            Self::LowerError { file, .. } => format!("Failed to lower source file {}", file.0),
             Self::UnknownDependency { dependency, .. } => {
-                write!(f, "Unknown dependency alias `@{dependency}`")
+                format!("Unknown dependency alias `@{dependency}`")
             }
             Self::ImportedModuleNotFound { import_path, .. } => {
-                write!(f, "Imported module `{}` was not found", import_path)
+                format!("Imported module `{}` was not found", import_path)
             }
             Self::DuplicateImportAlias { alias, .. } => {
-                write!(f, "Duplicate import alias `{}`", alias)
+                format!("Duplicate import alias `{}`", alias)
             }
             Self::BindingNameConflictsWithImportAlias { name, .. } => {
-                write!(
-                    f,
-                    "Top-level binding `{}` conflicts with an import alias",
-                    name
-                )
+                format!("Top-level binding `{}` conflicts with an import alias", name)
             }
             Self::UnknownModuleQualifier {
                 qualifier, name, ..
-            } => write!(
-                f,
-                "Unknown module qualifier `{}` in reference `{}`",
-                qualifier, name
-            ),
+            } => format!("Unknown module qualifier `{}` in reference `{}`", qualifier, name),
             Self::QualifiedCurrentModuleReference {
                 qualifier, name, ..
-            } => write!(
-                f,
+            } => format!(
                 "Reference `{}` uses qualifier `{}` for current module; use unqualified name",
                 name, qualifier
             ),
             Self::UnattachedExternalModule {
                 package,
                 module_path,
-            } => write!(
-                f,
+            } => format!(
                 "External module `{}` was not attached to any parsed module in package `{}`",
                 module_path, package
             ),
+        }
+    }
+
+    pub fn spans(&self) -> (Span, Vec<Span>) {
+        match self {
+            Self::LowerError { error, .. } => (error.span(), vec![]),
+            Self::UnknownDependency { span, .. }
+            | Self::ImportedModuleNotFound { span, .. }
+            | Self::DuplicateImportAlias { span, .. }
+            | Self::BindingNameConflictsWithImportAlias { span, .. }
+            | Self::UnknownModuleQualifier { span, .. }
+            | Self::QualifiedCurrentModuleReference { span, .. } => (span.clone(), vec![]),
+            Self::UnattachedExternalModule { .. } => (Span::None, vec![]),
+        }
+    }
+
+    pub fn to_report(&self) -> miette::Report {
+        match self {
+            Self::LowerError { source, error, .. } => error.to_report(source.clone()),
+            Self::UnknownDependency { source, span, .. }
+            | Self::ImportedModuleNotFound { source, span, .. }
+            | Self::DuplicateImportAlias { source, span, .. }
+            | Self::BindingNameConflictsWithImportAlias { source, span, .. }
+            | Self::UnknownModuleQualifier { source, span, .. }
+            | Self::QualifiedCurrentModuleReference { source, span, .. } => {
+                report_with_source_span(source.clone(), span, self.plain_message())
+            }
+            Self::UnattachedExternalModule { .. } => message_report(self.plain_message()),
         }
     }
 }

@@ -1,8 +1,6 @@
 use crate::language_server::instance::CompileError;
-use crate::package_utils::format_with_source_span;
 use lsp_types::{self as lsp, Uri};
-use miette::Diagnostic;
-use par_core::source::{FileName, Span, Spanning};
+use par_core::source::{FileName, Span};
 use par_core::workspace::{PackageLoadError, WorkspaceDiscoveryError, WorkspaceError};
 use std::collections::HashMap;
 use std::path::Path;
@@ -58,61 +56,23 @@ impl FeedbackBookKeeper {
 }
 
 pub fn diagnostic_for_error(err: &CompileError, fallback_uri: &Uri) -> (Uri, lsp::Diagnostic) {
-    let (span, message, help, _related_spans) = match err {
+    let (span, message, _related_spans) = match err {
         CompileError::Type { error, sources } => {
             let (span, related_span) = error.error.spans();
             (
                 span,
                 format!("{:?}", error.to_report(sources)),
-                None,
                 related_span.into_iter().collect(),
             )
         }
-        CompileError::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
-            source,
-            error,
-            ..
-        })) => (
-            error.span(),
-            format!(
-                "{:?}",
-                miette::Report::from(error.to_owned()).with_source_code(source.clone())
-            ),
-            error.help().map(|s| s.to_string()),
-            vec![],
-        ),
-        CompileError::Discovery(error) => (Span::None, error.to_string(), None, vec![]),
-        CompileError::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
-            let span = error.span();
-            let report = error.to_report(source.clone());
-            (span, format!("{report:?}"), None, vec![])
+        CompileError::Discovery(error) => {
+            let (span, related_spans) = error.spans();
+            (span, error.to_string(), related_spans)
         }
-        CompileError::Workspace(error @ WorkspaceError::UnknownDependency { source, span, .. })
-        | CompileError::Workspace(
-            error @ WorkspaceError::ImportedModuleNotFound { source, span, .. },
-        )
-        | CompileError::Workspace(
-            error @ WorkspaceError::DuplicateImportAlias { source, span, .. },
-        )
-        | CompileError::Workspace(
-            error @ WorkspaceError::BindingNameConflictsWithImportAlias { source, span, .. },
-        )
-        | CompileError::Workspace(
-            error @ WorkspaceError::UnknownModuleQualifier { source, span, .. },
-        )
-        | CompileError::Workspace(
-            error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
-        ) => (
-            span.clone(),
-            format_with_source_span(source.clone(), span, error.to_string()),
-            None,
-            vec![],
-        ),
-        CompileError::Workspace(error) => (Span::None, error.to_string(), None, vec![]),
-    };
-    let message = match help {
-        Some(help) => format!("{}\n{}", message, help),
-        None => message,
+        CompileError::Workspace(error) => {
+            let (span, related_spans) = error.spans();
+            (span, error.to_string(), related_spans)
+        }
     };
     (
         uri_for_error(err).unwrap_or_else(|| fallback_uri.clone()),

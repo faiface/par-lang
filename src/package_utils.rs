@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use par_core::frontend::TypeError;
 use par_core::frontend::language::{PackageId, Universal};
-use par_core::source::{FileName, Span};
+use par_core::source::FileName;
 use par_core::workspace::ModulePath;
 
 pub type SourceLookup = HashMap<FileName, Arc<str>>;
@@ -22,28 +21,6 @@ pub fn source_for_type_error(error: &TypeError<Universal>, sources: &SourceLooku
     span.file()
         .and_then(|file| sources.get(&file).cloned())
         .unwrap_or_else(|| source_for_fallback(sources))
-}
-
-pub fn format_with_source_span(
-    source: Arc<str>,
-    span: &Span,
-    message: impl Into<String>,
-) -> String {
-    let message = message.into();
-    let Some(start) = span.start() else {
-        return message;
-    };
-    let label = LabeledSpan::new_with_span(
-        None,
-        SourceSpan::new(
-            SourceOffset::from(start.offset as usize),
-            span.len() as usize,
-        ),
-    );
-    format!(
-        "{:?}",
-        miette::miette!(labels = vec![label], "{message}").with_source_code(source)
-    )
 }
 
 pub fn root_module_slash_path(root_package: &PackageId, module: &Universal) -> Option<String> {

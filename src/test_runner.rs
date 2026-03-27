@@ -15,7 +15,7 @@ use par_core::{
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
     workspace::{
-        CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceDiscoveryError, WorkspaceError,
+        CheckedWorkspace, ModulePath, WorkspaceDiscoveryError, WorkspaceError,
         render_global_name_in_scope,
     },
 };
@@ -23,8 +23,7 @@ use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
 
 use crate::package_utils::{
-    SourceLookup, find_local_module, format_with_source_span, parse_target, root_module_slash_path,
-    source_for_fallback,
+    SourceLookup, find_local_module, parse_target, root_module_slash_path, source_for_fallback,
 };
 use crate::workspace_support::{
     ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path,
@@ -47,32 +46,7 @@ enum BuildError {
 impl BuildError {
     fn display(&self) -> String {
         match self {
-            Self::Discovery(WorkspaceDiscoveryError::Load(PackageLoadError::ParseError {
-                source,
-                error,
-                ..
-            })) => format!(
-                "{:?}",
-                miette::Report::from(error.to_owned()).with_source_code(source.clone())
-            ),
             Self::Discovery(error) => error.to_string(),
-            Self::Workspace(WorkspaceError::LowerError { source, error, .. }) => {
-                format!("{:?}", error.to_report(source.clone()))
-            }
-            Self::Workspace(error @ WorkspaceError::UnknownDependency { source, span, .. })
-            | Self::Workspace(
-                error @ WorkspaceError::ImportedModuleNotFound { source, span, .. },
-            )
-            | Self::Workspace(error @ WorkspaceError::DuplicateImportAlias { source, span, .. })
-            | Self::Workspace(
-                error @ WorkspaceError::BindingNameConflictsWithImportAlias { source, span, .. },
-            )
-            | Self::Workspace(
-                error @ WorkspaceError::UnknownModuleQualifier { source, span, .. },
-            )
-            | Self::Workspace(
-                error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
-            ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
             Self::Type { errors, sources } => errors
                 .iter()
