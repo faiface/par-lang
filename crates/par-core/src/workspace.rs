@@ -1351,7 +1351,8 @@ impl PackageGraph {
             .packages
             .into_iter()
             .map(|package| {
-                let parsed = parse_package(&package.layout, overrides)?;
+                let files = collect_source_files(&package.layout, overrides).map_err(WorkspaceDiscoveryError::Load)?;
+                let parsed = parse_loaded_files(files).map_err(WorkspaceDiscoveryError::Load)?;
                 Ok(WorkspacePackage::new(package.id, parsed)
                     .with_dependencies(package.dependencies))
             })
@@ -1368,14 +1369,6 @@ pub fn discover_workspace_packages_from_path(
     overrides: Option<&SourceOverrides>,
 ) -> Result<WorkspacePackages, WorkspaceDiscoveryError> {
     PackageGraph::discover_from_path(start)?.into_workspace_packages(overrides)
-}
-
-fn parse_package(
-    layout: &PackageLayout,
-    overrides: Option<&SourceOverrides>,
-) -> Result<ParsedPackage, WorkspaceDiscoveryError> {
-    let files = collect_source_files(layout, overrides).map_err(WorkspaceDiscoveryError::Load)?;
-    parse_loaded_files(files).map_err(WorkspaceDiscoveryError::Load)
 }
 
 fn canonicalize_path(path: &Path) -> Result<PathBuf, WorkspaceDiscoveryError> {

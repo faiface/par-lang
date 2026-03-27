@@ -6,10 +6,10 @@ use std::{
     time::SystemTime,
 };
 
-use crate::package_utils::format_with_source_span;
+use crate::package_utils::{SourceLookup, format_with_source_span};
 use crate::workspace_support::{
-    assemble_default_workspace, default_workspace_packages_from_parsed,
-    default_workspace_packages_from_path,
+    CheckedWorkspaceBuild, ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path,
+    checked_workspace_from_single_file,
 };
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
@@ -22,14 +22,14 @@ use core::time::Duration;
 use par_core::frontend::DefinitionBody;
 use par_core::{
     frontend::{
-        Type, TypeError,
+        Type,
         language::{GlobalName, PackageId, Universal},
     },
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
     workspace::{
-        CheckedWorkspace, FileImportScope, LoadedPackageFile, ModulePath, PackageLoadError,
-        WorkspaceDiscoveryError, WorkspaceError, parse_loaded_files, render_global_name_in_scope,
+        CheckedWorkspace, FileImportScope, ModulePath, PackageLoadError,
+        WorkspaceDiscoveryError, WorkspaceError, render_global_name_in_scope,
     },
 };
 use par_runtime::linker::Linked;
@@ -42,8 +42,8 @@ enum BuildError {
     Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
-        errors: Vec<TypeError<Universal>>,
-        checked: Arc<CheckedWorkspace>,
+        errors: Vec<ScopedTypeError>,
+        sources: SourceLookup,
     },
     InetCompile(RuntimeCompilerError),
 }
@@ -78,16 +78,9 @@ impl BuildError {
                 error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type { errors, checked } => errors
+            Self::Type { errors, sources } => errors
                 .iter()
-                .map(|error| {
-                    let scope = error
-                        .spans()
-                        .0
-                        .file()
-                        .and_then(|file| checked.workspace().import_scope(&file));
-                    format!("{:?}", error.to_report(code.clone(), scope))
-                })
+                .map(|error| format!("{:?}", error.to_report(sources)))
                 .collect::<Vec<_>>()
                 .join("\n"),
             Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
@@ -107,7 +100,8 @@ enum BuildResult {
     TypeError {
         pretty: String,
         checked: Arc<CheckedWorkspace>,
-        errors: Vec<TypeError<Universal>>,
+        errors: Vec<ScopedTypeError>,
+        sources: SourceLookup,
     },
     InetError {
         pretty: String,
@@ -128,10 +122,10 @@ impl BuildResult {
             Self::DiscoveryError { error } => Some(BuildError::Discovery(error.clone())),
             Self::WorkspaceError { error } => Some(BuildError::Workspace(error.clone())),
             Self::TypeError {
-                errors, checked, ..
+                errors, sources, ..
             } => Some(BuildError::Type {
                 errors: errors.clone(),
-                checked: Arc::clone(checked),
+                sources: sources.clone(),
             }),
             Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
             Self::Ok { .. } => None,
@@ -168,29 +162,11 @@ impl BuildResult {
     }
 
     fn from_single_file_package(source: &str, file_path: PathBuf, max_interactions: u32) -> Self {
-        let relative_path_from_src = file_path
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("Main.par"));
-        let parsed = match parse_loaded_files(vec![LoadedPackageFile {
-            name: FileName::from(file_path.as_path()),
-            relative_path_from_src,
-            source: source.to_owned(),
-        }]) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                return Self::DiscoveryError {
-                    error: WorkspaceDiscoveryError::Load(error),
-                };
-            }
-        };
-
-        let workspace_packages = default_workspace_packages_from_parsed(parsed);
-        let workspace = match assemble_default_workspace(workspace_packages) {
-            Ok(workspace) => workspace,
-            Err(error) => return Self::WorkspaceError { error },
-        };
-        Self::from_workspace(workspace, max_interactions)
+        match checked_workspace_from_single_file(&file_path, "Main.par", source) {
+            Ok(build) => Self::from_checked_build(build, max_interactions),
+            Err(WorkspaceBuildError::Discovery(error)) => Self::DiscoveryError { error },
+            Err(WorkspaceBuildError::Workspace(error)) => Self::WorkspaceError { error },
+        }
     }
 
     fn from_package_active_file(
@@ -201,29 +177,24 @@ impl BuildResult {
         let mut overrides = std::collections::HashMap::new();
         overrides.insert(active_file_path.to_path_buf(), active_source.to_owned());
 
-        let workspace_packages =
-            match default_workspace_packages_from_path(active_file_path, Some(&overrides)) {
-                Ok(workspace_packages) => workspace_packages,
-                Err(WorkspaceDiscoveryError::PackageRootNotFound { .. }) => {
-                    return Self::from_single_file_package(
-                        active_source,
-                        active_file_path.to_path_buf(),
-                        max_interactions,
-                    );
-                }
-                Err(error) => {
-                    return Self::DiscoveryError { error };
-                }
-            };
-        let workspace = match assemble_default_workspace(workspace_packages) {
-            Ok(workspace) => workspace,
-            Err(error) => return Self::WorkspaceError { error },
-        };
-        Self::from_workspace(workspace, max_interactions)
+        match checked_workspace_from_path(active_file_path, Some(&overrides)) {
+            Ok(build) => Self::from_checked_build(build, max_interactions),
+            Err(WorkspaceBuildError::Discovery(WorkspaceDiscoveryError::PackageRootNotFound {
+                ..
+            })) => Self::from_single_file_package(
+                active_source,
+                active_file_path.to_path_buf(),
+                max_interactions,
+            ),
+            Err(WorkspaceBuildError::Discovery(error)) => Self::DiscoveryError { error },
+            Err(WorkspaceBuildError::Workspace(error)) => Self::WorkspaceError { error },
+        }
     }
 
-    fn from_workspace(workspace: par_core::workspace::Workspace, max_interactions: u32) -> Self {
-        let pretty = workspace
+    fn from_checked_build(build: CheckedWorkspaceBuild, max_interactions: u32) -> Self {
+        let pretty = build
+            .checked
+            .workspace()
             .lowered_module()
             .definitions
             .iter()
@@ -254,35 +225,27 @@ impl BuildResult {
             )
             .collect();
 
-        let (checked, type_errors) = workspace.type_check();
-        let checked = Arc::new(checked);
-        if !type_errors.is_empty() {
+        if !build.type_errors.is_empty() {
             return Self::TypeError {
                 pretty,
-                checked,
-                errors: type_errors,
+                checked: Arc::new(build.checked),
+                errors: build.type_errors,
+                sources: build.sources,
             };
         }
-        Self::from_checked(pretty, checked, max_interactions)
-    }
-
-    fn from_checked(pretty: String, checked: Arc<CheckedWorkspace>, max_interactions: u32) -> Self {
-        let rt_compiled = match checked
-            .compile_runtime(max_interactions)
-            .and_then(|compiled| compiled.link())
-        {
-            Ok(rt_compiled) => rt_compiled,
-            Err(error) => {
+        let (checked, rt_compiled, _) = match build.compile_linked(max_interactions) {
+            Ok(build) => build,
+            Err((checked, error)) => {
                 return Self::InetError {
                     pretty,
-                    checked,
+                    checked: Arc::new(checked),
                     error,
                 };
             }
         };
         Self::Ok {
             pretty,
-            checked,
+            checked: Arc::new(checked),
             rt_compiled,
         }
     }

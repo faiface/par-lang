@@ -2,17 +2,15 @@ use super::io::IO;
 use crate::language_server::data::ToLspPosition;
 use crate::package_utils::SourceLookup;
 use crate::workspace_support::{
-    assemble_default_workspace, default_workspace_packages_from_parsed,
-    default_workspace_packages_from_path,
+    ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path,
+    checked_workspace_from_single_file,
 };
 use indexmap::IndexMap;
 use lsp_types::{self as lsp, Uri};
-use par_core::frontend::TypeError;
-use par_core::frontend::language::{GlobalName, Universal};
+use par_core::frontend::language::GlobalName;
 use par_core::source::{FileName, Span};
 use par_core::workspace::{
-    CheckedWorkspace, FileImportScope, LoadedPackageFile, SourceOverrides, WorkspaceDiscoveryError,
-    WorkspaceError, parse_loaded_files,
+    CheckedWorkspace, SourceOverrides, WorkspaceDiscoveryError, WorkspaceError,
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,8 +21,7 @@ pub enum CompileError {
     Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
-        error: TypeError<Universal>,
-        file_scope: Option<FileImportScope<Universal>>,
+        error: ScopedTypeError,
         sources: SourceLookup,
     },
 }
@@ -385,34 +382,9 @@ impl Instance {
         code: &str,
     ) -> Result<(Arc<CheckedWorkspace>, Vec<CompileError>), CompileError> {
         let file_path = uri_to_path(&self.uri).unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
-        let relative_path_from_src = file_path
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("LspBuffer.par"));
-        let parsed = parse_loaded_files(vec![LoadedPackageFile {
-            name: FileName::from(file_path.as_path()),
-            relative_path_from_src,
-            source: code.to_owned(),
-        }])
-        .map_err(|error| CompileError::Discovery(WorkspaceDiscoveryError::Load(error)))?;
-        let workspace_packages = default_workspace_packages_from_parsed(parsed);
-        let workspace =
-            assemble_default_workspace(workspace_packages).map_err(CompileError::Workspace)?;
-        let sources = workspace.sources().clone();
-        let (checked, type_errors) = workspace.type_check();
-        let errors = type_errors
-            .into_iter()
-            .map(|error| CompileError::Type {
-                file_scope: error
-                    .spans()
-                    .0
-                    .file()
-                    .and_then(|file| workspace.import_scope(&file).cloned()),
-                error,
-                sources: sources.clone(),
-            })
-            .collect();
-        Ok((Arc::new(checked), errors))
+        let build = checked_workspace_from_single_file(&file_path, "LspBuffer.par", code)
+            .map_err(map_workspace_build_error)?;
+        Ok(build_compile_result(build))
     }
 
     fn compile_package_with_overlays(
@@ -426,26 +398,31 @@ impl Instance {
             .filter_map(|(uri, source)| uri_to_path(&uri).map(|path| (path, source)))
             .collect();
 
-        let workspace_packages =
-            default_workspace_packages_from_path(file_path, Some(&overlay_sources))
-                .map_err(CompileError::Discovery)?;
-        let workspace =
-            assemble_default_workspace(workspace_packages).map_err(CompileError::Workspace)?;
-        let sources = workspace.sources().clone();
-        let (checked, type_errors) = workspace.type_check();
-        let errors = type_errors
-            .into_iter()
-            .map(|error| CompileError::Type {
-                file_scope: error
-                    .spans()
-                    .0
-                    .file()
-                    .and_then(|file| workspace.import_scope(&file).cloned()),
-                error,
-                sources: sources.clone(),
-            })
-            .collect();
-        Ok((Arc::new(checked), errors))
+        let build = checked_workspace_from_path(file_path, Some(&overlay_sources))
+            .map_err(map_workspace_build_error)?;
+        Ok(build_compile_result(build))
+    }
+}
+
+fn build_compile_result(
+    build: crate::workspace_support::CheckedWorkspaceBuild,
+) -> (Arc<CheckedWorkspace>, Vec<CompileError>) {
+    let sources = build.sources.clone();
+    let errors = build
+        .type_errors
+        .into_iter()
+        .map(|error| CompileError::Type {
+            error,
+            sources: sources.clone(),
+        })
+        .collect();
+    (Arc::new(build.checked), errors)
+}
+
+fn map_workspace_build_error(error: WorkspaceBuildError) -> CompileError {
+    match error {
+        WorkspaceBuildError::Discovery(error) => CompileError::Discovery(error),
+        WorkspaceBuildError::Workspace(error) => CompileError::Workspace(error),
     }
 }
 

@@ -1,18 +1,19 @@
 use crate::package_manager::AddedDependencyStatus;
 use crate::package_utils::{
     SourceLookup, find_local_module, format_with_source_span, parse_target, root_module_slash_path,
-    source_for_fallback, source_for_type_error,
+    source_for_fallback,
 };
 #[cfg(feature = "playground")]
 use crate::playground::Playground;
-use crate::workspace_support::{assemble_default_workspace, default_workspace_packages_from_path};
+use crate::workspace_support::{
+    CheckedWorkspaceBuild, ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path,
+};
 use clap::{Command, arg, command, value_parser};
 use colored::Colorize;
 #[cfg(feature = "playground")]
 use eframe::egui;
-use par_core::frontend::language::Universal;
 use par_core::{
-    frontend::{Type, TypeError, set_miette_hook},
+    frontend::{Type, set_miette_hook},
     runtime::RuntimeCompilerError,
     workspace::{
         CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceDiscoveryError, WorkspaceError,
@@ -60,8 +61,7 @@ enum BuildError {
     Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
-        errors: Vec<TypeError<Universal>>,
-        checked: CheckedWorkspace,
+        errors: Vec<ScopedTypeError>,
         sources: SourceLookup,
     },
     InetCompile {
@@ -100,23 +100,9 @@ impl BuildError {
                 ..
             }) => format_with_source_span(source.clone(), span, self.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type {
-                errors,
-                checked,
-                sources,
-            } => errors
+            Self::Type { errors, sources } => errors
                 .iter()
-                .map(|error| {
-                    let scope = error
-                        .spans()
-                        .0
-                        .file()
-                        .and_then(|file| checked.workspace().import_scope(&file));
-                    format!(
-                        "{:?}",
-                        error.to_report(source_for_type_error(error, sources), scope)
-                    )
-                })
+                .map(|error| format!("{:?}", error.to_report(sources)))
                 .collect::<Vec<_>>()
                 .join("\n"),
             Self::InetCompile { error, sources } => format!(
@@ -197,21 +183,15 @@ impl Display for NewPackageError {
 
 fn build_checked_package(
     package_path: &PathBuf,
-) -> Result<(CheckedWorkspace, Vec<ModulePath>, SourceLookup), BuildError> {
-    let packages =
-        default_workspace_packages_from_path(package_path, None).map_err(BuildError::Discovery)?;
-    let workspace = assemble_default_workspace(packages).map_err(BuildError::Workspace)?;
-    let sources = workspace.sources().clone();
-    let (checked, type_errors) = workspace.type_check();
-    if !type_errors.is_empty() {
+) -> Result<CheckedWorkspaceBuild, BuildError> {
+    let build = checked_workspace_from_path(package_path, None).map_err(map_workspace_build_error)?;
+    if !build.type_errors.is_empty() {
         return Err(BuildError::Type {
-            errors: type_errors,
-            checked,
-            sources: sources.clone(),
+            errors: build.type_errors,
+            sources: build.sources.clone(),
         });
     }
-    let root_modules = checked.workspace().root_modules();
-    Ok((checked, root_modules, sources))
+    Ok(build)
 }
 
 fn build_unlinked_package(
@@ -226,14 +206,15 @@ fn build_unlinked_package(
     ),
     BuildError,
 > {
-    let (checked, local_modules, sources) = build_checked_package(package_path)?;
-    let rt_compiled =
-        checked
-            .compile_runtime(max_interactions)
-            .map_err(|error| BuildError::InetCompile {
-                error,
-                sources: sources.clone(),
-            })?;
+    let build = build_checked_package(package_path)?;
+    let sources = build.sources.clone();
+    let (checked, rt_compiled, sources) = build
+        .compile_unlinked(max_interactions)
+        .map_err(|(_, error)| BuildError::InetCompile {
+            error,
+            sources: sources.clone(),
+        })?;
+    let local_modules = checked.workspace().root_modules();
     Ok((checked, rt_compiled, local_modules, sources))
 }
 
@@ -260,6 +241,13 @@ fn build_runtime_package(
             })?,
         local_modules,
     ))
+}
+
+fn map_workspace_build_error(error: WorkspaceBuildError) -> BuildError {
+    match error {
+        WorkspaceBuildError::Discovery(error) => BuildError::Discovery(error),
+        WorkspaceBuildError::Workspace(error) => BuildError::Workspace(error),
+    }
 }
 
 fn is_reserved_package_name(name: &str) -> bool {

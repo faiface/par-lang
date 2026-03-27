@@ -1,5 +1,5 @@
 use crate::language_server::instance::CompileError;
-use crate::package_utils::{format_with_source_span, source_for_type_error};
+use crate::package_utils::format_with_source_span;
 use lsp_types::{self as lsp, Uri};
 use miette::Diagnostic;
 use par_core::source::{FileName, Span, Spanning};
@@ -59,18 +59,11 @@ impl FeedbackBookKeeper {
 
 pub fn diagnostic_for_error(err: &CompileError, fallback_uri: &Uri) -> (Uri, lsp::Diagnostic) {
     let (span, message, help, _related_spans) = match err {
-        CompileError::Type {
-            error,
-            file_scope,
-            sources,
-        } => {
-            let (span, related_span) = error.spans();
+        CompileError::Type { error, sources } => {
+            let (span, related_span) = error.error.spans();
             (
                 span,
-                format!(
-                    "{:?}",
-                    error.to_report(source_for_type_error(error, sources), file_scope.as_ref(),)
-                ),
+                format!("{:?}", error.to_report(sources)),
                 None,
                 related_span.into_iter().collect(),
             )
@@ -165,7 +158,7 @@ fn span_to_lsp_range(span: &Span) -> lsp::Range {
 fn uri_for_error(err: &CompileError) -> Option<Uri> {
     match err {
         CompileError::Type { error, .. } => {
-            let (span, _) = error.spans();
+            let (span, _) = error.error.spans();
             uri_for_span(&span)
         }
         CompileError::Discovery(error) => uri_for_discovery_error(error),
