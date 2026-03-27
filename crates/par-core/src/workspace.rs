@@ -9,8 +9,8 @@ use crate::frontend_impl::process;
 use crate::frontend_impl::program::{
     CheckedModule, DocComment, Docs, HoverIndex, ImportDecl, ImportPath, Module, SourceFile,
 };
-use crate::frontend_impl::types::error::labels_from_span;
 use crate::frontend_impl::types::display::{GlobalNameWriter, TypeRenderOptions};
+use crate::frontend_impl::types::error::labels_from_span;
 use crate::frontend_impl::types::{Type, TypeError, VisibilityIndex, validate_visibility};
 use crate::location::{FileName, Span, Spanning};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
@@ -861,11 +861,17 @@ impl WorkspaceError {
                 format!("Duplicate import alias `{}`", alias)
             }
             Self::BindingNameConflictsWithImportAlias { name, .. } => {
-                format!("Top-level binding `{}` conflicts with an import alias", name)
+                format!(
+                    "Top-level binding `{}` conflicts with an import alias",
+                    name
+                )
             }
             Self::UnknownModuleQualifier {
                 qualifier, name, ..
-            } => format!("Unknown module qualifier `{}` in reference `{}`", qualifier, name),
+            } => format!(
+                "Unknown module qualifier `{}` in reference `{}`",
+                qualifier, name
+            ),
             Self::QualifiedCurrentModuleReference {
                 qualifier, name, ..
             } => format!(
@@ -1469,7 +1475,8 @@ impl PackageGraph {
             .packages
             .into_iter()
             .map(|package| {
-                let files = collect_source_files(&package.layout, overrides).map_err(WorkspaceDiscoveryError::Load)?;
+                let files = collect_source_files(&package.layout, overrides)
+                    .map_err(WorkspaceDiscoveryError::Load)?;
                 let parsed = parse_loaded_files(files).map_err(WorkspaceDiscoveryError::Load)?;
                 Ok(WorkspacePackage::new(package.id, parsed)
                     .with_dependencies(package.dependencies))

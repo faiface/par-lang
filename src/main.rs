@@ -143,10 +143,9 @@ impl Display for NewPackageError {
     }
 }
 
-fn build_checked_package(
-    package_path: &PathBuf,
-) -> Result<CheckedWorkspaceBuild, BuildError> {
-    let build = checked_workspace_from_path(package_path, None).map_err(map_workspace_build_error)?;
+fn build_checked_package(package_path: &PathBuf) -> Result<CheckedWorkspaceBuild, BuildError> {
+    let build =
+        checked_workspace_from_path(package_path, None).map_err(map_workspace_build_error)?;
     if !build.type_errors.is_empty() {
         return Err(BuildError::Type {
             errors: build.type_errors,
@@ -170,12 +169,13 @@ fn build_unlinked_package(
 > {
     let build = build_checked_package(package_path)?;
     let sources = build.sources.clone();
-    let (checked, rt_compiled, sources) = build
-        .compile_unlinked(max_interactions)
-        .map_err(|(_, error)| BuildError::InetCompile {
-            error,
-            sources: sources.clone(),
-        })?;
+    let (checked, rt_compiled, sources) =
+        build
+            .compile_unlinked(max_interactions)
+            .map_err(|(_, error)| BuildError::InetCompile {
+                error,
+                sources: sources.clone(),
+            })?;
     let local_modules = checked.workspace().root_modules();
     Ok((checked, rt_compiled, local_modules, sources))
 }

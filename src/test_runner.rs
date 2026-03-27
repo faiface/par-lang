@@ -25,9 +25,7 @@ use par_runtime::spawn::TokioSpawn;
 use crate::package_utils::{
     SourceLookup, find_local_module, parse_target, root_module_slash_path, source_for_fallback,
 };
-use crate::workspace_support::{
-    ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path,
-};
+use crate::workspace_support::{ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path};
 
 #[derive(Clone)]
 enum BuildError {
@@ -65,7 +63,8 @@ fn build_for_run(
     package_path: &Path,
     max_interactions: u32,
 ) -> Result<(CheckedWorkspace, Compiled<Linked>, Vec<ModulePath>), BuildError> {
-    let build = checked_workspace_from_path(package_path, None).map_err(map_workspace_build_error)?;
+    let build =
+        checked_workspace_from_path(package_path, None).map_err(map_workspace_build_error)?;
     if !build.type_errors.is_empty() {
         return Err(BuildError::Type {
             errors: build.type_errors,
@@ -73,12 +72,13 @@ fn build_for_run(
         });
     }
     let sources = build.sources.clone();
-    let (checked, rt_compiled, _) = build
-        .compile_linked(max_interactions)
-        .map_err(|(_, error)| BuildError::InetCompile {
-            error,
-            sources: sources.clone(),
-        })?;
+    let (checked, rt_compiled, _) =
+        build
+            .compile_linked(max_interactions)
+            .map_err(|(_, error)| BuildError::InetCompile {
+                error,
+                sources: sources.clone(),
+            })?;
     let local_modules = checked.workspace().root_modules();
     Ok((checked, rt_compiled, local_modules))
 }

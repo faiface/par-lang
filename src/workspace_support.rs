@@ -131,8 +131,8 @@ pub(crate) fn checked_workspace_from_path(
     start: impl AsRef<Path>,
     overrides: Option<&SourceOverrides>,
 ) -> Result<CheckedWorkspaceBuild, WorkspaceBuildError> {
-    let packages =
-        default_workspace_packages_from_path(start, overrides).map_err(WorkspaceBuildError::Discovery)?;
+    let packages = default_workspace_packages_from_path(start, overrides)
+        .map_err(WorkspaceBuildError::Discovery)?;
     let workspace = assemble_default_workspace(packages).map_err(WorkspaceBuildError::Workspace)?;
     Ok(CheckedWorkspaceBuild::from_workspace(workspace))
 }
@@ -141,7 +141,8 @@ fn checked_workspace_from_parsed(
     parsed: ParsedPackage,
 ) -> Result<CheckedWorkspaceBuild, WorkspaceBuildError> {
     let workspace_packages = default_workspace_packages_from_parsed(parsed);
-    let workspace = assemble_default_workspace(workspace_packages).map_err(WorkspaceBuildError::Workspace)?;
+    let workspace =
+        assemble_default_workspace(workspace_packages).map_err(WorkspaceBuildError::Workspace)?;
     Ok(CheckedWorkspaceBuild::from_workspace(workspace))
 }
 
