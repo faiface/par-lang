@@ -1,10 +1,23 @@
 #[cfg(test)]
 mod tests {
     use crate::frontend_impl::language::{GlobalName, LocalName, PackageId, Universal};
-    use crate::frontend_impl::types::{Type, TypeDefs};
+    use crate::frontend_impl::types::{GlobalNameWriter, Type, TypeDefs};
     use crate::location::Span;
-    use crate::workspace::render_type_in_scope;
+    use crate::workspace::{render_global_name_in_scope, render_type_in_scope};
     use arcstr::{ArcStr, literal};
+    use std::fmt::{self, Write};
+
+    struct TestNameWriter;
+
+    impl GlobalNameWriter<Universal> for TestNameWriter {
+        fn write_global_name<W: Write>(
+            &self,
+            f: &mut W,
+            name: &GlobalName<Universal>,
+        ) -> fmt::Result {
+            write!(f, "{}", render_global_name_in_scope(None, name))
+        }
+    }
 
     fn alias_preserving_type_defs() -> (TypeDefs<Universal>, GlobalName<Universal>) {
         let span = Span::None;
@@ -166,17 +179,36 @@ mod tests {
     }
 
     #[test]
-    fn test_display_keeps_named_fixpoint_aliases_after_expansion() {
+    fn test_empty_branches_render_on_one_line() {
+        let mut pretty_either = String::new();
+        Type::<Universal>::either(vec![])
+            .pretty(&mut pretty_either, &TestNameWriter, 0)
+            .unwrap();
+        assert_eq!(pretty_either, "either {}");
+
+        let mut pretty_choice = String::new();
+        Type::<Universal>::choice(vec![])
+            .pretty(&mut pretty_choice, &TestNameWriter, 0)
+            .unwrap();
+        assert_eq!(pretty_choice, "choice {}");
+    }
+
+    #[test]
+    fn test_pretty_compact_keeps_named_fixpoint_aliases_after_expansion() {
         let (defs, map_name) = alias_preserving_type_defs();
         let expanded = defs
             .get(&Span::None, &map_name, &[Type::string(), Type::int()])
             .unwrap()
             .expand_fixpoint()
             .unwrap();
+        let mut actual = String::new();
+        expanded
+            .pretty_compact(&mut actual, &TestNameWriter)
+            .unwrap();
 
         assert_eq!(
-            format!("{expanded}"),
-            "choice {.delete => @__test__/Main.Map<String, Int>,.put => [Int] @__test__/Main.Map<String, Int>,}"
+            actual,
+            "choice {.delete => \"__test__\"/Main.Map<String, Int>,.put => [Int] \"__test__\"/Main.Map<String, Int>,}"
         );
     }
 

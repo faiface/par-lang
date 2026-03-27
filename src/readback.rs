@@ -8,8 +8,9 @@ use futures::{
 };
 use num_bigint::BigInt;
 use par_core::{
-    frontend::{ParString, Primitive, parse_bytes},
+    frontend::{ParString, Primitive, language::Universal, parse_bytes},
     runtime::{TypedHandle, TypedReadback},
+    workspace::{FileImportScope, render_type_in_scope},
 };
 use std::sync::{Arc, Mutex};
 
@@ -91,6 +92,7 @@ impl Element {
     pub fn new(
         refresh: Arc<dyn Fn() + Send + Sync>,
         spawner: Arc<dyn Spawn + Send + Sync>,
+        scope: Option<FileImportScope<Universal>>,
         handle: TypedHandle,
     ) -> Arc<Mutex<Self>> {
         let element = Arc::new(Mutex::new(Self {
@@ -102,6 +104,7 @@ impl Element {
             .spawn(handle_coroutine(
                 refresh,
                 Arc::clone(&spawner),
+                scope,
                 handle,
                 Arc::clone(&element),
             ))
@@ -394,6 +397,7 @@ impl Element {
 async fn handle_coroutine(
     refresh: Arc<dyn Fn() + Send + Sync>,
     spawner: Arc<dyn Spawn + Send + Sync>,
+    scope: Option<FileImportScope<Universal>>,
     handle: TypedHandle,
     element: Arc<Mutex<Element>>,
 ) {
@@ -490,6 +494,7 @@ async fn handle_coroutine(
                 lock.history.push(Event::Times(Element::new(
                     Arc::clone(&refresh),
                     Arc::clone(&spawner),
+                    scope.clone(),
                     handle1,
                 )));
                 handle = handle2;
@@ -501,6 +506,7 @@ async fn handle_coroutine(
                 lock.history.push(Event::Par(Element::new(
                     Arc::clone(&refresh),
                     Arc::clone(&spawner),
+                    scope.clone(),
                     handle1,
                 )));
                 handle = handle2;
@@ -547,10 +553,8 @@ async fn handle_coroutine(
 
             TypedReadback::Unreadable { typ, handle } => {
                 let mut lock = element.lock().expect("lock failed");
-                let mut str = String::new();
-                typ.pretty(&mut str, 2).unwrap();
                 lock.history.push(Event::Unreadable {
-                    typ: str,
+                    typ: render_type_in_scope(scope.as_ref(), &typ, 2),
                     handle: Arc::new(handle),
                 });
                 refresh();

@@ -49,7 +49,7 @@ impl Into<Artifact<Unlinked>> for Transpiled<Unlinked> {
             definition_to_package: self
                 .name_to_package
                 .iter()
-                .map(|(k, v)| (format!("{}", k), v.clone()))
+                .map(|(k, v)| (k.canonical_string().to_string(), v.clone()))
                 .collect(),
         }
     }

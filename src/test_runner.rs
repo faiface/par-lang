@@ -16,6 +16,7 @@ use par_core::{
     testing::{AssertionResult, provide_test},
     workspace::{
         CheckedWorkspace, ModulePath, PackageLoadError, WorkspaceDiscoveryError, WorkspaceError,
+        render_global_name_in_scope,
     },
 };
 use par_runtime::linker::Linked;
@@ -27,12 +28,13 @@ use crate::package_utils::{
 };
 use crate::workspace_support::{assemble_default_workspace, default_workspace_packages_from_path};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum BuildError {
     Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
         errors: Vec<TypeError<Universal>>,
+        checked: CheckedWorkspace,
         sources: SourceLookup,
     },
     InetCompile {
@@ -71,12 +73,21 @@ impl BuildError {
                 error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type { errors, sources } => errors
+            Self::Type {
+                errors,
+                checked,
+                sources,
+            } => errors
                 .iter()
                 .map(|error| {
+                    let scope = error
+                        .spans()
+                        .0
+                        .file()
+                        .and_then(|file| checked.workspace().import_scope(&file));
                     format!(
                         "{:?}",
-                        error.to_report(source_for_type_error(error, sources))
+                        error.to_report(source_for_type_error(error, sources), scope)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -101,6 +112,7 @@ fn build_for_run(
     if !type_errors.is_empty() {
         return Err(BuildError::Type {
             errors: type_errors,
+            checked,
             sources: sources.clone(),
         });
     }
@@ -305,7 +317,8 @@ fn test_single_definition(
     test_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
-    let name_label = test_name.to_string();
+    let name_label = render_global_name_in_scope(None, test_name);
+    let missing_type_name = name_label.clone();
     let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
         Err(e) => {
@@ -320,7 +333,7 @@ fn test_single_definition(
     let result = runtime.block_on(async {
         let ty = rt_compiled
             .get_type_of(test_name)
-            .ok_or_else(|| format!("Type not found for test '{}'", test_name))?;
+            .ok_or_else(|| format!("Type not found for test '{}'", missing_type_name))?;
         run_test_with_test_type(rt_compiled, test_name, &ty).await
     });
 
@@ -343,7 +356,8 @@ fn run_single_definition(
     run_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
-    let name_label = run_name.to_string();
+    let name_label = render_global_name_in_scope(None, run_name);
+    let missing_type_name = name_label.clone();
     let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
         Err(e) => {
@@ -358,7 +372,7 @@ fn run_single_definition(
     let result = runtime.block_on(async {
         let _ty = rt_compiled
             .get_type_of(run_name)
-            .ok_or_else(|| format!("Type not found for test '{}'", run_name))?;
+            .ok_or_else(|| format!("Type not found for test '{}'", missing_type_name))?;
         let package = rt_compiled.code.get_with_name(run_name).unwrap();
 
         let (handle, fut) = par_runtime::start_and_instantiate(

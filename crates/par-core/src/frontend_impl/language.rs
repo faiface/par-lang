@@ -94,6 +94,16 @@ impl<S> GlobalName<S> {
     }
 }
 
+impl<S: Display> GlobalName<S> {
+    pub(crate) fn canonical_string(&self) -> ArcStr {
+        let module = self.module.to_string();
+        if module.is_empty() {
+            return ArcStr::from(self.primary.as_str());
+        }
+        arcstr::format!("{module}.{}", self.primary)
+    }
+}
+
 impl From<ArcStr> for LocalName {
     fn from(value: ArcStr) -> Self {
         LocalName {
@@ -545,16 +555,6 @@ impl<S: Ord> Ord for GlobalName<S> {
         (&self.module, &self.primary).cmp(&(&other.module, &other.primary))
     }
 }
-impl<S: Display> Display for GlobalName<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let module = self.module.to_string();
-        if !module.is_empty() {
-            write!(f, "{}.", module)?;
-        }
-        write!(f, "{}", self.primary)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum CompileError {
     MustEndProcess(Span),
@@ -2239,7 +2239,7 @@ impl Context {
                 let span = global_name.span.clone();
                 let local_name = LocalName {
                     span: span.clone(),
-                    string: arcstr::format!("{}", global_name),
+                    string: global_name.canonical_string(),
                 };
                 Arc::new(process::Process::Let {
                     span: span.clone(),

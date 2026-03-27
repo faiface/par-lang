@@ -55,12 +55,13 @@ import @core/Debug
 def Main : ! = Debug.Log(\"Hello, World!\")
 ";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum BuildError {
     Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
     Type {
         errors: Vec<TypeError<Universal>>,
+        checked: CheckedWorkspace,
         sources: SourceLookup,
     },
     InetCompile {
@@ -99,12 +100,21 @@ impl BuildError {
                 ..
             }) => format_with_source_span(source.clone(), span, self.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type { errors, sources } => errors
+            Self::Type {
+                errors,
+                checked,
+                sources,
+            } => errors
                 .iter()
                 .map(|error| {
+                    let scope = error
+                        .spans()
+                        .0
+                        .file()
+                        .and_then(|file| checked.workspace().import_scope(&file));
                     format!(
                         "{:?}",
-                        error.to_report(source_for_type_error(error, sources))
+                        error.to_report(source_for_type_error(error, sources), scope)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -196,6 +206,7 @@ fn build_checked_package(
     if !type_errors.is_empty() {
         return Err(BuildError::Type {
             errors: type_errors,
+            checked,
             sources: sources.clone(),
         });
     }

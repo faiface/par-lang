@@ -69,10 +69,7 @@ pub fn diagnostic_for_error(err: &CompileError, fallback_uri: &Uri) -> (Uri, lsp
                 span,
                 format!(
                     "{:?}",
-                    error.to_report_in_scope(
-                        source_for_type_error(error, sources),
-                        file_scope.as_ref(),
-                    )
+                    error.to_report(source_for_type_error(error, sources), file_scope.as_ref(),)
                 ),
                 None,
                 related_span.into_iter().collect(),

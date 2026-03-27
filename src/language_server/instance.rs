@@ -315,7 +315,7 @@ impl Instance {
             .checked_module()
             .definitions
             .iter()
-            .find(|(name, _)| name.to_string().as_str() == def_name)
+            .find(|(name, _)| checked.render_global_in_file(&self.file, name) == def_name)
         else {
             return None;
         };

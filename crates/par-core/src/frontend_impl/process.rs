@@ -1,7 +1,7 @@
 pub use super::captures::{Captures, VariableUsage};
 use super::{
     language::{GlobalName, LocalName},
-    types::Type,
+    types::{GlobalNameWriter, Type},
 };
 use crate::{
     frontend_impl::program::{CheckedModule, DocComment, Docs},
@@ -1686,7 +1686,7 @@ impl<Typ, S: Clone + std::fmt::Display> Process<Typ, S> {
 
                     Command::SendType(argument, process) => {
                         write!(f, "(type ")?;
-                        argument.pretty(f, indent)?;
+                        argument.pretty(f, &CanonicalGlobalNameWriter, indent)?;
                         write!(f, ")")?;
                         process.pretty(f, indent)
                     }
@@ -1735,9 +1735,7 @@ impl<Typ, S> Expression<Typ, S> {
 impl<Typ, S: Clone + std::fmt::Display> Expression<Typ, S> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
-            Self::Global(_, name, _) => {
-                write!(f, "{}", name)
-            }
+            Self::Global(_, name, _) => write!(f, "{}", name.canonical_string()),
 
             Self::Variable(_, name, _, _) => {
                 write!(f, "{}", name)
@@ -1774,4 +1772,12 @@ fn indentation(f: &mut impl Write, indent: usize) -> fmt::Result {
         write!(f, "  ")?;
     }
     Ok(())
+}
+
+struct CanonicalGlobalNameWriter;
+
+impl<S: std::fmt::Display> GlobalNameWriter<S> for CanonicalGlobalNameWriter {
+    fn write_global_name<W: Write>(&self, f: &mut W, name: &GlobalName<S>) -> fmt::Result {
+        write!(f, "{}", name.canonical_string())
+    }
 }

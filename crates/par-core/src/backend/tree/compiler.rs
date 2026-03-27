@@ -340,7 +340,7 @@ impl Compiler {
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
 
-        let (id, typ) = self.in_package(format!("{name}"), |this, _| {
+        let (id, typ) = self.in_package(name.canonical_string().to_string(), |this, _| {
             let mut s = String::new();
             global.pretty(&mut s, 0).unwrap();
             Ok((
@@ -1229,7 +1229,7 @@ impl Display for IcCompiled {
             // check if it has a name
             for (name, id) in self.name_to_id.iter() {
                 if id == k {
-                    f.write_fmt(format_args!("// {} \n", name))?;
+                    f.write_fmt(format_args!("// {} \n", name.canonical_string()))?;
                 }
             }
             f.write_fmt(format_args!("@{} = {}\n", k, v.show()))?;

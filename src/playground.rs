@@ -28,8 +28,8 @@ use par_core::{
     runtime::{Compiled, RuntimeCompilerError, TypedHandle},
     source::FileName,
     workspace::{
-        CheckedWorkspace, LoadedPackageFile, ModulePath, PackageLoadError, WorkspaceDiscoveryError,
-        WorkspaceError, parse_loaded_files,
+        CheckedWorkspace, FileImportScope, LoadedPackageFile, ModulePath, PackageLoadError,
+        WorkspaceDiscoveryError, WorkspaceError, parse_loaded_files, render_global_name_in_scope,
     },
 };
 use par_runtime::linker::Linked;
@@ -37,11 +37,14 @@ use par_runtime::spawn::TokioSpawn;
 use std::fmt::Write;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum BuildError {
     Discovery(WorkspaceDiscoveryError),
     Workspace(WorkspaceError),
-    Type(Vec<TypeError<Universal>>),
+    Type {
+        errors: Vec<TypeError<Universal>>,
+        checked: Arc<CheckedWorkspace>,
+    },
     InetCompile(RuntimeCompilerError),
 }
 
@@ -75,9 +78,16 @@ impl BuildError {
                 error @ WorkspaceError::QualifiedCurrentModuleReference { source, span, .. },
             ) => format_with_source_span(source.clone(), span, error.to_string()),
             Self::Workspace(error) => error.to_string(),
-            Self::Type(errors) => errors
+            Self::Type { errors, checked } => errors
                 .iter()
-                .map(|error| format!("{:?}", error.to_report(code.clone())))
+                .map(|error| {
+                    let scope = error
+                        .spans()
+                        .0
+                        .file()
+                        .and_then(|file| checked.workspace().import_scope(&file));
+                    format!("{:?}", error.to_report(code.clone(), scope))
+                })
                 .collect::<Vec<_>>()
                 .join("\n"),
             Self::InetCompile(error) => format!("inet compilation error: {}", error.display(&code)),
@@ -117,7 +127,12 @@ impl BuildResult {
             Self::None => None,
             Self::DiscoveryError { error } => Some(BuildError::Discovery(error.clone())),
             Self::WorkspaceError { error } => Some(BuildError::Workspace(error.clone())),
-            Self::TypeError { errors, .. } => Some(BuildError::Type(errors.clone())),
+            Self::TypeError {
+                errors, checked, ..
+            } => Some(BuildError::Type {
+                errors: errors.clone(),
+                checked: Arc::clone(checked),
+            }),
             Self::InetError { error, .. } => Some(BuildError::InetCompile(error.clone())),
             Self::Ok { .. } => None,
         }
@@ -219,7 +234,12 @@ impl BuildResult {
                      body,
                  }| {
                     let mut buf = String::new();
-                    write!(&mut buf, "def {} = ", name).expect("write failed");
+                    write!(
+                        &mut buf,
+                        "def {} = ",
+                        render_global_name_in_scope(None, name)
+                    )
+                    .expect("write failed");
                     match body {
                         DefinitionBody::Par(expr) => {
                             expr.pretty(&mut buf, 0).expect("write failed");
@@ -702,6 +722,7 @@ impl Playground {
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
         name: &GlobalName<Universal>,
+        display_scope: Option<FileImportScope<Universal>>,
         ctx: &egui::Context,
     ) {
         if let Some(cancel_token) = cancel_token {
@@ -724,6 +745,7 @@ impl Playground {
                 repaint_ctx.request_repaint();
             }),
             spawner.clone(),
+            display_scope,
             TypedHandle::new(
                 program.checked_module().type_defs.clone(),
                 ty.clone(),
@@ -752,6 +774,7 @@ impl Playground {
         program: Arc<CheckedWorkspace>,
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        display_scope: Option<FileImportScope<Universal>>,
         name: &GlobalName<Universal>,
         label: &str,
     ) -> () {
@@ -764,6 +787,7 @@ impl Playground {
                 compiled,
                 name_to_ty,
                 name,
+                display_scope,
                 ui.ctx(),
             );
             ui.close();
@@ -778,6 +802,7 @@ impl Playground {
         program: Arc<CheckedWorkspace>,
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        display_scope: Option<FileImportScope<Universal>>,
         package: &PackageId,
         module: &ModulePath,
     ) {
@@ -796,6 +821,7 @@ impl Playground {
                 program.clone(),
                 compiled,
                 name_to_ty,
+                display_scope.clone(),
                 name,
                 &name.primary,
             );
@@ -814,6 +840,7 @@ impl Playground {
         program: Arc<CheckedWorkspace>,
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        display_scope: Option<FileImportScope<Universal>>,
         package: &PackageId,
         tree: &ModuleMenuTree<'_>,
     ) {
@@ -827,6 +854,7 @@ impl Playground {
                     program.clone(),
                     compiled,
                     name_to_ty,
+                    display_scope.clone(),
                     package,
                     subtree,
                 );
@@ -843,6 +871,7 @@ impl Playground {
                     program.clone(),
                     compiled,
                     name_to_ty,
+                    display_scope.clone(),
                     package,
                     module,
                 );
@@ -858,6 +887,7 @@ impl Playground {
         program: Arc<CheckedWorkspace>,
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+        display_scope: Option<FileImportScope<Universal>>,
         package: &PackageId,
         exclude_module: Option<&ModulePath>,
     ) {
@@ -888,6 +918,7 @@ impl Playground {
             program,
             compiled,
             name_to_ty,
+            display_scope,
             package,
             &tree,
         );
@@ -915,9 +946,13 @@ impl Playground {
         compiled: &Compiled<Linked>,
         name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
     ) {
-        let current_scope = program.workspace().import_scope(&active_file);
-        let current_package = current_scope.map(|scope| scope.current_module.package.clone());
-        let current_module = current_scope.map(|scope| scope.current_module.clone());
+        let current_scope = program.workspace().import_scope(&active_file).cloned();
+        let current_package = current_scope
+            .as_ref()
+            .map(|scope| scope.current_module.package.clone());
+        let current_module = current_scope
+            .as_ref()
+            .map(|scope| scope.current_module.clone());
         let current_module_path = current_module.as_ref().map(|module| ModulePath {
             directories: module.directories.clone(),
             module: module.module.clone(),
@@ -946,6 +981,7 @@ impl Playground {
                             program.clone(),
                             compiled,
                             name_to_ty,
+                            current_scope.clone(),
                             package,
                             None,
                         );
@@ -964,6 +1000,7 @@ impl Playground {
                     program.clone(),
                     compiled,
                     name_to_ty,
+                    current_scope.clone(),
                     package,
                     current_module_path.as_ref(),
                 );
@@ -992,6 +1029,7 @@ impl Playground {
                     program.clone(),
                     compiled,
                     name_to_ty,
+                    current_scope.clone(),
                     name,
                     &label,
                 );

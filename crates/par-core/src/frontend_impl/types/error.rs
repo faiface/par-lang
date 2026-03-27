@@ -93,18 +93,6 @@ fn two_labels_from_two_spans(
 }
 
 impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
-    pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
-        self.to_report_with(
-            source_code,
-            |name| name.to_string(),
-            |typ, indent| {
-                let mut buf = String::new();
-                typ.pretty(&mut buf, indent).unwrap();
-                buf
-            },
-        )
-    }
-
     fn to_report_with(
         &self,
         source_code: Arc<str>,
@@ -528,7 +516,7 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
 }
 
 impl TypeError<Universal> {
-    pub fn to_report_in_scope(
+    pub fn to_report(
         &self,
         source_code: Arc<str>,
         scope: Option<&FileImportScope<Universal>>,

@@ -16,6 +16,7 @@ pub(crate) mod context;
 pub(crate) use context::Context;
 pub(crate) mod dependencies;
 pub(crate) mod display;
+pub use display::GlobalNameWriter;
 pub(crate) mod duality;
 pub(crate) mod expansion;
 mod implicit;

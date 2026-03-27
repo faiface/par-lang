@@ -1,432 +1,81 @@
-use crate::frontend_impl::language::GlobalName;
+use crate::frontend_impl::language::{GlobalName, LocalName};
 use crate::frontend_impl::process::HoverInfo;
 use crate::frontend_impl::program::Docs;
 use crate::frontend_impl::types::core::NamedTypeDisplay;
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs};
 use crate::location::{Span, Spanning};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Write;
 
-impl<S: Clone> Type<S>
-where
-    GlobalName<S>: fmt::Display,
-{
-    pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
-        if let Some(display_hint) = self.display_hint() {
-            return write_named_type_display(f, display_hint, indent, false);
-        }
+pub trait GlobalNameWriter<S> {
+    fn write_global_name<W: Write>(&self, f: &mut W, name: &GlobalName<S>) -> fmt::Result;
+}
 
-        match self {
-            Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
-            Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
-            Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
-            Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
-            Self::Primitive(_, PrimitiveType::Byte) => write!(f, "Byte"),
-            Self::Primitive(_, PrimitiveType::Bytes) => write!(f, "Bytes"),
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TypeRenderOptions {
+    indent: usize,
+    compact: bool,
+    prefer_display_hints: bool,
+}
 
-            Self::DualPrimitive(_, PrimitiveType::Nat) => write!(f, "dual Nat"),
-            Self::DualPrimitive(_, PrimitiveType::Int) => write!(f, "dual Int"),
-            Self::DualPrimitive(_, PrimitiveType::String) => write!(f, "dual String"),
-            Self::DualPrimitive(_, PrimitiveType::Char) => write!(f, "dual Char"),
-            Self::DualPrimitive(_, PrimitiveType::Byte) => write!(f, "dual Byte"),
-            Self::DualPrimitive(_, PrimitiveType::Bytes) => write!(f, "dual Bytes"),
-
-            Self::Var(_, name) => write!(f, "{}", name),
-            Self::DualVar(_, name) => write!(f, "dual {}", name),
-            Self::Name(_, name, args) => {
-                write!(f, "{}", name)?;
-                if !args.is_empty() {
-                    write!(f, "<")?;
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        arg.pretty(f, indent)?;
-                    }
-                    write!(f, ">")?
-                }
-                Ok(())
-            }
-            Self::DualName(_, name, args) => {
-                write!(f, "dual {}", name)?;
-                if !args.is_empty() {
-                    write!(f, "<")?;
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        arg.pretty(f, indent)?;
-                    }
-                    write!(f, ">")?
-                }
-                Ok(())
-            }
-
-            Self::Box(_, body) => {
-                write!(f, "box ")?;
-                body.pretty(f, indent)
-            }
-            Self::DualBox(_, body) => {
-                write!(f, "dual box ")?;
-                body.pretty(f, indent)
-            }
-
-            Self::Pair(_, arg, then, vars) => {
-                let mut then = then;
-                if !vars.is_empty() {
-                    write!(f, "<")?;
-                    write!(f, "{}", vars[0])?;
-                    for var in vars.iter().skip(1) {
-                        write!(f, ", {}", var)?;
-                    }
-                    write!(f, ">")?;
-                    write!(f, "(")?;
-                    arg.pretty(f, indent)?;
-                } else {
-                    write!(f, "(")?;
-                    arg.pretty(f, indent)?;
-                    while let Self::Pair(_, arg, next, vars) = then.as_ref() {
-                        if !vars.is_empty() {
-                            break;
-                        }
-                        write!(f, ", ")?;
-                        arg.pretty(f, indent)?;
-                        then = next;
-                    }
-                }
-                if let Self::Break(_) = then.as_ref() {
-                    write!(f, ")!")
-                } else {
-                    write!(f, ") ")?;
-                    then.pretty(f, indent)
-                }
-            }
-
-            Self::Function(_, param, then, vars) => {
-                let mut then = then;
-                if !vars.is_empty() {
-                    write!(f, "<")?;
-                    write!(f, "{}", vars[0])?;
-                    for var in vars.iter().skip(1) {
-                        write!(f, ", {}", var)?;
-                    }
-                    write!(f, ">")?;
-                    write!(f, "[")?;
-                    param.pretty(f, indent)?;
-                } else {
-                    write!(f, "[")?;
-                    param.pretty(f, indent)?;
-                    while let Self::Function(_, arg, next, vars) = then.as_ref() {
-                        if !vars.is_empty() {
-                            break;
-                        }
-                        write!(f, ", ")?;
-                        arg.pretty(f, indent)?;
-                        then = next;
-                    }
-                }
-                if let Self::Continue(_) = then.as_ref() {
-                    write!(f, "]?")
-                } else {
-                    write!(f, "] ")?;
-                    then.pretty(f, indent)
-                }
-            }
-
-            Self::Either(_, branches) => {
-                write!(f, "either {{")?;
-                for (branch, typ) in branches {
-                    indentation(f, indent + 1)?;
-                    write!(f, ".{} ", branch)?;
-                    typ.pretty(f, indent + 1)?;
-                    write!(f, ",")?;
-                }
-                indentation(f, indent)?;
-                write!(f, "}}")
-            }
-
-            Self::Choice(_, branches) => {
-                write!(f, "choice {{")?;
-                for (branch, typ) in branches {
-                    indentation(f, indent + 1)?;
-                    write!(f, ".{} => ", branch)?;
-                    typ.pretty(f, indent + 1)?;
-                    write!(f, ",")?;
-                }
-                indentation(f, indent)?;
-                write!(f, "}}")
-            }
-
-            Self::Break(_) => write!(f, "!"),
-            Self::Continue(_) => write!(f, "?"),
-
-            Self::Recursive { label, body, .. } => {
-                write!(f, "recursive")?;
-                if let Some(label) = label {
-                    write!(f, "@{}", label)?;
-                }
-                write!(f, " ")?;
-                body.pretty(f, indent)
-            }
-
-            Self::Iterative { label, body, .. } => {
-                write!(f, "iterative")?;
-                if let Some(label) = label {
-                    write!(f, "@{}", label)?;
-                }
-                write!(f, " ")?;
-                body.pretty(f, indent)
-            }
-
-            Self::Self_(_, label) => {
-                write!(f, "self")?;
-                if let Some(label) = label {
-                    write!(f, "@{}", label)?;
-                }
-                Ok(())
-            }
-            Self::DualSelf(_, label) => {
-                write!(f, "dual self")?;
-                if let Some(label) = label {
-                    write!(f, "@{}", label)?;
-                }
-                Ok(())
-            }
-
-            Self::Exists(_, name, then) => {
-                let mut then = then;
-                write!(f, "(type {name}")?;
-                while let Self::Exists(_, name, next) = then.as_ref() {
-                    write!(f, ", {name}")?;
-                    then = next;
-                }
-                write!(f, ") ")?;
-                then.pretty(f, indent)
-            }
-
-            Self::Forall(_, name, then) => {
-                let mut then = then;
-                write!(f, "[type {name}")?;
-                while let Self::Forall(_, name, next) = then.as_ref() {
-                    write!(f, ", {name}")?;
-                    then = next;
-                }
-                write!(f, "] ")?;
-                then.pretty(f, indent)
-            }
-            Type::Hole(_, name, _) => write!(f, "%{}", name),
-            Type::DualHole(_, name, _) => write!(f, "dual %{}", name),
-            Type::Fail(_) => write!(f, "<error>"),
+impl TypeRenderOptions {
+    pub(crate) const fn pretty(indent: usize) -> Self {
+        Self {
+            indent,
+            compact: false,
+            prefer_display_hints: true,
         }
     }
 
-    pub fn pretty_compact(&self, f: &mut impl Write) -> fmt::Result {
-        if let Some(display_hint) = self.display_hint() {
-            return write_named_type_display(f, display_hint, 0, true);
+    pub(crate) const fn pretty_compact() -> Self {
+        Self {
+            indent: 0,
+            compact: true,
+            prefer_display_hints: true,
         }
+    }
 
-        match self {
-            Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
-            Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
-            Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
-            Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
-            Self::Primitive(_, PrimitiveType::Byte) => write!(f, "Byte"),
-            Self::Primitive(_, PrimitiveType::Bytes) => write!(f, "Bytes"),
-
-            Self::DualPrimitive(_, PrimitiveType::Nat) => write!(f, "dual Nat"),
-            Self::DualPrimitive(_, PrimitiveType::Int) => write!(f, "dual Int"),
-            Self::DualPrimitive(_, PrimitiveType::String) => write!(f, "dual String"),
-            Self::DualPrimitive(_, PrimitiveType::Char) => write!(f, "dual Char"),
-            Self::DualPrimitive(_, PrimitiveType::Byte) => write!(f, "dual Byte"),
-            Self::DualPrimitive(_, PrimitiveType::Bytes) => write!(f, "dual Bytes"),
-
-            Self::Var(_, name) => write!(f, "{}", name),
-            Self::DualVar(_, name) => write!(f, "dual {}", name),
-            Self::Name(_, name, args) => {
-                write!(f, "{}", name)?;
-                if !args.is_empty() {
-                    write!(f, "<")?;
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        arg.pretty_compact(f)?;
-                    }
-                    write!(f, ">")?
-                }
-                Ok(())
-            }
-            Self::DualName(_, name, args) => {
-                write!(f, "dual {}", name)?;
-                if !args.is_empty() {
-                    write!(f, "<")?;
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        arg.pretty_compact(f)?;
-                    }
-                    write!(f, ">")?
-                }
-                Ok(())
-            }
-
-            Self::Box(_, body) => {
-                write!(f, "box ")?;
-                body.pretty_compact(f)
-            }
-            Self::DualBox(_, body) => {
-                write!(f, "dual box ")?;
-                body.pretty_compact(f)
-            }
-
-            Self::Pair(_, arg, then, vars) => {
-                let mut then = then;
-                if !vars.is_empty() {
-                    write!(f, "<")?;
-                    write!(f, "{}", vars[0])?;
-                    for var in vars.iter().skip(1) {
-                        write!(f, ", {}", var)?;
-                    }
-                    write!(f, ">")?;
-                    write!(f, "(")?;
-                    arg.pretty_compact(f)?;
-                } else {
-                    write!(f, "(")?;
-                    arg.pretty_compact(f)?;
-                    while let Self::Pair(_, arg, next, vars) = then.as_ref() {
-                        if !vars.is_empty() {
-                            break;
-                        }
-                        write!(f, ", ")?;
-                        arg.pretty_compact(f)?;
-                        then = next;
-                    }
-                }
-                if let Self::Break(_) = then.as_ref() {
-                    write!(f, ")!")
-                } else {
-                    write!(f, ") ")?;
-                    then.pretty_compact(f)
-                }
-            }
-
-            Self::Function(_, param, then, vars) => {
-                let mut then = then;
-                if !vars.is_empty() {
-                    write!(f, "<")?;
-                    write!(f, "{}", vars[0])?;
-                    for var in vars.iter().skip(1) {
-                        write!(f, ", {}", var)?;
-                    }
-                    write!(f, ">")?;
-                    write!(f, "[")?;
-                    param.pretty_compact(f)?;
-                } else {
-                    write!(f, "[")?;
-                    param.pretty_compact(f)?;
-                    while let Self::Function(_, arg, next, vars) = then.as_ref() {
-                        if !vars.is_empty() {
-                            break;
-                        }
-                        write!(f, ", ")?;
-                        arg.pretty_compact(f)?;
-                        then = next;
-                    }
-                }
-                if let Self::Continue(_) = then.as_ref() {
-                    write!(f, "]?")
-                } else {
-                    write!(f, "] ")?;
-                    then.pretty_compact(f)
-                }
-            }
-
-            Self::Either(_, branches) => {
-                write!(f, "either {{")?;
-                for (branch, typ) in branches {
-                    write!(f, ".{} ", branch)?;
-                    typ.pretty_compact(f)?;
-                    write!(f, ",")?;
-                }
-                write!(f, "}}")
-            }
-
-            Self::Choice(_, branches) => {
-                write!(f, "choice {{")?;
-                for (branch, typ) in branches {
-                    write!(f, ".{} => ", branch)?;
-                    typ.pretty_compact(f)?;
-                    write!(f, ",")?;
-                }
-                write!(f, "}}")
-            }
-
-            Self::Break(_) => write!(f, "!"),
-            Self::Continue(_) => write!(f, "?"),
-
-            Self::Recursive { label, body, .. } => {
-                write!(f, "recursive")?;
-                if !matches!(body.as_ref(), Self::Either(..)) {
-                    if let Some(label) = label {
-                        write!(f, "@{}", label)?;
-                    }
-                }
-                write!(f, " ")?;
-                body.pretty_compact(f)
-            }
-
-            Self::Iterative { label, body, .. } => {
-                write!(f, "iterative")?;
-                if !matches!(body.as_ref(), Self::Choice(..)) {
-                    if let Some(label) = label {
-                        write!(f, "@{}", label)?;
-                    }
-                }
-                write!(f, " ")?;
-                body.pretty_compact(f)
-            }
-
-            Self::Self_(_, label) => {
-                write!(f, "self")?;
-                if let Some(label) = label {
-                    write!(f, "@{}", label)?;
-                }
-                Ok(())
-            }
-            Self::DualSelf(_, label) => {
-                write!(f, "dual self")?;
-                if let Some(label) = label {
-                    write!(f, "@{}", label)?;
-                }
-                Ok(())
-            }
-
-            Self::Exists(_, name, then) => {
-                let mut then = then;
-                write!(f, "(type {name}")?;
-                while let Self::Exists(_, name, next) = then.as_ref() {
-                    write!(f, ", {name}")?;
-                    then = next;
-                }
-                write!(f, ") ")?;
-                then.pretty_compact(f)
-            }
-
-            Self::Forall(_, name, then) => {
-                let mut then = then;
-                write!(f, "[type {name}")?;
-                while let Self::Forall(_, name, next) = then.as_ref() {
-                    write!(f, ", {name}")?;
-                    then = next;
-                }
-                write!(f, "] ")?;
-                then.pretty_compact(f)
-            }
-            Type::Hole(_, name, _) => write!(f, "%{}", name),
-            Type::DualHole(_, name, _) => write!(f, "dual %{}", name),
-            Type::Fail(_) => write!(f, "<error>"),
+    pub(crate) const fn with_prefer_display_hints(self, prefer_display_hints: bool) -> Self {
+        Self {
+            prefer_display_hints,
+            ..self
         }
+    }
+
+    fn next_indent(self) -> Self {
+        Self {
+            indent: self.indent + 1,
+            ..self
+        }
+    }
+}
+
+impl<S: Clone> Type<S> {
+    pub fn pretty<N: GlobalNameWriter<S>>(
+        &self,
+        f: &mut impl Write,
+        names: &N,
+        indent: usize,
+    ) -> fmt::Result {
+        self.pretty_with_options(f, names, TypeRenderOptions::pretty(indent))
+    }
+
+    pub fn pretty_compact<N: GlobalNameWriter<S>>(
+        &self,
+        f: &mut impl Write,
+        names: &N,
+    ) -> fmt::Result {
+        self.pretty_with_options(f, names, TypeRenderOptions::pretty_compact())
+    }
+
+    pub(crate) fn pretty_with_options<N: GlobalNameWriter<S>>(
+        &self,
+        f: &mut impl Write,
+        names: &N,
+        options: TypeRenderOptions,
+    ) -> fmt::Result {
+        write_type_with_options(f, names, self, options)
     }
 
     pub fn types_at_spans(
@@ -534,35 +183,279 @@ where
     }
 }
 
-fn write_named_type_display<S: Clone>(
+fn write_type_with_options<S: Clone, N: GlobalNameWriter<S>>(
     f: &mut impl Write,
-    display_hint: &NamedTypeDisplay<S>,
-    indent: usize,
-    compact: bool,
-) -> fmt::Result
-where
-    GlobalName<S>: fmt::Display,
-{
-    if display_hint.dual {
-        write!(f, "dual ")?;
+    names: &N,
+    typ: &Type<S>,
+    options: TypeRenderOptions,
+) -> fmt::Result {
+    if options.prefer_display_hints {
+        if let Some(display_hint) = typ.display_hint() {
+            return write_named_type_display(f, names, display_hint, options);
+        }
     }
-    write!(f, "{}", display_hint.name)?;
-    if display_hint.args.is_empty() {
+
+    match typ {
+        Type::Primitive(_, primitive) => write_primitive_type(f, primitive),
+        Type::DualPrimitive(_, primitive) => {
+            write!(f, "dual ")?;
+            write_primitive_type(f, primitive)
+        }
+        Type::Var(_, name) => write!(f, "{name}"),
+        Type::DualVar(_, name) => write!(f, "dual {name}"),
+        Type::Name(_, name, args) => {
+            names.write_global_name(f, name)?;
+            write_type_args(f, names, args, options)
+        }
+        Type::DualName(_, name, args) => {
+            write!(f, "dual ")?;
+            names.write_global_name(f, name)?;
+            write_type_args(f, names, args, options)
+        }
+        Type::Box(_, body) => {
+            write!(f, "box ")?;
+            write_type_with_options(f, names, body, options)
+        }
+        Type::DualBox(_, body) => {
+            write!(f, "dual box ")?;
+            write_type_with_options(f, names, body, options)
+        }
+        Type::Pair(_, arg, then, vars) => {
+            write_pair_like(f, names, "(", ")", arg, then, vars, false, options)
+        }
+        Type::Function(_, arg, then, vars) => {
+            write_pair_like(f, names, "[", "]", arg, then, vars, true, options)
+        }
+        Type::Either(_, branches) => {
+            write_braced_branches(f, names, "either", branches, false, options)
+        }
+        Type::Choice(_, branches) => {
+            write_braced_branches(f, names, "choice", branches, true, options)
+        }
+        Type::Break(_) => write!(f, "!"),
+        Type::Continue(_) => write!(f, "?"),
+        Type::Recursive { label, body, .. } => {
+            write!(f, "recursive")?;
+            if !options.compact || !matches!(body.as_ref(), Type::Either(..)) {
+                if let Some(label) = label {
+                    write!(f, "@{label}")?;
+                }
+            }
+            write!(f, " ")?;
+            write_type_with_options(f, names, body, options)
+        }
+        Type::Iterative { label, body, .. } => {
+            write!(f, "iterative")?;
+            if !options.compact || !matches!(body.as_ref(), Type::Choice(..)) {
+                if let Some(label) = label {
+                    write!(f, "@{label}")?;
+                }
+            }
+            write!(f, " ")?;
+            write_type_with_options(f, names, body, options)
+        }
+        Type::Self_(_, label) => {
+            write!(f, "self")?;
+            if let Some(label) = label {
+                write!(f, "@{label}")?;
+            }
+            Ok(())
+        }
+        Type::DualSelf(_, label) => {
+            write!(f, "dual self")?;
+            if let Some(label) = label {
+                write!(f, "@{label}")?;
+            }
+            Ok(())
+        }
+        Type::Exists(_, name, then) => {
+            write_quantified_type(f, names, "(", ")", name, then, true, options)
+        }
+        Type::Forall(_, name, then) => {
+            write_quantified_type(f, names, "[", "]", name, then, false, options)
+        }
+        Type::Hole(_, name, _) => write!(f, "%{name}"),
+        Type::DualHole(_, name, _) => write!(f, "dual %{name}"),
+        Type::Fail(_) => write!(f, "<error>"),
+    }
+}
+
+fn write_primitive_type(f: &mut impl Write, primitive: &PrimitiveType) -> fmt::Result {
+    let text = match primitive {
+        PrimitiveType::Nat => "Nat",
+        PrimitiveType::Int => "Int",
+        PrimitiveType::String => "String",
+        PrimitiveType::Char => "Char",
+        PrimitiveType::Byte => "Byte",
+        PrimitiveType::Bytes => "Bytes",
+    };
+    write!(f, "{text}")
+}
+
+fn write_type_args<S: Clone, N: GlobalNameWriter<S>>(
+    f: &mut impl Write,
+    names: &N,
+    args: &[Type<S>],
+    options: TypeRenderOptions,
+) -> fmt::Result {
+    if args.is_empty() {
         return Ok(());
     }
 
     write!(f, "<")?;
-    for (i, arg) in display_hint.args.iter().enumerate() {
+    for (i, arg) in args.iter().enumerate() {
         if i > 0 {
             write!(f, ", ")?;
         }
-        if compact {
-            arg.pretty_compact(f)?;
-        } else {
-            arg.pretty(f, indent)?;
-        }
+        write_type_with_options(f, names, arg, options)?;
     }
     write!(f, ">")
+}
+
+fn write_pair_like<S: Clone, N: GlobalNameWriter<S>>(
+    f: &mut impl Write,
+    names: &N,
+    open: &str,
+    close: &str,
+    arg: &Type<S>,
+    then: &Type<S>,
+    vars: &[LocalName],
+    function: bool,
+    options: TypeRenderOptions,
+) -> fmt::Result {
+    let mut then = then;
+    if !vars.is_empty() {
+        write!(f, "<{}", vars[0])?;
+        for var in vars.iter().skip(1) {
+            write!(f, ", {var}")?;
+        }
+        write!(f, ">{open}")?;
+        write_type_with_options(f, names, arg, options)?;
+    } else {
+        write!(f, "{open}")?;
+        write_type_with_options(f, names, arg, options)?;
+        while let Some((next_arg, next_then, next_vars)) = if function {
+            match then {
+                Type::Function(_, next_arg, next_then, next_vars) => {
+                    Some((next_arg.as_ref(), next_then.as_ref(), next_vars.as_slice()))
+                }
+                _ => None,
+            }
+        } else {
+            match then {
+                Type::Pair(_, next_arg, next_then, next_vars) => {
+                    Some((next_arg.as_ref(), next_then.as_ref(), next_vars.as_slice()))
+                }
+                _ => None,
+            }
+        } {
+            if !next_vars.is_empty() {
+                break;
+            }
+            write!(f, ", ")?;
+            write_type_with_options(f, names, next_arg, options)?;
+            then = next_then;
+        }
+    }
+
+    let is_terminal = if function {
+        matches!(then, Type::Continue(_))
+    } else {
+        matches!(then, Type::Break(_))
+    };
+    if is_terminal {
+        if function {
+            write!(f, "{close}?")
+        } else {
+            write!(f, "{close}!")
+        }
+    } else {
+        write!(f, "{close} ")?;
+        write_type_with_options(f, names, then, options)
+    }
+}
+
+fn write_quantified_type<S: Clone, N: GlobalNameWriter<S>>(
+    f: &mut impl Write,
+    names: &N,
+    open: &str,
+    close: &str,
+    name: &LocalName,
+    then: &Type<S>,
+    existential: bool,
+    options: TypeRenderOptions,
+) -> fmt::Result {
+    let mut then = then;
+    write!(f, "{open}type {name}")?;
+    loop {
+        match then {
+            Type::Exists(_, next_name, next_then) if existential => {
+                write!(f, ", {next_name}")?;
+                then = next_then;
+            }
+            Type::Forall(_, next_name, next_then) if !existential => {
+                write!(f, ", {next_name}")?;
+                then = next_then;
+            }
+            _ => break,
+        }
+    }
+    write!(f, "{close} ")?;
+    write_type_with_options(f, names, then, options)
+}
+
+fn write_braced_branches<S: Clone, N: GlobalNameWriter<S>>(
+    f: &mut impl Write,
+    names: &N,
+    prefix: &str,
+    branches: &BTreeMap<LocalName, Type<S>>,
+    choice: bool,
+    options: TypeRenderOptions,
+) -> fmt::Result {
+    if branches.is_empty() {
+        return write!(f, "{prefix} {{}}");
+    }
+
+    write!(f, "{prefix} {{")?;
+
+    if options.compact {
+        for (branch, branch_type) in branches {
+            if choice {
+                write!(f, ".{branch} => ")?;
+            } else {
+                write!(f, ".{branch} ")?;
+            }
+            write_type_with_options(f, names, branch_type, options)?;
+            write!(f, ",")?;
+        }
+        return write!(f, "}}");
+    }
+
+    for (branch, branch_type) in branches {
+        indentation(f, options.indent + 1)?;
+        if choice {
+            write!(f, ".{branch} => ")?;
+        } else {
+            write!(f, ".{branch} ")?;
+        }
+        write_type_with_options(f, names, branch_type, options.next_indent())?;
+        write!(f, ",")?;
+    }
+    indentation(f, options.indent)?;
+    write!(f, "}}")
+}
+
+fn write_named_type_display<S: Clone, N: GlobalNameWriter<S>>(
+    f: &mut impl Write,
+    names: &N,
+    display_hint: &NamedTypeDisplay<S>,
+    options: TypeRenderOptions,
+) -> fmt::Result {
+    if display_hint.dual {
+        write!(f, "dual ")?;
+    }
+    names.write_global_name(f, &display_hint.name)?;
+    write_type_args(f, names, &display_hint.args, options)
 }
 
 fn dual_name_hover_span<S>(full_span: &Span, name: &GlobalName<S>) -> Span {
@@ -578,15 +471,6 @@ fn dual_keyword_hover_span<S>(full_span: &Span, name: &GlobalName<S>) -> Span {
             Span::At { start, end, file }
         }
         _ => Span::None,
-    }
-}
-
-impl<S: Clone> fmt::Display for Type<S>
-where
-    GlobalName<S>: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.pretty_compact(f)
     }
 }
 
