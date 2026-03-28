@@ -147,6 +147,7 @@ impl<'a> Renderer<'a> {
             .package_pages
             .get(&package.id)
             .expect("site paths missing package page");
+        let (path_prefix, has_path_prefix, name) = module_path_parts(&module.path);
         let base = self.base_page(
             current_page,
             format!(
@@ -160,11 +161,10 @@ impl<'a> Renderer<'a> {
                     relative_href(current_page, &self.site_paths.index),
                 ),
                 BreadcrumbView::link(&package.name, relative_href(current_page, package_page)),
-                BreadcrumbView::current(&module.path.to_slash_path()),
+                BreadcrumbView::current_with_prefix(&path_prefix, has_path_prefix, &name),
             ],
         );
         let content_html = self.render_module_content(module, current_page, true)?;
-        let (path_prefix, has_path_prefix, name) = module_path_parts(&module.path);
 
         ModulePageTemplate {
             base: &base,
@@ -323,7 +323,7 @@ fn module_path_parts(path: &par_core::workspace::ModulePath) -> (String, bool, S
         (String::new(), false, path.module.clone())
     } else {
         (
-            format!("{}/", path.directories.join("/")),
+            format!("{} /", path.directories.join(" / ")),
             true,
             path.module.clone(),
         )
@@ -340,6 +340,8 @@ struct BasePageView {
 
 #[derive(Debug, Clone)]
 struct BreadcrumbView {
+    prefix: String,
+    has_prefix: bool,
     label: String,
     href: String,
     is_link: bool,
@@ -348,6 +350,8 @@ struct BreadcrumbView {
 impl BreadcrumbView {
     fn link(label: &str, href: String) -> Self {
         Self {
+            prefix: String::new(),
+            has_prefix: false,
             label: label.to_string(),
             href,
             is_link: true,
@@ -356,6 +360,18 @@ impl BreadcrumbView {
 
     fn current(label: &str) -> Self {
         Self {
+            prefix: String::new(),
+            has_prefix: false,
+            label: label.to_string(),
+            href: String::new(),
+            is_link: false,
+        }
+    }
+
+    fn current_with_prefix(prefix: &str, has_prefix: bool, label: &str) -> Self {
+        Self {
+            prefix: prefix.to_string(),
+            has_prefix,
             label: label.to_string(),
             href: String::new(),
             is_link: false,

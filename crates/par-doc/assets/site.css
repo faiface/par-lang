@@ -117,10 +117,23 @@ pre,
   white-space: nowrap;
 }
 
+.breadcrumb-current-wrap,
+.module-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .breadcrumb-link,
 .package-link,
 .module-link {
   text-decoration: none;
+}
+
+.breadcrumb-prefix {
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .breadcrumb-current {
@@ -202,6 +215,10 @@ pre,
   gap: 6px;
 }
 
+.page-title-module .module-label {
+  gap: 0.22em;
+}
+
 .page-subtitle {
   margin: 6px 0 0;
   color: var(--text-muted);
@@ -260,6 +277,12 @@ pre,
 .module-path,
 .item-module {
   color: var(--text-muted);
+}
+
+.module-path {
+  font-size: 0.94em;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .toolbar {

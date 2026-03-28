@@ -20,10 +20,12 @@
               {% if module.is_unexported %}
                 <span class="lock-chip" title="Unexported">&#x1F512;</span>
               {% endif %}
-              {% if module.has_path_prefix %}
-                <span class="module-path">{{ module.path_prefix }}</span>
-              {% endif %}
-              <a class="module-link" href="{{ module.href }}">{{ module.name }}</a>
+              <span class="module-label">
+                {% if module.has_path_prefix %}
+                  <span class="module-path">{{ module.path_prefix }}</span>
+                {% endif %}
+                <a class="module-link" href="{{ module.href }}">{{ module.name }}</a>
+              </span>
             </span>
           </summary>
           <div class="module-body">

@@ -15,7 +15,12 @@
             {% if breadcrumb.is_link %}
               <a class="breadcrumb-link" href="{{ breadcrumb.href }}">{{ breadcrumb.label }}</a>
             {% else %}
-              <span class="breadcrumb-current">{{ breadcrumb.label }}</span>
+              <span class="breadcrumb-current-wrap">
+                {% if breadcrumb.has_prefix %}
+                  <span class="breadcrumb-prefix">{{ breadcrumb.prefix }}</span>
+                {% endif %}
+                <span class="breadcrumb-current">{{ breadcrumb.label }}</span>
+              </span>
             {% endif %}
             {% if !loop.last %}
               <span class="breadcrumb-sep">/</span>
