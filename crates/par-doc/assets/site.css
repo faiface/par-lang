@@ -13,7 +13,7 @@
   --link-hover: light-dark(#af672f, #ffd4a7);
   --accent: light-dark(#e4934b, #ffc892);
   --accent-soft: light-dark(rgba(228, 147, 75, 0.18), rgba(255, 200, 146, 0.22));
-  --keyword: light-dark(#c97738, #ffcfa1);
+  --keyword: light-dark(#8e6fb5, #d9c2ff);
   --unexported: light-dark(rgba(118, 108, 95, 0.72), rgba(214, 206, 192, 0.7));
   --shadow: 0 8px 18px rgba(48, 35, 18, 0.08);
   --shadow-soft: 0 3px 8px rgba(48, 35, 18, 0.06);
