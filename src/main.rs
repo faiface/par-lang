@@ -16,7 +16,9 @@ use par_core::{
     runtime::RuntimeCompilerError,
     workspace::{CheckedWorkspace, ModulePath, WorkspaceDiscoveryError, WorkspaceError},
 };
+use par_doc::DocOptions;
 use tokio::time::Instant;
+use url::Url;
 
 use par_runtime::linker::{Artifact, Linked, Unlinked};
 use par_runtime::spawn::TokioSpawn;
@@ -387,6 +389,20 @@ fn main() -> ExitCode {
                 .arg(arg!(-f --flag <FLAG> ... "Set a flag")),
         )
         .subcommand(
+            Command::new("doc")
+                .about("Generate HTML documentation for a Par package and its dependencies")
+                .arg(
+                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
+                )
+                .arg(
+                    arg!(--out <OUT> "Directory where generated HTML documentation will be written")
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(arg!(--open "Open the generated documentation in a browser")),
+        )
+        .subcommand(
             Command::new("compile")
                 .about("Compile a Par package")
                 .arg(
@@ -495,6 +511,15 @@ fn main() -> ExitCode {
         Some(("check", args)) => {
             let package = args.get_one::<PathBuf>("package").unwrap().clone();
             if check(package).is_err() {
+                return ExitCode::FAILURE;
+            }
+        }
+        Some(("doc", args)) => {
+            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            let out_dir = args.get_one::<PathBuf>("out").cloned();
+            let open = *args.get_one::<bool>("open").unwrap();
+            if let Err(error) = generate_docs(package, out_dir, open) {
+                eprintln!("{}", error.bright_red());
                 return ExitCode::FAILURE;
             }
         }
@@ -764,6 +789,55 @@ fn check(package_path: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn generate_docs(
+    package_path: PathBuf,
+    out_dir: Option<PathBuf>,
+    open: bool,
+) -> Result<(), String> {
+    let generated = par_doc::generate_docs(DocOptions {
+        package_path,
+        out_dir,
+    })
+    .map_err(|error| error.to_string())?;
+
+    println!(
+        "{} {}",
+        "Generated documentation:".bright_green(),
+        generated.out_dir.display()
+    );
+
+    if open {
+        let url = file_url_for_path(&generated.index_file)?;
+        webbrowser::open(url.as_str()).map_err(|error| error.to_string())?;
+        println!(
+            "{} {}",
+            "Opened documentation:".bright_green(),
+            generated.index_file.display()
+        );
+    }
+
+    Ok(())
+}
+
+fn file_url_for_path(path: &Path) -> Result<Url, String> {
+    let absolute_path = fs::canonicalize(path).unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(path)
+        }
+    });
+
+    Url::from_file_path(&absolute_path).map_err(|()| {
+        format!(
+            "Failed to convert documentation path to file URL: {}",
+            absolute_path.display()
+        )
+    })
+}
+
 fn add_dependencies(package_path: PathBuf, source: Option<String>) -> Result<(), String> {
     println!(
         "Managing dependencies in package: {}",
@@ -898,5 +972,25 @@ mod tests {
 
         let error = create_new_package_in(&root, "hello").unwrap_err();
         assert!(matches!(error, NewPackageError::DirectoryNotEmpty(path) if path == package_dir));
+    }
+
+    #[test]
+    fn file_url_for_path_accepts_relative_paths() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        let relative_path = PathBuf::from(format!("par-doc-open-{unique}.html"));
+        fs::write(&relative_path, "<!doctype html>").unwrap();
+
+        let url = file_url_for_path(&relative_path).unwrap();
+
+        assert_eq!(url.scheme(), "file");
+        assert!(
+            url.path()
+                .ends_with(relative_path.to_string_lossy().as_ref())
+        );
+
+        fs::remove_file(relative_path).unwrap();
     }
 }

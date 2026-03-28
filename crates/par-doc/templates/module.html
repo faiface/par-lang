@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="page-intro">
+    <h1 class="page-title page-title-module">
+      {% if module.is_unexported %}
+        <span class="lock-chip" title="Unexported">&#x1F512;</span>
+      {% endif %}
+      {% if module.has_path_prefix %}
+        <span class="module-path">{{ module.path_prefix }}</span>
+      {% endif %}
+      <span class="module-name">{{ module.name }}</span>
+    </h1>
+  </section>
+
+  {{ content_html|safe }}
+{% endblock %}

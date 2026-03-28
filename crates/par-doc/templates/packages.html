@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="page-intro">
+    <h1 class="page-title">Packages</h1>
+  </section>
+
+  {% for section in sections %}
+    <section class="section-card">
+      {% if section.show_heading %}
+        <h2 class="section-heading">{{ section.heading }}</h2>
+      {% endif %}
+
+      <div class="package-list">
+        {% for package in section.packages %}
+          <article class="package-row">
+            <div class="package-row-main">
+              <a class="package-link" href="{{ package.href }}">{{ package.name }}</a>
+              <span class="package-identity">{{ package.identity }}</span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+{% endblock %}

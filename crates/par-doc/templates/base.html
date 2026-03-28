@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ base.title }}</title>
+    <link rel="stylesheet" href="{{ base.stylesheet_href }}">
+    <script defer src="{{ base.script_href }}"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <nav class="breadcrumbs" aria-label="Breadcrumbs">
+          {% for breadcrumb in base.breadcrumbs %}
+            {% if breadcrumb.is_link %}
+              <a class="breadcrumb-link" href="{{ breadcrumb.href }}">{{ breadcrumb.label }}</a>
+            {% else %}
+              <span class="breadcrumb-current">{{ breadcrumb.label }}</span>
+            {% endif %}
+            {% if !loop.last %}
+              <span class="breadcrumb-sep">/</span>
+            {% endif %}
+          {% endfor %}
+        </nav>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme" title="Switch theme">
+          <span class="theme-toggle-icon" aria-hidden="true">☀</span>
+        </button>
+      </header>
+
+      <main class="page-main">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

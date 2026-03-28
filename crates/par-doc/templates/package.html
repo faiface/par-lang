@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="page-intro">
+    <h1 class="page-title">{{ package.name }}</h1>
+    <p class="page-subtitle">{{ package.identity }}</p>
+  </section>
+
+  <div class="toolbar">
+    <button class="toolbar-button" type="button" data-expand-all="open" data-expand-target="modules">Expand All</button>
+    <button class="toolbar-button" type="button" data-expand-all="close" data-expand-target="modules">Collapse All</button>
+  </div>
+
+  {% if has_modules %}
+    <section class="module-list" data-expand-scope="modules">
+      {% for module in modules %}
+        <details class="module-entry{% if module.is_unexported %} module-entry-unexported{% endif %}">
+          <summary class="module-summary">
+            <span class="module-summary-main">
+              {% if module.is_unexported %}
+                <span class="lock-chip" title="Unexported">&#x1F512;</span>
+              {% endif %}
+              {% if module.has_path_prefix %}
+                <span class="module-path">{{ module.path_prefix }}</span>
+              {% endif %}
+              <a class="module-link" href="{{ module.href }}">{{ module.name }}</a>
+            </span>
+          </summary>
+          <div class="module-body">
+            {{ module.content_html|safe }}
+          </div>
+        </details>
+      {% endfor %}
+    </section>
+  {% else %}
+    <p class="empty-note">No documented modules.</p>
+  {% endif %}
+{% endblock %}
