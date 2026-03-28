@@ -11,11 +11,13 @@
         <h2 class="section-heading">{{ section.heading }}</h2>
       {% endif %}
 
-      <div class="package-list">
+        <div class="package-list">
         {% for package in section.packages %}
           <article class="package-row">
             <div class="package-row-main">
-              <a class="package-link" href="{{ package.href }}">{{ package.name }}</a>
+              <a class="package-link" href="{{ package.href }}">
+                {{ package.name }}
+              </a>
               <span class="package-identity">{{ package.identity }}</span>
             </div>
           </article>

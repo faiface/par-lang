@@ -195,11 +195,11 @@ pre,
 
 .page-main {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .page-intro {
-  padding: 2px 0 6px;
+  padding: 2px 0 0;
 }
 
 .page-title {
@@ -208,11 +208,20 @@ pre,
   letter-spacing: -0.02em;
 }
 
+.page-title-label {
+  font-weight: 700;
+}
+
+.page-title-name {
+  font-weight: 800;
+}
+
+.page-title-package,
 .page-title-module {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 0.34em;
 }
 
 .page-title-module .module-label {
@@ -225,17 +234,27 @@ pre,
   font-size: 1rem;
 }
 
+.page-subtitle-link {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.page-subtitle-link:hover {
+  color: var(--link);
+}
+
 .section-card {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .section-heading {
   margin: 0;
   color: var(--text);
-  font-size: 0.97rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: 1.38rem;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -263,6 +282,9 @@ pre,
 .package-link,
 .module-link {
   color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 1.11rem;
   font-weight: 780;
   letter-spacing: -0.012em;
@@ -288,6 +310,18 @@ pre,
 .toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  justify-content: space-between;
+}
+
+.toolbar-heading {
+  margin: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
@@ -300,6 +334,10 @@ pre,
 }
 
 .module-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   list-style: none;
   cursor: pointer;
   padding: 12px 15px;
@@ -330,12 +368,26 @@ pre,
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.module-name {
-  color: var(--text);
-  font-weight: 700;
+.module-summary-side {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.module-toggle-indicator {
+  color: var(--text-muted);
+  font-size: 1.02rem;
+  line-height: 1;
+  flex: 0 0 auto;
+  transition: transform 140ms ease, color 140ms ease;
+}
+
+.module-entry[open] .module-toggle-indicator {
+  transform: rotate(90deg);
 }
 
 .module-body {

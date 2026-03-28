@@ -2,13 +2,25 @@
 
 {% block content %}
   <section class="page-intro">
-    <h1 class="page-title">{{ package.name }}</h1>
-    <p class="page-subtitle">{{ package.identity }}</p>
+    <h1 class="page-title page-title-package">
+      <span class="page-title-label">Package</span>
+      <span class="page-title-name">{{ package.name }}</span>
+    </h1>
+    <p class="page-subtitle">
+      {% if package.has_identity_link %}
+        <a class="page-subtitle-link" href="{{ package.identity_href }}" target="_blank" rel="noreferrer noopener">{{ package.identity }}</a>
+      {% else %}
+        {{ package.identity }}
+      {% endif %}
+    </p>
   </section>
 
   <div class="toolbar">
-    <button class="toolbar-button" type="button" data-expand-all="open" data-expand-target="modules">Expand All</button>
-    <button class="toolbar-button" type="button" data-expand-all="close" data-expand-target="modules">Collapse All</button>
+    <h2 class="section-heading toolbar-heading">Modules</h2>
+    <div class="toolbar-actions">
+      <button class="toolbar-button" type="button" data-expand-all="open" data-expand-target="modules">Expand All</button>
+      <button class="toolbar-button" type="button" data-expand-all="close" data-expand-target="modules">Collapse All</button>
+    </div>
   </div>
 
   {% if has_modules %}
@@ -17,16 +29,21 @@
         <details class="module-entry{% if module.is_unexported %} module-entry-unexported{% endif %}">
           <summary class="module-summary">
             <span class="module-summary-main">
-              {% if module.is_unexported %}
-                <span class="lock-chip" title="Unexported">&#x1F512;</span>
-              {% endif %}
+              <span class="module-toggle-indicator" aria-hidden="true">&#x25B6;</span>
               <span class="module-label">
                 {% if module.has_path_prefix %}
                   <span class="module-path">{{ module.path_prefix }}</span>
                 {% endif %}
-                <a class="module-link" href="{{ module.href }}">{{ module.name }}</a>
+                <a class="module-link" href="{{ module.href }}">
+                  {{ module.name }}
+                </a>
               </span>
             </span>
+            {% if module.is_unexported %}
+              <span class="module-summary-side">
+                <span class="lock-chip" title="Unexported">&#x1F512;</span>
+              </span>
+            {% endif %}
           </summary>
           <div class="module-body">
             {{ module.content_html|safe }}

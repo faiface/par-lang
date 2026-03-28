@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use askama::Template;
-use par_core::frontend::language::{GlobalName, Universal};
+use par_core::frontend::language::{GlobalName, PackageId, Universal};
 
 use crate::error::DocError;
 use crate::html::{self, TypeLinkTarget};
@@ -124,6 +124,8 @@ impl<'a> Renderer<'a> {
             package: &PackageHeaderView {
                 name: package.name.clone(),
                 identity: package.identity.clone(),
+                identity_href: package_identity_href(&package.id),
+                has_identity_link: matches!(package.id, PackageId::Remote(_)),
             },
             modules: &modules,
             has_modules: !modules.is_empty(),
@@ -330,6 +332,13 @@ fn module_path_parts(path: &par_core::workspace::ModulePath) -> (String, bool, S
     }
 }
 
+fn package_identity_href(id: &PackageId) -> String {
+    match id {
+        PackageId::Remote(path) => format!("https://{path}"),
+        PackageId::Special(_) | PackageId::Local(_) => String::new(),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct BasePageView {
     title: String,
@@ -397,6 +406,8 @@ struct PackageCardView {
 struct PackageHeaderView {
     name: String,
     identity: String,
+    identity_href: String,
+    has_identity_link: bool,
 }
 
 #[derive(Debug, Clone)]
