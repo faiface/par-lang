@@ -400,6 +400,10 @@ fn main() -> ExitCode {
                     arg!(--out <OUT> "Directory where generated HTML documentation will be written")
                         .value_parser(value_parser!(PathBuf)),
                 )
+                .arg(
+                    arg!(--only_exported "Hide unexported root-package modules and items")
+                        .long("only-exported"),
+                )
                 .arg(arg!(--open "Open the generated documentation in a browser")),
         )
         .subcommand(
@@ -517,8 +521,9 @@ fn main() -> ExitCode {
         Some(("doc", args)) => {
             let package = args.get_one::<PathBuf>("package").unwrap().clone();
             let out_dir = args.get_one::<PathBuf>("out").cloned();
+            let only_exported = *args.get_one::<bool>("only_exported").unwrap();
             let open = *args.get_one::<bool>("open").unwrap();
-            if let Err(error) = generate_docs(package, out_dir, open) {
+            if let Err(error) = generate_docs(package, out_dir, only_exported, open) {
                 eprintln!("{}", error.bright_red());
                 return ExitCode::FAILURE;
             }
@@ -792,11 +797,13 @@ fn check(package_path: PathBuf) -> Result<(), String> {
 fn generate_docs(
     package_path: PathBuf,
     out_dir: Option<PathBuf>,
+    only_exported: bool,
     open: bool,
 ) -> Result<(), String> {
     let generated = par_doc::generate_docs(DocOptions {
         package_path,
         out_dir,
+        only_exported,
     })
     .map_err(|error| error.to_string())?;
 

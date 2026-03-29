@@ -13,6 +13,7 @@ pub use error::DocError;
 pub struct DocOptions {
     pub package_path: PathBuf,
     pub out_dir: Option<PathBuf>,
+    pub only_exported: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +23,7 @@ pub struct GeneratedDocs {
 }
 
 pub fn generate_docs(options: DocOptions) -> Result<GeneratedDocs, DocError> {
-    let loaded = load::load_site(&options.package_path)?;
+    let loaded = load::load_site(&options.package_path, options.only_exported)?;
     let out_dir = options.out_dir.unwrap_or(loaded.default_out_dir);
     let index_file = render::render_site(&loaded.model, &out_dir)?;
     Ok(GeneratedDocs {
@@ -71,10 +72,12 @@ mod tests {
         let start = temp_dir("builtins");
         let out_dir = start.join("out");
 
-        let loaded = crate::load::load_site(&start).expect("failed to load builtin docs site");
+        let loaded =
+            crate::load::load_site(&start, false).expect("failed to load builtin docs site");
         let generated = generate_docs(DocOptions {
             package_path: start.clone(),
             out_dir: Some(out_dir.clone()),
+            only_exported: false,
         })
         .expect("failed to generate builtin docs");
 
@@ -194,11 +197,13 @@ def SecretVisible = !
             ],
         );
 
-        let loaded = crate::load::load_site(&root).expect("failed to load workspace docs site");
+        let loaded =
+            crate::load::load_site(&root, false).expect("failed to load workspace docs site");
         let out_dir = root.join("site");
         generate_docs(DocOptions {
             package_path: root.clone(),
             out_dir: Some(out_dir.clone()),
+            only_exported: false,
         })
         .expect("failed to generate workspace docs");
 

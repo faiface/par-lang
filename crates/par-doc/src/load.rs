@@ -35,15 +35,17 @@ struct RawItem {
     exported: bool,
 }
 
-pub fn load_site(start: &Path) -> Result<LoadedSite, DocError> {
+pub fn load_site(start: &Path, only_exported: bool) -> Result<LoadedSite, DocError> {
     match PackageGraph::discover_from_path(start) {
-        Ok(graph) => load_workspace_site(graph),
-        Err(WorkspaceDiscoveryError::PackageRootNotFound { .. }) => load_builtin_site(start),
+        Ok(graph) => load_workspace_site(graph, only_exported),
+        Err(WorkspaceDiscoveryError::PackageRootNotFound { .. }) => {
+            load_builtin_site(start, only_exported)
+        }
         Err(error) => Err(DocError::Discovery(error)),
     }
 }
 
-fn load_workspace_site(graph: PackageGraph) -> Result<LoadedSite, DocError> {
+fn load_workspace_site(graph: PackageGraph, only_exported: bool) -> Result<LoadedSite, DocError> {
     let root_package = graph.root_package.clone();
     let root_package_data = graph
         .packages
@@ -73,12 +75,12 @@ fn load_workspace_site(graph: PackageGraph) -> Result<LoadedSite, DocError> {
     ensure_type_checked(&workspace)?;
 
     Ok(LoadedSite {
-        model: build_site_model(&workspace, package_meta, Some(root_package)),
+        model: build_site_model(&workspace, package_meta, only_exported),
         default_out_dir,
     })
 }
 
-fn load_builtin_site(start: &Path) -> Result<LoadedSite, DocError> {
+fn load_builtin_site(start: &Path, only_exported: bool) -> Result<LoadedSite, DocError> {
     let workspace_packages = WorkspacePackages {
         root_package: PackageId::Special("__par_doc__".into()),
         packages: builtin_packages(),
@@ -88,7 +90,7 @@ fn load_builtin_site(start: &Path) -> Result<LoadedSite, DocError> {
     ensure_type_checked(&workspace)?;
 
     Ok(LoadedSite {
-        model: build_site_model(&workspace, package_meta, None),
+        model: build_site_model(&workspace, package_meta, only_exported),
         default_out_dir: fallback_out_dir(start),
     })
 }
@@ -191,7 +193,7 @@ fn build_builtin_meta(workspace_packages: &WorkspacePackages) -> BTreeMap<Packag
 fn build_site_model(
     workspace: &Workspace,
     package_meta: BTreeMap<PackageId, PackageMeta>,
-    _root_package: Option<PackageId>,
+    only_exported: bool,
 ) -> SiteModel {
     let mut raw_items_by_module = BTreeMap::<Universal, Vec<RawItem>>::new();
 
@@ -230,7 +232,7 @@ fn build_site_model(
             .iter()
             .filter_map(|path| {
                 let is_exported = meta.module_exports.get(path).copied().unwrap_or(true);
-                if !meta.is_root && !is_exported {
+                if (!meta.is_root || only_exported) && !is_exported {
                     return None;
                 }
 
@@ -246,7 +248,7 @@ fn build_site_model(
                     .into_iter()
                     .filter_map(|raw_item| {
                         let is_public = is_exported && raw_item.exported;
-                        if !meta.is_root && !is_public {
+                        if (!meta.is_root || only_exported) && !is_public {
                             return None;
                         }
                         Some(ItemModel {
