@@ -123,7 +123,7 @@ impl<'a> Renderer<'a> {
             base: &base,
             package: &PackageHeaderView {
                 name: package.name.clone(),
-                identity: package_page_identity(package),
+                identity: display_package_identity(package),
                 identity_href: package_identity_href(&package.id),
                 has_identity_link: matches!(package.id, PackageId::Remote(_)),
             },
@@ -253,7 +253,7 @@ impl<'a> Renderer<'a> {
                         .expect("package section references missing package");
                     PackageCardView {
                         name: package.name.clone(),
-                        identity: package.identity.clone(),
+                        identity: display_package_identity(package),
                         href: relative_href(
                             current_page,
                             self.site_paths
@@ -339,7 +339,7 @@ fn package_identity_href(id: &PackageId) -> String {
     }
 }
 
-fn package_page_identity(package: &PackageModel) -> String {
+fn display_package_identity(package: &PackageModel) -> String {
     match package.kind {
         PackageKind::Root => String::from("This package"),
         PackageKind::BuiltIn => String::from("Built-in package"),
