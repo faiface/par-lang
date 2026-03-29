@@ -88,10 +88,11 @@ pub fn relative_href_with_anchor(from_page: &Path, to_page: &Path, anchor: &str)
 }
 
 fn package_page_path(id: &PackageId, kind: PackageKind) -> PathBuf {
-    PathBuf::from("packages")
-        .join(kind_dir(kind))
-        .join(package_identity_segment(id))
-        .join("index.html")
+    let mut path = PathBuf::from("packages").join(kind_dir(kind));
+    if kind != PackageKind::Root {
+        path = path.join(package_identity_segment(id));
+    }
+    path.join("index.html")
 }
 
 fn package_path_for_module(package_page: &Path, module_path: &str) -> PathBuf {

@@ -231,11 +231,14 @@ pre,
 .page-subtitle {
   margin: 6px 0 0;
   color: var(--text-muted);
-  font-size: 1rem;
+  font-family: "Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 1.04rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .page-subtitle-link {
-  color: var(--text-muted);
+  color: inherit;
   text-decoration: none;
 }
 

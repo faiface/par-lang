@@ -7,7 +7,7 @@ use par_core::frontend::language::{GlobalName, PackageId, Universal};
 
 use crate::error::DocError;
 use crate::html::{self, TypeLinkTarget};
-use crate::model::{ItemKind, ModuleModel, PackageModel, SiteModel};
+use crate::model::{ItemKind, ModuleModel, PackageKind, PackageModel, SiteModel};
 use crate::paths::{SitePaths, item_anchor, relative_href, relative_href_with_anchor};
 
 const SITE_CSS: &str = include_str!("../assets/site.css");
@@ -123,7 +123,7 @@ impl<'a> Renderer<'a> {
             base: &base,
             package: &PackageHeaderView {
                 name: package.name.clone(),
-                identity: package.identity.clone(),
+                identity: package_page_identity(package),
                 identity_href: package_identity_href(&package.id),
                 has_identity_link: matches!(package.id, PackageId::Remote(_)),
             },
@@ -336,6 +336,14 @@ fn package_identity_href(id: &PackageId) -> String {
     match id {
         PackageId::Remote(path) => format!("https://{path}"),
         PackageId::Special(_) | PackageId::Local(_) => String::new(),
+    }
+}
+
+fn package_page_identity(package: &PackageModel) -> String {
+    match package.kind {
+        PackageKind::Root => String::from("This package"),
+        PackageKind::BuiltIn => String::from("Built-in package"),
+        PackageKind::DirectDependency | PackageKind::IndirectDependency => package.identity.clone(),
     }
 }
 
