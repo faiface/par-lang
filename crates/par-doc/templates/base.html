@@ -9,24 +9,26 @@
   </head>
   <body>
     <div class="page-shell">
-      <header class="topbar">
-        <nav class="breadcrumbs" aria-label="Breadcrumbs">
-          {% for breadcrumb in base.breadcrumbs %}
-            {% if breadcrumb.is_link %}
-              <a class="breadcrumb-link" href="{{ breadcrumb.href }}">{{ breadcrumb.label }}</a>
-            {% else %}
-              <span class="breadcrumb-current-wrap">
-                {% if breadcrumb.has_prefix %}
-                  <span class="breadcrumb-prefix">{{ breadcrumb.prefix }}</span>
-                {% endif %}
-                <span class="breadcrumb-current">{{ breadcrumb.label }}</span>
-              </span>
-            {% endif %}
-            {% if !loop.last %}
-              <span class="breadcrumb-sep">/</span>
-            {% endif %}
-          {% endfor %}
-        </nav>
+      <header class="topbar{% if !base.show_breadcrumbs %} topbar-right{% endif %}">
+        {% if base.show_breadcrumbs %}
+          <nav class="breadcrumbs" aria-label="Breadcrumbs">
+            {% for breadcrumb in base.breadcrumbs %}
+              {% if breadcrumb.is_link %}
+                <a class="breadcrumb-link" href="{{ breadcrumb.href }}">{{ breadcrumb.label }}</a>
+              {% else %}
+                <span class="breadcrumb-current-wrap">
+                  {% if breadcrumb.has_prefix %}
+                    <span class="breadcrumb-prefix">{{ breadcrumb.prefix }}</span>
+                  {% endif %}
+                  <span class="breadcrumb-current">{{ breadcrumb.label }}</span>
+                </span>
+              {% endif %}
+              {% if !loop.last %}
+                <span class="breadcrumb-sep">/</span>
+              {% endif %}
+            {% endfor %}
+          </nav>
+        {% endif %}
         <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme" title="Switch theme">
           <span class="theme-toggle-icon" aria-hidden="true">☀</span>
         </button>

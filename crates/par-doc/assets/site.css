@@ -96,6 +96,10 @@ pre,
   margin-bottom: 16px;
 }
 
+.topbar-right {
+  justify-content: flex-end;
+}
+
 .breadcrumbs {
   display: flex;
   flex-wrap: wrap;

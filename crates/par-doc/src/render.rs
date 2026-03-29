@@ -82,11 +82,7 @@ impl<'a> Renderer<'a> {
 
     fn render_packages_page(&self) -> Result<String, DocError> {
         let current_page = &self.site_paths.index;
-        let base = self.base_page(
-            current_page,
-            String::from("Packages · Par Docs"),
-            vec![BreadcrumbView::current("Packages")],
-        );
+        let base = self.base_page(current_page, String::from("Packages · Par Docs"), vec![]);
         let sections = self.section_views(current_page);
         PackagesPageTemplate {
             base: &base,
@@ -307,6 +303,7 @@ impl<'a> Renderer<'a> {
             title,
             stylesheet_href: relative_href(current_page, &self.site_paths.css),
             script_href: relative_href(current_page, &self.site_paths.js),
+            show_breadcrumbs: !breadcrumbs.is_empty(),
             breadcrumbs,
         }
     }
@@ -352,6 +349,7 @@ struct BasePageView {
     title: String,
     stylesheet_href: String,
     script_href: String,
+    show_breadcrumbs: bool,
     breadcrumbs: Vec<BreadcrumbView>,
 }
 
