@@ -1735,7 +1735,7 @@ impl<Typ, S> Expression<Typ, S> {
 impl<Typ, S: Clone + std::fmt::Display> Expression<Typ, S> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
-            Self::Global(_, name, _) => write!(f, "{}", name.canonical_string()),
+            Self::Global(_, name, _) => write!(f, "{name}"),
 
             Self::Variable(_, name, _, _) => {
                 write!(f, "{}", name)
@@ -1778,6 +1778,6 @@ struct CanonicalGlobalNameWriter;
 
 impl<S: std::fmt::Display> GlobalNameWriter<S> for CanonicalGlobalNameWriter {
     fn write_global_name<W: Write>(&self, f: &mut W, name: &GlobalName<S>) -> fmt::Result {
-        write!(f, "{}", name.canonical_string())
+        write!(f, "{name}")
     }
 }

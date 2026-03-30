@@ -3,7 +3,7 @@ mod tests {
     use crate::frontend_impl::language::{GlobalName, LocalName, PackageId, Universal};
     use crate::frontend_impl::types::{GlobalNameWriter, Type, TypeDefs};
     use crate::location::Span;
-    use crate::workspace::{render_global_name_in_scope, render_type_in_scope};
+    use crate::workspace::render_type_in_scope;
     use arcstr::{ArcStr, literal};
     use std::fmt::{self, Write};
 
@@ -15,7 +15,7 @@ mod tests {
             f: &mut W,
             name: &GlobalName<Universal>,
         ) -> fmt::Result {
-            write!(f, "{}", render_global_name_in_scope(None, name))
+            write!(f, "{name}")
         }
     }
 
@@ -208,7 +208,7 @@ mod tests {
 
         assert_eq!(
             actual,
-            "choice {.delete => \"__test__\"/Main.Map<String, Int>,.put => [Int] \"__test__\"/Main.Map<String, Int>,}"
+            "choice {.delete => @__test__/Main.Map<String, Int>,.put => [Int] @__test__/Main.Map<String, Int>,}"
         );
     }
 
@@ -225,8 +225,8 @@ mod tests {
             render_type_in_scope(None, &expanded, 0),
             "\
 choice {
-  .delete => \"__test__\"/Main.Map<String, Int>,
-  .put => [Int] \"__test__\"/Main.Map<String, Int>,
+  .delete => @__test__/Main.Map<String, Int>,
+  .put => [Int] @__test__/Main.Map<String, Int>,
 }"
         );
     }

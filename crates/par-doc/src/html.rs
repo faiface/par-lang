@@ -127,7 +127,7 @@ fn short_global_name(name: &GlobalName<Universal>) -> String {
 }
 
 fn full_global_name(name: &GlobalName<Universal>) -> String {
-    format!("{}.{}", name.module, name.primary)
+    name.to_string()
 }
 
 struct TypeLinkWriter<'a> {

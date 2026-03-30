@@ -14,10 +14,7 @@ use par_core::{
     },
     runtime::{Compiled, RuntimeCompilerError},
     testing::{AssertionResult, provide_test},
-    workspace::{
-        CheckedWorkspace, ModulePath, WorkspaceDiscoveryError, WorkspaceError,
-        render_global_name_in_scope,
-    },
+    workspace::{CheckedWorkspace, ModulePath, WorkspaceDiscoveryError, WorkspaceError},
 };
 use par_runtime::linker::Linked;
 use par_runtime::spawn::TokioSpawn;
@@ -277,7 +274,7 @@ fn test_single_definition(
     test_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
-    let name_label = render_global_name_in_scope(None, test_name);
+    let name_label = test_name.to_string();
     let missing_type_name = name_label.clone();
     let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,
@@ -316,7 +313,7 @@ fn run_single_definition(
     run_name: &GlobalName<Universal>,
 ) -> TestResult {
     let start = Instant::now();
-    let name_label = render_global_name_in_scope(None, run_name);
+    let name_label = run_name.to_string();
     let missing_type_name = name_label.clone();
     let runtime = match crate::tokio_factory::create_runtime() {
         Ok(rt) => rt,

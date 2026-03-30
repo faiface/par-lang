@@ -94,16 +94,6 @@ impl<S> GlobalName<S> {
     }
 }
 
-impl<S: Display> GlobalName<S> {
-    pub(crate) fn canonical_string(&self) -> ArcStr {
-        let module = self.module.to_string();
-        if module.is_empty() {
-            return ArcStr::from(self.primary.as_str());
-        }
-        arcstr::format!("{module}.{}", self.primary)
-    }
-}
-
 impl From<ArcStr> for LocalName {
     fn from(value: ArcStr) -> Self {
         LocalName {
@@ -502,23 +492,18 @@ impl Display for Unresolved {
 
 impl Display for Universal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let package = match &self.package {
-            PackageId::Special(name) | PackageId::Local(name) | PackageId::Remote(name) => {
-                Some(format!("@{name}"))
+        match &self.package {
+            PackageId::Special(name) => write!(f, "@{name}")?,
+            PackageId::Local(name) | PackageId::Remote(name) => {
+                write!(f, "\"{name}\"")?;
             }
-        };
-        match (&package, self.directories.is_empty()) {
-            (None, true) => write!(f, "{}", self.module),
-            (None, false) => write!(f, "{}/{}", self.directories.join("/"), self.module),
-            (Some(package), true) => write!(f, "{package}/{}", self.module),
-            (Some(package), false) => {
-                write!(
-                    f,
-                    "{package}/{}/{}",
-                    self.directories.join("/"),
-                    self.module
-                )
-            }
+        }
+
+        write!(f, "/")?;
+        if self.directories.is_empty() {
+            write!(f, "{}", self.module)
+        } else {
+            write!(f, "{}/{}", self.directories.join("/"), self.module)
         }
     }
 }
@@ -529,6 +514,17 @@ impl Display for PackageId {
             PackageId::Special(name) | PackageId::Local(name) | PackageId::Remote(name) => {
                 write!(f, "@{name}")
             }
+        }
+    }
+}
+
+impl<S: Display> Display for GlobalName<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let module = self.module.to_string();
+        if module.is_empty() {
+            write!(f, "{}", self.primary)
+        } else {
+            write!(f, "{module}.{}", self.primary)
         }
     }
 }
@@ -2239,7 +2235,7 @@ impl Context {
                 let span = global_name.span.clone();
                 let local_name = LocalName {
                     span: span.clone(),
-                    string: global_name.canonical_string(),
+                    string: ArcStr::from(global_name.to_string()),
                 };
                 Arc::new(process::Process::Let {
                     span: span.clone(),

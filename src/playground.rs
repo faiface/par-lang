@@ -29,7 +29,6 @@ use par_core::{
     source::FileName,
     workspace::{
         CheckedWorkspace, FileImportScope, ModulePath, WorkspaceDiscoveryError, WorkspaceError,
-        render_global_name_in_scope,
     },
 };
 use par_runtime::linker::Linked;
@@ -180,12 +179,7 @@ impl BuildResult {
                      body,
                  }| {
                     let mut buf = String::new();
-                    write!(
-                        &mut buf,
-                        "def {} = ",
-                        render_global_name_in_scope(None, name)
-                    )
-                    .expect("write failed");
+                    write!(&mut buf, "def {name} = ").expect("write failed");
                     match body {
                         DefinitionBody::Par(expr) => {
                             expr.pretty(&mut buf, 0).expect("write failed");
