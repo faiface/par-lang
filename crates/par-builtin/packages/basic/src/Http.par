@@ -1,3 +1,12 @@
+// HTTP client and server primitives.
+//
+// This module contains:
+// - request / response shapes
+// - `Http.Fetch` for outgoing requests
+// - `Http.Listen` for serving incoming requests
+//
+// Bodies are streamed as `Bytes.Reader<Error>`, so large payloads can be
+// processed incrementally.
 export module Http
 
 import {

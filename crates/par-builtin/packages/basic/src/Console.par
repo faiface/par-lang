@@ -1,3 +1,15 @@
+// Terminal interaction utilities.
+//
+// Typical flow:
+// - `Console.Open` to acquire a console
+// - `.print` for line output
+// - `.prompt` for interactive input
+//
+// ```par
+// let console = Console.Open
+// console.print("Hello from Par!")
+// console.close
+// ```
 export module Console
 
 import {

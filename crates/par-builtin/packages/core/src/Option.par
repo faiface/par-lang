@@ -1,3 +1,10 @@
+// `Option<a>` models an optional value.
+//
+// - `.ok value` means a value is present.
+// - `.err!` means there is no value.
+//
+// It is a thin alias over `Result<!, a>`, so it is best when you want
+// **absence** rather than a richer error payload.
 export module Option
 
 import {

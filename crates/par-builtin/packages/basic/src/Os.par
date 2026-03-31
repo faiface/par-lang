@@ -1,3 +1,11 @@
+// Operating system access for files, directories, stdio, and environment.
+//
+// Common entry points:
+// - `Os.Path` for constructing paths
+// - `Os.OpenFile` and friends for file I/O
+// - `Os.Stdin`, `Os.Stdout`, `Os.Stderr` for process streams
+//
+// Most operations return `Result<Os.Error, ...>`.
 export module Os
 
 import {

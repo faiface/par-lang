@@ -1,3 +1,14 @@
+// `List` contains the standard finite sequence types and combinators.
+//
+// Highlights:
+// - `List<a>` for ordinary finite lists
+// - `Builder<a>` for incremental construction
+// - `Fallible<e, a>` for streams that may end in an error
+//
+// ```par
+// let xs = *(1, 2, 3)
+// xs->List.Map(type Int)(box [n] Int.Mul(n, 2))
+// ```
 export module List
 
 import {

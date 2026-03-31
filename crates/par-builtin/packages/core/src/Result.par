@@ -1,3 +1,12 @@
+// `Result<e, a>` is the standard success-or-error shape.
+//
+// Use it when an operation can either:
+// - produce `.ok value`, or
+// - stop with `.err error`.
+//
+// ```par
+// let try value = Result.Always(value)
+// ```
 export module Result
 
 export {
