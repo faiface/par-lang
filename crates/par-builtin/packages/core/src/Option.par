@@ -1,10 +1,7 @@
-// `Option<a>` models an optional value.
+// `Option<a>` is `Result<!, a>`.
 //
-// - `.ok value` means a value is present.
-// - `.err!` means there is no value.
-//
-// It is a thin alias over `Result<!, a>`, so it is best when you want
-// **absence** rather than a richer error payload.
+// - `.ok value` carries a value.
+// - `.err!` means no value is available.
 export module Option
 
 import {
@@ -12,7 +9,6 @@ import {
 }
 
 export {
-  // An `Option` is a `Result` where the error type is `!` (unit),
-  // meaning it either holds a value (`.ok`) or nothing (`.err!`).
+  // An optional value, defined as `Result<!, a>`.
   type Option<a> = Result<!, a>
 }

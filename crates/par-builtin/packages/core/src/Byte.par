@@ -1,3 +1,4 @@
+// Byte operations and byte classes.
 export module Byte
 
 import {
@@ -6,7 +7,7 @@ import {
 }
 
 export {
-  // A byte class for matching bytes. Used in byte parsers and `Byte.Is`.
+  // A class of bytes for parsers and `Byte.Is`.
   //
   // - `.any!` — any byte.
   // - `.byte b` — a specific byte.
@@ -23,7 +24,7 @@ export {
   // Returns the numeric value of a byte (0-255) as a natural number.
   dec Code : [Byte] Nat
 
-  // Tests whether a byte belongs to the given class.
+  // Tests whether a byte matches a class.
   dec Is : [Byte, Class] Bool
 }
 

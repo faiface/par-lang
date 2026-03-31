@@ -1,3 +1,4 @@
+// Integer operations.
 export module Int
 
 import {
@@ -9,20 +10,21 @@ import {
 }
 
 export {
-  // Adds two integers.
+  // Returns `x + y`.
   dec Add : [Int, Int] Int
 
-  // Subtracts the second integer from the first.
+  // `Int.Sub(x, y)` returns `x - y`.
   dec Sub : [Int, Int] Int
 
-  // Multiplies two integers.
+  // Returns `x * y`.
   dec Mul : [Int, Int] Int
 
-  // Integer division, truncated toward zero. Returns 0 when the divisor is 0.
+  // `Int.Div(x, y)` is integer division truncated toward zero.
+  // Returns `0` when `y` is `0`.
   dec Div : [Int, Int] Int
 
-  // Non-negative remainder (mathematical modulo). The result is always in `[0, n)`.
-  // Returns 0 when `n` is 0.
+  // `Int.Mod(x, n)` returns the non-negative remainder of `x` modulo `n`.
+  // The result is in `[0, n)`, or `0` when `n` is `0`.
   dec Mod : [Int, Nat] Nat
 
   // Returns the smaller of two integers.
@@ -31,10 +33,10 @@ export {
   // Returns the larger of two integers.
   dec Max : [Int, Int] Int
 
-  // Returns the absolute value as a natural number.
+  // Returns the absolute value of an integer as a natural number.
   dec Abs : [Int] Nat
 
-  // Clamps an integer to the range `[min, max]`.
+  // `Int.Clamp(x)(lo, hi)` clamps `x` to the inclusive range `[lo, hi]`.
   //
   // ```par
   // Int.Clamp(7)(0, 5)   // = 5
@@ -48,7 +50,7 @@ export {
   // Compares two integers, returning their `Ordering`.
   dec Compare : [Int, Int] Ordering
 
-  // Produces a list of integers from `lo` (inclusive) to `hi` (exclusive).
+  // `Int.Range(lo, hi)` produces the integers from `lo` (inclusive) to `hi` (exclusive).
   //
   // ```par
   // Int.Range(0, 5)  // = *(0, 1, 2, 3, 4)
@@ -58,7 +60,8 @@ export {
   // Converts an integer to its decimal string representation.
   dec ToString : [Int] String
 
-  // Parses a decimal string into an integer. Returns `.err!` if the string is not a valid integer.
+  // Parses a decimal string into an integer.
+  // Returns `.err!` when the string is not a valid integer.
   dec FromString : [String] either {
     .ok Int,
     .err!,

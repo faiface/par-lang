@@ -1,8 +1,4 @@
-// `Result<e, a>` is the standard success-or-error shape.
-//
-// Use it when an operation can either:
-// - produce `.ok value`, or
-// - stop with `.err error`.
+// `Result<e, a>` carries either `.ok a` or `.err e`.
 //
 // ```par
 // let try value = Result.Always(value)
@@ -10,13 +6,13 @@
 export module Result
 
 export {
-  // A value that is either successful (`.ok`) or an error (`.err`).
+  // A value that is either `.ok a` or `.err e`.
   type Result<e, a> = either {
     .ok a,
     .err e,
   }
 
-  // Unwraps a `Result` that can never be an error.
+  // Extracts the `.ok` branch from a `Result<either {}, a>`.
   dec Always : <a>[Result<either {}, a>] a
 }
 

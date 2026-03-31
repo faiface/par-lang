@@ -1,3 +1,4 @@
+// Natural-number operations and iterators.
 export module Nat
 
 import {
@@ -9,10 +10,10 @@ import {
 }
 
 export {
-  // Adds two natural numbers.
+  // Returns `m + n`.
   dec Add : [Nat, Nat] Nat
 
-  // Subtracts an integer from a natural number, clamping the result at 0.
+  // `Nat.Sub(n, m)` returns `n - m`, clamped at `0`.
   //
   // ```par
   // Nat.Sub(5, 3)   // = 2
@@ -21,23 +22,25 @@ export {
   // ```
   dec Sub : [Nat, Int] Nat
 
-  // Multiplies two natural numbers.
+  // Returns `m * n`.
   dec Mul : [Nat, Nat] Nat
 
-  // Natural number division. Returns 0 when the divisor is 0.
+  // `Nat.Div(m, n)` is integer division on naturals.
+  // Returns `0` when `n` is `0`.
   dec Div : [Nat, Nat] Nat
 
-  // Remainder after division. Returns 0 when the divisor is 0.
+  // `Nat.Mod(m, n)` is the remainder of dividing `m` by `n`.
+  // Returns `0` when `n` is `0`.
   dec Mod : [Nat, Nat] Nat
 
   // Returns the smaller of two natural numbers.
   dec Min : [Nat, Nat] Nat
 
-  // Returns the larger value, taking an `Int` as the second argument.
-  // The result is always a natural number.
+  // `Nat.Max(n, m)` returns the larger of `n` and `m`.
+  // The result is always a `Nat`, even though `m` is an `Int`.
   dec Max : [Nat, Int] Nat
 
-  // Clamps an integer to the range `[min, max]`, returning a natural number.
+  // `Nat.Clamp(x)(lo, hi)` clamps `x` to the inclusive range `[lo, hi]`.
   dec Clamp : [Int] [Nat, Nat] Nat
 
   // Tests two natural numbers for equality.
@@ -59,8 +62,8 @@ export {
     .step self,
   }
 
-  // Like `Repeat`, but each step is lazily evaluated behind a `box`.
-  // Use when not every step may be needed.
+  // Like `Repeat`, but each `.step` carries a boxed continuation behind `.next`.
+  // Use it when later steps might not be needed.
   dec RepeatLazy : [Nat] recursive either {
     .end!,
     .step box choice {
@@ -68,7 +71,7 @@ export {
     }
   }
 
-  // Produces a list of natural numbers from `lo` (inclusive) to `hi` (exclusive).
+  // `Nat.Range(lo, hi)` produces the naturals from `lo` (inclusive) to `hi` (exclusive).
   //
   // ```par
   // Nat.Range(0, 4)  // = *(0, 1, 2, 3)
@@ -79,7 +82,7 @@ export {
   dec ToString : [Nat] String
 
   // Parses a decimal string into a natural number.
-  // Returns `.err!` if the string is not a valid non-negative integer.
+  // Returns `.err!` when the string is not a valid non-negative integer.
   dec FromString : [String] either {
     .ok Nat,
     .err!,

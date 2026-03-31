@@ -1,12 +1,7 @@
-// HTTP client and server primitives.
+// HTTP request and response types, plus client and server operations.
 //
-// This module contains:
-// - request / response shapes
-// - `Http.Fetch` for outgoing requests
-// - `Http.Listen` for serving incoming requests
-//
-// Bodies are streamed as `Bytes.Reader<Error>`, so large payloads can be
-// processed incrementally.
+// Request and response bodies are `Bytes.Reader<Error>` values, so body data can
+// be consumed incrementally.
 export module Http
 
 import {
@@ -22,23 +17,16 @@ export {
   // Error type for HTTP operations (a human-readable message).
   type Error = String
 
-  // An HTTP request: `(method) (url) (headers) body`.
-  //
-  // - `method` — HTTP method string (e.g. `"GET"`, `"POST"`).
-  // - `url` — the request `Url`.
-  // - `headers` — list of `(name) value` pairs (values as `Bytes`).
-  // - `body` — a `Bytes.Reader` for the request body.
+  // An HTTP request with shape `(method) (url) (headers) body`.
+  // Use `let (method, url, headers) body = request` to name its parts.
   type Request =
     (String)
     (Url)
     (List<(String) Bytes>)
     Bytes.Reader<Error>
 
-  // An HTTP response: `(status) (headers) body`.
-  //
-  // - `status` — HTTP status code as a `Nat` (e.g. 200, 404).
-  // - `headers` — list of `(name) value` pairs (values as `Bytes`).
-  // - `body` — a `Bytes.Reader` for the response body.
+  // An HTTP response with shape `(status) (headers) body`.
+  // Use `let (status, headers) body = response` to name its parts.
   type Response =
     (Nat)
     (List<(String) Bytes>)
@@ -47,6 +35,7 @@ export {
   // Sends an HTTP request and returns the response.
   //
   // ```par
+  // let try url = Url.FromString("https://example.com")
   // let try (status, headers) body = Http.Fetch(
   //   ("GET")
   //   (url)
@@ -56,7 +45,8 @@ export {
   // ```
   dec Fetch : [Request] Result<Error, Response>
 
-  // Starts an HTTP server listening on the given address (e.g. `"127.0.0.1:8080"`).
+  // `Http.Listen(address)` starts an HTTP server on `address`,
+  // such as `"127.0.0.1:8080"`.
   //
   // Returns a recursive stream of events:
   // - `.shutdown result` — the server has shut down (e.g. on Ctrl+C or error).

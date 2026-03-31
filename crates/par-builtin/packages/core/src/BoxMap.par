@@ -1,3 +1,4 @@
+// Non-linear ordered-map interfaces and constructors for common key types.
 export module BoxMap
 
 import {
@@ -10,16 +11,16 @@ import {
 }
 
 export {
-  // A persistent ordered map that can be immutably shared across multiple references.
-  // `.put` and `.delete` efficiently produce new shareable instances without copying the
-  // whole map.
+  // A non-linear ordered map interface.
   //
   // - `.size` — get the number of entries.
-  // - `.keys` — get a list of all keys.
-  // - `.list` — get all entries as a list of `(key) box value` pairs.
-  // - `.get(key)` — look up a key, returning `Option<box v>`.
-  // - `.put(key, value)` — insert or update an entry, returning a new instance.
-  // - `.delete(key)` — remove an entry, returning a new instance.
+  // - `.keys` — get the keys in map order.
+  // - `.list` — get all entries as `(key) box value` pairs.
+  // - `.get(key)` — look up a key.
+  // - `.put(key, value)` — return a map with that entry inserted or updated.
+  // - `.delete(key)` — return a map with that entry removed.
+  //
+  // Since `BoxMap` is non-linear, updates return another `BoxMap` value.
   type BoxMap<k, v> = iterative box choice {
     .size => Nat,
     .keys => List<k>,
@@ -29,7 +30,7 @@ export {
     .delete(k) => self,
   }
 
-  // A read-only view of a `BoxMap`. Supports `.size`, `.keys`, `.list`, and `.get`.
+  // A read-only view of a `BoxMap`.
   type Readonly<k, v> = box choice {
     .size => Nat,
     .keys => List<k>,
@@ -37,16 +38,20 @@ export {
     .get(k) => Option<box v>,
   }
 
-  // Creates a `BoxMap` with `String` keys from a list of `(key) value` pairs.
+  // Builds a `BoxMap<String, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfString : [type v] [List<(String) box v>] BoxMap<String, v>
 
-  // Creates a `BoxMap` with `Bytes` keys from a list of `(key) value` pairs.
+  // Builds a `BoxMap<Bytes, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfBytes : [type v] [List<(Bytes) box v>] BoxMap<Bytes, v>
 
-  // Creates a `BoxMap` with `Int` keys from a list of `(key) value` pairs.
+  // Builds a `BoxMap<Int, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfInt : [type v] [List<(Int) box v>] BoxMap<Int, v>
 
-  // Creates a `BoxMap` with `Nat` keys from a list of `(key) value` pairs.
+  // Builds a `BoxMap<Nat, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfNat : [type v] [List<(Nat) box v>] BoxMap<Nat, v>
 }
 

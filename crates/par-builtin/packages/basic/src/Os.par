@@ -1,9 +1,5 @@
-// Operating system access for files, directories, stdio, and environment.
-//
-// Common entry points:
-// - `Os.Path` for constructing paths
-// - `Os.OpenFile` and friends for file I/O
-// - `Os.Stdin`, `Os.Stdout`, `Os.Stderr` for process streams
+// Operating system interfaces for paths, files, directories, standard streams,
+// and environment variables.
 //
 // Most operations return `Result<Os.Error, ...>`.
 export module Os
@@ -27,13 +23,13 @@ export {
   // A byte writer for OS I/O, with `Os.Error` as the error type.
   type Writer = Bytes.Writer<Error>
 
-  // A file system path. Boxed and supports both navigation and inspection.
+  // A filesystem path value.
   //
   // - `.name` — get the file name component as bytes.
   // - `.absolute` — get the absolute path as bytes.
   // - `.parts` — get all path components as a list of byte sequences.
   // - `.parent` — get the parent path, or `.err!` if at root.
-  // - `.append(segment)` — append a path segment, returning a new path.
+  // - `.append(part)` — return a path with one more path component.
   type Path = iterative@append recursive@parent box choice {
     .name => Bytes,
     .absolute => Bytes,
@@ -43,7 +39,7 @@ export {
     .append(Bytes) => self@append,
   }
 
-  // Creates a `Path` from a byte sequence.
+  // Creates a `Path` from its byte representation.
   dec Path : [Bytes] Path
 
   // Standard input as a byte reader.
@@ -88,7 +84,7 @@ export {
     .dir(Path, self) self,
   }>
 
-  // Read-only view of the process environment variables, keyed by byte sequences.
+  // Read-only view of the process environment variables.
   dec Env : BoxMap.Readonly<Bytes, Bytes>
 }
 

@@ -1,3 +1,4 @@
+// Linear ordered-map interfaces and constructors for common key types.
 export module Map
 
 import {
@@ -10,16 +11,16 @@ import {
 }
 
 export {
-  // A linear ordered map from keys to values, backed by a B-tree.
+  // A linear ordered map interface.
   //
-  // - `.size` — get the number of entries, keeping the map.
-  // - `.keys` — get a list of all keys, keeping the map.
-  // - `.list` — consume the map and get all entries as a list of `(key) value` pairs.
-  // - `.entry(key)` — look up a key, receiving `Option<v>` with the current value
-  //   (if any), then choose `.put(v)` to insert/update or `.delete` to remove.
+  // - `.size` — get the number of entries while keeping the map.
+  // - `.keys` — get the keys in map order while keeping the map.
+  // - `.list` — consume the map and return its entries as `(key) value` pairs.
+  // - `.entry(key)` — inspect the current `Option<v>` for `key`, then choose
+  //   `.put(value)` or `.delete`.
   //
   // The map is linear: `.list` consumes it, while `.size`, `.keys`, and `.entry`
-  // allow continued use.
+  // return a continuation for further use.
   type Map<k, v> = iterative choice {
     .size => (Nat) self,
     .keys => (List<k>) self,
@@ -30,17 +31,20 @@ export {
     },
   }
 
-  // Creates a `Map` with `String` keys from a list of `(key) value` pairs.
-  // If duplicate keys exist, the last value wins. Values must be boxed.
+  // Builds a `Map<String, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfString : [type v] [List<(String) box v>] Map<String, v>
 
-  // Creates a `Map` with `Bytes` keys from a list of `(key) value` pairs.
+  // Builds a `Map<Bytes, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfBytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
 
-  // Creates a `Map` with `Int` keys from a list of `(key) value` pairs.
+  // Builds a `Map<Int, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfInt : [type v] [List<(Int) box v>] Map<Int, v>
 
-  // Creates a `Map` with `Nat` keys from a list of `(key) value` pairs.
+  // Builds a `Map<Nat, v>` from `(key) value` pairs.
+  // If a key appears more than once, the last pair wins.
   dec OfNat : [type v] [List<(Nat) box v>] Map<Nat, v>
 }
 

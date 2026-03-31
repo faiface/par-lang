@@ -1,9 +1,4 @@
-// `List` contains the standard finite sequence types and combinators.
-//
-// Highlights:
-// - `List<a>` for ordinary finite lists
-// - `Builder<a>` for incremental construction
-// - `Fallible<e, a>` for streams that may end in an error
+// Finite list types and list combinators.
 //
 // ```par
 // let xs = *(1, 2, 3)
@@ -30,14 +25,14 @@ export {
     .item(a) self,
   }
 
-  // An incremental list builder. Add items with `.add`, then finalize with `.build`.
+  // Incrementally constructs a list.
   type Builder<a> = iterative choice {
     .add(a) => self,
     .build => List<a>,
   }
 
-  // A list that may end with an error (`.end .err e`) instead of successfully (`.end .ok!`).
-  // Used for streaming sources that can fail partway through.
+  // A list that ends with `Result<e, !>` instead of `!`.
+  // Use it for streams that may finish with an error.
   type Fallible<e, a> = recursive either {
     .end Result<e, !>,
     .item(a) self,
@@ -46,7 +41,7 @@ export {
   // Creates a new list `Builder`.
   dec Builder : [type a] Builder<a>
 
-  // Transforms each element of a list using a function.
+  // Applies `f` to each element of a list.
   //
   // ```par
   // {*(1, 2, 3)}->List.Map(type Int)(box [n] Int.Mul(n, 2))
@@ -54,13 +49,13 @@ export {
   // ```
   dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
 
-  // Maps each element to a list and flattens the results into a single list.
+  // Applies `f` to each element and concatenates the resulting lists.
   dec FlatMap : <a>[List<a>] [type b] [box [a] List<b>] List<b>
 
-  // Keeps only the elements for which the predicate returns `.true!`.
+  // Keeps the elements for which the predicate returns `.true!`.
   dec Filter : <a>[List<box a>] [box [a] Bool] List<a>
 
-  // Reduces a list to a single value by repeatedly applying a function.
+  // Folds a list from left to right.
   //
   // ```par
   // {*(1, 2, 3)}->List.Fold(0, box [sum, n] Nat.Add(sum, n))

@@ -1,8 +1,8 @@
+// Benchmarking helpers.
 export module Bench
 
 export {
-  // Identity function that prevents the compiler from optimizing away its argument.
-  // Useful in benchmarks to ensure a computation actually runs.
+  // Identity function intended for benchmarks.
   dec BlackBox : [type a] [a] a
 }
 

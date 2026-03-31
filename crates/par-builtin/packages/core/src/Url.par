@@ -1,3 +1,4 @@
+// Parsed URLs and URL construction helpers.
 export module Url
 
 import {
@@ -10,7 +11,7 @@ export {
   // Error type for URL parsing failures.
   type Error = String
 
-  // A parsed URL that can be inspected and modified.
+  // A URL value with inspection operations and derived updates.
   //
   // - `.full` — get the full URL string.
   // - `.protocol` — get the scheme (e.g. `"http"`, `"https"`).
@@ -19,9 +20,7 @@ export {
   // - `.query` — get the query parameters as a list of `(key) value` pairs.
   // - `.appendPath(segment)` — append a path segment.
   // - `.addQuery(key, value)` — add a query parameter.
-  //
-  // The `Url` is boxed, so it can be used multiple times.
-  // `.appendPath` and `.addQuery` return a new `Url` with the modification applied.
+  // `.appendPath` and `.addQuery` return updated `Url` values.
   type Url = iterative box choice {
     .full => String,
     .protocol => String,
@@ -32,7 +31,8 @@ export {
     .addQuery(String, String) => self,
   }
 
-  // Parses a string into a `Url`. Returns `.err` with an error message if invalid.
+  // Parses a string into a `Url`.
+  // Returns `.err` with an error message when the string is not a valid URL.
   dec FromString : [String] Result<Error, Url>
 }
 

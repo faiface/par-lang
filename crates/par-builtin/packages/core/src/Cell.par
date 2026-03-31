@@ -1,11 +1,12 @@
+// Shared cells.
 export module Cell
 
 export {
-  // A shared mutable reference to a value. Multiple clients can access the cell concurrently.
+  // A shared cell containing a value.
   //
   // - `.end` — release the cell.
-  // - `.split` — split into two cells sharing the same value.
-  // - `.take` — take the value out; you must `.put` a value back.
+  // - `.split` — create another handle to the same cell.
+  // - `.take` — remove the current value and continue by choosing `.put`.
   type Cell<a> = iterative choice {
     .end => ?,
     .split(dual self) => self,
@@ -14,8 +15,8 @@ export {
     }
   }
 
-  // Wraps a value in a `Cell`, serving concurrent access from clients via nondeterminism.
-  // Returns the value when all clients are done.
+  // Serves a value through a `Cell`.
+  // Returns the final value when all clients are done.
   dec Share : <a>[a] [dual Cell<a>] a
 }
 
