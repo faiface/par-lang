@@ -15,7 +15,7 @@ use crate::frontend_impl::types::{Type, TypeError, VisibilityIndex, validate_vis
 use crate::location::{FileName, Span, Spanning};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 use arcstr::ArcStr;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use par_runtime::linker::Unlinked;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry};
@@ -403,6 +403,7 @@ pub struct ParsedPackageFile {
 #[derive(Debug, Clone)]
 pub struct ParsedModule {
     pub path: ModulePath,
+    pub doc: Option<DocComment>,
     pub files: Vec<ParsedPackageFile>,
 }
 
@@ -1051,6 +1052,10 @@ impl Workspace {
         self.docs.type_doc(name)
     }
 
+    pub fn module_doc(&self, module: &Universal) -> Option<&DocComment> {
+        self.docs.module_doc(module)
+    }
+
     pub fn declaration_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
         self.docs.declaration_doc(name)
     }
@@ -1287,6 +1292,7 @@ pub fn assemble_workspace(
     let package_modules = package_module_paths(&packages);
 
     let mut lowered = Module::default();
+    let mut module_docs = IndexMap::new();
     let mut visibility = VisibilityIndex::default();
     let mut sources = HashMap::<FileName, Arc<str>>::new();
     let mut file_scopes = HashMap::<FileName, FileImportScope<Universal>>::new();
@@ -1295,6 +1301,7 @@ pub fn assemble_workspace(
     for package in packages {
         load_package(
             &mut lowered,
+            &mut module_docs,
             &mut visibility,
             &mut sources,
             &mut file_scopes,
@@ -1304,7 +1311,8 @@ pub fn assemble_workspace(
         )?;
     }
 
-    let docs = lowered.docs();
+    let mut docs = lowered.docs();
+    docs.modules = module_docs;
     Ok(Workspace {
         root_package,
         lowered,
@@ -1388,6 +1396,7 @@ pub fn parse_loaded_files(
             Entry::Vacant(vacant) => {
                 vacant.insert(ParsedModule {
                     path: module_path,
+                    doc: None,
                     files: vec![parsed_file],
                 });
             }
@@ -1413,6 +1422,12 @@ pub fn parse_loaded_files(
         module.files.sort_by(|left, right| {
             module_file_ordering_key(left).cmp(&module_file_ordering_key(right))
         });
+        module.doc = module
+            .files
+            .iter()
+            .find(|file| file.module_part_suffix.is_none())
+            .and_then(|file| file.source_file.module_decl.as_ref())
+            .and_then(|module_decl| module_decl.doc.clone());
     }
     modules.sort_by(|left, right| left.path.cmp(&right.path));
 
@@ -1709,6 +1724,7 @@ fn package_module_paths(packages: &[WorkspacePackage]) -> BTreeMap<PackageId, Ve
 
 fn load_package(
     lowered: &mut Module<Arc<process::Expression<(), Universal>>, Universal>,
+    module_docs: &mut IndexMap<Universal, DocComment>,
     visibility: &mut VisibilityIndex,
     sources: &mut HashMap<FileName, Arc<str>>,
     file_scopes: &mut HashMap<FileName, FileImportScope<Universal>>,
@@ -1729,6 +1745,9 @@ fn load_package(
             directories: parsed_module.path.directories.clone(),
             module: parsed_module.path.module.clone(),
         };
+        if let Some(doc) = parsed_module.doc.clone() {
+            module_docs.insert(current_universal_module.clone(), doc);
+        }
         let current_module_path =
             resolved_module_path(&parsed_module.path, ResolvedPackageRef::Local);
 
@@ -2306,7 +2325,8 @@ fn write_global_name_in_file(
         }
     }
 
-    write!(f, "{name}")
+    write_universal_module_in_file(f, scope, &name.module)?;
+    write!(f, ".{}", name.primary)
 }
 
 fn write_universal_module_in_file(
@@ -2523,6 +2543,7 @@ mod tests {
     #[test]
     fn doc_comments_survive_into_checked_workspace_docs() {
         let source = "\
+/*Module docs*/
 module Main
 
 /*Type docs*/
@@ -2533,6 +2554,11 @@ dec Run : !
 def Run = external
 ";
         let checked = checked_workspace_from_source(source);
+        let module = Universal {
+            package: test_package_id(),
+            directories: Vec::new(),
+            module: String::from("Main"),
+        };
 
         let type_name = checked
             .checked_module()
@@ -2558,9 +2584,48 @@ def Run = external
         assert_eq!(
             checked
                 .workspace()
+                .module_doc(&module)
+                .map(|doc| doc.markdown.as_str()),
+            Some("Module docs")
+        );
+        assert_eq!(
+            checked
+                .workspace()
                 .declaration_doc(declaration_name)
                 .map(|doc| doc.markdown.as_str()),
             Some("Run docs")
+        );
+    }
+
+    #[test]
+    fn module_doc_comments_only_come_from_main_module_file() {
+        let parsed = parsed_package_from_files(
+            "local",
+            &[
+                (
+                    "Main.par",
+                    "\
+/*Main docs*/
+module Main
+",
+                ),
+                (
+                    "Main.Part.par",
+                    "\
+/*Part docs*/
+module Main
+",
+                ),
+            ],
+        );
+
+        assert_eq!(parsed.modules.len(), 1);
+        assert_eq!(
+            parsed.modules[0]
+                .doc
+                .as_ref()
+                .map(|doc| doc.markdown.as_str()),
+            Some("Main docs")
         );
     }
 
@@ -2604,6 +2669,42 @@ def Main = Run
         assert_eq!(
             run_hover.global_name().map(|name| name.primary.as_str()),
             Some("Run")
+        );
+    }
+
+    #[test]
+    fn import_hover_includes_module_doc_comments() {
+        let main_source = "\
+module Main
+import Helper
+";
+        let checked = checked_workspace_from_files(
+            "local",
+            &[
+                (
+                    "Helper.par",
+                    "\
+/*Helper docs*/
+export module Helper
+",
+                ),
+                ("Main.par", main_source),
+            ],
+        );
+        let file = FileName::from("local/Main.par");
+
+        let helper_index = main_source.match_indices("Helper").last().unwrap().0;
+        let (row, column) = row_and_column(main_source, helper_index);
+        let hover = checked.hover_at(&file, row, column).unwrap();
+
+        assert!(hover.is_module());
+        assert_eq!(
+            hover.doc().map(|doc| doc.markdown.as_str()),
+            Some("Helper docs")
+        );
+        assert_eq!(
+            checked.render_hover_markdown_in_file(&file, &hover),
+            "```par\nmodule Helper\n```\n\nHelper docs"
         );
     }
 

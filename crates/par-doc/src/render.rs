@@ -211,12 +211,18 @@ impl<'a> Renderer<'a> {
                         .unwrap_or_default(),
                     has_doc: item.doc_markdown.is_some(),
                     is_unexported: !item.is_public,
-                    copy_href: item_href,
                 })
             })
             .collect::<Result<Vec<_>, DocError>>()?;
+        let module_doc_html = module
+            .doc_markdown
+            .as_deref()
+            .map(html::render_markdown)
+            .unwrap_or_default();
 
         ModuleContentTemplate {
+            module_doc_html: &module_doc_html,
+            has_module_doc: module.doc_markdown.is_some(),
             items: &items,
             is_empty: items.is_empty(),
         }
@@ -442,7 +448,6 @@ struct ItemView {
     doc_html: String,
     has_doc: bool,
     is_unexported: bool,
-    copy_href: String,
 }
 
 #[derive(Template)]
@@ -472,6 +477,8 @@ struct ModulePageTemplate<'a> {
 #[derive(Template)]
 #[template(path = "module_content.html")]
 struct ModuleContentTemplate<'a> {
+    module_doc_html: &'a str,
+    has_module_doc: bool,
     items: &'a [ItemView],
     is_empty: bool,
 }

@@ -61,27 +61,4 @@
       });
     });
   });
-
-  document.querySelectorAll(".copy-link").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const copyUrl = button.getAttribute("data-copy-url") || window.location.href;
-      const absoluteUrl = new URL(copyUrl, window.location.href).toString();
-      const originalText = button.textContent;
-      const originalTitle = button.title;
-
-      try {
-        await navigator.clipboard.writeText(absoluteUrl);
-        button.textContent = "\u2713";
-        button.title = "Copied";
-      } catch (_error) {
-        button.textContent = "!";
-        button.title = "Copy failed";
-      }
-
-      window.setTimeout(() => {
-        button.textContent = originalText;
-        button.title = originalTitle;
-      }, 1100);
-    });
-  });
 })();

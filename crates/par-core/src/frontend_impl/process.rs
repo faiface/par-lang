@@ -780,6 +780,7 @@ enum HoverInfoInner<S> {
     },
     Module {
         module: S,
+        doc: Option<DocComment>,
         types: Vec<(GlobalName<S>, Vec<LocalName>, Type<S>)>,
         declarations: Vec<(GlobalName<S>, Type<S>)>,
     },
@@ -857,12 +858,14 @@ impl<S> HoverInfo<S> {
 
     pub fn module(
         module: S,
+        doc: Option<DocComment>,
         types: Vec<(GlobalName<S>, Vec<LocalName>, Type<S>)>,
         declarations: Vec<(GlobalName<S>, Type<S>)>,
     ) -> Self {
         Self {
             inner: HoverInfoInner::Module {
                 module,
+                doc,
                 types,
                 declarations,
             },
@@ -890,7 +893,8 @@ impl<S> HoverInfo<S> {
             }
             HoverInfoInner::Variable { .. }
             | HoverInfoInner::Anonymous { .. }
-            | HoverInfoInner::Module { .. } => None,
+            | HoverInfoInner::Module { doc: None, .. } => None,
+            HoverInfoInner::Module { doc: Some(doc), .. } => Some(doc),
         }
     }
 
@@ -974,6 +978,7 @@ impl<S> HoverInfo<S> {
                 module,
                 types,
                 declarations,
+                ..
             } => Some((module, types, declarations)),
             _ => None,
         }

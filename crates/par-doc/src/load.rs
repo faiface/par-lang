@@ -241,6 +241,9 @@ fn build_site_model(
                     directories: path.directories.clone(),
                     module: path.module.clone(),
                 };
+                let doc_markdown = workspace
+                    .module_doc(&universal)
+                    .map(|doc| doc.markdown.to_string());
 
                 let mut items = raw_items_by_module
                     .remove(&universal)
@@ -266,6 +269,7 @@ fn build_site_model(
                 Some(ModuleModel {
                     universal,
                     path: path.clone(),
+                    doc_markdown,
                     is_exported,
                     items,
                 })

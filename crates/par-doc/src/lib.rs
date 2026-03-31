@@ -323,4 +323,80 @@ def SecretVisible = !
         );
         assert!(helper_module_html.contains(&inner_href));
     }
+
+    #[test]
+    fn generates_module_docs_from_main_module_file_only() {
+        let root = temp_dir("module-docs");
+
+        write_package(
+            &root,
+            "\
+[package]
+name = \"app\"
+",
+            &[
+                (
+                    "src/Main.par",
+                    "\
+/*Main module docs*/
+module Main
+",
+                ),
+                (
+                    "src/Main.Part.par",
+                    "\
+/*Part module docs*/
+module Main
+",
+                ),
+            ],
+        );
+
+        let loaded =
+            crate::load::load_site(&root, false).expect("failed to load workspace docs site");
+        let out_dir = root.join("site");
+        generate_docs(DocOptions {
+            package_path: root.clone(),
+            out_dir: Some(out_dir.clone()),
+            only_exported: false,
+        })
+        .expect("failed to generate workspace docs");
+
+        let root_package = loaded
+            .model
+            .packages
+            .values()
+            .find(|package| package.kind == PackageKind::Root)
+            .expect("missing root package");
+        let main_module = root_package
+            .modules
+            .iter()
+            .find(|module| module.path.module == "Main")
+            .expect("missing Main module");
+        assert_eq!(
+            main_module.doc_markdown.as_deref(),
+            Some("Main module docs")
+        );
+
+        let paths = SitePaths::new(&loaded.model);
+        let package_html = read(
+            &out_dir,
+            paths
+                .package_pages
+                .get(&root_package.id)
+                .expect("missing root package page"),
+        );
+        let module_html = read(
+            &out_dir,
+            paths
+                .module_pages
+                .get(&main_module.key())
+                .expect("missing Main module page"),
+        );
+
+        assert!(package_html.contains("Main module docs"));
+        assert!(module_html.contains("Main module docs"));
+        assert!(!package_html.contains("Part module docs"));
+        assert!(!module_html.contains("Part module docs"));
+    }
 }

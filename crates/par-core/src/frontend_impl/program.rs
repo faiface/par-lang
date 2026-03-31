@@ -25,6 +25,7 @@ pub struct Module<Expr, S> {
 pub struct ModuleDecl {
     pub span: Span,
     pub exported: bool,
+    pub doc: Option<DocComment>,
     pub name: String,
 }
 
@@ -84,11 +85,16 @@ pub struct DocComment {
 
 #[derive(Clone, Debug, Default)]
 pub struct Docs<S> {
+    pub modules: IndexMap<S, DocComment>,
     pub types: IndexMap<GlobalName<S>, DocComment>,
     pub declarations: IndexMap<GlobalName<S>, DocComment>,
 }
 
 impl<S: std::hash::Hash + Eq> Docs<S> {
+    pub fn module_doc(&self, module: &S) -> Option<&DocComment> {
+        self.modules.get(module)
+    }
+
     pub fn type_doc(&self, name: &GlobalName<S>) -> Option<&DocComment> {
         self.types.get(name)
     }
@@ -337,6 +343,7 @@ impl<Expr, S> Default for Module<Expr, S> {
 impl<Expr, S: Clone + Eq + std::hash::Hash> Module<Expr, S> {
     pub fn docs(&self) -> Docs<S> {
         Docs {
+            modules: IndexMap::new(),
             types: self
                 .type_defs
                 .iter()
@@ -494,13 +501,14 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> HoverIndex<S> {
                 }
                 declarations.sort_by(|(a, _), (b, _)| a.primary.cmp(&b.primary));
 
-                if types.is_empty() && declarations.is_empty() {
+                let doc = docs.module_doc(module).cloned();
+                if types.is_empty() && declarations.is_empty() && doc.is_none() {
                     continue;
                 }
 
                 file_hovers.push(
                     span.clone(),
-                    HoverInfo::module(module.clone(), types, declarations),
+                    HoverInfo::module(module.clone(), doc, types, declarations),
                 );
             }
         }

@@ -52,6 +52,7 @@ pub enum PackageKind {
 pub struct ModuleModel {
     pub universal: Universal,
     pub path: ModulePath,
+    pub doc_markdown: Option<String>,
     pub is_exported: bool,
     pub items: Vec<ItemModel>,
 }

@@ -211,6 +211,7 @@ fn module_decl(input: &mut Input) -> Result<ModuleDecl> {
                 .map(|export_kw| export_kw.span.join(name_span.clone()))
                 .unwrap_or_else(|| module_kw.span.join(name_span)),
             exported: export_kw.is_some(),
+            doc: None,
             name,
         })
         .parse_next(input)
@@ -587,6 +588,7 @@ pub(crate) fn parse_source_file(
 
 #[derive(Clone, Copy)]
 enum DocTarget {
+    ModuleDecl,
     TypeDef(usize),
     Declaration(usize),
 }
@@ -609,7 +611,7 @@ fn attach_doc_comments(
             barriers.push(TopLevelBarrier {
                 start,
                 end,
-                target: None,
+                target: Some(DocTarget::ModuleDecl),
             });
         }
     }
@@ -686,6 +688,11 @@ fn attach_doc_comments(
             doc_comment_before_item(&comments[comment_start..comment_end], barrier.start)
         {
             match barrier.target {
+                Some(DocTarget::ModuleDecl) => {
+                    if let Some(module_decl) = source_file.module_decl.as_mut() {
+                        module_decl.doc = Some(doc);
+                    }
+                }
                 Some(DocTarget::TypeDef(index)) => {
                     source_file.body.type_defs[index].doc = Some(doc)
                 }
@@ -3571,6 +3578,7 @@ mod test {
     #[test]
     fn test_doc_comments_attach_to_type_and_explicit_declaration() {
         let source = "\
+/*Module docs*/
 module Main
 
 /*Type docs*/
@@ -3585,6 +3593,14 @@ def Helper: ! = external
 ";
         let parsed = parse_source_file(source, "Main.par".into()).unwrap();
 
+        assert_eq!(
+            parsed
+                .module_decl
+                .as_ref()
+                .and_then(|module_decl| module_decl.doc.as_ref())
+                .map(|doc| doc.markdown.as_str()),
+            Some("Module docs")
+        );
         assert_eq!(
             parsed.body.type_defs[0]
                 .doc
@@ -3605,6 +3621,8 @@ def Helper: ! = external
     #[test]
     fn test_doc_comments_require_direct_precedence() {
         let source = "\
+/*Not attached to module*/
+
 module Main
 
 /*Not attached*/
@@ -3617,6 +3635,13 @@ dec Run : !
 ";
         let parsed = parse_source_file(source, "Main.par".into()).unwrap();
 
+        assert_eq!(
+            parsed
+                .module_decl
+                .as_ref()
+                .and_then(|module_decl| module_decl.doc.as_ref()),
+            None
+        );
         assert_eq!(parsed.body.type_defs[0].doc, None);
         assert_eq!(parsed.body.declarations[0].doc, None);
     }
