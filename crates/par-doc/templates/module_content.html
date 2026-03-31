@@ -1,4 +1,10 @@
 <section class="item-list">
+  {% if has_module_doc %}
+    <div class="module-doc prose">
+      {{ module_doc_html|safe }}
+    </div>
+  {% endif %}
+
   {% if is_empty %}
     <p class="empty-note">No documented items.</p>
   {% endif %}
@@ -7,12 +13,9 @@
     <article class="item-card"{% if item.include_id %} id="{{ item.anchor }}"{% endif %}>
       <div class="item-head">
         <pre class="signature">{{ item.signature_html|safe }}</pre>
-        <div class="item-actions">
-          {% if item.is_unexported %}
-            <span class="lock-chip" title="Unexported">&#x1F512;</span>
-          {% endif %}
-          <button class="copy-link" type="button" data-copy-url="{{ item.copy_href }}" title="Copy link" aria-label="Copy link">#</button>
-        </div>
+        {% if item.is_unexported %}
+          <span class="lock-chip" title="Unexported">&#x1F512;</span>
+        {% endif %}
       </div>
 
       {% if item.has_doc %}
