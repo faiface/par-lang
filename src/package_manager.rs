@@ -261,6 +261,14 @@ pub fn add(
     add_with_fetcher(package_path, source, &fetcher)
 }
 
+pub fn fetch_remote_package(
+    source: &str,
+    destination: &Path,
+) -> Result<PackageManagerResult, PackageManagerError> {
+    let fetcher = GitRemoteFetcher;
+    fetch_remote_package_with_fetcher(source, destination, &fetcher)
+}
+
 pub fn update(package_path: &Path) -> Result<PackageManagerResult, PackageManagerError> {
     let fetcher = GitRemoteFetcher;
     update_with_fetcher(package_path, &fetcher)
@@ -280,6 +288,33 @@ fn add_with_fetcher(
             }
         }),
     }
+}
+
+fn fetch_remote_package_with_fetcher(
+    raw_source: &str,
+    destination: &Path,
+    fetcher: &impl RemoteFetcher,
+) -> Result<PackageManagerResult, PackageManagerError> {
+    let source = RemoteDependencySource::parse(raw_source).map_err(|message| {
+        PackageManagerError::InvalidRemoteDependencySource {
+            source: raw_source.to_string(),
+            message,
+        }
+    })?;
+    let mut remote = PreparedRemotePackage::prepare(fetcher, &source, destination)?;
+    let fetched_root_package = remote.install()?;
+
+    let mut fetched_dependencies = sync_dependencies_with_fetcher(destination, fetcher)?;
+    if fetched_root_package {
+        fetched_dependencies.push(source.to_string());
+        fetched_dependencies.sort();
+        fetched_dependencies.dedup();
+    }
+
+    Ok(PackageManagerResult {
+        added_dependency: None,
+        fetched_dependencies,
+    })
 }
 
 fn update_with_fetcher(

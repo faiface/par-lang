@@ -55,6 +55,21 @@ import @core/Debug
 def Main : ! = Debug.Log(\"Hello, World!\")
 ";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DocSource {
+    Local(PathBuf),
+    Remote(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DocCommandPlan {
+    source: DocSource,
+    out_dir: PathBuf,
+    temporary_out_dir: bool,
+    only_exported: bool,
+    open: bool,
+}
+
 #[derive(Clone)]
 enum BuildError {
     Discovery(WorkspaceDiscoveryError),
@@ -392,17 +407,25 @@ fn main() -> ExitCode {
             Command::new("doc")
                 .about("Generate HTML documentation for a Par package and its dependencies")
                 .arg(
-                    arg!(--package <PACKAGE> "Path to package directory (or any file/directory inside it)")
+                    arg!(--package <PACKAGE> "Path to a local package directory (or any file/directory inside it)")
                         .value_parser(value_parser!(PathBuf))
-                        .default_value("."),
+                        .conflicts_with("remote"),
+                )
+                .arg(
+                    arg!(--remote <REMOTE> "Remote package source to fetch and document")
+                        .conflicts_with("package"),
                 )
                 .arg(
                     arg!(--out <OUT> "Directory where generated HTML documentation will be written")
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
-                    arg!(--only_exported "Hide unexported root-package modules and items")
-                        .long("only-exported"),
+                    arg!(--exported "Show only exported modules and items of the target package")
+                        .conflicts_with("unexported"),
+                )
+                .arg(
+                    arg!(--unexported "Include unexported modules and items of the target package")
+                        .conflicts_with("exported"),
                 )
                 .arg(arg!(--open "Open the generated documentation in a browser")),
         )
@@ -519,11 +542,21 @@ fn main() -> ExitCode {
             }
         }
         Some(("doc", args)) => {
-            let package = args.get_one::<PathBuf>("package").unwrap().clone();
+            let package = args.get_one::<PathBuf>("package").cloned();
+            let remote = args.get_one::<String>("remote").cloned();
             let out_dir = args.get_one::<PathBuf>("out").cloned();
-            let only_exported = *args.get_one::<bool>("only_exported").unwrap();
+            let exported = *args.get_one::<bool>("exported").unwrap();
+            let unexported = *args.get_one::<bool>("unexported").unwrap();
             let open = *args.get_one::<bool>("open").unwrap();
-            if let Err(error) = generate_docs(package, out_dir, only_exported, open) {
+            let plan = match plan_doc_command(package, remote, out_dir, exported, unexported, open)
+            {
+                Ok(plan) => plan,
+                Err(error) => {
+                    eprintln!("{}", error.bright_red());
+                    return ExitCode::FAILURE;
+                }
+            };
+            if let Err(error) = generate_docs(plan) {
                 eprintln!("{}", error.bright_red());
                 return ExitCode::FAILURE;
             }
@@ -794,16 +827,79 @@ fn check(package_path: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-fn generate_docs(
-    package_path: PathBuf,
+fn create_temp_dir(prefix: &str) -> Result<PathBuf, String> {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time before unix epoch")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("par-{prefix}-{unique}"));
+    fs::create_dir_all(&path).map_err(|error| error.to_string())?;
+    Ok(path)
+}
+
+fn plan_doc_command(
+    package: Option<PathBuf>,
+    remote: Option<String>,
     out_dir: Option<PathBuf>,
-    only_exported: bool,
+    exported: bool,
+    unexported: bool,
     open: bool,
-) -> Result<(), String> {
+) -> Result<DocCommandPlan, String> {
+    if package.is_some() && remote.is_some() {
+        return Err(String::from(
+            "`--package` and `--remote` cannot be used together",
+        ));
+    }
+    if exported && unexported {
+        return Err(String::from(
+            "`--exported` and `--unexported` cannot be used together",
+        ));
+    }
+
+    let source = match (package, remote) {
+        (Some(path), None) => DocSource::Local(path),
+        (None, Some(source)) => DocSource::Remote(source),
+        (None, None) => DocSource::Local(PathBuf::from(".")),
+        (Some(_), Some(_)) => unreachable!("validated above"),
+    };
+
+    let temporary_out_dir = out_dir.is_none();
+    let out_dir = match out_dir {
+        Some(out_dir) => out_dir,
+        None => create_temp_dir("doc")?,
+    };
+    let only_exported = if exported {
+        true
+    } else if unexported {
+        false
+    } else {
+        matches!(source, DocSource::Remote(_))
+    };
+
+    Ok(DocCommandPlan {
+        source,
+        out_dir,
+        temporary_out_dir,
+        only_exported,
+        open: open || temporary_out_dir,
+    })
+}
+
+fn generate_docs(plan: DocCommandPlan) -> Result<(), String> {
+    let package_path = match &plan.source {
+        DocSource::Local(path) => path.clone(),
+        DocSource::Remote(source) => {
+            let package_root = create_temp_dir("doc-remote-package")?.join("package");
+            package_manager::fetch_remote_package(source, &package_root)
+                .map_err(|error| error.to_string())?;
+            package_root
+        }
+    };
+
     let generated = par_doc::generate_docs(DocOptions {
         package_path,
-        out_dir,
-        only_exported,
+        out_dir: Some(plan.out_dir.clone()),
+        only_exported: plan.only_exported,
     })
     .map_err(|error| error.to_string())?;
 
@@ -813,7 +909,7 @@ fn generate_docs(
         generated.out_dir.display()
     );
 
-    if open {
+    if plan.open {
         let url = file_url_for_path(&generated.index_file)?;
         webbrowser::open(url.as_str()).map_err(|error| error.to_string())?;
         println!(
