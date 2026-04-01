@@ -788,7 +788,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
         match command {
-            Command::Noop(process) => self.check_command_noop(process, mode, emit),
+            Command::Noop(process) => {
+                self.put(span, object.clone(), typ.clone()).ok();
+                let (process, inferred) = self.analyze_process(process, mode, emit);
+                (Command::Noop(process), inferred)
+            }
             Command::Link(expression) => self.check_command_link(span, typ, expression, emit),
             Command::Send(argument, process) => {
                 self.check_command_send(span, object, typ, argument, process, mode, emit)
@@ -871,16 +875,6 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 self.check_command_receive_type(span, object, typ, parameter, process, mode, emit)
             }
         }
-    }
-
-    fn check_command_noop(
-        &mut self,
-        process: &Arc<Process<(), S>>,
-        mode: &ProcessAnalyzerMode,
-        emit: &mut impl FnMut(TypeError<S>),
-    ) -> (Command<Type<S>, S>, Option<Type<S>>) {
-        let (process, inferred) = self.analyze_process(process, mode, emit);
-        (Command::Noop(process), inferred)
     }
 
     fn check_command_link(
@@ -2513,7 +2507,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Type<S>) {
         match command {
-            Command::Noop(process) => self.infer_command_noop(subject, process, emit),
+            Command::Noop(process) => {
+                let (process, typ) = self.infer_process(process, subject, emit);
+                (Command::Noop(process), typ)
+            }
             Command::Link(expression) => self.infer_command_link(span, subject, expression, emit),
             Command::Send(argument, process) => {
                 self.infer_command_send(span, subject, argument, process, emit)
@@ -2554,16 +2551,6 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 self.infer_command_receive_type(span, subject, parameter, process, emit)
             }
         }
-    }
-
-    fn infer_command_noop(
-        &mut self,
-        subject: &LocalName,
-        process: &Arc<Process<(), S>>,
-        emit: &mut impl FnMut(TypeError<S>),
-    ) -> (Command<Type<S>, S>, Type<S>) {
-        let (process, typ) = self.infer_process(process, subject, emit);
-        (Command::Noop(process), typ)
     }
 
     fn infer_command_link(
