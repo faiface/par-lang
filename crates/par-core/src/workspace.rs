@@ -275,7 +275,6 @@ impl Display for RemoteDependencySource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageManifest {
     pub name: String,
-    pub url: Option<String>,
     pub dependencies: BTreeMap<String, DependencySpec>,
 }
 
@@ -296,7 +295,6 @@ impl PackageManifest {
 
         Ok(Self {
             name: manifest.package.name,
-            url: manifest.package.url,
             dependencies: manifest
                 .dependencies
                 .into_iter()
@@ -324,7 +322,6 @@ impl PackageManifest {
         let manifest = ManifestToml {
             package: ManifestPackageToml {
                 name: self.name.clone(),
-                url: self.url.clone(),
             },
             dependencies: self
                 .dependencies
@@ -352,8 +349,6 @@ struct ManifestToml {
 #[derive(Debug, Serialize, Deserialize)]
 struct ManifestPackageToml {
     name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
