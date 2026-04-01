@@ -1,4 +1,5 @@
-// Linear ordered-map interfaces and constructors for common key types.
+// Linear ordered-map interface and built-in B-tree constructors for `String`,
+// `Bytes`, `Int`, and `Nat` keys.
 export module Map
 
 import {

@@ -1,4 +1,5 @@
-// Non-linear ordered-map interfaces and constructors for common key types.
+// Non-linear ordered-map interface and built-in B-tree constructors for
+// `String`, `Bytes`, `Int`, and `Nat` keys.
 export module BoxMap
 
 import {
