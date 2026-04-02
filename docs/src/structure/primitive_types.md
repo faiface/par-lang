@@ -26,13 +26,12 @@ Primitives are manipulated using magical built-in functions.
 
 1. Open the playground.
    ```
-   $ par-lang playground
+   $ par playground
    ```
 2. Press **Compile,** and **Run.** Scroll the list that pops up.
    ![List of built-in functions](../images/strings_and_numbers_1.png)
 
-Alternatively, the [Built-In Definitions](../builtin.md) chapter contains all built-in definitions
-available in the language.
+Alternatively, `par doc` lets you browse the built-in packages and their exported definitions.
 
 **To figure out the type of a built-in function:**
 
@@ -40,14 +39,14 @@ available in the language.
    ```par
    def Examine = Int.ToString
    ```
-   Par knows the type of `Int.String`, so it will infer it for `Examine` as well.
+   Par knows the type of `Int.ToString`, so it will infer it for `Examine` as well.
 2. Press **Compile.**
 3. Move the cursor to the definition. The playground will display the type on the right,
    in green.
    ![Displayed type of a built-in function](../images/strings_and_numbers_2.png)
 
 The type `[Int] String` is a [function](../types/function.md) from `Int` to `String`. We will cover
-functions and other types in detail [later](../types.md). Despite that, we'll still play with
+functions and other types in detail [later](../types_and_expressions.md). Despite that, we'll still play with
 some built-in functions in this section. All you need to know is that
 **the square brackets enclose function arguments,** and the result type follows. For example:
 - `[Int, Int] Int` is a function from two `Int`s to an `Int`.
@@ -72,6 +71,10 @@ Their literals consist of digits, optionally prefixed with `-` or `+`, and may i
 for readability.
 
 ```par
+module Main
+
+import @core/Int
+
 def Num1: Int = 7
 def Num2: Int = -123_456_789
 ```
@@ -154,7 +157,7 @@ def Str3 = String.Builder
 Analyzing strings — such as finding, splitting, or parsing — is done using `String.Reader`.
 To be able to use it, more knowledge of the language is needed first. But, feel
 free to play with it in the playground, or check out the `StringManipulation.par` example in
-the `examples/` folder.
+the `examples/src/` folder.
 
 Numbers can be converted to strings using `Int.ToString`:
 

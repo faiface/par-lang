@@ -7,6 +7,13 @@ They defined a finite number of variants, each with a different name and a paylo
 an either type is one of its variants.
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
 type StringOrNumber = either {
   .string String,
   .number Int,

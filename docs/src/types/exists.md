@@ -114,6 +114,14 @@ The hidden type `set` is never revealed — only its operations are exposed.
 Let’s now implement an inefficient, but simple `SetModule` using lists and equality functions:
 
 ```par
+module Main
+
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
+
 type Eq<a> = box [a, a] Bool
 
 dec ListSet : [type a] [Eq<box a>] SetModule<box a>

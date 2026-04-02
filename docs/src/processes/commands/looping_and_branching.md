@@ -27,6 +27,13 @@ To work with such a structure in process syntax, we’ll need to combine three k
 We're now going to demonstrate all of these by implementing a string concatenation function.
 
 ```par
+module Main
+
+import {
+  @core/List
+  @core/String
+}
+
 dec Concat : [List<String>] String
 ```
 
@@ -141,6 +148,13 @@ Can be rewritten as:
 Which is exactly what we’ll do in the final version:
 
 ```par
+module Main
+
+import {
+  @core/List
+  @core/String
+}
+
 dec Concat : [List<String>] String
 def Concat = [strings] do {
   let builder = String.Builder

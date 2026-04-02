@@ -10,6 +10,10 @@ the variable.
 That's a mouthful.
 
 ```par
+module Main
+
+import @core/Nat
+
 def Six = let three = 3 in Nat.Add(three, three)
 ```
 

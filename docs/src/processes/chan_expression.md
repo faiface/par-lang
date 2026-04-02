@@ -107,6 +107,13 @@ It takes a natural number (`Nat`) and returns a `String`.
 Here’s how that looks:
 
 ```par
+module Main
+
+import {
+  @core/Nat
+  @core/String
+}
+
 dec HashesOrNothing : [Nat] String
 def HashesOrNothing = [n] chan result {
   Nat.Equals(n, 0).case {

@@ -16,6 +16,10 @@ can be repeatedly interacted with.
 We construct an empty `String.Builder` using the built-in definition of the same name:
 
 ```par
+module Main
+
+import @core/String
+
 def LetsBuildStrings = do {
   let builder = String.Builder
   // code continued below...
@@ -111,6 +115,10 @@ This is rather noisy, but we can improve it! Multiple consecutive **commands on 
 can be **chained** together, without repeating the subject.
 
 ```par
+module Main
+
+import @core/String
+
 def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add("Hello")

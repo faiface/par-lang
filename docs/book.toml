@@ -4,7 +4,6 @@ authors = ["s15n"]
 description = "Documentation for the Par programming language"
 src = "src"
 language = "en"
-multilingual = false
 
 [output.html]
 theme = "par-theme"

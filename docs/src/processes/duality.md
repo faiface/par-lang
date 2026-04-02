@@ -148,6 +148,13 @@ Remember: in a `chan`, the channel you obtain inside the block always has the **
 final result. Let's use this to construct a list step-by-step.
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
 def SmallList: List<Int> = chan yield {
   yield.item(1)
   yield.item(2)

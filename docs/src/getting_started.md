@@ -1,14 +1,9 @@
 # Getting Started
 
-Let's install the **Par** programming language. Currently, we have:
-- A _playground_ to code and interactively explore your and built-in definitions via
-  an _automatic UI._
-- A _`run`_ command to run definitions with the [unit](./types/unit.md) type straight from
-  the console.
-- A _`check`_ command to check Par programs for validity without actually running them.
+Let's install the **Par** programming language.
 
 At the moment, there are no pre-built binaries, or releases, so we'll have to build it from
-souce.
+source.
 
 ### 1. Install Rust and Cargo
 
@@ -49,15 +44,63 @@ $ cargo install --path .
 
 This may take a while as Rust downloads and builds all the dependencies.
 
-### 4. Try it out!
+This installs the `par` command.
 
-A new `par-lang` command should now be available in your terminal. It may be necessary
+### 4. Create a package
+
+A new `par` command should now be available in your terminal. It may be necessary
 to restart the terminal for it to appear.
 
-If successful, start the Par's playground:
+Let's create a fresh package:
 
 ```
-$ par-lang playground
+$ par new hello_par
+$ cd hello_par
+```
+
+This creates:
+
+```text
+hello_par/
+  Par.toml
+  src/
+    Main.par
+```
+
+The generated `src/Main.par` is a tiny runnable Par program. You can run it with:
+
+```
+$ par run
+```
+
+And you can type-check the package without running it:
+
+```
+$ par check
+```
+
+### 5. Browse the docs
+
+Par comes with a built-in docs browser:
+
+```
+$ par doc
+```
+
+This command is useful in three different situations:
+
+- **Outside any package,** `par doc` shows the documentation for the built-in packages.
+- **Inside a package,** `par doc` shows the current package together with its dependencies.
+- **For a remote package,** `par doc --remote github.com/faiface/par-cancellable` lets you inspect
+  a package without manually adding it as a dependency.
+
+### 6. Open the playground
+
+The playground is a great way to experiment with code and interact with values through the
+playground's automatic UI:
+
+```
+$ par playground
 ```
 
 And the playground should appear:

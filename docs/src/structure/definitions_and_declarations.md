@@ -1,8 +1,34 @@
 # Definitions & Declarations
 
-At the top level, a _Par_ file consists of **definitions**, **declarations**, and **type definitions**.
+Let's keep working with the package created by `par new`.
 
-These define **global names** that can be used throughout the file, an unlimited number of times.
+Its `src/Main.par` file starts like this:
+
+```par
+module Main
+```
+
+There may also be imports above the rest of the code, but we're going to ignore those for a moment
+and focus only on what comes after them.
+
+At the top level of a Par module, you write:
+
+- **definitions**
+- **declarations**
+- **type definitions**
+
+These define **global names** that can be used throughout the module, an unlimited number of times.
+
+In a fresh package, `par run` looks for the `Main` definition in the `Main` module, that is
+`Main.Main`.
+
+So:
+
+- `par run` means `Main.Main`
+- `par run Main.Other` means the `Other` definition in the `Main` module
+
+Once there are more modules, the same idea extends to paths such as `par run util/Parse.Program`.
+We'll come back to that in the next section.
 
 > Because of Par's linear type system, local variables may be required to be used _exactly once._ That is
 > if they have a linear type. Global definitions can be used any number of times regardless of their
@@ -13,7 +39,7 @@ Par has a simple naming rule:
 - **Local names start with a lower-case letter, or `_`.** That includes local variables, function
   parameters, and type variables in generic functions.
 
-While global names can be used throughout the program, there is an _important restriction!_
+While global names can be used throughout their module, there is an _important restriction!_
 
 > ❗ **Cyclic usages are forbidden!** Both in types, and in definitions.
 >
@@ -49,6 +75,8 @@ Global values (including functions) are defined at the top level starting with t
 followed by an upper-case name, an `=` sign, and an expression computing the value.
 
 ```par
+module Main
+
 def MyNumber = 7
 ```
 
@@ -95,7 +123,7 @@ to their corresponding definitions.
 
 ## Type Definitions
 
-Par has a [structural](TODO) type system. While many languages offer multiple forms of type definitions
+Par has a [structural](../introduction.md#orthogonality-goes-wide-not-deep) type system. While many languages offer multiple forms of type definitions
 — for example, Rust has `struct`, `enum`, and more — Par only has one: **type aliases.**
 
 > With [recursive](../types/recursive.md) and [iterative](../types/iterative.md) types being anonymous,
@@ -168,3 +196,6 @@ type IntListExpanded = recursive either {
   .item(Int) self,
 }
 ```
+
+Now that we know what goes inside a module, let's zoom out and look at **packages, modules, imports,
+and exports.**

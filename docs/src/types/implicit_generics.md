@@ -3,6 +3,13 @@
 Par already supports explicit generics via [`forall`](./forall.md):
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
 dec Swap : [type a, b] [(a, b)!] (b, a)!
 def Swap = [type a, b] [pair]
   let (first, second)! = pair

@@ -21,10 +21,14 @@ type BinaryFunction2 = [Int, Int] Int
 
 This is the preferred way to define functions of multiple arguments.
 
-**Functions are [linear](TODO).** While a globally defined function may be called any number of times,
+**Functions are [linear](../types_and_expressions.md#linearity).** While a globally defined function may be called any number of times,
 a function stored in a local variable can (and must) only be called once:
 
 ```par
+module Main
+
+import @core/Int
+
 dec Add : [Int, Int] Int
 def Add = [x, y] Int.Add(x, y)
 
@@ -37,7 +41,7 @@ def Illegal =
   in Add(inc(2), inc(3))       // Error!
 ```
 
-[Linearity](TODO) brings a lot of expressivity that wouldn't be possible otherwise. After all, the main
+[Linearity](../types_and_expressions.md#linearity) brings a lot of expressivity that wouldn't be possible otherwise. After all, the main
 purpose of _Par_ is to explore where this new paradigm arising from linear types and duality can take us.
 
 > Non-linear functions are achieved using [box types](./box.md).
@@ -56,6 +60,10 @@ Multi-argument functions — or more precisely: functions returning other functi
 using the same kind of a syntax sugar as available for their types:
 
 ```par
+module Main
+
+import @core/String
+
 dec Concat : [String, String] String
 // the same as `[String] [String] String`
 
@@ -88,7 +96,7 @@ def Identity = [x: String] x  // Okay.
 
 For **generic functions**, read up on [_forall_ types](./forall.md).
 
-> **_Par_ has an unusual take on recursion,** thanks to its ambitious stride towards [totality](TODO).
+> **_Par_ has an unusual take on recursion,** thanks to its ambitious stride towards [totality](../introduction.md#an-ambitious-stride-towards-totality).
 > Naive recursion by self-reference is not allowed. In other words,
 > **a function can't directly call itself.**
 > 
@@ -102,7 +110,7 @@ For **generic functions**, read up on [_forall_ types](./forall.md).
 > 
 > Par's powerful `begin`/`loop` syntax is a single, universal construct for cyclic computations.
 > It serves well in recursive functions, [iterative](./iterative.md) objects, and imperative-looking loops
-> in [process syntax](../processes.md).
+> in [process syntax](../process_syntax.md).
 > 
 > Forbidding functions from calling themselves may seem limiting at first, but `begin`/`loop` makes up
 > for it with its perky handling of local variables, and its ability to be used deep in expressions,
@@ -130,5 +138,5 @@ def HelloWorld3 =
 
 All three versions do the same thing.
 
-The word _destruction_ is especially apt here, due to [linearity](TODO) of functions. If a function
+The word _destruction_ is especially apt here, due to [linearity](../types_and_expressions.md#linearity) of functions. If a function
 is stored in a local variable, calling it destroys the variable, as discussed above.

@@ -17,7 +17,7 @@ to take that role. However, I saw much more potential in _CP_, and decided to tu
 a practical language.
 
 How is it then that Par managed to look perfectly functional until now? Turns out,
-**all of the _construction_ and _destruction_ syntax described in [_Types & Their Expressions_](./types.md) can actually be considered a syntax sugar over the fundamental process syntax of Par**.
+**all of the _construction_ and _destruction_ syntax described in [_Types & Their Expressions_](./types_and_expressions.md) can actually be considered a syntax sugar over the fundamental process syntax of Par**.
 
 While most of the Par code you'll be writing will use _expression syntax_, the full power of the
 language rests in the _process syntax_. There are things Par can express, which simply are not
@@ -41,9 +41,13 @@ clearer as we understand this process syntax.
 Processes and commands have been more hidden, so far. They were always there, but not in a plain sight! Any expression, be
 it a construction, or a destruction, compiled to processes composed of commands.
 
-In fact, you can see it for yourself! Let's take any Par program, say `examples/HelloWorld.par`.
+In fact, you can see it for yourself! Let's take any Par program, say `examples/src/HelloWorld.par`.
 
 ```par
+module HelloWorld
+
+import @basic/Console
+
 def Program = Console.Open
   .print("Hello, world!")
   .close
@@ -58,6 +62,10 @@ Aside from the `#`-signs in front of some variables (Par uses them for internall
 name clashes), this is a valid Par program. If we remove those, we get this:
 
 ```par
+module HelloWorld
+
+import @basic/Console
+
 def Program = chan result {
   let object = Console.Open
   object.print

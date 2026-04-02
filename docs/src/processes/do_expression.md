@@ -24,6 +24,14 @@ a variable. The only difference is: the `let` statement doesn't contain the `in`
 there can be more of them one after another.
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/Nat
+  @core/String
+}
+
 dec DisplayPlusEquation : [Nat, Nat] String
 def DisplayPlusEquation = [a, b] do {
   let c = Nat.Add(a, b)

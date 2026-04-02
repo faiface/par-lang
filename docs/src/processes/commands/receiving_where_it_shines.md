@@ -89,6 +89,14 @@ Much like `String.Builder`, but the output appears directly in your console.
 Let’s tie it all together!
 
 ```par
+module Main
+
+import {
+  @basic/Console
+  @core/Int
+  @core/Nat
+}
+
 def Program: ! = do {
   let console = Console.Open
   let fib = Fibonacci

@@ -47,6 +47,13 @@ def TestUnitDestruction = do {
 This is useful when matching an end of a list:
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
 dec GetFirstOrZero : [List<Int>] Int
 def GetFirstOrZero = [list] list.case {
   .end!      => 0,  // `!` is a pattern here
@@ -57,6 +64,10 @@ def GetFirstOrZero = [list] list.case {
 Or when destructing a `!`-ended [tuple](./pair.md):
 
 ```par
+module Main
+
+import @core/Int
+
 dec SumPair : [(Int, Int)!] Int
 def SumPair = [pair]
   let (x, y)! = pair  // `!` is a pattern here

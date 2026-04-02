@@ -196,6 +196,10 @@ This `repoll()` does not produce any `a` values. It just drains the pool by disc
 Putting it all together:
 
 ```par
+module Main
+
+import @core/List
+
 dec MergeSources : <a>[List<Source<a>>] Source<a>
 def MergeSources = <a>[sources] poll(SourceFan(sources)) {
   fan => fan.case {

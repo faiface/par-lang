@@ -98,6 +98,10 @@ _created outside of that expression._
 With `box`, we can rewrite the `Map` function much more cleanly:
 
 ```par
+module Main
+
+import @core/List
+
 dec Map : [type a, b] [List<a>, box [a] b] List<b>
 def Map = [type a, b] [list, f] list.begin.case {
   .end! => .end!,
@@ -142,6 +146,14 @@ def Ints: List<Int> = Boxes
 Let’s write a function that filters a list using a boxed predicate.
 
 ```par
+module Main
+
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
+
 dec Filter : [type a] [List<box a>, box [a] Bool] List<a>
 
 def Filter = [type a] [list, predicate] list.begin.case {

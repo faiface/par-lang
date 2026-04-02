@@ -71,6 +71,13 @@ The simplest way to start is to recreate some functions you'd normally implement
 **Let's compute the sum of a list:**
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
 dec PollSum : [List<Int>] Int
 def PollSum = [nums] poll(nums) {
   list => list.case {

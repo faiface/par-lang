@@ -109,6 +109,10 @@ in the `self` places of the body type to go back to the corresponding `begin`.
 Here's a simple `Sequence<Int>` that produces the number `7` forever:
 
 ```par
+module Main
+
+import @core/Int
+
 dec SevenForever : Sequence<Int>
 def SevenForever = begin case {
   .close => !,
@@ -160,6 +164,10 @@ With iterative types, we can use it to carry and **update the internal state** o
 For example, here's an infinite sequence of fibonacci numbers:
 
 ```par
+module Main
+
+import @core/Nat
+
 def Fibonacci: Sequence<Nat> =
   let (a, b)! = (0, 1)!
   in begin case {

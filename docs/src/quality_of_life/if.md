@@ -14,6 +14,13 @@ code.
 Let's start with a small example:
 
 ```par
+module Main
+
+import {
+  @core/Bool
+  @core/String
+}
+
 dec Describe : [Bool] String
 def Describe = [flag] if {
   flag => "on",
@@ -93,6 +100,13 @@ type Ordering = either {
 Now an `if` can match directly on those variants:
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
 dec CompareSign : [Int, Int] String
 def CompareSign = [x, y]
   let cmp = Int.Compare(x, y) in

@@ -10,6 +10,10 @@ names.
 Here are some helper functions that operate on numbers:
 
 ```par
+module Main
+
+import @core/Nat
+
 def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
 def Double = [n: Nat] Nat.Add(n, n)
 def Square = [n: Nat] Nat.Mul(n, n)
@@ -74,6 +78,14 @@ result back into that same variable. Pipes follow the same rule, which means
 you can treat any function as if it were a built-in command.
 
 ```par
+module Main
+
+import {
+  @core/List
+  @core/Option
+  @core/Nat
+}
+
 dec Push : [List<Nat>, Nat] List<Nat>
 def Push = [stack, value] .item(value) stack
 

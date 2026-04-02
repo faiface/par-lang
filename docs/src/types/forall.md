@@ -19,6 +19,13 @@ however, always concrete.
 Now consider these two definitions:
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
 def None: Option<String> = .none!
 
 dec Swap : [(String, Int)!] (Int, String)!
@@ -62,7 +69,7 @@ dec Swap : [type a, b] [(a, b)!] (b, a)!
 
 This looks better. The two ways are, however, completely equivalent.
 
-Just like functions, foralls are [**linear**](TODO). Variables containing them can't be dropped, nor
+Just like functions, foralls are [**linear**](../types_and_expressions.md#linearity). Variables containing them can't be dropped, nor
 copied, only destructed by calling.
 
 ## Construction

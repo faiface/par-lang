@@ -3,6 +3,10 @@
 We've been able to merge two lists based on the timing of their items:
 
 ```par
+module Main
+
+import @core/List
+
 dec MergeTwoLists : <a>[List<a>] [List<a>] List<a>
 def MergeTwoLists = [left, right] poll(left, right) {
   list => list.case {

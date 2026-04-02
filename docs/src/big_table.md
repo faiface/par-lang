@@ -1,5 +1,14 @@
 # The Big Table
 
+After walking through the individual type chapters, it's useful to have one compact place where the
+main constructions and destructions sit side by side.
+
+This chapter is a cheat sheet, not a replacement for the explanations in the earlier chapters.
+The first table summarizes the expression syntax you've already seen.
+
+The second table does the same from the point of view of process syntax. If you haven't read the
+next section on process syntax yet, feel free to skip that table for now and come back to it later.
+
 ## Expression syntax
 
 <table>
@@ -97,7 +106,7 @@
 }</code></pre></td>
 <td><pre><code class="language-par">let value: Either = chan c {
   c.left
-  c <> "Hello!"
+  c &lt;&gt; "Hello!"
 }</code></pre></td>
 <td><pre><code class="language-par">value.case {
   .left => {
@@ -117,7 +126,7 @@
 <td><pre><code class="language-par">type Pair = (String) Int</code></pre></td>
 <td><pre><code class="language-par">let value = chan c {
   c("Hello!")
-  c <> 42
+  c &lt;&gt; 42
 }</code></pre></td>
 <td><pre><code class="language-par">value[str]
 let num = value</code></pre></td>
@@ -129,7 +138,7 @@ let num = value</code></pre></td>
 <td><pre><code class="language-par">type Function = [Int] String</code></pre></td>
 <td><pre><code class="language-par">let value = chan c {
   c[num: Int]
-  c <> Int.ToString(num)
+  c &lt;&gt; Int.ToString(num)
 }</code></pre></td>
 <td><pre><code class="language-par">value(42)
 let result = value</code></pre></td>
@@ -144,8 +153,8 @@ let result = value</code></pre></td>
 }</code></pre></td>
 <td><pre><code class="language-par">let value = chan c {
   c.case {
-    .left  => { c <> "Hello!" }
-    .right => { c <> 42 }
+    .left  => { c &lt;&gt; "Hello!" }
+    .right => { c &lt;&gt; 42 }
   }
 }</code></pre></td>
 <td><pre><code class="language-par">value.right

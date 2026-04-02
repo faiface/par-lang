@@ -124,6 +124,10 @@ It's very similar to what we saw previously, except the `.getId` variant isn't g
 Here's how we can implement such a server, with comments:
 
 ```par
+module Main
+
+import @core/Nat
+
 dec ServeIds : [IdClient] !
 def ServeIds = [clients] do {
   // Initialize the internal state of the server.
@@ -156,6 +160,14 @@ def ServeIds = [clients] do {
 And here's how we can use it:
 
 ```par
+module Main
+
+import {
+  @core/Debug
+  @core/Nat
+  @core/String
+}
+
 def SimpleClient: [String] IdClient = [name]
   // `IdServer` and `IdClient` are dual, so we can construct
   // an `IdClient` by operating on an `IdServer`.
@@ -302,4 +314,4 @@ Here's a more involved example of both-ways communication between a server and i
 
 It's an example of client-to-client mediation via a server.
 
-You can find a thoroughly commented code for this toy chat server in the [`examples`](https://github.com/faiface/par-lang/blob/main/examples/PlaygroundChat.par) directory.
+You can find a thoroughly commented code for this toy chat server in the [`examples`](https://github.com/faiface/par-lang/blob/main/examples/src/PlaygroundChat.par) directory.

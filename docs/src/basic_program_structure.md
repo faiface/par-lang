@@ -1,26 +1,18 @@
 # Basic Program Structure
 
-For now, _Par_ lacks a proper module system. Each program is contained in one file, with built-in
-names imported automatically.
+Before we start writing our own package, it's helpful to see Par in action in the playground.
 
-These built-in names are scoped in modules — for example, `Int.Add` is a function called `Add` in the
-`Int` module — but there is no way to define custom modules. All we can do is define types and values,
-and then run them, interactively!
-
-Before we start defining our own types and values, the built-in definitions already give us something
-to play with.
-
-Let's open the playground!
+Let's open it:
 
 ```
-$ par-lang playground
+$ par playground
 ```
 
-Press **Compile**, then hit the **Run** button:
+Press **Compile**, then open **Run → Packages → core → Int → Add**:
 
 ![**Run** on an empty program](./images/basic_structure_1.png)
 
-All the built-in names are there. Let's run `Int.Add`:
+That picks the built-in `Int.Add` definition from the `core` package:
 
 ![**Run** `Int.Add`](./images/basic_structure_2.png)
 
@@ -29,9 +21,11 @@ we get a result:
 
 ![`Int.Add` result](./images/basic_structure_3.png)
 
-The playground features an _automatic_ UI. Nobody made a specific interaface for this `Int.Add` function.
-Instead, the UI that shows up is based purely on its type — here, a function from two integers to an
-integer result.
+This automatic UI is a feature of the **playground,** not of the Par language itself. Nobody made a
+specific interface for `Int.Add`. Instead, the playground looked at its type — here, a function from
+two integers to an integer result — and generated a small interface for interacting with it.
 
-Go ahead, and play with any built-in definition! Then, when you turn the page, we're going to talk about
-creating our own.
+That makes the playground a nice way to explore built-in definitions, and later your own definitions
+too.
+
+On the next page, we'll create a fresh package and look at what actually lives inside a Par module.

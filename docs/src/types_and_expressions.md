@@ -39,8 +39,8 @@ _first send `A`, then receive `B`, then send `C`, then receive `D`, and finally 
 
 And that, in a nutshell, is how Par unifies every-day types with session types.
 
-**This chapter covers the every-day aspect of types in Par.** For the session types aspect, check
-out [Processes](./processes.md).
+**This chapter covers the every-day aspect of types in Par.** For the session-typed, process-oriented
+aspect, check out [The Process Syntax](./process_syntax.md).
 
 ## Linearity
 

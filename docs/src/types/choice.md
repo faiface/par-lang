@@ -48,11 +48,11 @@ type CancellableFunction<a, b> = choice {
 }
 ```
 
-Like [functions](./function.md), **choice types are [linear](TODO).** A value of a choice type may not be
+Like [functions](./function.md), **choice types are [linear](../types_and_expressions.md#linearity).** A value of a choice type may not be
 dropped, or copied. It must be destructed exactly once, using one of its branches.
 
 > Choice types are frequently used together with [_iterative_](./iterative.md) types to define objects
-> that can be acted upon repeatedly. For example, the [built-in](../standard_library.md) `Console` type
+> that can be acted upon repeatedly. For example, the built-in `Console` type from `@basic/Console`
 > obtained as a handle to print to the standard output is an _iterative choice_:
 > 
 > ```par
@@ -65,6 +65,10 @@ dropped, or copied. It must be destructed exactly once, using one of its branche
 > Then it can be used to print multiple lines in order:
 > 
 > ```par
+> module Main
+>
+> import @basic/Console
+>
 > def Main = Console.Open
 >   .print("First line.")
 >   .print("Second line.")

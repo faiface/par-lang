@@ -16,11 +16,18 @@ Par needs error handling that makes cleanup fully explicit while remaining conve
 
 ## Working with Files: Error Handling Without Sugar
 
-Let's start with a concrete example using Par's file system operations through the [`Os` module](./builtin.md). The `Os.Path` type provides methods for working with the filesystem — creating files, reading directories, and so on. Most of these operations can fail, so they return `Result` values.
+Let's start with a concrete example using Par's file system operations through the built-in `@basic/Os` module. The `Os.Path` type provides methods for working with the filesystem — creating files, reading directories, and so on. Most of these operations can fail, so they return `Result` values.
 
 Here's what error handling looks like without any syntax sugar. We'll write a program that creates a log file and writes some entries to it:
 
 ```par
+module Main
+
+import {
+  @basic/Console
+  @basic/Os
+}
+
 def Main: ! = chan exit {
   let console = Console.Open
 
@@ -86,6 +93,13 @@ Note the `.ok!` pattern here — after closing, the writer becomes a unit value 
 Here's the complete program:
 
 ```par
+module Main
+
+import {
+  @basic/Console
+  @basic/Os
+}
+
 def Main: ! = chan exit {
   let console = Console.Open
 
@@ -137,6 +151,13 @@ This is extremely verbose! The same error handling code is repeated for every op
 Here's the exact same functionality using Par's error handling syntax:
 
 ```par
+module Main
+
+import {
+  @basic/Console
+  @basic/Os
+}
+
 def Main: ! = chan exit {
   let console = Console.Open
 
@@ -524,6 +545,14 @@ This layered approach allows you to build sophisticated error handling hierarchi
 The examples so far have shown terminal error handling — printing errors and exiting. But often you want to propagate errors up to the caller. Here's a utility function that reads an entire file's contents:
 
 ```par
+module Main
+
+import {
+  @basic/Os
+  @core/Bytes
+  @core/Result
+}
+
 dec ReadAll : [Os.Path] Result<Os.Error, Bytes>
 def ReadAll = [path] chan return {
   catch e => { return <> .err e }

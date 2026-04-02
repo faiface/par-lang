@@ -7,6 +7,13 @@ to a much wider set of use-cases.
 A pair type consists of two types, the first enclosed in round parentheses.
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
 type Pair = (String) Int
 ```
 
