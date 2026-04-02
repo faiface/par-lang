@@ -758,6 +758,10 @@ impl Runtime {
             sym!(NodeRef::Linear(Linear::ShareHole(hole)), other) => {
                 self.fill_hole(hole, other.into_node())
             }
+            sym!(NodeRef::Linear(Linear::Request(request)), other) => {
+                self.rewrites.ext_send += 1;
+                return Some((UserData::Request(request), other.into_node()));
+            }
             sym!(
                 NodeRef::Global(instance, _, Global::Package(package, captures_in, _)),
                 other
@@ -782,10 +786,6 @@ impl Runtime {
                 );
             }
 
-            sym!(NodeRef::Linear(Linear::Request(request)), other) => {
-                self.rewrites.ext_send += 1;
-                return Some((UserData::Request(request), other.into_node()));
-            }
             sym!(node, other) if node.as_external_fn().is_some() => {
                 let Some(ext) = node.as_external_fn() else {
                     unreachable!()
