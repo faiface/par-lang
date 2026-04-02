@@ -22,6 +22,16 @@ At the moment, Par has six primitive types:
 
 Primitives are manipulated using magical built-in functions.
 
+Primitive **literals** are special: you can write values such as `42`, `"Hello"`, `<<65>>`, or
+`<<65 66>>` without importing anything.
+
+But the module names `Int`, `Nat`, `String`, `Char`, `Byte`, and `Bytes` are **not** automatically
+in scope. So if you want to:
+- mention one of these types explicitly
+- or call functions from their modules, such as `Int.Add` or `String.Reader`
+
+then you need to import the corresponding module from `@core`.
+
 **To find the list of all built-in functions:**
 
 1. Open the playground.
@@ -37,6 +47,10 @@ Alternatively, `par doc` lets you browse the built-in packages and their exporte
 
 1. Assigning it to your own `def`, such as:
    ```par
+   module Main
+
+   import @core/Int
+
    def Examine = Int.ToString
    ```
    Par knows the type of `Int.ToString`, so it will infer it for `Examine` as well.
@@ -79,7 +93,7 @@ def Num1: Int = 7
 def Num2: Int = -123_456_789
 ```
 
-The type annotations are not needed:
+The type annotations are not needed, and then no import is required:
 
 ```par
 def Num3 = 42
@@ -104,6 +118,13 @@ Natural numbers are just integers excluding the negative ones. `Nat` is a subtyp
 every variable of type `Nat` can be used as an `Int`, too.
 
 ```par
+module Main
+
+import {
+  @core/Int
+  @core/Nat
+}
+
 def Num7 = 14  // inferred as `Nat`
 def Num8 = 17  // inferred as `Nat`
 
@@ -147,6 +168,10 @@ cover [iterative](../types/iterative.md) and [choice](../types/choice.md) types,
 you can get the idea:
 
 ```par
+module Main
+
+import @core/String
+
 def Str3 = String.Builder
   .add(Str1)
   .add(", ")
@@ -162,6 +187,10 @@ the `examples/src/` folder.
 Numbers can be converted to strings using `Int.ToString`:
 
 ```par
+module Main
+
+import @core/Int
+
 def Str4 = Int.ToString(14)  // = "14"
 def Str5 = Int.ToString(-7)  // = "-7"
 ```
@@ -183,6 +212,10 @@ Since `Char` is a subtype of `String`, every variable of type `Char` can be used
 There's a built-in function to check if a `Char` is a part of a character class:
 
 ```par
+module Main
+
+import @core/Char
+
 def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
 ```
 
@@ -190,6 +223,14 @@ There's no built-in function turning a `String` to a list of `Char`s. Feel free 
 copy-paste this one, if you ever need it:
 
 ```par
+module Main
+
+import {
+  @core/Char
+  @core/List
+  @core/String
+}
+
 dec Chars : [String] List<Char>
 def Chars = [s] String.Reader(s).begin.char.case {
   .end _ => .end!,
@@ -212,6 +253,10 @@ Since `Byte` is a subtype of `Bytes`, every variable of type `Byte` can be used 
 Just like `Char`s, there's a built-in function to check if a `Byte` is a part of a byte class. For `Byte`s, that's mainly byte ranges:
 
 ```par
+module Main
+
+import @core/Byte
+
 def IsMsbSet = Byte.Is(<<192>>, .range(<<128>>, <<255>>)!)  // .true!
 ```
 
@@ -228,6 +273,14 @@ def Bytes2 = <<>>       // zero-byte sequence
 A `Bytes` can also be broken down to a list of `Byte`s:
 
 ```par
+module Main
+
+import {
+  @core/Byte
+  @core/Bytes
+  @core/List
+}
+
 dec Bytes : [Bytes] List<Byte>
 def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
   .end _ => .end!,
