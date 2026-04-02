@@ -1118,7 +1118,6 @@ fn par_syntax() -> Syntax {
             "unfounded",
             "loop",
             "module",
-            "telltypes",
             "import",
             "as",
             "export",
