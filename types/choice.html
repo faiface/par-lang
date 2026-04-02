@@ -196,11 +196,11 @@ of the arrow, inside round parentheses:</p>
   .apply(a) =&gt; b,
 }
 </code></pre>
-<p>Like <a href="./function.html">functions</a>, <strong>choice types are <a href="TODO">linear</a>.</strong> A value of a choice type may not be
+<p>Like <a href="./function.html">functions</a>, <strong>choice types are <a href="../types_and_expressions.html#linearity">linear</a>.</strong> A value of a choice type may not be
 dropped, or copied. It must be destructed exactly once, using one of its branches.</p>
 <blockquote>
 <p>Choice types are frequently used together with <a href="./iterative.html"><em>iterative</em></a> types to define objects
-that can be acted upon repeatedly. For example, the <a href="../standard_library.html">built-in</a> <code>Console</code> type
+that can be acted upon repeatedly. For example, the built-in <code>Console</code> type from <code>@basic/Console</code>
 obtained as a handle to print to the standard output is an <em>iterative choice</em>:</p>
 <pre><code class="language-par">type Console = iterative choice {
   .close =&gt; !,
@@ -208,7 +208,11 @@ obtained as a handle to print to the standard output is an <em>iterative choice<
 }
 </code></pre>
 <p>Then it can be used to print multiple lines in order:</p>
-<pre><code class="language-par">def Main = Console.Open
+<pre><code class="language-par">module Main
+
+import @basic/Console
+
+def Main = Console.Open
   .print("First line.")
   .print("Second line.")
   .print("Third line.")

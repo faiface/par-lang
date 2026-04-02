@@ -176,7 +176,15 @@ curly braces, followed by the keyword <code>in</code>, and finally the resulting
 a process: the <code>let</code> statement. Just like the <a href="../structure/let_expressions.html"><code>let</code>/<code>in</code> expression</a>, it assigns
 a variable. The only difference is: the <code>let</code> statement doesn’t contain the <code>in</code> keyword. And, since it’s a process,
 there can be more of them one after another.</p>
-<pre><code class="language-par">dec DisplayPlusEquation : [Nat, Nat] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/Nat
+  @core/String
+}
+
+dec DisplayPlusEquation : [Nat, Nat] String
 def DisplayPlusEquation = [a, b] do {
   let c = Nat.Add(a, b)
   let a = Int.ToString(a)

@@ -1,0 +1,511 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Packages &amp; Modules - Par Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for the Par programming language">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Par Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/tree/main/docs" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/faiface/par-lang/edit/main/docs/src/structure/packages_and_modules.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="packages--modules"><a class="header" href="#packages--modules">Packages &amp; Modules</a></h1>
+<p>So far, we’ve focused on the contents of one module file. That’s a good place to start, but real Par
+programs live in <strong>packages,</strong> and packages are made of <strong>modules.</strong></p>
+<p>The hierarchy looks like this:</p>
+<ul>
+<li>A <strong>program</strong> or a <strong>library</strong> is a <strong>package.</strong></li>
+<li>A <strong>package</strong> contains <strong>modules.</strong></li>
+<li>A <strong>module</strong> contains <strong>type definitions, declarations, and definitions.</strong></li>
+</ul>
+<p>Let’s now look at how those pieces fit together.</p>
+<h2 id="packages"><a class="header" href="#packages">Packages</a></h2>
+<p>A Par package is a project directory with a <code>Par.toml</code> file and a <code>src/</code> directory.</p>
+<p>For example:</p>
+<pre><code class="language-text">hello_par/
+  Par.toml
+  src/
+    Main.par
+</code></pre>
+<p>This is exactly what <code>par new hello_par</code> creates.</p>
+<p>The <code>Par.toml</code> file starts like this:</p>
+<pre><code class="language-toml">[package]
+name = "hello_par"
+</code></pre>
+<p>This <code>name</code> is the package’s <strong>recommended name.</strong> It is used by tooling such as generated
+docs.</p>
+<h3 id="dependencies"><a class="header" href="#dependencies">Dependencies</a></h3>
+<p>Packages may depend on other packages through the <code>[dependencies]</code> section:</p>
+<pre><code class="language-toml">[package]
+name = "postify"
+
+[dependencies]
+web = "github.com/author/par-web"
+shared = "../shared"
+</code></pre>
+<p>Each dependency has the form:</p>
+<pre><code class="language-toml">alias = "reference"
+</code></pre>
+<p>The <strong>alias</strong> on the left is the name used in imports, such as <code>@web/...</code>.</p>
+<p>The <strong>reference</strong> on the right may be one of two things:</p>
+<ul>
+<li>A <strong>local path.</strong> These are recognized by starting with <code>.</code>, <code>..</code>, <code>~</code>, or <code>$</code>.</li>
+<li>A <strong>remote dependency source.</strong> Anything else is treated as remote, for example
+<code>github.com/faiface/par-cancellable</code>.</li>
+</ul>
+<p>Local paths may look like:</p>
+<pre><code class="language-toml">shared = "./shared"
+common = "../common"
+tools = "~/par/tools"
+extras = "$PAR_PACKAGES/extras"
+</code></pre>
+<p>Remote dependencies currently have <strong>no versioning.</strong> Par just fetches the latest contents from the given source.</p>
+<h3 id="managing-remote-dependencies"><a class="header" href="#managing-remote-dependencies">Managing remote dependencies</a></h3>
+<p>Remote dependencies are managed by the CLI:</p>
+<ul>
+<li><code>par add</code> reads <code>Par.toml</code> and fetches any missing remote dependencies into <code>dependencies/</code>.</li>
+<li><code>par update</code> re-fetches all managed remote dependencies.</li>
+<li><code>par add github.com/faiface/par-cancellable</code> both adds that dependency to <code>Par.toml</code> under its
+recommended name and fetches it.</li>
+</ul>
+<p>The <code>dependencies/</code> directory is managed state. It is not where you write source code.</p>
+<p>Transitive remote dependencies are fetched automatically. If the same remote package is reached
+through multiple dependencies, Par handles that seamlessly and fetches it only once.</p>
+<p>Local dependencies are <strong>not</strong> copied into <code>dependencies/</code>. They stay where they are on disk and are
+referenced directly.</p>
+<h3 id="built-in-packages"><a class="header" href="#built-in-packages">Built-in packages</a></h3>
+<p>Every package automatically depends on two built-in packages:</p>
+<ul>
+<li><code>@core</code> for core types and data structures such as <code>String</code>, <code>List</code>, <code>Map</code>, <code>Result</code>, and so on.</li>
+<li><code>@basic</code> for simple I/O such as <code>Console</code>, <code>Os</code>, and <code>Http</code>.</li>
+</ul>
+<p>These are <strong>implicit dependencies,</strong> but <strong>not implicit imports.</strong> Their modules are available to import from,
+but their names are not automatically in scope inside your source files.</p>
+<h3 id="browsing-packages-with-par-doc"><a class="header" href="#browsing-packages-with-par-doc">Browsing packages with <code>par doc</code></a></h3>
+<p>The <code>par doc</code> command is all about exploring packages:</p>
+<ul>
+<li>Outside any package, <code>par doc</code> shows the <strong>built-in packages.</strong></li>
+<li>Inside a package, <code>par doc</code> shows the <strong>current package together with its dependencies.</strong></li>
+<li><code>par doc --remote github.com/faiface/par-cancellable</code> lets you inspect a <strong>remote package</strong>
+without manually adding it as a dependency.</li>
+</ul>
+<h2 id="modules"><a class="header" href="#modules">Modules</a></h2>
+<p>Modules live under <code>src/</code>, in any directory structure you like.</p>
+<p>For example:</p>
+<pre><code class="language-text">src/
+  Main.par
+  data/
+    Post.par
+  handlers/
+    api/
+      Posts.par
+</code></pre>
+<p>Here:</p>
+<ul>
+<li><code>src/Main.par</code> defines the <code>Main</code> module.</li>
+<li><code>src/data/Post.par</code> defines the <code>Post</code> module with the path <code>data/Post</code>.</li>
+<li><code>src/handlers/api/Posts.par</code> defines the <code>Posts</code> module with the path <code>handlers/api/Posts</code>.</li>
+</ul>
+<p>Notice the split:</p>
+<ul>
+<li>A module has a <strong>name</strong> such as <code>Post</code>.</li>
+<li>A module also has a <strong>path</strong> such as <code>data/Post</code>.</li>
+</ul>
+<p>The <strong>name</strong> is what appears in the file:</p>
+<pre><code class="language-par">module Post
+</code></pre>
+<p>The <strong>path</strong> is how the module is imported from elsewhere.
+The file name and the module declaration must match, <strong>case-insensitively.</strong></p>
+<p>So:</p>
+<ul>
+<li><code>Post.par</code> must declare <code>module Post</code></li>
+<li><code>posts.par</code> may also declare <code>module Post</code></li>
+<li><code>handlers/api/Posts.par</code> must declare <code>module Posts</code></li>
+</ul>
+<p>The directories contribute to the module’s <strong>path</strong>, not to its declared module name.</p>
+<h2 id="importing-modules"><a class="header" href="#importing-modules">Importing modules</a></h2>
+<p>Modules import other modules explicitly.</p>
+<p>To import a module from the <strong>same package,</strong> use its absolute path from <code>src/</code>:</p>
+<pre><code class="language-par">import data/Post
+import handlers/api/Posts
+</code></pre>
+<p>Relative module imports are <strong>not</strong> supported.</p>
+<p>Import paths always use forward slashes:</p>
+<pre><code class="language-par">import util/DateTimeUtils
+</code></pre>
+<p>To import a module from a <strong>dependency,</strong> prefix the path with <code>@alias</code>:</p>
+<pre><code class="language-par">import @web/http/Server
+import @shared/FancyModule
+</code></pre>
+<h3 id="aliasing-imports"><a class="header" href="#aliasing-imports">Aliasing imports</a></h3>
+<p>If two modules would clash, rename them on import:</p>
+<pre><code class="language-par">import @dep1/blah/Data as Data1
+import @dep2/bleh/Data as Data2
+</code></pre>
+<h3 id="grouped-imports"><a class="header" href="#grouped-imports">Grouped imports</a></h3>
+<p>Multiple imports can be grouped:</p>
+<pre><code class="language-par">import {
+  @basic/Console
+  @core/List
+  data/Post
+}
+</code></pre>
+<p>Grouped imports are just syntax sugar over multiple <code>import</code> statements.</p>
+<h2 id="accessing-names-from-imported-modules"><a class="header" href="#accessing-names-from-imported-modules">Accessing names from imported modules</a></h2>
+<p>Once a module is imported, its exported items are accessed through the module name:</p>
+<pre><code class="language-par">import {
+  @core/List
+  @core/Nat
+  @core/String
+  data/Post
+}
+
+dec RenderPosts : String
+def RenderPosts = Post.FetchAllFromDB(!)-&gt;List.Length-&gt;Nat.ToString
+</code></pre>
+<p>In general, imported names are accessed as:</p>
+<pre><code class="language-par">Module.Name
+</code></pre>
+<h2 id="primary-types-and-primary-declarations"><a class="header" href="#primary-types-and-primary-declarations">Primary types and primary declarations</a></h2>
+<p>A module may export a <strong>type</strong> and/or a <strong>declaration</strong> with the same name as the module itself.</p>
+<p>Those are special: they become available directly under the module name.</p>
+<p>For example:</p>
+<pre><code class="language-par">module Post
+
+export {
+  type Post = box choice {
+    .title =&gt; String,
+    .content =&gt; String,
+  }
+
+  dec Post : [String, String] Post
+  dec FetchAllFromDB : [!] List&lt;Post&gt;
+}
+</code></pre>
+<p>Now another module can write:</p>
+<pre><code class="language-par">import data/Post
+</code></pre>
+<p>and gets access to:</p>
+<ul>
+<li><code>Post</code> as a <strong>type</strong></li>
+<li><code>Post</code> as a <strong>declaration</strong></li>
+<li><code>Post.FetchAllFromDB</code> as another exported declaration from the module</li>
+</ul>
+<p>This works smoothly with aliases too:</p>
+<pre><code class="language-par">import @core/List as L
+</code></pre>
+<p>After that:</p>
+<ul>
+<li><code>L&lt;a&gt;</code> is the primary type of the module</li>
+<li><code>L.Map</code>, <code>L.Filter</code>, and so on are other exported declarations</li>
+</ul>
+<p>Having both a primary type <code>Post</code> and a primary declaration <code>Post</code> is perfectly fine,
+because in Par, types and terms are always distinguishable by syntactic position.</p>
+<h2 id="visibility-and-exports"><a class="header" href="#visibility-and-exports">Visibility and exports</a></h2>
+<p>There are two related visibility questions:</p>
+<ol>
+<li>Is the <strong>module</strong> visible outside its package?</li>
+<li>Is a <strong>type</strong> or <strong>declaration</strong> visible outside its module?</li>
+</ol>
+<h3 id="exporting-a-module"><a class="header" href="#exporting-a-module">Exporting a module</a></h3>
+<p>Modules are visible <strong>inside their own package</strong> regardless of <code>export module</code>.</p>
+<p>To make a module visible to <strong>dependent packages,</strong> mark it:</p>
+<pre><code class="language-par">export module List
+</code></pre>
+<h3 id="exporting-items"><a class="header" href="#exporting-items">Exporting items</a></h3>
+<p>Types and declarations are <strong>module-private by default.</strong></p>
+<p>To make them visible outside the module, use <code>export</code>:</p>
+<pre><code class="language-par">export type Iterator&lt;a&gt; = ...
+export dec Map : ...
+</code></pre>
+<p>Or grouped:</p>
+<pre><code class="language-par">export {
+  type Iterator&lt;a&gt; = ...
+  dec Map : ...
+  dec Filter : ...
+}
+</code></pre>
+<p>There is <strong>no</strong> <code>export def</code>.</p>
+<p>Definitions are always the implementation side. If you want a value to be visible, export its
+<strong>declaration</strong>.</p>
+<h3 id="the-three-visibility-levels"><a class="header" href="#the-three-visibility-levels">The three visibility levels</a></h3>
+<p>Putting the two layers together gives three effective visibility modes for items:</p>
+<ol>
+<li><code>export module</code> + exported item<br />
+The item is visible to dependent packages.</li>
+<li>Non-exported module + exported item<br />
+The item is visible throughout its own package, but not outside it.</li>
+<li>Any module + non-exported item<br />
+The item is visible only inside its own module.</li>
+</ol>
+<h3 id="visibility-is-checked-through-types-too"><a class="header" href="#visibility-is-checked-through-types-too">Visibility is checked through types too</a></h3>
+<p>Par also checks that visible API does not mention hidden types.</p>
+<p>For example, if a declaration is visible throughout the package, or exported from the package,
+then its type must not mention a less-visible type. In other words:</p>
+<ul>
+<li>a package-visible item may not mention a module-private type</li>
+<li>a public item may not mention a merely package-visible type</li>
+</ul>
+<p>This prevents less-visible helper types from leaking into wider APIs.</p>
+<h2 id="cycles"><a class="header" href="#cycles">Cycles</a></h2>
+<p>In the previous section, we already saw that types and definitions may not use one another in a
+cycle, and package dependencies follow the same spirit: cyclic dependencies between packages are
+disallowed.</p>
+<p>Modules are different, though: cyclic imports between modules of the same package are allowed.</p>
+<p>Why is that useful, if definitions still may not form cycles? Because modules often need one
+another’s types in their signatures, and some definitions in one module may legitimately call
+definitions in the other as long as no actual usage cycle is formed.</p>
+<p>For example, the built-in <code>@core/List</code> module imports <code>@core/Nat</code> because <code>List.Length</code> returns a
+<code>Nat</code>. At the same time, <code>@core/Nat</code> imports <code>@core/List</code> because <code>Nat.Range</code> returns a
+<code>List&lt;Nat&gt;</code>.</p>
+<p>So the modules import each other, but there is still no cyclic usage between the individual
+definitions themselves.</p>
+<h2 id="multi-file-modules"><a class="header" href="#multi-file-modules">Multi-file modules</a></h2>
+<p>If one file becomes too large, a module may be split across several files in the same directory:</p>
+<pre><code class="language-text">src/
+  Parser.par
+  Parser.lexing.par
+  Parser.errors.par
+</code></pre>
+<p>These all belong to the same module:</p>
+<pre><code class="language-par">module Parser
+</code></pre>
+<p>The rules are:</p>
+<ul>
+<li><code>Parser.par</code> and every <code>Parser.*.par</code> in the same directory are parts of one module.</li>
+<li>Every part still declares <code>module Parser</code>.</li>
+<li>All parts share one top-level module namespace.</li>
+<li>Each file has its <strong>own imports</strong> that apply only within that file.</li>
+<li>All parts must agree on whether the module is marked <code>export module</code>.</li>
+</ul>
+<h2 id="running-a-definition"><a class="header" href="#running-a-definition">Running a definition</a></h2>
+<p><code>par run</code> is specifically for definitions of type <code>!</code> — the unit type, comparable to <code>null</code> or an
+empty tuple in other languages.</p>
+<p>Other non-generic definitions can still be run in the playground, which generates an automatic UI
+for interacting with them based on their type.</p>
+<p>Now that modules have paths, the <code>par run</code> target syntax makes more sense:</p>
+<ul>
+<li>Targets have one of these forms:
+<ul>
+<li><code>path/to/Module</code></li>
+<li><code>path/to/Module.Def</code></li>
+</ul>
+</li>
+<li>The slash-separated part is always the <strong>module path.</strong></li>
+<li>If the target ends right after the module path, <code>par run</code> looks for the module’s <code>Main</code>
+definition.</li>
+<li>If the target ends with <code>.Def</code>, Par runs that specific definition from the module.</li>
+</ul>
+<p>So:</p>
+<ul>
+<li><code>par run</code> means <code>Main.Main</code></li>
+<li><code>par run Main</code> also means <code>Main.Main</code></li>
+<li><code>par run Main.Other</code> means the <code>Other</code> definition in the <code>Main</code> module</li>
+<li><code>par run handlers/api/Posts</code> means <code>handlers/api/Posts.Main</code></li>
+<li><code>par run handlers/api/Posts.Program</code> means the <code>Program</code> definition in the <code>handlers/api/Posts</code> module</li>
+</ul>
+<p>The same path-based rules are used by other commands such as <code>par test</code>.</p>
+<p>That’s the package/module system. With that in place, we can now return to the language itself.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../structure/definitions_and_declarations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../structure/primitive_types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../structure/definitions_and_declarations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../structure/primitive_types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

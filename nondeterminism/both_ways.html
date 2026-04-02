@@ -258,7 +258,11 @@ type IdClient = recursive either {
 </code></pre>
 <p>It’s very similar to what we saw previously, except the <code>.getId</code> variant isn’t giving out a value, it’s taking one.</p>
 <p>Here’s how we can implement such a server, with comments:</p>
-<pre><code class="language-par">dec ServeIds : [IdClient] !
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+dec ServeIds : [IdClient] !
 def ServeIds = [clients] do {
   // Initialize the internal state of the server.
   // Here it's just an `id` variable that will keep
@@ -288,7 +292,15 @@ def ServeIds = [clients] do {
 <p>Notice how the <code>id</code> variable gets implicitly passed to each new iteration at <code>submit</code>. The treatment of local variables in <code>poll</code>/<code>submit</code> is the same as it is with <code>.begin</code>/<code>.loop</code>. They’re kept around, always keeping their latest values.</p>
 </blockquote>
 <p>And here’s how we can use it:</p>
-<pre><code class="language-par">def SimpleClient: [String] IdClient = [name]
+<pre><code class="language-par">module Main
+
+import {
+  @core/Debug
+  @core/Nat
+  @core/String
+}
+
+def SimpleClient: [String] IdClient = [name]
   // `IdServer` and `IdClient` are dual, so we can construct
   // an `IdClient` by operating on an `IdServer`.
   chan server: IdServer {
@@ -409,7 +421,7 @@ def Main: ! = do {
 <h2 id="example-a-chat-server-in-the-playground"><a class="header" href="#example-a-chat-server-in-the-playground">Example: A chat server in the <a href="../getting_started.html">Playground</a></a></h2>
 <p>Here’s a more involved example of both-ways communication between a server and its clients. It’s a little toy chat server that you can play with in the <a href="../getting_started.html">Par’s interactive playground</a>.</p>
 <p>It’s an example of client-to-client mediation via a server.</p>
-<p>You can find a thoroughly commented code for this toy chat server in the <a href="https://github.com/faiface/par-lang/blob/main/examples/PlaygroundChat.par"><code>examples</code></a> directory.</p>
+<p>You can find a thoroughly commented code for this toy chat server in the <a href="https://github.com/faiface/par-lang/blob/main/examples/src/PlaygroundChat.par"><code>examples</code></a> directory.</p>
 
                     </main>
 

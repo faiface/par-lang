@@ -162,7 +162,14 @@
                     <main>
                         <h1 id="implicit-generics"><a class="header" href="#implicit-generics">Implicit generics</a></h1>
 <p>Par already supports explicit generics via <a href="./forall.html"><code>forall</code></a>:</p>
-<pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+dec Swap : [type a, b] [(a, b)!] (b, a)!
 def Swap = [type a, b] [pair]
   let (first, second)! = pair
   in (second, first)!

@@ -165,7 +165,14 @@
 otherwise known as <em>tagged unions</em>.</p>
 <p>They defined a finite number of variants, each with a different name and a payload. A value of
 an either type is one of its variants.</p>
-<pre><code class="language-par">type StringOrNumber = either {
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+type StringOrNumber = either {
   .string String,
   .number Int,
 }

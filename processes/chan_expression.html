@@ -236,7 +236,14 @@ some concurrency invariants Par provides.</p>
 <li>Otherwise, it returns a string of exactly <code>n</code> hash marks (<code>"#"</code>).</li>
 </ul>
 <p>Here’s how that looks:</p>
-<pre><code class="language-par">dec HashesOrNothing : [Nat] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Nat
+  @core/String
+}
+
+dec HashesOrNothing : [Nat] String
 def HashesOrNothing = [n] chan result {
   Nat.Equals(n, 0).case {
     .true! =&gt; {

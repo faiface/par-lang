@@ -162,7 +162,11 @@
                     <main>
                         <h1 id="the-fan-pattern"><a class="header" href="#the-fan-pattern">The Fan Pattern</a></h1>
 <p>We’ve been able to merge two lists based on the timing of their items:</p>
-<pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
+<pre><code class="language-par">module Main
+
+import @core/List
+
+dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
 def MergeTwoLists = [left, right] poll(left, right) {
   list =&gt; list.case {
     .end! =&gt; submit(),

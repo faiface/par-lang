@@ -167,7 +167,11 @@ expression. It’s for assigning a variable and using it in another expression.<
 to assign to the variable, and finally the keyword <code>in</code> followed by an expression that may use
 the variable.</p>
 <p>That’s a mouthful.</p>
-<pre><code class="language-par">def Six = let three = 3 in Nat.Add(three, three)
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+def Six = let three = 3 in Nat.Add(three, three)
 </code></pre>
 <p>The left side of the <code>=</code> sign can actually be more than a variable!</p>
 <p>For one, it can have an annotation:</p>
@@ -196,7 +200,7 @@ We’ll learn more about those soon.</p>
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../big_table.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../types_and_expressions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -210,7 +214,7 @@ We’ll learn more about those soon.</p>
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../big_table.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../types_and_expressions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

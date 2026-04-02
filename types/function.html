@@ -174,9 +174,13 @@ type BinaryFunction2 = [Int, Int] Int
 // these two are exactly the same type
 </code></pre>
 <p>This is the preferred way to define functions of multiple arguments.</p>
-<p><strong>Functions are <a href="TODO">linear</a>.</strong> While a globally defined function may be called any number of times,
+<p><strong>Functions are <a href="../types_and_expressions.html#linearity">linear</a>.</strong> While a globally defined function may be called any number of times,
 a function stored in a local variable can (and must) only be called once:</p>
-<pre><code class="language-par">dec Add : [Int, Int] Int
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+dec Add : [Int, Int] Int
 def Add = [x, y] Int.Add(x, y)
 
 // a global function may be called many times
@@ -187,7 +191,7 @@ def Illegal =
   let inc = Add(1)
   in Add(inc(2), inc(3))       // Error!
 </code></pre>
-<p><a href="TODO">Linearity</a> brings a lot of expressivity that wouldn’t be possible otherwise. After all, the main
+<p><a href="../types_and_expressions.html#linearity">Linearity</a> brings a lot of expressivity that wouldn’t be possible otherwise. After all, the main
 purpose of <em>Par</em> is to explore where this new paradigm arising from linear types and duality can take us.</p>
 <blockquote>
 <p>Non-linear functions are achieved using <a href="./box.html">box types</a>.</p>
@@ -200,7 +204,11 @@ def Double = [number] Int.Mul(2, number)
 </code></pre>
 <p>Multi-argument functions — or more precisely: functions returning other functions — can be expressed
 using the same kind of a syntax sugar as available for their types:</p>
-<pre><code class="language-par">dec Concat : [String, String] String
+<pre><code class="language-par">module Main
+
+import @core/String
+
+dec Concat : [String, String] String
 // the same as `[String] [String] String`
 
 def Concat = [left, right]
@@ -222,7 +230,7 @@ explicitly:</p>
 </code></pre>
 <p>For <strong>generic functions</strong>, read up on <a href="./forall.html"><em>forall</em> types</a>.</p>
 <blockquote>
-<p><strong><em>Par</em> has an unusual take on recursion,</strong> thanks to its ambitious stride towards <a href="TODO">totality</a>.
+<p><strong><em>Par</em> has an unusual take on recursion,</strong> thanks to its ambitious stride towards <a href="../introduction.html#an-ambitious-stride-towards-totality">totality</a>.
 Naive recursion by self-reference is not allowed. In other words,
 <strong>a function can’t directly call itself.</strong></p>
 <pre><code class="language-par">def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
@@ -232,7 +240,7 @@ and <a href="https://en.wikipedia.org/wiki/Corecursion">corecursion</a>, respect
 more.</p>
 <p>Par’s powerful <code>begin</code>/<code>loop</code> syntax is a single, universal construct for cyclic computations.
 It serves well in recursive functions, <a href="./iterative.html">iterative</a> objects, and imperative-looking loops
-in <a href="../processes.html">process syntax</a>.</p>
+in <a href="../process_syntax.html">process syntax</a>.</p>
 <p>Forbidding functions from calling themselves may seem limiting at first, but <code>begin</code>/<code>loop</code> makes up
 for it with its perky handling of local variables, and its ability to be used deep in expressions,
 removing any need for recursive helper functions.</p>
@@ -251,7 +259,7 @@ def HelloWorld3 =
   in partial("World")
 </code></pre>
 <p>All three versions do the same thing.</p>
-<p>The word <em>destruction</em> is especially apt here, due to <a href="TODO">linearity</a> of functions. If a function
+<p>The word <em>destruction</em> is especially apt here, due to <a href="../types_and_expressions.html#linearity">linearity</a> of functions. If a function
 is stored in a local variable, calling it destroys the variable, as discussed above.</p>
 
                     </main>

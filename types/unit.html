@@ -189,14 +189,25 @@ purpose, the pattern <code>!</code> will destruct a <code>!</code> value without
 } in !
 </code></pre>
 <p>This is useful when matching an end of a list:</p>
-<pre><code class="language-par">dec GetFirstOrZero : [List&lt;Int&gt;] Int
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
+dec GetFirstOrZero : [List&lt;Int&gt;] Int
 def GetFirstOrZero = [list] list.case {
   .end!      =&gt; 0,  // `!` is a pattern here
   .item(x) _ =&gt; x,
 }
 </code></pre>
 <p>Or when destructing a <code>!</code>-ended <a href="./pair.html">tuple</a>:</p>
-<pre><code class="language-par">dec SumPair : [(Int, Int)!] Int
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+dec SumPair : [(Int, Int)!] Int
 def SumPair = [pair]
   let (x, y)! = pair  // `!` is a pattern here
   in Int.Add(x, y)

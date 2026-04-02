@@ -173,7 +173,14 @@ a typical optional type, as present in many languages:</p>
 such as <code>a</code> for <code>Option&lt;a&gt;</code> may be replaced with anything, such as <code>Option&lt;Int&gt;</code>. The resulting type is,
 however, always concrete.</p>
 <p>Now consider these two definitions:</p>
-<pre><code class="language-par">def None: Option&lt;String&gt; = .none!
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+def None: Option&lt;String&gt; = .none!
 
 dec Swap : [(String, Int)!] (Int, String)!
 def Swap = [pair]
@@ -207,7 +214,7 @@ put them both in one pair of square brackets:</p>
 <pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
 </code></pre>
 <p>This looks better. The two ways are, however, completely equivalent.</p>
-<p>Just like functions, foralls are <a href="TODO"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
+<p>Just like functions, foralls are <a href="../types_and_expressions.html#linearity"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
 copied, only destructed by calling.</p>
 <h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
 <p>Values of forall types are constructed the same way as functions, except the argument is a type

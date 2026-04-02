@@ -181,30 +181,42 @@ that are operated on using magical built-in functions. This is necessary to achi
 efficient representation.</p>
 </blockquote>
 <p>Primitives are manipulated using magical built-in functions.</p>
+<p>Primitive <strong>literals</strong> are special: you can write values such as <code>42</code>, <code>"Hello"</code>, <code>&lt;&lt;65&gt;&gt;</code>, or
+<code>&lt;&lt;65 66&gt;&gt;</code> without importing anything.</p>
+<p>But the module names <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>, <code>Byte</code>, and <code>Bytes</code> are <strong>not</strong> automatically
+in scope. So if you want to:</p>
+<ul>
+<li>mention one of these types explicitly</li>
+<li>or call functions from their modules, such as <code>Int.Add</code> or <code>String.Reader</code></li>
+</ul>
+<p>then you need to import the corresponding module from <code>@core</code>.</p>
 <p><strong>To find the list of all built-in functions:</strong></p>
 <ol>
 <li>Open the playground.
-<pre><code>$ par-lang playground
+<pre><code>$ par playground
 </code></pre>
 </li>
 <li>Press <strong>Compile,</strong> and <strong>Run.</strong> Scroll the list that pops up.
 <img src="../images/strings_and_numbers_1.png" alt="List of built-in functions" /></li>
 </ol>
-<p>Alternatively, the <a href="../builtin.html">Built-In Definitions</a> chapter contains all built-in definitions
-available in the language.</p>
+<p>Alternatively, <code>par doc</code> lets you browse the built-in packages and their exported definitions.</p>
 <p><strong>To figure out the type of a built-in function:</strong></p>
 <ol>
 <li>Assigning it to your own <code>def</code>, such as:
-<pre><code class="language-par">def Examine = Int.ToString
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+def Examine = Int.ToString
 </code></pre>
-Par knows the type of <code>Int.String</code>, so it will infer it for <code>Examine</code> as well.</li>
+Par knows the type of <code>Int.ToString</code>, so it will infer it for <code>Examine</code> as well.</li>
 <li>Press <strong>Compile.</strong></li>
 <li>Move the cursor to the definition. The playground will display the type on the right,
 in green.
 <img src="../images/strings_and_numbers_2.png" alt="Displayed type of a built-in function" /></li>
 </ol>
 <p>The type <code>[Int] String</code> is a <a href="../types/function.html">function</a> from <code>Int</code> to <code>String</code>. We will cover
-functions and other types in detail <a href="../types.html">later</a>. Despite that, we’ll still play with
+functions and other types in detail <a href="../types_and_expressions.html">later</a>. Despite that, we’ll still play with
 some built-in functions in this section. All you need to know is that
 <strong>the square brackets enclose function arguments,</strong> and the result type follows. For example:</p>
 <ul>
@@ -225,10 +237,14 @@ before we understand what’s actually going on here.</p>
 <p>Integers are arbitrarily sized whole numbers, positive or negative.</p>
 <p>Their literals consist of digits, optionally prefixed with <code>-</code> or <code>+</code>, and may include underscores
 for readability.</p>
-<pre><code class="language-par">def Num1: Int = 7
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+def Num1: Int = 7
 def Num2: Int = -123_456_789
 </code></pre>
-<p>The type annotations are not needed:</p>
+<p>The type annotations are not needed, and then no import is required:</p>
 <pre><code class="language-par">def Num3 = 42
 def Num4 = -2202
 </code></pre>
@@ -242,7 +258,14 @@ def Num6 = Int.Mul(3, 4)  // = 12
 <h2 id="nat"><a class="header" href="#nat"><code>Nat</code></a></h2>
 <p>Natural numbers are just integers excluding the negative ones. <code>Nat</code> is a subtype of <code>Int</code>, so
 every variable of type <code>Nat</code> can be used as an <code>Int</code>, too.</p>
-<pre><code class="language-par">def Num7 = 14  // inferred as `Nat`
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/Nat
+}
+
+def Num7 = 14  // inferred as `Nat`
 def Num8 = 17  // inferred as `Nat`
 
 // perfectly valid
@@ -273,7 +296,11 @@ def Str2 = "World"
 <p>To concatenate strings, use <code>String.Builder</code>. To fully understand how it works, we’ll need to
 cover <a href="../types/iterative.html">iterative</a> and <a href="../types/choice.html">choice</a> types, but perhaps
 you can get the idea:</p>
-<pre><code class="language-par">def Str3 = String.Builder
+<pre><code class="language-par">module Main
+
+import @core/String
+
+def Str3 = String.Builder
   .add(Str1)
   .add(", ")
   .add(Str2)
@@ -282,9 +309,13 @@ you can get the idea:</p>
 <p>Analyzing strings — such as finding, splitting, or parsing — is done using <code>String.Reader</code>.
 To be able to use it, more knowledge of the language is needed first. But, feel
 free to play with it in the playground, or check out the <code>StringManipulation.par</code> example in
-the <code>examples/</code> folder.</p>
+the <code>examples/src/</code> folder.</p>
 <p>Numbers can be converted to strings using <code>Int.ToString</code>:</p>
-<pre><code class="language-par">def Str4 = Int.ToString(14)  // = "14"
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+def Str4 = Int.ToString(14)  // = "14"
 def Str5 = Int.ToString(-7)  // = "-7"
 </code></pre>
 <p>Note, that <code>Nat</code> is a subtype of <code>Int</code>, so any natural number can also be converted to a string
@@ -296,11 +327,23 @@ def Char2 = "\n"
 </code></pre>
 <p>Since <code>Char</code> is a subtype of <code>String</code>, every variable of type <code>Char</code> can be used as a <code>String</code>, too.</p>
 <p>There’s a built-in function to check if a <code>Char</code> is a part of a character class:</p>
-<pre><code class="language-par">def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
+<pre><code class="language-par">module Main
+
+import @core/Char
+
+def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
 </code></pre>
 <p>There’s no built-in function turning a <code>String</code> to a list of <code>Char</code>s. Feel free to
 copy-paste this one, if you ever need it:</p>
-<pre><code class="language-par">dec Chars : [String] List&lt;Char&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/Char
+  @core/List
+  @core/String
+}
+
+dec Chars : [String] List&lt;Char&gt;
 def Chars = [s] String.Reader(s).begin.char.case {
   .end _ =&gt; .end!,
   .char(c) rest =&gt; .item(c) rest.loop,
@@ -314,7 +357,11 @@ def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapp
 </code></pre>
 <p>Since <code>Byte</code> is a subtype of <code>Bytes</code>, every variable of type <code>Byte</code> can be used as a <code>Bytes</code>, too.</p>
 <p>Just like <code>Char</code>s, there’s a built-in function to check if a <code>Byte</code> is a part of a byte class. For <code>Byte</code>s, that’s mainly byte ranges:</p>
-<pre><code class="language-par">def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
+<pre><code class="language-par">module Main
+
+import @core/Byte
+
+def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
 </code></pre>
 <h2 id="bytes"><a class="header" href="#bytes"><code>Bytes</code></a></h2>
 <p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
@@ -323,7 +370,15 @@ that multiple decimal values are allowed, and are delimited by spaces:</p>
 def Bytes2 = &lt;&lt;&gt;&gt;       // zero-byte sequence
 </code></pre>
 <p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
-<pre><code class="language-par">dec Bytes : [Bytes] List&lt;Byte&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/Byte
+  @core/Bytes
+  @core/List
+}
+
+dec Bytes : [Bytes] List&lt;Byte&gt;
 def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
   .end _ =&gt; .end!,
   .byte(b) rest =&gt; .item(b) rest.loop,
@@ -335,7 +390,7 @@ def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../structure/definitions_and_declarations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../structure/packages_and_modules.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -349,7 +404,7 @@ def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../structure/definitions_and_declarations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../structure/packages_and_modules.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

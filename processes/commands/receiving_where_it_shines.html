@@ -221,7 +221,15 @@ Precisely what we need.</p>
 <p>You can think of it as a “sink” object that receives strings and sends them to the terminal.
 Much like <code>String.Builder</code>, but the output appears directly in your console.</p>
 <p>Let’s tie it all together!</p>
-<pre><code class="language-par">def Program: ! = do {
+<pre><code class="language-par">module Main
+
+import {
+  @basic/Console
+  @core/Int
+  @core/Nat
+}
+
+def Program: ! = do {
   let console = Console.Open
   let fib = Fibonacci
 

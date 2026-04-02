@@ -239,7 +239,15 @@ implementation details inside interfaces that can be passed around freely.</p>
 The interface is boxed, so it can be copied and discarded.
 The hidden type <code>set</code> is never revealed — only its operations are exposed.</p>
 <p>Let’s now implement an inefficient, but simple <code>SetModule</code> using lists and equality functions:</p>
-<pre><code class="language-par">type Eq&lt;a&gt; = box [a, a] Bool
+<pre><code class="language-par">module Main
+
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
+
+type Eq&lt;a&gt; = box [a, a] Bool
 
 dec ListSet : [type a] [Eq&lt;box a&gt;] SetModule&lt;box a&gt;
 def ListSet = [type a] [eq] (type List&lt;box a&gt;) box case {

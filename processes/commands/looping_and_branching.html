@@ -180,7 +180,14 @@ come with their own command styles. Every type does.</p>
 <li>And <code>value[variable]</code> for receiving (peeling off) a value from a pair.</li>
 </ul>
 <p>We’re now going to demonstrate all of these by implementing a string concatenation function.</p>
-<pre><code class="language-par">dec Concat : [List&lt;String&gt;] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/List
+  @core/String
+}
+
+dec Concat : [List&lt;String&gt;] String
 </code></pre>
 <p>This function takes a list of strings, and returns them concatenated. We’ll use process syntax and
 see how it works out!</p>
@@ -257,7 +264,14 @@ tagging along the control flow of <code>strings</code>.</p>
     }
 </code></pre>
 <p>Which is exactly what we’ll do in the final version:</p>
-<pre><code class="language-par">dec Concat : [List&lt;String&gt;] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/List
+  @core/String
+}
+
+dec Concat : [List&lt;String&gt;] String
 def Concat = [strings] do {
   let builder = String.Builder
   strings.begin.case {

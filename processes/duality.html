@@ -301,7 +301,14 @@ this dual type provides a good way to communicate with them.</p>
 this type, but finally, we’re going to learn how to handle it in processes!</p>
 <p>Remember: in a <code>chan</code>, the channel you obtain inside the block always has the <strong>dual type</strong> of the expression’s
 final result. Let’s use this to construct a list step-by-step.</p>
-<pre><code class="language-par">def SmallList: List&lt;Int&gt; = chan yield {
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
+def SmallList: List&lt;Int&gt; = chan yield {
   yield.item(1)
   yield.item(2)
   yield.item(3)

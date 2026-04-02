@@ -171,7 +171,11 @@
 level, it’s an <a href="../../types/iterative.html">iterative</a> <a href="../../types/choice.html">choice</a>: an object that
 can be repeatedly interacted with.</p>
 <p>We construct an empty <code>String.Builder</code> using the built-in definition of the same name:</p>
-<pre><code class="language-par">def LetsBuildStrings = do {
+<pre><code class="language-par">module Main
+
+import @core/String
+
+def LetsBuildStrings = do {
   let builder = String.Builder
   // code continued below...
 </code></pre>
@@ -239,7 +243,11 @@ keep adding more content to it.</p>
 <h2 id="chaining-commands"><a class="header" href="#chaining-commands">Chaining commands</a></h2>
 <p>This is rather noisy, but we can improve it! Multiple consecutive <strong>commands on the same subject,</strong>
 can be <strong>chained</strong> together, without repeating the subject.</p>
-<pre><code class="language-par">def LetsBuildStrings = do {
+<pre><code class="language-par">module Main
+
+import @core/String
+
+def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add("Hello")
   builder.add(", ")

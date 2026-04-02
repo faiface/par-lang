@@ -161,16 +161,9 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
-<p>Let’s install the <strong>Par</strong> programming language. Currently, we have:</p>
-<ul>
-<li>A <em>playground</em> to code and interactively explore your and built-in definitions via
-an <em>automatic UI.</em></li>
-<li>A <em><code>run</code></em> command to run definitions with the <a href="./types/unit.html">unit</a> type straight from
-the console.</li>
-<li>A <em><code>check</code></em> command to check Par programs for validity without actually running them.</li>
-</ul>
+<p>Let’s install the <strong>Par</strong> programming language.</p>
 <p>At the moment, there are no pre-built binaries, or releases, so we’ll have to build it from
-souce.</p>
+source.</p>
 <h3 id="1-install-rust-and-cargo"><a class="header" href="#1-install-rust-and-cargo">1. Install Rust and Cargo</a></h3>
 <p>Par is written in <a href="https://www.rust-lang.org">Rust</a>. To be able to build it from source,
 we’ll need to install Rust and its build tool, called Cargo.</p>
@@ -194,11 +187,41 @@ in your terminal:</p>
 <pre><code>$ cargo install --path .
 </code></pre>
 <p>This may take a while as Rust downloads and builds all the dependencies.</p>
-<h3 id="4-try-it-out"><a class="header" href="#4-try-it-out">4. Try it out!</a></h3>
-<p>A new <code>par-lang</code> command should now be available in your terminal. It may be necessary
+<p>This installs the <code>par</code> command.</p>
+<h3 id="4-create-a-package"><a class="header" href="#4-create-a-package">4. Create a package</a></h3>
+<p>A new <code>par</code> command should now be available in your terminal. It may be necessary
 to restart the terminal for it to appear.</p>
-<p>If successful, start the Par’s playground:</p>
-<pre><code>$ par-lang playground
+<p>Let’s create a fresh package:</p>
+<pre><code>$ par new hello_par
+$ cd hello_par
+</code></pre>
+<p>This creates:</p>
+<pre><code class="language-text">hello_par/
+  Par.toml
+  src/
+    Main.par
+</code></pre>
+<p>The generated <code>src/Main.par</code> is a tiny runnable Par program. You can run it with:</p>
+<pre><code>$ par run
+</code></pre>
+<p>And you can type-check the package without running it:</p>
+<pre><code>$ par check
+</code></pre>
+<h3 id="5-browse-the-docs"><a class="header" href="#5-browse-the-docs">5. Browse the docs</a></h3>
+<p>Par comes with a built-in docs browser:</p>
+<pre><code>$ par doc
+</code></pre>
+<p>This command is useful in three different situations:</p>
+<ul>
+<li><strong>Outside any package,</strong> <code>par doc</code> shows the documentation for the built-in packages.</li>
+<li><strong>Inside a package,</strong> <code>par doc</code> shows the current package together with its dependencies.</li>
+<li><strong>For a remote package,</strong> <code>par doc --remote github.com/faiface/par-cancellable</code> lets you inspect
+a package without manually adding it as a dependency.</li>
+</ul>
+<h3 id="6-open-the-playground"><a class="header" href="#6-open-the-playground">6. Open the playground</a></h3>
+<p>The playground is a great way to experiment with code and interact with values through the
+playground’s automatic UI:</p>
+<pre><code>$ par playground
 </code></pre>
 <p>And the playground should appear:</p>
 <p><img src="./images/getting_started_1.png" alt="Playground window" /></p>

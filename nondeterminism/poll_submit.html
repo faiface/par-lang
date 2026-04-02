@@ -210,7 +210,14 @@
 <p><code>poll</code>/<code>submit</code> is not a replacement for <code>.begin</code>/<code>.loop</code>. One can’t achieve the job of the other and vice versa, only in some situations.</p>
 </blockquote>
 <p><strong>Let’s compute the sum of a list:</strong></p>
-<pre><code class="language-par">dec PollSum : [List&lt;Int&gt;] Int
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
+dec PollSum : [List&lt;Int&gt;] Int
 def PollSum = [nums] poll(nums) {
   list =&gt; list.case {
     .end! =&gt; submit(),

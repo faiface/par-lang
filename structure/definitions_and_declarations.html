@@ -161,8 +161,28 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="definitions--declarations"><a class="header" href="#definitions--declarations">Definitions &amp; Declarations</a></h1>
-<p>At the top level, a <em>Par</em> file consists of <strong>definitions</strong>, <strong>declarations</strong>, and <strong>type definitions</strong>.</p>
-<p>These define <strong>global names</strong> that can be used throughout the file, an unlimited number of times.</p>
+<p>Let’s keep working with the package created by <code>par new</code>.</p>
+<p>Its <code>src/Main.par</code> file starts like this:</p>
+<pre><code class="language-par">module Main
+</code></pre>
+<p>There may also be imports above the rest of the code, but we’re going to ignore those for a moment
+and focus only on what comes after them.</p>
+<p>At the top level of a Par module, you write:</p>
+<ul>
+<li><strong>definitions</strong></li>
+<li><strong>declarations</strong></li>
+<li><strong>type definitions</strong></li>
+</ul>
+<p>These define <strong>global names</strong> that can be used throughout the module, an unlimited number of times.</p>
+<p>In a fresh package, <code>par run</code> looks for the <code>Main</code> definition in the <code>Main</code> module, that is
+<code>Main.Main</code>.</p>
+<p>So:</p>
+<ul>
+<li><code>par run</code> means <code>Main.Main</code></li>
+<li><code>par run Main.Other</code> means the <code>Other</code> definition in the <code>Main</code> module</li>
+</ul>
+<p>Once there are more modules, the same idea extends to paths such as <code>par run util/Parse.Program</code>.
+We’ll come back to that in the next section.</p>
 <blockquote>
 <p>Because of Par’s linear type system, local variables may be required to be used <em>exactly once.</em> That is
 if they have a linear type. Global definitions can be used any number of times regardless of their
@@ -174,7 +194,7 @@ type.</p>
 <li><strong>Local names start with a lower-case letter, or <code>_</code>.</strong> That includes local variables, function
 parameters, and type variables in generic functions.</li>
 </ul>
-<p>While global names can be used throughout the program, there is an <em>important restriction!</em></p>
+<p>While global names can be used throughout their module, there is an <em>important restriction!</em></p>
 <blockquote>
 <p>❗ <strong>Cyclic usages are forbidden!</strong> Both in types, and in definitions.</p>
 <p>That means that if a type <code>Alice</code> uses a type <code>Bob</code>, then <code>Bob</code> can’t use <code>Alice</code>. Same for functions,
@@ -202,7 +222,9 @@ with repeatedly.</li>
 <h2 id="definitions"><a class="header" href="#definitions">Definitions</a></h2>
 <p>Global values (including functions) are defined at the top level starting with the keyword <code>def</code>,
 followed by an upper-case name, an <code>=</code> sign, and an expression computing the value.</p>
-<pre><code class="language-par">def MyNumber = 7
+<pre><code class="language-par">module Main
+
+def MyNumber = 7
 </code></pre>
 <p>In this case, Par is able to infer the type of <code>MyNumber</code> as <a href="./primitive_types.html#nat"><code>Nat</code></a>
 (a natural number), so no type annotation is needed. Often, a type annotation is needed, or wanted.
@@ -232,7 +254,7 @@ def SumList = [list] list.begin.case {
 <p>Declarations may be placed anywhere in a file, so feel free to put them all on top, or keep them close
 to their corresponding definitions.</p>
 <h2 id="type-definitions"><a class="header" href="#type-definitions">Type Definitions</a></h2>
-<p>Par has a <a href="TODO">structural</a> type system. While many languages offer multiple forms of type definitions
+<p>Par has a <a href="../introduction.html#orthogonality-goes-wide-not-deep">structural</a> type system. While many languages offer multiple forms of type definitions
 — for example, Rust has <code>struct</code>, <code>enum</code>, and more — Par only has one: <strong>type aliases.</strong></p>
 <blockquote>
 <p>With <a href="../types/recursive.html">recursive</a> and <a href="../types/iterative.html">iterative</a> types being anonymous,
@@ -284,6 +306,8 @@ type argument. So, the above is equal to:</p>
   .item(Int) self,
 }
 </code></pre>
+<p>Now that we know what goes inside a module, let’s zoom out and look at <strong>packages, modules, imports,
+and exports.</strong></p>
 
                     </main>
 
@@ -293,7 +317,7 @@ type argument. So, the above is equal to:</p>
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../structure/primitive_types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../structure/packages_and_modules.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -307,7 +331,7 @@ type argument. So, the above is equal to:</p>
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../structure/primitive_types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../structure/packages_and_modules.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

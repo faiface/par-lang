@@ -258,7 +258,11 @@ distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begi
 <code>begin@label</code> and <code>loop@label</code>.</p>
 </blockquote>
 <p>Here’s a simple <code>Sequence&lt;Int&gt;</code> that produces the number <code>7</code> forever:</p>
-<pre><code class="language-par">dec SevenForever : Sequence&lt;Int&gt;
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+dec SevenForever : Sequence&lt;Int&gt;
 def SevenForever = begin case {
   .close =&gt; !,
   .next  =&gt; (7) loop,
@@ -304,7 +308,11 @@ to the <code>begin</code>.</p>
 <p><strong>Retention of local variables</strong> works the same as in <a href="./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>.
 With iterative types, we can use it to carry and <strong>update the internal state</strong> of the iterative object.</p>
 <p>For example, here’s an infinite sequence of fibonacci numbers:</p>
-<pre><code class="language-par">def Fibonacci: Sequence&lt;Nat&gt; =
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+def Fibonacci: Sequence&lt;Nat&gt; =
   let (a, b)! = (0, 1)!
   in begin case {
     .close =&gt; !,

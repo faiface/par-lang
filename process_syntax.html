@@ -176,7 +176,7 @@ for a practical programming language; <em>GV</em> — a functional language in t
 to take that role. However, I saw much more potential in <em>CP</em>, and decided to turn it into
 a practical language.</p>
 <p>How is it then that Par managed to look perfectly functional until now? Turns out,
-<strong>all of the <em>construction</em> and <em>destruction</em> syntax described in <a href="./types.html"><em>Types &amp; Their Expressions</em></a> can actually be considered a syntax sugar over the fundamental process syntax of Par</strong>.</p>
+<strong>all of the <em>construction</em> and <em>destruction</em> syntax described in <a href="./types_and_expressions.html"><em>Types &amp; Their Expressions</em></a> can actually be considered a syntax sugar over the fundamental process syntax of Par</strong>.</p>
 <p>While most of the Par code you’ll be writing will use <em>expression syntax</em>, the full power of the
 language rests in the <em>process syntax</em>. There are things Par can express, which simply are not
 expressible using the constructs we learned thus far.</p>
@@ -196,8 +196,12 @@ what to send, what to receive.</li>
 clearer as we understand this process syntax.</p>
 <p>Processes and commands have been more hidden, so far. They were always there, but not in a plain sight! Any expression, be
 it a construction, or a destruction, compiled to processes composed of commands.</p>
-<p>In fact, you can see it for yourself! Let’s take any Par program, say <code>examples/HelloWorld.par</code>.</p>
-<pre><code class="language-par">def Program = Console.Open
+<p>In fact, you can see it for yourself! Let’s take any Par program, say <code>examples/src/HelloWorld.par</code>.</p>
+<pre><code class="language-par">module HelloWorld
+
+import @basic/Console
+
+def Program = Console.Open
   .print("Hello, world!")
   .close
 </code></pre>
@@ -206,7 +210,11 @@ it a construction, or a destruction, compiled to processes composed of commands.
 <p>What you see on the right is the same program rewritten using the most bare-bones process syntax that Par offers.
 Aside from the <code>#</code>-signs in front of some variables (Par uses them for internally generated variables to avoid
 name clashes), this is a valid Par program. If we remove those, we get this:</p>
-<pre><code class="language-par">def Program = chan result {
+<pre><code class="language-par">module HelloWorld
+
+import @basic/Console
+
+def Program = chan result {
   let object = Console.Open
   object.print
   object("Hello, world!")
@@ -269,7 +277,7 @@ all the way to unlocking the full semantics of Par by exploiting <strong>duality
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="types/continuation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="big_table.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -283,7 +291,7 @@ all the way to unlocking the full semantics of Par by exploiting <strong>duality
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="types/continuation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="big_table.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

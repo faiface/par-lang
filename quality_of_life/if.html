@@ -170,7 +170,14 @@ full condition language, and finally see how the same ideas apply in process
 code.</p>
 <h2 id="expression-if---"><a class="header" href="#expression-if---">Expression <code>if { ... }</code></a></h2>
 <p>Let’s start with a small example:</p>
-<pre><code class="language-par">dec Describe : [Bool] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Bool
+  @core/String
+}
+
+dec Describe : [Bool] String
 def Describe = [flag] if {
   flag =&gt; "on",
   else =&gt; "off",
@@ -229,7 +236,14 @@ so <code>value is .less!</code> is valid, but <code>value is .less</code> is not
 }
 </code></pre>
 <p>Now an <code>if</code> can match directly on those variants:</p>
-<pre><code class="language-par">dec CompareSign : [Int, Int] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+dec CompareSign : [Int, Int] String
 def CompareSign = [x, y]
   let cmp = Int.Compare(x, y) in
   if {

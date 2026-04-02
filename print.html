@@ -228,16 +228,9 @@ escape hatch. But, the eventual goal is to get rid of it.</p>
 explored.</p>
 <p>If you’re curious about what programming can look like when guided by logic — <strong>turn the page.</strong></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
-<p>Let’s install the <strong>Par</strong> programming language. Currently, we have:</p>
-<ul>
-<li>A <em>playground</em> to code and interactively explore your and built-in definitions via
-an <em>automatic UI.</em></li>
-<li>A <em><code>run</code></em> command to run definitions with the <a href="./types/unit.html">unit</a> type straight from
-the console.</li>
-<li>A <em><code>check</code></em> command to check Par programs for validity without actually running them.</li>
-</ul>
+<p>Let’s install the <strong>Par</strong> programming language.</p>
 <p>At the moment, there are no pre-built binaries, or releases, so we’ll have to build it from
-souce.</p>
+source.</p>
 <h3 id="1-install-rust-and-cargo"><a class="header" href="#1-install-rust-and-cargo">1. Install Rust and Cargo</a></h3>
 <p>Par is written in <a href="https://www.rust-lang.org">Rust</a>. To be able to build it from source,
 we’ll need to install Rust and its build tool, called Cargo.</p>
@@ -261,11 +254,41 @@ in your terminal:</p>
 <pre><code>$ cargo install --path .
 </code></pre>
 <p>This may take a while as Rust downloads and builds all the dependencies.</p>
-<h3 id="4-try-it-out"><a class="header" href="#4-try-it-out">4. Try it out!</a></h3>
-<p>A new <code>par-lang</code> command should now be available in your terminal. It may be necessary
+<p>This installs the <code>par</code> command.</p>
+<h3 id="4-create-a-package"><a class="header" href="#4-create-a-package">4. Create a package</a></h3>
+<p>A new <code>par</code> command should now be available in your terminal. It may be necessary
 to restart the terminal for it to appear.</p>
-<p>If successful, start the Par’s playground:</p>
-<pre><code>$ par-lang playground
+<p>Let’s create a fresh package:</p>
+<pre><code>$ par new hello_par
+$ cd hello_par
+</code></pre>
+<p>This creates:</p>
+<pre><code class="language-text">hello_par/
+  Par.toml
+  src/
+    Main.par
+</code></pre>
+<p>The generated <code>src/Main.par</code> is a tiny runnable Par program. You can run it with:</p>
+<pre><code>$ par run
+</code></pre>
+<p>And you can type-check the package without running it:</p>
+<pre><code>$ par check
+</code></pre>
+<h3 id="5-browse-the-docs"><a class="header" href="#5-browse-the-docs">5. Browse the docs</a></h3>
+<p>Par comes with a built-in docs browser:</p>
+<pre><code>$ par doc
+</code></pre>
+<p>This command is useful in three different situations:</p>
+<ul>
+<li><strong>Outside any package,</strong> <code>par doc</code> shows the documentation for the built-in packages.</li>
+<li><strong>Inside a package,</strong> <code>par doc</code> shows the current package together with its dependencies.</li>
+<li><strong>For a remote package,</strong> <code>par doc --remote github.com/faiface/par-cancellable</code> lets you inspect
+a package without manually adding it as a dependency.</li>
+</ul>
+<h3 id="6-open-the-playground"><a class="header" href="#6-open-the-playground">6. Open the playground</a></h3>
+<p>The playground is a great way to experiment with code and interact with values through the
+playground’s automatic UI:</p>
+<pre><code>$ par playground
 </code></pre>
 <p>And the playground should appear:</p>
 <p><img src="./images/getting_started_1.png" alt="Playground window" /></p>
@@ -273,31 +296,46 @@ to restart the terminal for it to appear.</p>
 <p>In case of problems, head over to our <a href="https://discord.gg/8KsypefW99">Discord</a>, we’ll try and
 help.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="basic-program-structure"><a class="header" href="#basic-program-structure">Basic Program Structure</a></h1>
-<p>For now, <em>Par</em> lacks a proper module system. Each program is contained in one file, with built-in
-names imported automatically.</p>
-<p>These built-in names are scoped in modules — for example, <code>Int.Add</code> is a function called <code>Add</code> in the
-<code>Int</code> module — but there is no way to define custom modules. All we can do is define types and values,
-and then run them, interactively!</p>
-<p>Before we start defining our own types and values, the built-in definitions already give us something
-to play with.</p>
-<p>Let’s open the playground!</p>
-<pre><code>$ par-lang playground
+<p>Before we start writing our own package, it’s helpful to see Par in action in the playground.</p>
+<p>Let’s open it:</p>
+<pre><code>$ par playground
 </code></pre>
-<p>Press <strong>Compile</strong>, then hit the <strong>Run</strong> button:</p>
+<p>Press <strong>Compile</strong>, then open <strong>Run → Packages → core → Int → Add</strong>:</p>
 <p><img src="./images/basic_structure_1.png" alt="Run on an empty program" /></p>
-<p>All the built-in names are there. Let’s run <code>Int.Add</code>:</p>
+<p>That picks the built-in <code>Int.Add</code> definition from the <code>core</code> package:</p>
 <p><img src="./images/basic_structure_2.png" alt="Run Int.Add" /></p>
 <p>An <strong>automatic UI</strong> shows up, telling us to input two numbers. After confirming both inputs,
 we get a result:</p>
 <p><img src="./images/basic_structure_3.png" alt="Int.Add result" /></p>
-<p>The playground features an <em>automatic</em> UI. Nobody made a specific interaface for this <code>Int.Add</code> function.
-Instead, the UI that shows up is based purely on its type — here, a function from two integers to an
-integer result.</p>
-<p>Go ahead, and play with any built-in definition! Then, when you turn the page, we’re going to talk about
-creating our own.</p>
+<p>This automatic UI is a feature of the <strong>playground,</strong> not of the Par language itself. Nobody made a
+specific interface for <code>Int.Add</code>. Instead, the playground looked at its type — here, a function from
+two integers to an integer result — and generated a small interface for interacting with it.</p>
+<p>That makes the playground a nice way to explore built-in definitions, and later your own definitions
+too.</p>
+<p>On the next page, we’ll create a fresh package and look at what actually lives inside a Par module.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="definitions--declarations"><a class="header" href="#definitions--declarations">Definitions &amp; Declarations</a></h1>
-<p>At the top level, a <em>Par</em> file consists of <strong>definitions</strong>, <strong>declarations</strong>, and <strong>type definitions</strong>.</p>
-<p>These define <strong>global names</strong> that can be used throughout the file, an unlimited number of times.</p>
+<p>Let’s keep working with the package created by <code>par new</code>.</p>
+<p>Its <code>src/Main.par</code> file starts like this:</p>
+<pre><code class="language-par">module Main
+</code></pre>
+<p>There may also be imports above the rest of the code, but we’re going to ignore those for a moment
+and focus only on what comes after them.</p>
+<p>At the top level of a Par module, you write:</p>
+<ul>
+<li><strong>definitions</strong></li>
+<li><strong>declarations</strong></li>
+<li><strong>type definitions</strong></li>
+</ul>
+<p>These define <strong>global names</strong> that can be used throughout the module, an unlimited number of times.</p>
+<p>In a fresh package, <code>par run</code> looks for the <code>Main</code> definition in the <code>Main</code> module, that is
+<code>Main.Main</code>.</p>
+<p>So:</p>
+<ul>
+<li><code>par run</code> means <code>Main.Main</code></li>
+<li><code>par run Main.Other</code> means the <code>Other</code> definition in the <code>Main</code> module</li>
+</ul>
+<p>Once there are more modules, the same idea extends to paths such as <code>par run util/Parse.Program</code>.
+We’ll come back to that in the next section.</p>
 <blockquote>
 <p>Because of Par’s linear type system, local variables may be required to be used <em>exactly once.</em> That is
 if they have a linear type. Global definitions can be used any number of times regardless of their
@@ -309,7 +347,7 @@ type.</p>
 <li><strong>Local names start with a lower-case letter, or <code>_</code>.</strong> That includes local variables, function
 parameters, and type variables in generic functions.</li>
 </ul>
-<p>While global names can be used throughout the program, there is an <em>important restriction!</em></p>
+<p>While global names can be used throughout their module, there is an <em>important restriction!</em></p>
 <blockquote>
 <p>❗ <strong>Cyclic usages are forbidden!</strong> Both in types, and in definitions.</p>
 <p>That means that if a type <code>Alice</code> uses a type <code>Bob</code>, then <code>Bob</code> can’t use <code>Alice</code>. Same for functions,
@@ -337,7 +375,9 @@ with repeatedly.</li>
 <h2 id="definitions"><a class="header" href="#definitions">Definitions</a></h2>
 <p>Global values (including functions) are defined at the top level starting with the keyword <code>def</code>,
 followed by an upper-case name, an <code>=</code> sign, and an expression computing the value.</p>
-<pre><code class="language-par">def MyNumber = 7
+<pre><code class="language-par">module Main
+
+def MyNumber = 7
 </code></pre>
 <p>In this case, Par is able to infer the type of <code>MyNumber</code> as <a href="structure/./primitive_types.html#nat"><code>Nat</code></a>
 (a natural number), so no type annotation is needed. Often, a type annotation is needed, or wanted.
@@ -367,7 +407,7 @@ def SumList = [list] list.begin.case {
 <p>Declarations may be placed anywhere in a file, so feel free to put them all on top, or keep them close
 to their corresponding definitions.</p>
 <h2 id="type-definitions"><a class="header" href="#type-definitions">Type Definitions</a></h2>
-<p>Par has a <a href="structure/TODO">structural</a> type system. While many languages offer multiple forms of type definitions
+<p>Par has a <a href="structure/../introduction.html#orthogonality-goes-wide-not-deep">structural</a> type system. While many languages offer multiple forms of type definitions
 — for example, Rust has <code>struct</code>, <code>enum</code>, and more — Par only has one: <strong>type aliases.</strong></p>
 <blockquote>
 <p>With <a href="structure/../types/recursive.html">recursive</a> and <a href="structure/../types/iterative.html">iterative</a> types being anonymous,
@@ -419,6 +459,305 @@ type argument. So, the above is equal to:</p>
   .item(Int) self,
 }
 </code></pre>
+<p>Now that we know what goes inside a module, let’s zoom out and look at <strong>packages, modules, imports,
+and exports.</strong></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="packages--modules"><a class="header" href="#packages--modules">Packages &amp; Modules</a></h1>
+<p>So far, we’ve focused on the contents of one module file. That’s a good place to start, but real Par
+programs live in <strong>packages,</strong> and packages are made of <strong>modules.</strong></p>
+<p>The hierarchy looks like this:</p>
+<ul>
+<li>A <strong>program</strong> or a <strong>library</strong> is a <strong>package.</strong></li>
+<li>A <strong>package</strong> contains <strong>modules.</strong></li>
+<li>A <strong>module</strong> contains <strong>type definitions, declarations, and definitions.</strong></li>
+</ul>
+<p>Let’s now look at how those pieces fit together.</p>
+<h2 id="packages"><a class="header" href="#packages">Packages</a></h2>
+<p>A Par package is a project directory with a <code>Par.toml</code> file and a <code>src/</code> directory.</p>
+<p>For example:</p>
+<pre><code class="language-text">hello_par/
+  Par.toml
+  src/
+    Main.par
+</code></pre>
+<p>This is exactly what <code>par new hello_par</code> creates.</p>
+<p>The <code>Par.toml</code> file starts like this:</p>
+<pre><code class="language-toml">[package]
+name = "hello_par"
+</code></pre>
+<p>This <code>name</code> is the package’s <strong>recommended name.</strong> It is used by tooling such as generated
+docs.</p>
+<h3 id="dependencies"><a class="header" href="#dependencies">Dependencies</a></h3>
+<p>Packages may depend on other packages through the <code>[dependencies]</code> section:</p>
+<pre><code class="language-toml">[package]
+name = "postify"
+
+[dependencies]
+web = "github.com/author/par-web"
+shared = "../shared"
+</code></pre>
+<p>Each dependency has the form:</p>
+<pre><code class="language-toml">alias = "reference"
+</code></pre>
+<p>The <strong>alias</strong> on the left is the name used in imports, such as <code>@web/...</code>.</p>
+<p>The <strong>reference</strong> on the right may be one of two things:</p>
+<ul>
+<li>A <strong>local path.</strong> These are recognized by starting with <code>.</code>, <code>..</code>, <code>~</code>, or <code>$</code>.</li>
+<li>A <strong>remote dependency source.</strong> Anything else is treated as remote, for example
+<code>github.com/faiface/par-cancellable</code>.</li>
+</ul>
+<p>Local paths may look like:</p>
+<pre><code class="language-toml">shared = "./shared"
+common = "../common"
+tools = "~/par/tools"
+extras = "$PAR_PACKAGES/extras"
+</code></pre>
+<p>Remote dependencies currently have <strong>no versioning.</strong> Par just fetches the latest contents from the given source.</p>
+<h3 id="managing-remote-dependencies"><a class="header" href="#managing-remote-dependencies">Managing remote dependencies</a></h3>
+<p>Remote dependencies are managed by the CLI:</p>
+<ul>
+<li><code>par add</code> reads <code>Par.toml</code> and fetches any missing remote dependencies into <code>dependencies/</code>.</li>
+<li><code>par update</code> re-fetches all managed remote dependencies.</li>
+<li><code>par add github.com/faiface/par-cancellable</code> both adds that dependency to <code>Par.toml</code> under its
+recommended name and fetches it.</li>
+</ul>
+<p>The <code>dependencies/</code> directory is managed state. It is not where you write source code.</p>
+<p>Transitive remote dependencies are fetched automatically. If the same remote package is reached
+through multiple dependencies, Par handles that seamlessly and fetches it only once.</p>
+<p>Local dependencies are <strong>not</strong> copied into <code>dependencies/</code>. They stay where they are on disk and are
+referenced directly.</p>
+<h3 id="built-in-packages"><a class="header" href="#built-in-packages">Built-in packages</a></h3>
+<p>Every package automatically depends on two built-in packages:</p>
+<ul>
+<li><code>@core</code> for core types and data structures such as <code>String</code>, <code>List</code>, <code>Map</code>, <code>Result</code>, and so on.</li>
+<li><code>@basic</code> for simple I/O such as <code>Console</code>, <code>Os</code>, and <code>Http</code>.</li>
+</ul>
+<p>These are <strong>implicit dependencies,</strong> but <strong>not implicit imports.</strong> Their modules are available to import from,
+but their names are not automatically in scope inside your source files.</p>
+<h3 id="browsing-packages-with-par-doc"><a class="header" href="#browsing-packages-with-par-doc">Browsing packages with <code>par doc</code></a></h3>
+<p>The <code>par doc</code> command is all about exploring packages:</p>
+<ul>
+<li>Outside any package, <code>par doc</code> shows the <strong>built-in packages.</strong></li>
+<li>Inside a package, <code>par doc</code> shows the <strong>current package together with its dependencies.</strong></li>
+<li><code>par doc --remote github.com/faiface/par-cancellable</code> lets you inspect a <strong>remote package</strong>
+without manually adding it as a dependency.</li>
+</ul>
+<h2 id="modules"><a class="header" href="#modules">Modules</a></h2>
+<p>Modules live under <code>src/</code>, in any directory structure you like.</p>
+<p>For example:</p>
+<pre><code class="language-text">src/
+  Main.par
+  data/
+    Post.par
+  handlers/
+    api/
+      Posts.par
+</code></pre>
+<p>Here:</p>
+<ul>
+<li><code>src/Main.par</code> defines the <code>Main</code> module.</li>
+<li><code>src/data/Post.par</code> defines the <code>Post</code> module with the path <code>data/Post</code>.</li>
+<li><code>src/handlers/api/Posts.par</code> defines the <code>Posts</code> module with the path <code>handlers/api/Posts</code>.</li>
+</ul>
+<p>Notice the split:</p>
+<ul>
+<li>A module has a <strong>name</strong> such as <code>Post</code>.</li>
+<li>A module also has a <strong>path</strong> such as <code>data/Post</code>.</li>
+</ul>
+<p>The <strong>name</strong> is what appears in the file:</p>
+<pre><code class="language-par">module Post
+</code></pre>
+<p>The <strong>path</strong> is how the module is imported from elsewhere.
+The file name and the module declaration must match, <strong>case-insensitively.</strong></p>
+<p>So:</p>
+<ul>
+<li><code>Post.par</code> must declare <code>module Post</code></li>
+<li><code>posts.par</code> may also declare <code>module Post</code></li>
+<li><code>handlers/api/Posts.par</code> must declare <code>module Posts</code></li>
+</ul>
+<p>The directories contribute to the module’s <strong>path</strong>, not to its declared module name.</p>
+<h2 id="importing-modules"><a class="header" href="#importing-modules">Importing modules</a></h2>
+<p>Modules import other modules explicitly.</p>
+<p>To import a module from the <strong>same package,</strong> use its absolute path from <code>src/</code>:</p>
+<pre><code class="language-par">import data/Post
+import handlers/api/Posts
+</code></pre>
+<p>Relative module imports are <strong>not</strong> supported.</p>
+<p>Import paths always use forward slashes:</p>
+<pre><code class="language-par">import util/DateTimeUtils
+</code></pre>
+<p>To import a module from a <strong>dependency,</strong> prefix the path with <code>@alias</code>:</p>
+<pre><code class="language-par">import @web/http/Server
+import @shared/FancyModule
+</code></pre>
+<h3 id="aliasing-imports"><a class="header" href="#aliasing-imports">Aliasing imports</a></h3>
+<p>If two modules would clash, rename them on import:</p>
+<pre><code class="language-par">import @dep1/blah/Data as Data1
+import @dep2/bleh/Data as Data2
+</code></pre>
+<h3 id="grouped-imports"><a class="header" href="#grouped-imports">Grouped imports</a></h3>
+<p>Multiple imports can be grouped:</p>
+<pre><code class="language-par">import {
+  @basic/Console
+  @core/List
+  data/Post
+}
+</code></pre>
+<p>Grouped imports are just syntax sugar over multiple <code>import</code> statements.</p>
+<h2 id="accessing-names-from-imported-modules"><a class="header" href="#accessing-names-from-imported-modules">Accessing names from imported modules</a></h2>
+<p>Once a module is imported, its exported items are accessed through the module name:</p>
+<pre><code class="language-par">import {
+  @core/List
+  @core/Nat
+  @core/String
+  data/Post
+}
+
+dec RenderPosts : String
+def RenderPosts = Post.FetchAllFromDB(!)-&gt;List.Length-&gt;Nat.ToString
+</code></pre>
+<p>In general, imported names are accessed as:</p>
+<pre><code class="language-par">Module.Name
+</code></pre>
+<h2 id="primary-types-and-primary-declarations"><a class="header" href="#primary-types-and-primary-declarations">Primary types and primary declarations</a></h2>
+<p>A module may export a <strong>type</strong> and/or a <strong>declaration</strong> with the same name as the module itself.</p>
+<p>Those are special: they become available directly under the module name.</p>
+<p>For example:</p>
+<pre><code class="language-par">module Post
+
+export {
+  type Post = box choice {
+    .title =&gt; String,
+    .content =&gt; String,
+  }
+
+  dec Post : [String, String] Post
+  dec FetchAllFromDB : [!] List&lt;Post&gt;
+}
+</code></pre>
+<p>Now another module can write:</p>
+<pre><code class="language-par">import data/Post
+</code></pre>
+<p>and gets access to:</p>
+<ul>
+<li><code>Post</code> as a <strong>type</strong></li>
+<li><code>Post</code> as a <strong>declaration</strong></li>
+<li><code>Post.FetchAllFromDB</code> as another exported declaration from the module</li>
+</ul>
+<p>This works smoothly with aliases too:</p>
+<pre><code class="language-par">import @core/List as L
+</code></pre>
+<p>After that:</p>
+<ul>
+<li><code>L&lt;a&gt;</code> is the primary type of the module</li>
+<li><code>L.Map</code>, <code>L.Filter</code>, and so on are other exported declarations</li>
+</ul>
+<p>Having both a primary type <code>Post</code> and a primary declaration <code>Post</code> is perfectly fine,
+because in Par, types and terms are always distinguishable by syntactic position.</p>
+<h2 id="visibility-and-exports"><a class="header" href="#visibility-and-exports">Visibility and exports</a></h2>
+<p>There are two related visibility questions:</p>
+<ol>
+<li>Is the <strong>module</strong> visible outside its package?</li>
+<li>Is a <strong>type</strong> or <strong>declaration</strong> visible outside its module?</li>
+</ol>
+<h3 id="exporting-a-module"><a class="header" href="#exporting-a-module">Exporting a module</a></h3>
+<p>Modules are visible <strong>inside their own package</strong> regardless of <code>export module</code>.</p>
+<p>To make a module visible to <strong>dependent packages,</strong> mark it:</p>
+<pre><code class="language-par">export module List
+</code></pre>
+<h3 id="exporting-items"><a class="header" href="#exporting-items">Exporting items</a></h3>
+<p>Types and declarations are <strong>module-private by default.</strong></p>
+<p>To make them visible outside the module, use <code>export</code>:</p>
+<pre><code class="language-par">export type Iterator&lt;a&gt; = ...
+export dec Map : ...
+</code></pre>
+<p>Or grouped:</p>
+<pre><code class="language-par">export {
+  type Iterator&lt;a&gt; = ...
+  dec Map : ...
+  dec Filter : ...
+}
+</code></pre>
+<p>There is <strong>no</strong> <code>export def</code>.</p>
+<p>Definitions are always the implementation side. If you want a value to be visible, export its
+<strong>declaration</strong>.</p>
+<h3 id="the-three-visibility-levels"><a class="header" href="#the-three-visibility-levels">The three visibility levels</a></h3>
+<p>Putting the two layers together gives three effective visibility modes for items:</p>
+<ol>
+<li><code>export module</code> + exported item<br />
+The item is visible to dependent packages.</li>
+<li>Non-exported module + exported item<br />
+The item is visible throughout its own package, but not outside it.</li>
+<li>Any module + non-exported item<br />
+The item is visible only inside its own module.</li>
+</ol>
+<h3 id="visibility-is-checked-through-types-too"><a class="header" href="#visibility-is-checked-through-types-too">Visibility is checked through types too</a></h3>
+<p>Par also checks that visible API does not mention hidden types.</p>
+<p>For example, if a declaration is visible throughout the package, or exported from the package,
+then its type must not mention a less-visible type. In other words:</p>
+<ul>
+<li>a package-visible item may not mention a module-private type</li>
+<li>a public item may not mention a merely package-visible type</li>
+</ul>
+<p>This prevents less-visible helper types from leaking into wider APIs.</p>
+<h2 id="cycles"><a class="header" href="#cycles">Cycles</a></h2>
+<p>In the previous section, we already saw that types and definitions may not use one another in a
+cycle, and package dependencies follow the same spirit: cyclic dependencies between packages are
+disallowed.</p>
+<p>Modules are different, though: cyclic imports between modules of the same package are allowed.</p>
+<p>Why is that useful, if definitions still may not form cycles? Because modules often need one
+another’s types in their signatures, and some definitions in one module may legitimately call
+definitions in the other as long as no actual usage cycle is formed.</p>
+<p>For example, the built-in <code>@core/List</code> module imports <code>@core/Nat</code> because <code>List.Length</code> returns a
+<code>Nat</code>. At the same time, <code>@core/Nat</code> imports <code>@core/List</code> because <code>Nat.Range</code> returns a
+<code>List&lt;Nat&gt;</code>.</p>
+<p>So the modules import each other, but there is still no cyclic usage between the individual
+definitions themselves.</p>
+<h2 id="multi-file-modules"><a class="header" href="#multi-file-modules">Multi-file modules</a></h2>
+<p>If one file becomes too large, a module may be split across several files in the same directory:</p>
+<pre><code class="language-text">src/
+  Parser.par
+  Parser.lexing.par
+  Parser.errors.par
+</code></pre>
+<p>These all belong to the same module:</p>
+<pre><code class="language-par">module Parser
+</code></pre>
+<p>The rules are:</p>
+<ul>
+<li><code>Parser.par</code> and every <code>Parser.*.par</code> in the same directory are parts of one module.</li>
+<li>Every part still declares <code>module Parser</code>.</li>
+<li>All parts share one top-level module namespace.</li>
+<li>Each file has its <strong>own imports</strong> that apply only within that file.</li>
+<li>All parts must agree on whether the module is marked <code>export module</code>.</li>
+</ul>
+<h2 id="running-a-definition"><a class="header" href="#running-a-definition">Running a definition</a></h2>
+<p><code>par run</code> is specifically for definitions of type <code>!</code> — the unit type, comparable to <code>null</code> or an
+empty tuple in other languages.</p>
+<p>Other non-generic definitions can still be run in the playground, which generates an automatic UI
+for interacting with them based on their type.</p>
+<p>Now that modules have paths, the <code>par run</code> target syntax makes more sense:</p>
+<ul>
+<li>Targets have one of these forms:
+<ul>
+<li><code>path/to/Module</code></li>
+<li><code>path/to/Module.Def</code></li>
+</ul>
+</li>
+<li>The slash-separated part is always the <strong>module path.</strong></li>
+<li>If the target ends right after the module path, <code>par run</code> looks for the module’s <code>Main</code>
+definition.</li>
+<li>If the target ends with <code>.Def</code>, Par runs that specific definition from the module.</li>
+</ul>
+<p>So:</p>
+<ul>
+<li><code>par run</code> means <code>Main.Main</code></li>
+<li><code>par run Main</code> also means <code>Main.Main</code></li>
+<li><code>par run Main.Other</code> means the <code>Other</code> definition in the <code>Main</code> module</li>
+<li><code>par run handlers/api/Posts</code> means <code>handlers/api/Posts.Main</code></li>
+<li><code>par run handlers/api/Posts.Program</code> means the <code>Program</code> definition in the <code>handlers/api/Posts</code> module</li>
+</ul>
+<p>The same path-based rules are used by other commands such as <code>par test</code>.</p>
+<p>That’s the package/module system. With that in place, we can now return to the language itself.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="primitive-types"><a class="header" href="#primitive-types">Primitive Types</a></h1>
 <p>Before taking a stroll in the diverse garden of Par’s types, let’s stop by the most basic ones:
 the <em>primitives.</em></p>
@@ -440,30 +779,42 @@ that are operated on using magical built-in functions. This is necessary to achi
 efficient representation.</p>
 </blockquote>
 <p>Primitives are manipulated using magical built-in functions.</p>
+<p>Primitive <strong>literals</strong> are special: you can write values such as <code>42</code>, <code>"Hello"</code>, <code>&lt;&lt;65&gt;&gt;</code>, or
+<code>&lt;&lt;65 66&gt;&gt;</code> without importing anything.</p>
+<p>But the module names <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>, <code>Byte</code>, and <code>Bytes</code> are <strong>not</strong> automatically
+in scope. So if you want to:</p>
+<ul>
+<li>mention one of these types explicitly</li>
+<li>or call functions from their modules, such as <code>Int.Add</code> or <code>String.Reader</code></li>
+</ul>
+<p>then you need to import the corresponding module from <code>@core</code>.</p>
 <p><strong>To find the list of all built-in functions:</strong></p>
 <ol>
 <li>Open the playground.
-<pre><code>$ par-lang playground
+<pre><code>$ par playground
 </code></pre>
 </li>
 <li>Press <strong>Compile,</strong> and <strong>Run.</strong> Scroll the list that pops up.
 <img src="structure/../images/strings_and_numbers_1.png" alt="List of built-in functions" /></li>
 </ol>
-<p>Alternatively, the <a href="structure/../builtin.html">Built-In Definitions</a> chapter contains all built-in definitions
-available in the language.</p>
+<p>Alternatively, <code>par doc</code> lets you browse the built-in packages and their exported definitions.</p>
 <p><strong>To figure out the type of a built-in function:</strong></p>
 <ol>
 <li>Assigning it to your own <code>def</code>, such as:
-<pre><code class="language-par">def Examine = Int.ToString
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+def Examine = Int.ToString
 </code></pre>
-Par knows the type of <code>Int.String</code>, so it will infer it for <code>Examine</code> as well.</li>
+Par knows the type of <code>Int.ToString</code>, so it will infer it for <code>Examine</code> as well.</li>
 <li>Press <strong>Compile.</strong></li>
 <li>Move the cursor to the definition. The playground will display the type on the right,
 in green.
 <img src="structure/../images/strings_and_numbers_2.png" alt="Displayed type of a built-in function" /></li>
 </ol>
 <p>The type <code>[Int] String</code> is a <a href="structure/../types/function.html">function</a> from <code>Int</code> to <code>String</code>. We will cover
-functions and other types in detail <a href="structure/../types.html">later</a>. Despite that, we’ll still play with
+functions and other types in detail <a href="structure/../types_and_expressions.html">later</a>. Despite that, we’ll still play with
 some built-in functions in this section. All you need to know is that
 <strong>the square brackets enclose function arguments,</strong> and the result type follows. For example:</p>
 <ul>
@@ -484,10 +835,14 @@ before we understand what’s actually going on here.</p>
 <p>Integers are arbitrarily sized whole numbers, positive or negative.</p>
 <p>Their literals consist of digits, optionally prefixed with <code>-</code> or <code>+</code>, and may include underscores
 for readability.</p>
-<pre><code class="language-par">def Num1: Int = 7
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+def Num1: Int = 7
 def Num2: Int = -123_456_789
 </code></pre>
-<p>The type annotations are not needed:</p>
+<p>The type annotations are not needed, and then no import is required:</p>
 <pre><code class="language-par">def Num3 = 42
 def Num4 = -2202
 </code></pre>
@@ -501,7 +856,14 @@ def Num6 = Int.Mul(3, 4)  // = 12
 <h2 id="nat"><a class="header" href="#nat"><code>Nat</code></a></h2>
 <p>Natural numbers are just integers excluding the negative ones. <code>Nat</code> is a subtype of <code>Int</code>, so
 every variable of type <code>Nat</code> can be used as an <code>Int</code>, too.</p>
-<pre><code class="language-par">def Num7 = 14  // inferred as `Nat`
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/Nat
+}
+
+def Num7 = 14  // inferred as `Nat`
 def Num8 = 17  // inferred as `Nat`
 
 // perfectly valid
@@ -532,7 +894,11 @@ def Str2 = "World"
 <p>To concatenate strings, use <code>String.Builder</code>. To fully understand how it works, we’ll need to
 cover <a href="structure/../types/iterative.html">iterative</a> and <a href="structure/../types/choice.html">choice</a> types, but perhaps
 you can get the idea:</p>
-<pre><code class="language-par">def Str3 = String.Builder
+<pre><code class="language-par">module Main
+
+import @core/String
+
+def Str3 = String.Builder
   .add(Str1)
   .add(", ")
   .add(Str2)
@@ -541,9 +907,13 @@ you can get the idea:</p>
 <p>Analyzing strings — such as finding, splitting, or parsing — is done using <code>String.Reader</code>.
 To be able to use it, more knowledge of the language is needed first. But, feel
 free to play with it in the playground, or check out the <code>StringManipulation.par</code> example in
-the <code>examples/</code> folder.</p>
+the <code>examples/src/</code> folder.</p>
 <p>Numbers can be converted to strings using <code>Int.ToString</code>:</p>
-<pre><code class="language-par">def Str4 = Int.ToString(14)  // = "14"
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+def Str4 = Int.ToString(14)  // = "14"
 def Str5 = Int.ToString(-7)  // = "-7"
 </code></pre>
 <p>Note, that <code>Nat</code> is a subtype of <code>Int</code>, so any natural number can also be converted to a string
@@ -555,11 +925,23 @@ def Char2 = "\n"
 </code></pre>
 <p>Since <code>Char</code> is a subtype of <code>String</code>, every variable of type <code>Char</code> can be used as a <code>String</code>, too.</p>
 <p>There’s a built-in function to check if a <code>Char</code> is a part of a character class:</p>
-<pre><code class="language-par">def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
+<pre><code class="language-par">module Main
+
+import @core/Char
+
+def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
 </code></pre>
 <p>There’s no built-in function turning a <code>String</code> to a list of <code>Char</code>s. Feel free to
 copy-paste this one, if you ever need it:</p>
-<pre><code class="language-par">dec Chars : [String] List&lt;Char&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/Char
+  @core/List
+  @core/String
+}
+
+dec Chars : [String] List&lt;Char&gt;
 def Chars = [s] String.Reader(s).begin.char.case {
   .end _ =&gt; .end!,
   .char(c) rest =&gt; .item(c) rest.loop,
@@ -573,7 +955,11 @@ def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapp
 </code></pre>
 <p>Since <code>Byte</code> is a subtype of <code>Bytes</code>, every variable of type <code>Byte</code> can be used as a <code>Bytes</code>, too.</p>
 <p>Just like <code>Char</code>s, there’s a built-in function to check if a <code>Byte</code> is a part of a byte class. For <code>Byte</code>s, that’s mainly byte ranges:</p>
-<pre><code class="language-par">def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
+<pre><code class="language-par">module Main
+
+import @core/Byte
+
+def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
 </code></pre>
 <h2 id="bytes"><a class="header" href="#bytes"><code>Bytes</code></a></h2>
 <p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
@@ -582,7 +968,15 @@ that multiple decimal values are allowed, and are delimited by spaces:</p>
 def Bytes2 = &lt;&lt;&gt;&gt;       // zero-byte sequence
 </code></pre>
 <p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
-<pre><code class="language-par">dec Bytes : [Bytes] List&lt;Byte&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/Byte
+  @core/Bytes
+  @core/List
+}
+
+dec Bytes : [Bytes] List&lt;Byte&gt;
 def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
   .end _ =&gt; .end!,
   .byte(b) rest =&gt; .item(b) rest.loop,
@@ -596,7 +990,11 @@ expression. It’s for assigning a variable and using it in another expression.<
 to assign to the variable, and finally the keyword <code>in</code> followed by an expression that may use
 the variable.</p>
 <p>That’s a mouthful.</p>
-<pre><code class="language-par">def Six = let three = 3 in Nat.Add(three, three)
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+def Six = let three = 3 in Nat.Add(three, three)
 </code></pre>
 <p>The left side of the <code>=</code> sign can actually be more than a variable!</p>
 <p>For one, it can have an annotation:</p>
@@ -616,828 +1014,6 @@ We’ll learn more about those soon.</p>
 </code></pre>
 </blockquote>
 <p><strong>Now, onto types and their expressions!</strong></p>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="the-big-table"><a class="header" href="#the-big-table">The Big Table</a></h1>
-<h2 id="expression-syntax"><a class="header" href="#expression-syntax">Expression syntax</a></h2>
-<table>
-<tr>
-<td><strong>Type</strong></td>
-<td><strong>Construction</strong></td>
-<td><strong>Destruction</strong></td>
-</tr>
-<tr>
-<td><pre><code class="language-par">type Unit = !
-</code></pre></td>
-<td><pre><code class="language-par">let value = !
-</code></pre></td>
-<td><pre><code class="language-par">let ! = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Either = either {
-  .left String,
-  .right Int,
-}
-</code></pre></td>
-<td><pre><code class="language-par">let value: Either = .left "Hello!"
-</code></pre></td>
-<td><pre><code class="language-par">let result = value.case {
-  .left str => String.Length(str),
-  .right num => Int.Mul(num, 5),
-}
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Pair = (String) Int
-</code></pre></td>
-<td><pre><code class="language-par">let value = ("Hello!") 42
-</code></pre></td>
-<td><pre><code class="language-par">let (str) num = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Function = [Int] String
-</code></pre></td>
-<td><pre><code class="language-par">let value = [num: Int] Int.ToString(num)
-</code></pre></td>
-<td><pre><code class="language-par">let str = value(42)
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Choice = choice {
-  .left => String,
-  .right => Int,
-}
-</code></pre></td>
-<td><pre><code class="language-par">let value: Choice = case {
-  .left => "Hello!",
-  .right => 42,
-}
-</code></pre></td>
-<td><pre><code class="language-par">let num = value.right
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Continuation = ?
-</code></pre></td>
-<td><em>No expression syntax</em></td>
-<td><em>No expression syntax</em></td>
-</tr>
-</table>
-<h2 id="process-syntax"><a class="header" href="#process-syntax">Process syntax</a></h2>
-<table>
-<tr>
-<td><strong>Type</strong></td>
-<td><strong>Construction</strong></td>
-<td><strong>Destruction</strong></td>
-</tr>
-<tr>
-<td><pre><code class="language-par">type Unit = !
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c!
-}
-</code></pre></td>
-<td><pre><code class="language-par">value?
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Either = either {
-  .left String,
-  .right Int,
-}
-</code></pre></td>
-<td><pre><code class="language-par">let value: Either = chan c {
-  c.left
-  c <> "Hello!"
-}
-</code></pre></td>
-<td><pre><code class="language-par">value.case {
-  .left => {
-    let result = String.Length(value)
-  }
-  .right => {
-    let result = Int.Mul(value, 5)
-  }
-}
-// `result` is in scope here
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Pair = (String) Int
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c("Hello!")
-  c <> 42
-}
-</code></pre></td>
-<td><pre><code class="language-par">value[str]
-let num = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Function = [Int] String
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c[num: Int]
-  c <> Int.ToString(num)
-}
-</code></pre></td>
-<td><pre><code class="language-par">value(42)
-let result = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Choice = choice {
-  .left => String,
-  .right => Int,
-}
-</code></pre></td>
-<td><pre><code class="language-par">let value = chan c {
-  c.case {
-    .left  => { c <> "Hello!" }
-    .right => { c <> 42 }
-  }
-}
-</code></pre></td>
-<td><pre><code class="language-par">value.right
-let num = value
-</code></pre></td>
-</tr>
-<tr/>
-<tr>
-<td><pre><code class="language-par">type Continuation = ?
-</code></pre></td>
-<td><pre><code class="language-par">let outer: ! = chan break {
-  let value: ? = chan c {
-    c?     // construction
-    break!
-  }
-  value!   // destruction
-}
-</code></pre></td>
-<td><em>Shown on the left</em></td>
-</tr>
-</table>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="built-in-definitions"><a class="header" href="#built-in-definitions">Built-In Definitions</a></h1>
-<pre><code class="language-par">/// Nat
-
-dec Nat.Add   : [Nat, Nat] Nat
-dec Nat.Sub   : [Nat, Int] Nat
-dec Nat.Mul   : [Nat, Nat] Nat
-dec Nat.Div   : [Nat, Nat] Nat
-dec Nat.Mod   : [Nat, Nat] Nat
-dec Nat.Min   : [Nat, Nat] Nat
-dec Nat.Max   : [Nat, Int] Nat
-dec Nat.Clamp : [Int] [Nat, Nat] Nat
-
-dec Nat.Equals  : [Nat, Nat] Bool
-dec Nat.Compare : [Nat, Nat] Ordering
-
-dec Nat.Repeat : [Nat] recursive either {
-  .end!,
-  .step self,
-}
-
-dec Nat.RepeatLazy : [Nat] recursive either {
-  .end!,
-  .step box choice {
-    .next =&gt; self,
-  }
-}
-
-dec Nat.Range : [Nat, Nat] List&lt;Nat&gt;
-
-dec Nat.ToString : [Nat] String
-
-dec Nat.FromString : [String] either {
-  .ok Nat,
-  .err!,
-}
-
-
-/// Int
-
-dec Int.Add   : [Int, Int] Int
-dec Int.Sub   : [Int, Int] Int
-dec Int.Mul   : [Int, Int] Int
-dec Int.Div   : [Int, Int] Int
-dec Int.Mod   : [Int, Nat] Nat
-dec Int.Min   : [Int, Int] Int
-dec Int.Max   : [Int, Int] Int
-dec Int.Abs   : [Int] Nat
-dec Int.Clamp : [Int] [Int, Int] Int
-
-dec Int.Equals  : [Int, Int] Bool
-dec Int.Compare : [Int, Int] Ordering
-
-dec Int.Range : [Int, Int] List&lt;Int&gt;
-
-dec Int.ToString : [Int] String
-
-dec Int.FromString : [String] either {
-  .ok Int,
-  .err!,
-}
-
-
-/// Bool
-
-type Bool = either {
-  .false!,
-  .true!,
-}
-
-
-/// Result
-
-type Result&lt;e, a&gt; = either {
-  .ok a,
-  .err e,
-}
-
-dec Result.Always : &lt;a&gt;[Result&lt;either {}, a&gt;] a
-def Result.Always = &lt;a&gt;[result] result.case {
-  .ok value =&gt; value,
-  .err impossible =&gt; impossible.case {},
-}
-
-type Option&lt;a&gt; = Result&lt;!, a&gt;
-
-
-/// List
-
-type List&lt;a&gt; = recursive either {
-  .end!,
-  .item(a) self,
-}
-
-type List.Builder&lt;a&gt; = iterative choice {
-  .add(a) =&gt; self,
-  .build =&gt; List&lt;a&gt;,
-}
-
-type List.Result&lt;e, a&gt; = recursive either {
-  .end Result&lt;e, !&gt;,
-  .item(a) self,
-}
-
-dec List.Builder : [type a] List.Builder&lt;a&gt;
-def List.Builder = [type a]
-  let append: [List&lt;a&gt;] List&lt;a&gt; = [xs] xs
-  in begin case {
-    .add(x) =&gt; let append = [xs: List&lt;a&gt;] append(.item(x) xs) in loop,
-    .build =&gt; append(.end!),
-  }
-
-dec List.Find : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Option&lt;a&gt;
-def List.Find = &lt;a&gt;[list] [f] list.begin.case {
-  .end! =&gt; .err!,
-  .item(v) list =&gt; f(v).case {
-    .true! =&gt; .ok v,
-    .false! =&gt; list.loop,
-  },
-}
-
-dec List.FindLast : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Option&lt;a&gt;
-def List.FindLast = &lt;a&gt;[list] [f]
-  let result: Option&lt;box a&gt; = .err! in
-  list.begin.case {
-    .end! =&gt; result,
-    .item(v) list =&gt; f(v).case {
-      .true! =&gt; let result = .ok v in list.loop,
-      .false! =&gt; list.loop,
-    },
-  }
-
-dec List.Map : &lt;a&gt;[List&lt;a&gt;] [type b] [box [a] b] List&lt;b&gt;
-def List.Map = &lt;a&gt;[list] [type b] [f] list.begin.case {
-  .end! =&gt; .end!
-  .item(v) list =&gt; .item(f(v)) list.loop,
-}
-
-dec List.FlatMap : &lt;a&gt;[List&lt;a&gt;] [type b] [box [a] List&lt;b&gt;] List&lt;b&gt;
-def List.FlatMap = &lt;a&gt;[list] [type b] [f] list.begin.case {
-  .end! =&gt; .end!,
-  .item(v) list =&gt; f(v).begin@flat.case {
-    .end! =&gt; list.loop,
-    .item(v) flat =&gt; .item(v) flat.loop@flat,
-  },
-}
-
-dec List.Filter : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] List&lt;a&gt;
-def List.Filter = &lt;a&gt;[list] [f] list.begin.case {
-  .end! =&gt; .end!,
-  .item(v) list =&gt; f(v).case {
-    .true! =&gt; .item(v) list.loop,
-    .false! =&gt; list.loop,
-  },
-}
-
-dec List.Fold : &lt;a&gt;[List&lt;a&gt;] &lt;r&gt;[r] [box [r, a] r] r
-def List.Fold = &lt;a&gt;[list] &lt;r&gt;[result] [f] list.begin.case {
-  .end! =&gt; result,
-  .item(v) list =&gt; let result = f(result, v) in list.loop,
-}
-
-dec List.Reduce : &lt;a&gt;[List&lt;a&gt;] [box [a, a] a] Option&lt;a&gt;
-def List.Reduce = &lt;a&gt;[list] [f] list.case {
-  .end! =&gt; .err!,
-  .item(result) list =&gt; .ok List.Fold(list, result, f),
-}
-
-dec List.Length : &lt;a&gt;[List&lt;box a&gt;] Nat
-def List.Length = &lt;a&gt;[list]
-  let len = 0 in
-  list.begin.case {
-    .end! =&gt; len,
-    .item(_) list =&gt; do { len-&gt;Nat.Add(1) } in list.loop,
-  }
-
-dec List.Concat : &lt;a&gt;[List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
-def List.Concat = &lt;a&gt;[lists] chan yield {
-  lists.begin.case {
-    .item(list) =&gt; {
-      yield-&gt;List.Copy(list)
-      lists.loop
-    }
-    .end! =&gt; {
-      yield.end!
-    }
-  }
-}
-
-dec List.Copy : &lt;a&gt;[dual List&lt;a&gt;] [List&lt;a&gt;] dual List&lt;a&gt;
-def List.Copy = &lt;a&gt;[dst] [src] do {
-  src.begin.case {
-    .end! =&gt; {},
-    .item(v) src =&gt; {
-      dst.item(v)
-      src.loop
-    },
-  }
-} in dst
-
-dec List.MinMax : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Ordering] Option&lt;(a) a&gt;
-def List.MinMax = &lt;a&gt;[list] [cmp]
-  let result: Option&lt;(box a) box a&gt; = .err! in
-  list.begin.case {
-    .end! =&gt; result,
-    .item(v) list =&gt; result.case {
-      .err! =&gt;
-        let result = .ok(v) v in
-        list.loop,
-      .ok(min) max =&gt;
-        let result = cmp(v, min).case {
-          .less! =&gt; .ok (v) max,
-          else _ =&gt; cmp(v, max).case {
-            .greater! =&gt; .ok (min) v,
-            else _ =&gt; result,
-          },
-        } in list.loop,
-    },
-  }
-
-dec List.Min : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Ordering] Option&lt;a&gt;
-def List.Min = &lt;a&gt;[list] [cmp]
-  List.MinMax(list, cmp).case {
-    .err! =&gt; .err!,
-    .ok(min) _ =&gt; .ok min,
-  }
-
-dec List.Max : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Ordering] Option&lt;a&gt;
-def List.Max = &lt;a&gt;[list] [cmp]
-  List.MinMax(list, cmp).case {
-    .err! =&gt; .err!,
-    .ok(_) max =&gt; .ok max,
-  }
-
-dec List.Zip : &lt;a&gt;[List&lt;box a&gt;] &lt;b&gt;[List&lt;box b&gt;] List&lt;(a) b&gt;
-def List.Zip = &lt;a&gt;[list1] &lt;b&gt;[list2] chan yield {
-  list1.begin.case {
-    .end! =&gt; { yield.end! },
-    .item(v1) list1 =&gt; {
-      list2.case {
-        .end! =&gt; { yield.end! },
-        .item(v2) list2 =&gt; {
-          yield.item((v1) v2)
-          list1.loop
-        },
-      }
-    },
-  }
-}
-
-dec List.Unzip : &lt;a, b&gt;[List&lt;(a) b&gt;] (List&lt;a&gt;) List&lt;b&gt;
-def List.Unzip = &lt;a, b&gt;[list] do {
-  let list1 = List.Builder(type a)
-  let list2 = List.Builder(type b)
-
-  list.begin.case {
-    .end! =&gt; {},
-    .item((v1) v2) list =&gt; {
-      list1.add(v1)
-      list2.add(v2)
-      list.loop
-    },
-  }
-} in (list1.build) list2.build
-
-dec List.All : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Bool
-def List.All = &lt;a&gt;[list] [f]
-  list.begin.case {
-    .end! =&gt; .true!,
-    .item(v) list =&gt; f(v).case {
-      .true! =&gt; list.loop,
-      .false! =&gt; .false!,
-    },
-  }
-
-dec List.Any : &lt;a&gt;[List&lt;box a&gt;] [box [box a] Bool] Bool
-def List.Any = &lt;a&gt;[list] [f] List.All(list, box [v] f(v).case {
-  .true! =&gt; .false!,
-  .false! =&gt; .true!,
-})
-
-dec List.Dedup : &lt;a&gt;[List&lt;box a&gt;] [box [box a, box a] Bool] List&lt;a&gt;
-def List.Dedup = &lt;a&gt;[list] [eq]
-  list.case {
-    .end! =&gt; .end!,
-    .item(prev) list =&gt; .item(prev)
-      list.begin.case {
-        .end! =&gt; .end!,
-        .item(v) list =&gt; eq(prev, v).case {
-          .true! =&gt; list.loop,
-          .false! =&gt;
-            let prev = v in
-            .item(v) list.loop,
-        }
-      }
-  }
-
-dec List.Take : &lt;a&gt;[List&lt;box a&gt;] [Nat] List&lt;a&gt;
-def List.Take = &lt;a&gt;[list] [n]
-  Nat.Repeat(n).begin.case {
-    .end! =&gt; .end!,
-    .step next =&gt; list.case {
-      .end! =&gt; .end!
-      .item(v) list =&gt; .item(v) next.loop,
-    }
-  }
-
-dec List.Drop : &lt;a&gt;[List&lt;box a&gt;] [Nat] List&lt;a&gt;
-def List.Drop = &lt;a&gt;[list] [n]
-  Nat.Repeat(n).begin.case {
-    .end! =&gt; list,
-    .step next =&gt; list.case {
-      .end! =&gt; .end!,
-      .item(_) list =&gt; next.loop,
-    },
-  }
-
-dec List.Chunk : &lt;a&gt;[List&lt;a&gt;] [Nat] List&lt;List&lt;a&gt;&gt;
-def List.Chunk = &lt;a&gt;[list] [n] chan outer {
-  let inner: Option&lt;List.Builder&lt;a&gt;&gt; = .err!
-  let i = 0
-
-  list.begin.case {
-    .end! =&gt; {
-      inner.case {
-        .err! =&gt; {},
-        .ok builder =&gt; { outer.item(builder.build) },
-      }
-      outer.end!
-    },
-    .item(v) list =&gt; {
-      inner.case {
-        .err! =&gt; {
-          let inner = .ok List.Builder(type a).add(v)
-        },
-        .ok builder =&gt; {
-          let inner = .ok builder.add(v)
-        },
-      }
-      i-&gt;Nat.Add(1)
-      Nat.Equals(i, n).case {
-        .true! =&gt; {
-          inner.case {
-            .ok builder =&gt; { outer.item(builder.build) },
-          }
-          let inner = .err!
-          let i = 0
-          list.loop
-        },
-        .false! =&gt; {
-          list.loop
-        },
-      }
-    },
-  }
-}
-
-
-/// Ordering
-
-type Ordering = either {
-  .less!,
-  .equal!,
-  .greater!,
-}
-
-
-/// Char
-
-type Char.Class = either {
-  .any!,
-  .char Char,
-  .whitespace!,
-  .ascii either {
-    .any!,
-    .alpha!,
-    .alphanum!,
-    .digit!,
-  },
-}
-
-dec Char.Equals : [Char, Char] Bool
-dec Char.Code   : [Char] Nat
-dec Char.Is     : [Char, Char.Class] Bool
-
-
-/// String
-
-type String.Builder = iterative choice {
-  .add(String) =&gt; self,
-  .build =&gt; String,
-}
-
-type String.Parser&lt;e&gt; = recursive iterative@attempt choice {
-  .close =&gt; Result&lt;e, !&gt;,
-  .remainder =&gt; Result&lt;e, String&gt;,
-  .char =&gt; either {
-    .end Result&lt;e, !&gt;,
-    .char(Char) self,
-  },
-  .match(String.Pattern, String.Pattern) =&gt; either {
-    .end Result&lt;e, !&gt;,
-    .fail self@attempt,
-    .match(String, String) self,
-  },
-  .matchEnd(String.Pattern, String.Pattern) =&gt; either {
-    .end Result&lt;e, !&gt;,
-    .fail self@attempt,
-    .match(String, String)!,
-  },
-}
-
-type String.Pattern = recursive either {
-  .empty!,
-  .str String,
-  .one Char.Class,
-  .non Char.Class,
-  .min Nat,
-  .max Nat,
-  .repeat self,
-  .repeat1 self,
-  .concat List&lt;self&gt;,
-  .and List&lt;self&gt;,
-  .or List&lt;self&gt;,
-}
-
-dec String.Quote     : [String] String
-dec String.FromBytes : [Bytes] String
-
-dec String.Equals    : [String, String] Bool
-dec String.Compare   : [String, String] Ordering
-
-dec String.Builder : String.Builder
-dec String.Parser  : [String] String.Parser&lt;either {}&gt;
-
-dec String.ParserFromReader : &lt;e&gt;[Bytes.Reader&lt;e&gt;] String.Parser&lt;e&gt;
-
-dec String.Lines : &lt;e&gt;[String.Parser&lt;e&gt;] List.Result&lt;e, String&gt;
-def String.Lines = &lt;e&gt;[parser]
-  catch e =&gt; .end .err e in
-  parser.begin.match(.repeat.one.any!, .str "\n").case {
-    .end try ! =&gt; .end .ok!,
-    .fail parser =&gt; let try r = parser.remainder in .item(r) .end .ok!,
-    .match(line, _) parser =&gt; .item(line) parser.loop,
-  }
-
-dec String.Join : [List&lt;String&gt;, String] String
-def String.Join = [list, sep]
-  let builder = String.Builder in
-  list.case {
-    .end! =&gt; builder.build,
-    .item(v) list =&gt; do {
-      builder.add(v)
-    } in list.begin.case {
-      .end! =&gt; builder.build,
-      .item(v) list =&gt; do {
-        builder.add(sep).add(v)
-      } in list.loop,
-    },
-  }
-
-dec String.Concat : [List&lt;String&gt;] String
-def String.Concat = [list]
-  let builder = String.Builder in
-  list.begin.case {
-    .end! =&gt; builder.build,
-    .item(v) list =&gt; do {
-      builder.add(v)
-    } in list.loop,
-  }
-
-
-/// Byte
-
-type Byte.Class = either {
-  .any!,
-  .byte Byte,
-  .range(Byte, Byte)!,
-}
-
-dec Byte.Equals : [Byte, Byte] Bool
-dec Byte.Code   : [Byte] Nat
-dec Byte.Is     : [Byte, Byte.Class] Bool
-
-
-/// Bytes
-
-type Bytes.Builder = iterative choice {
-  .add(Bytes) =&gt; self,
-  .build =&gt; Bytes,
-}
-
-type Bytes.Reader&lt;e&gt; = recursive choice {
-  .close =&gt; Result&lt;e, !&gt;,
-  .read =&gt; Result&lt;e, either {
-    .end!,
-    .chunk(Bytes) self,
-  }&gt;,
-}
-
-type Bytes.Writer&lt;e&gt; = iterative choice {
-  .close =&gt; Result&lt;e, !&gt;,
-  .flush =&gt; Result&lt;e, self&gt;,
-  .write(Bytes) =&gt; Result&lt;e, self&gt;,
-}
-
-type Bytes.Parser&lt;e&gt; = recursive iterative@attempt choice {
-  .close =&gt; Result&lt;e, !&gt;,
-  .remainder =&gt; Result&lt;e, Bytes&gt;,
-  .byte =&gt; either {
-    .end Result&lt;e, !&gt;,
-    .byte(Byte) self,
-  },
-  .match(Bytes.Pattern, Bytes.Pattern) =&gt; either {
-    .end Result&lt;e, !&gt;,
-    .fail self@attempt,
-    .match(Bytes, Bytes) self,
-  },
-  .matchEnd(Bytes.Pattern, Bytes.Pattern) =&gt; either {
-    .end Result&lt;e, !&gt;,
-    .fail self@attempt,
-    .match(Bytes, Bytes)!,
-  },
-}
-
-type Bytes.Pattern = recursive either {
-  .empty!,
-  .bytes Bytes,
-  .one Byte.Class,
-  .non Byte.Class,
-  .min Nat,
-  .max Nat,
-  .repeat self,
-  .repeat1 self,
-  .concat List&lt;self&gt;,
-  .and List&lt;self&gt;,
-  .or List&lt;self&gt;,
-}
-
-dec Bytes.Equals  : [Bytes, Bytes] Bool
-dec Bytes.Compare : [Bytes, Bytes] Ordering
-dec Bytes.Length  : [Bytes] Nat
-dec Bytes.Builder : Bytes.Builder
-dec Bytes.Reader  : [Bytes] Bytes.Reader&lt;either {}&gt;
-dec Bytes.Parser  : [Bytes] Bytes.Parser&lt;either {}&gt;
-
-dec Bytes.EmptyReader      : Bytes.Reader&lt;either {}&gt;
-dec Bytes.ParserFromReader : &lt;e&gt;[Bytes.Reader&lt;e&gt;] Bytes.Parser&lt;e&gt;
-
-dec Bytes.PipeReader : [type e] [[Bytes.Writer&lt;!&gt;] Result&lt;e, !&gt;] Bytes.Reader&lt;e&gt;
-
-
-/// Console
-
-type Console = iterative choice {
-  .close =&gt; !,
-  .print(String) =&gt; self,
-  .prompt(String) =&gt; (Option&lt;String&gt;) self,
-}
-
-dec Console.Open : Console
-
-/// Url
-
-type Url.Error = String
-
-type Url = iterative box choice {
-  .full =&gt; String,
-  .protocol =&gt; String,
-  .host =&gt; String,
-  .path =&gt; String,
-  .query =&gt; List&lt;(String) String&gt;,
-  .appendPath(String) =&gt; self,
-  .addQuery(String, String) =&gt; self,
-}
-
-dec Url.FromString : [String] Result&lt;Url.Error, Url&gt;
-
-/// Time
-
-dec Time.Now : [!] Nat
-
-
-/// Map
-
-type Map&lt;k, v&gt; = iterative choice {
-  .size =&gt; (Nat) self,
-  .keys =&gt; (List&lt;k&gt;) self,
-  .list =&gt; List&lt;(k) v&gt;,
-  .entry(k) =&gt; (Option&lt;v&gt;) choice {
-    .put(v) =&gt; self,
-    .delete =&gt; self,
-  },
-}
-
-dec Map.String : [type v] [List&lt;(String) box v&gt;] Map&lt;String, v&gt;
-dec Map.Bytes  : [type v] [List&lt;(Bytes) box v&gt;]  Map&lt;Bytes, v&gt;
-dec Map.Int    : [type v] [List&lt;(Int) box v&gt;]    Map&lt;Int, v&gt;
-dec Map.Nat    : [type v] [List&lt;(Nat) box v&gt;]    Map&lt;Nat, v&gt;
-
-
-/// BoxMap
-
-type BoxMap&lt;k, v&gt; = iterative box choice {
-  .size =&gt; Nat,
-  .keys =&gt; List&lt;k&gt;,
-  .list =&gt; List&lt;(k) box v&gt;,
-  .get(k) =&gt; Option&lt;box v&gt;,
-  .put(k, box v) =&gt; self,
-  .delete(k) =&gt; self,
-}
-
-type BoxMap.Readonly&lt;k, v&gt; = box choice {
-  .size =&gt; Nat,
-  .keys =&gt; List&lt;k&gt;,
-  .list =&gt; List&lt;(k) box v&gt;,
-  .get(k) =&gt; Option&lt;box v&gt;,
-}
-
-dec BoxMap.String : [type v] [List&lt;(String) box v&gt;] BoxMap&lt;String, v&gt;
-dec BoxMap.Bytes  : [type v] [List&lt;(Bytes) box v&gt;]  BoxMap&lt;Bytes, v&gt;
-dec BoxMap.Int    : [type v] [List&lt;(Int) box v&gt;]    BoxMap&lt;Int, v&gt;
-dec BoxMap.Nat    : [type v] [List&lt;(Nat) box v&gt;]    BoxMap&lt;Nat, v&gt;
-
-
-/// Cell
-
-type Cell&lt;a&gt; = iterative choice {
-  .end =&gt; ?,
-  .split(dual self) =&gt; self,
-  .take =&gt; (a) choice {
-    .put(a) =&gt; self,
-  }
-}
-
-dec Cell.Share : &lt;a&gt;[a] [dual Cell&lt;a&gt;] a
-def Cell.Share = &lt;a&gt;[value] [client] poll(client) {
-  session =&gt; session.case {
-    .end! =&gt; submit(),
-    .split(client1) client2 =&gt; submit(client1, client2),
-    .take session =&gt; session(value).case {
-      .put(value) client =&gt; submit(client),
-    }
-  }
-  else =&gt; value,
-}
-
-
-/// Debug
-
-dec Debug.Log : [String] !
-</code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="types--their-expressions"><a class="header" href="#types--their-expressions">Types &amp; Their Expressions</a></h1>
 <p>Types in Par serve two seemingly incompatible purposes at the same time:</p>
 <ul>
@@ -1469,8 +1045,8 @@ that plays more nicely with the pairs: <code>[A] B</code>. Now compare</p>
 <p>This is starting to look a lot like session types! An alternative reading of the type could be:
 <em>first send <code>A</code>, then receive <code>B</code>, then send <code>C</code>, then receive <code>D</code>, and finally proceed as <code>E</code>.</em></p>
 <p>And that, in a nutshell, is how Par unifies every-day types with session types.</p>
-<p><strong>This chapter covers the every-day aspect of types in Par.</strong> For the session types aspect, check
-out <a href="./processes.html">Processes</a>.</p>
+<p><strong>This chapter covers the every-day aspect of types in Par.</strong> For the session-typed, process-oriented
+aspect, check out <a href="./process_syntax.html">The Process Syntax</a>.</p>
 <h2 id="linearity"><a class="header" href="#linearity">Linearity</a></h2>
 <p>Par is based on <a href="https://en.wikipedia.org/wiki/Linear_logic">linear logic</a>, and with that comes a
 <strong>linear type system.</strong> That means: <strong>some values must be used exactly once.</strong></p>
@@ -1546,14 +1122,25 @@ purpose, the pattern <code>!</code> will destruct a <code>!</code> value without
 } in !
 </code></pre>
 <p>This is useful when matching an end of a list:</p>
-<pre><code class="language-par">dec GetFirstOrZero : [List&lt;Int&gt;] Int
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
+dec GetFirstOrZero : [List&lt;Int&gt;] Int
 def GetFirstOrZero = [list] list.case {
   .end!      =&gt; 0,  // `!` is a pattern here
   .item(x) _ =&gt; x,
 }
 </code></pre>
 <p>Or when destructing a <code>!</code>-ended <a href="types/./pair.html">tuple</a>:</p>
-<pre><code class="language-par">dec SumPair : [(Int, Int)!] Int
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+dec SumPair : [(Int, Int)!] Int
 def SumPair = [pair]
   let (x, y)! = pair  // `!` is a pattern here
   in Int.Add(x, y)
@@ -1567,7 +1154,14 @@ def Five =
 otherwise known as <em>tagged unions</em>.</p>
 <p>They defined a finite number of variants, each with a different name and a payload. A value of
 an either type is one of its variants.</p>
-<pre><code class="language-par">type StringOrNumber = either {
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+type StringOrNumber = either {
   .string String,
   .number Int,
 }
@@ -1725,7 +1319,14 @@ def VariedToString = [varied] varied.case {
 compared to other languages, is their sequential syntax. While unusual, it makes pairs applicable
 to a much wider set of use-cases.</p>
 <p>A pair type consists of two types, the first enclosed in round parentheses.</p>
-<pre><code class="language-par">type Pair = (String) Int
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+type Pair = (String) Int
 </code></pre>
 <p>If the second type is another pair, we can use <em>syntax sugar</em> to write it more concisely:</p>
 <pre><code class="language-par">type Triple1 = (String) (Int) String
@@ -1808,9 +1409,13 @@ type BinaryFunction2 = [Int, Int] Int
 // these two are exactly the same type
 </code></pre>
 <p>This is the preferred way to define functions of multiple arguments.</p>
-<p><strong>Functions are <a href="types/TODO">linear</a>.</strong> While a globally defined function may be called any number of times,
+<p><strong>Functions are <a href="types/../types_and_expressions.html#linearity">linear</a>.</strong> While a globally defined function may be called any number of times,
 a function stored in a local variable can (and must) only be called once:</p>
-<pre><code class="language-par">dec Add : [Int, Int] Int
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+dec Add : [Int, Int] Int
 def Add = [x, y] Int.Add(x, y)
 
 // a global function may be called many times
@@ -1821,7 +1426,7 @@ def Illegal =
   let inc = Add(1)
   in Add(inc(2), inc(3))       // Error!
 </code></pre>
-<p><a href="types/TODO">Linearity</a> brings a lot of expressivity that wouldn’t be possible otherwise. After all, the main
+<p><a href="types/../types_and_expressions.html#linearity">Linearity</a> brings a lot of expressivity that wouldn’t be possible otherwise. After all, the main
 purpose of <em>Par</em> is to explore where this new paradigm arising from linear types and duality can take us.</p>
 <blockquote>
 <p>Non-linear functions are achieved using <a href="types/./box.html">box types</a>.</p>
@@ -1834,7 +1439,11 @@ def Double = [number] Int.Mul(2, number)
 </code></pre>
 <p>Multi-argument functions — or more precisely: functions returning other functions — can be expressed
 using the same kind of a syntax sugar as available for their types:</p>
-<pre><code class="language-par">dec Concat : [String, String] String
+<pre><code class="language-par">module Main
+
+import @core/String
+
+dec Concat : [String, String] String
 // the same as `[String] [String] String`
 
 def Concat = [left, right]
@@ -1856,7 +1465,7 @@ explicitly:</p>
 </code></pre>
 <p>For <strong>generic functions</strong>, read up on <a href="types/./forall.html"><em>forall</em> types</a>.</p>
 <blockquote>
-<p><strong><em>Par</em> has an unusual take on recursion,</strong> thanks to its ambitious stride towards <a href="types/TODO">totality</a>.
+<p><strong><em>Par</em> has an unusual take on recursion,</strong> thanks to its ambitious stride towards <a href="types/../introduction.html#an-ambitious-stride-towards-totality">totality</a>.
 Naive recursion by self-reference is not allowed. In other words,
 <strong>a function can’t directly call itself.</strong></p>
 <pre><code class="language-par">def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
@@ -1866,7 +1475,7 @@ and <a href="https://en.wikipedia.org/wiki/Corecursion">corecursion</a>, respect
 more.</p>
 <p>Par’s powerful <code>begin</code>/<code>loop</code> syntax is a single, universal construct for cyclic computations.
 It serves well in recursive functions, <a href="types/./iterative.html">iterative</a> objects, and imperative-looking loops
-in <a href="types/../processes.html">process syntax</a>.</p>
+in <a href="types/../process_syntax.html">process syntax</a>.</p>
 <p>Forbidding functions from calling themselves may seem limiting at first, but <code>begin</code>/<code>loop</code> makes up
 for it with its perky handling of local variables, and its ability to be used deep in expressions,
 removing any need for recursive helper functions.</p>
@@ -1885,7 +1494,7 @@ def HelloWorld3 =
   in partial("World")
 </code></pre>
 <p>All three versions do the same thing.</p>
-<p>The word <em>destruction</em> is especially apt here, due to <a href="types/TODO">linearity</a> of functions. If a function
+<p>The word <em>destruction</em> is especially apt here, due to <a href="types/../types_and_expressions.html#linearity">linearity</a> of functions. If a function
 is stored in a local variable, calling it destroys the variable, as discussed above.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="forall"><a class="header" href="#forall">Forall</a></h1>
 <p>What about <em>generic</em> functions? Or generic values?</p>
@@ -1900,7 +1509,14 @@ a typical optional type, as present in many languages:</p>
 such as <code>a</code> for <code>Option&lt;a&gt;</code> may be replaced with anything, such as <code>Option&lt;Int&gt;</code>. The resulting type is,
 however, always concrete.</p>
 <p>Now consider these two definitions:</p>
-<pre><code class="language-par">def None: Option&lt;String&gt; = .none!
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+def None: Option&lt;String&gt; = .none!
 
 dec Swap : [(String, Int)!] (Int, String)!
 def Swap = [pair]
@@ -1934,7 +1550,7 @@ put them both in one pair of square brackets:</p>
 <pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
 </code></pre>
 <p>This looks better. The two ways are, however, completely equivalent.</p>
-<p>Just like functions, foralls are <a href="types/TODO"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
+<p>Just like functions, foralls are <a href="types/../types_and_expressions.html#linearity"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
 copied, only destructed by calling.</p>
 <h2 id="construction-4"><a class="header" href="#construction-4">Construction</a></h2>
 <p>Values of forall types are constructed the same way as functions, except the argument is a type
@@ -1968,7 +1584,14 @@ def Swapped = Swap(type String, Int)(Pair)
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="implicit-generics"><a class="header" href="#implicit-generics">Implicit generics</a></h1>
 <p>Par already supports explicit generics via <a href="types/./forall.html"><code>forall</code></a>:</p>
-<pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+dec Swap : [type a, b] [(a, b)!] (b, a)!
 def Swap = [type a, b] [pair]
   let (first, second)! = pair
   in (second, first)!
@@ -2137,7 +1760,7 @@ and instead adding a first-class syntax for anonymous self-referential types.</p
 <ul>
 <li>Anonymous self-referential types: <code>recursive</code> and <a href="types/./iterative.html"><code>iterative</code></a>.</li>
 <li>A single, universal recursion construct: <code>begin</code>/<code>loop</code>. It’s suitable for recursive destruction,
-iterative construction, and imperative-style loops in <a href="types/../processes.html">process syntax</a>.</li>
+iterative construction, and imperative-style loops in <a href="types/../process_syntax.html">process syntax</a>.</li>
 </ul>
 <p><strong>Let’s take a look at <code>recursive</code>!</strong></p>
 <blockquote>
@@ -2495,11 +2118,11 @@ of the arrow, inside round parentheses:</p>
   .apply(a) =&gt; b,
 }
 </code></pre>
-<p>Like <a href="types/./function.html">functions</a>, <strong>choice types are <a href="types/TODO">linear</a>.</strong> A value of a choice type may not be
+<p>Like <a href="types/./function.html">functions</a>, <strong>choice types are <a href="types/../types_and_expressions.html#linearity">linear</a>.</strong> A value of a choice type may not be
 dropped, or copied. It must be destructed exactly once, using one of its branches.</p>
 <blockquote>
 <p>Choice types are frequently used together with <a href="types/./iterative.html"><em>iterative</em></a> types to define objects
-that can be acted upon repeatedly. For example, the <a href="types/../standard_library.html">built-in</a> <code>Console</code> type
+that can be acted upon repeatedly. For example, the built-in <code>Console</code> type from <code>@basic/Console</code>
 obtained as a handle to print to the standard output is an <em>iterative choice</em>:</p>
 <pre><code class="language-par">type Console = iterative choice {
   .close =&gt; !,
@@ -2507,7 +2130,11 @@ obtained as a handle to print to the standard output is an <em>iterative choice<
 }
 </code></pre>
 <p>Then it can be used to print multiple lines in order:</p>
-<pre><code class="language-par">def Main = Console.Open
+<pre><code class="language-par">module Main
+
+import @basic/Console
+
+def Main = Console.Open
   .print("First line.")
   .print("Second line.")
   .print("Third line.")
@@ -2661,7 +2288,11 @@ distinguish between nested <code>begin</code>/<code>loop</code> (and <code>.begi
 <code>begin@label</code> and <code>loop@label</code>.</p>
 </blockquote>
 <p>Here’s a simple <code>Sequence&lt;Int&gt;</code> that produces the number <code>7</code> forever:</p>
-<pre><code class="language-par">dec SevenForever : Sequence&lt;Int&gt;
+<pre><code class="language-par">module Main
+
+import @core/Int
+
+dec SevenForever : Sequence&lt;Int&gt;
 def SevenForever = begin case {
   .close =&gt; !,
   .next  =&gt; (7) loop,
@@ -2707,7 +2338,11 @@ to the <code>begin</code>.</p>
 <p><strong>Retention of local variables</strong> works the same as in <a href="types/./recursive.html">recursive’s</a> <code>.begin</code>/<code>.loop</code>.
 With iterative types, we can use it to carry and <strong>update the internal state</strong> of the iterative object.</p>
 <p>For example, here’s an infinite sequence of fibonacci numbers:</p>
-<pre><code class="language-par">def Fibonacci: Sequence&lt;Nat&gt; =
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+def Fibonacci: Sequence&lt;Nat&gt; =
   let (a, b)! = (0, 1)!
   in begin case {
     .close =&gt; !,
@@ -2833,7 +2468,11 @@ Copying, closing, and chaining all become manual work.</p>
 <em>created outside of that expression.</em></p>
 <h2 id="a-better-map"><a class="header" href="#a-better-map">A better <code>Map</code></a></h2>
 <p>With <code>box</code>, we can rewrite the <code>Map</code> function much more cleanly:</p>
-<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
+<pre><code class="language-par">module Main
+
+import @core/List
+
+dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
 def Map = [type a, b] [list, f] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; .item(f(x)) xs.loop,
@@ -2860,7 +2499,15 @@ def Ints: List&lt;Int&gt; = Boxes
 <p><strong>For non-linear types, <code>T</code> and <code>box T</code> are effectively interchangeable.</strong></p>
 <h2 id="another-example-filtering-a-list"><a class="header" href="#another-example-filtering-a-list">Another example: Filtering a list</a></h2>
 <p>Let’s write a function that filters a list using a boxed predicate.</p>
-<pre><code class="language-par">dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
+
+dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
 
 def Filter = [type a] [list, predicate] list.begin.case {
   .end! =&gt; .end!,
@@ -2970,7 +2617,15 @@ implementation details inside interfaces that can be passed around freely.</p>
 The interface is boxed, so it can be copied and discarded.
 The hidden type <code>set</code> is never revealed — only its operations are exposed.</p>
 <p>Let’s now implement an inefficient, but simple <code>SetModule</code> using lists and equality functions:</p>
-<pre><code class="language-par">type Eq&lt;a&gt; = box [a, a] Bool
+<pre><code class="language-par">module Main
+
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
+
+type Eq&lt;a&gt; = box [a, a] Bool
 
 dec ListSet : [type a] [Eq&lt;box a&gt;] SetModule&lt;box a&gt;
 def ListSet = [type a] [eq] (type List&lt;box a&gt;) box case {
@@ -3032,6 +2687,183 @@ def TestDedup =
 <p>The <em>continuation</em> type — spelled <code>?</code> — is the <a href="types/../processes/duality.html">dual</a> of <a href="types/./unit.html">unit</a>.
 It has <strong>no expression syntax</strong> whatsoever — it’s only usable in <a href="types/../process_syntax.html">processes</a>.
 Turn the page to learn all about that!</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="the-big-table"><a class="header" href="#the-big-table">The Big Table</a></h1>
+<p>After walking through the individual type chapters, it’s useful to have one compact place where the
+main constructions and destructions sit side by side.</p>
+<p>This chapter is a cheat sheet, not a replacement for the explanations in the earlier chapters.
+The first table summarizes the expression syntax you’ve already seen.</p>
+<p>The second table does the same from the point of view of process syntax. If you haven’t read the
+next section on process syntax yet, feel free to skip that table for now and come back to it later.</p>
+<h2 id="expression-syntax"><a class="header" href="#expression-syntax">Expression syntax</a></h2>
+<table>
+<tr>
+<td><strong>Type</strong></td>
+<td><strong>Construction</strong></td>
+<td><strong>Destruction</strong></td>
+</tr>
+<tr>
+<td><pre><code class="language-par">type Unit = !
+</code></pre></td>
+<td><pre><code class="language-par">let value = !
+</code></pre></td>
+<td><pre><code class="language-par">let ! = value
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Either = either {
+  .left String,
+  .right Int,
+}
+</code></pre></td>
+<td><pre><code class="language-par">let value: Either = .left "Hello!"
+</code></pre></td>
+<td><pre><code class="language-par">let result = value.case {
+  .left str => String.Length(str),
+  .right num => Int.Mul(num, 5),
+}
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Pair = (String) Int
+</code></pre></td>
+<td><pre><code class="language-par">let value = ("Hello!") 42
+</code></pre></td>
+<td><pre><code class="language-par">let (str) num = value
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Function = [Int] String
+</code></pre></td>
+<td><pre><code class="language-par">let value = [num: Int] Int.ToString(num)
+</code></pre></td>
+<td><pre><code class="language-par">let str = value(42)
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Choice = choice {
+  .left => String,
+  .right => Int,
+}
+</code></pre></td>
+<td><pre><code class="language-par">let value: Choice = case {
+  .left => "Hello!",
+  .right => 42,
+}
+</code></pre></td>
+<td><pre><code class="language-par">let num = value.right
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Continuation = ?
+</code></pre></td>
+<td><em>No expression syntax</em></td>
+<td><em>No expression syntax</em></td>
+</tr>
+</table>
+<h2 id="process-syntax"><a class="header" href="#process-syntax">Process syntax</a></h2>
+<table>
+<tr>
+<td><strong>Type</strong></td>
+<td><strong>Construction</strong></td>
+<td><strong>Destruction</strong></td>
+</tr>
+<tr>
+<td><pre><code class="language-par">type Unit = !
+</code></pre></td>
+<td><pre><code class="language-par">let value = chan c {
+  c!
+}
+</code></pre></td>
+<td><pre><code class="language-par">value?
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Either = either {
+  .left String,
+  .right Int,
+}
+</code></pre></td>
+<td><pre><code class="language-par">let value: Either = chan c {
+  c.left
+  c &lt;&gt; "Hello!"
+}
+</code></pre></td>
+<td><pre><code class="language-par">value.case {
+  .left => {
+    let result = String.Length(value)
+  }
+  .right => {
+    let result = Int.Mul(value, 5)
+  }
+}
+// `result` is in scope here
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Pair = (String) Int
+</code></pre></td>
+<td><pre><code class="language-par">let value = chan c {
+  c("Hello!")
+  c &lt;&gt; 42
+}
+</code></pre></td>
+<td><pre><code class="language-par">value[str]
+let num = value
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Function = [Int] String
+</code></pre></td>
+<td><pre><code class="language-par">let value = chan c {
+  c[num: Int]
+  c &lt;&gt; Int.ToString(num)
+}
+</code></pre></td>
+<td><pre><code class="language-par">value(42)
+let result = value
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Choice = choice {
+  .left => String,
+  .right => Int,
+}
+</code></pre></td>
+<td><pre><code class="language-par">let value = chan c {
+  c.case {
+    .left  => { c &lt;&gt; "Hello!" }
+    .right => { c &lt;&gt; 42 }
+  }
+}
+</code></pre></td>
+<td><pre><code class="language-par">value.right
+let num = value
+</code></pre></td>
+</tr>
+<tr/>
+<tr>
+<td><pre><code class="language-par">type Continuation = ?
+</code></pre></td>
+<td><pre><code class="language-par">let outer: ! = chan break {
+  let value: ? = chan c {
+    c?     // construction
+    break!
+  }
+  value!   // destruction
+}
+</code></pre></td>
+<td><em>Shown on the left</em></td>
+</tr>
+</table>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-process-syntax"><a class="header" href="#the-process-syntax">The Process Syntax</a></h1>
 <p>So far, <em>Par</em> seems clearly a functional language. Yes, it has linear types, and some unusual
 features, like <a href="./types/choice.html">choices</a>, and <code>begin</code>/<code>loop</code> for
@@ -3048,7 +2880,7 @@ for a practical programming language; <em>GV</em> — a functional language in t
 to take that role. However, I saw much more potential in <em>CP</em>, and decided to turn it into
 a practical language.</p>
 <p>How is it then that Par managed to look perfectly functional until now? Turns out,
-<strong>all of the <em>construction</em> and <em>destruction</em> syntax described in <a href="./types.html"><em>Types &amp; Their Expressions</em></a> can actually be considered a syntax sugar over the fundamental process syntax of Par</strong>.</p>
+<strong>all of the <em>construction</em> and <em>destruction</em> syntax described in <a href="./types_and_expressions.html"><em>Types &amp; Their Expressions</em></a> can actually be considered a syntax sugar over the fundamental process syntax of Par</strong>.</p>
 <p>While most of the Par code you’ll be writing will use <em>expression syntax</em>, the full power of the
 language rests in the <em>process syntax</em>. There are things Par can express, which simply are not
 expressible using the constructs we learned thus far.</p>
@@ -3068,8 +2900,12 @@ what to send, what to receive.</li>
 clearer as we understand this process syntax.</p>
 <p>Processes and commands have been more hidden, so far. They were always there, but not in a plain sight! Any expression, be
 it a construction, or a destruction, compiled to processes composed of commands.</p>
-<p>In fact, you can see it for yourself! Let’s take any Par program, say <code>examples/HelloWorld.par</code>.</p>
-<pre><code class="language-par">def Program = Console.Open
+<p>In fact, you can see it for yourself! Let’s take any Par program, say <code>examples/src/HelloWorld.par</code>.</p>
+<pre><code class="language-par">module HelloWorld
+
+import @basic/Console
+
+def Program = Console.Open
   .print("Hello, world!")
   .close
 </code></pre>
@@ -3078,7 +2914,11 @@ it a construction, or a destruction, compiled to processes composed of commands.
 <p>What you see on the right is the same program rewritten using the most bare-bones process syntax that Par offers.
 Aside from the <code>#</code>-signs in front of some variables (Par uses them for internally generated variables to avoid
 name clashes), this is a valid Par program. If we remove those, we get this:</p>
-<pre><code class="language-par">def Program = chan result {
+<pre><code class="language-par">module HelloWorld
+
+import @basic/Console
+
+def Program = chan result {
   let object = Console.Open
   object.print
   object("Hello, world!")
@@ -3152,7 +2992,15 @@ curly braces, followed by the keyword <code>in</code>, and finally the resulting
 a process: the <code>let</code> statement. Just like the <a href="processes/../structure/let_expressions.html"><code>let</code>/<code>in</code> expression</a>, it assigns
 a variable. The only difference is: the <code>let</code> statement doesn’t contain the <code>in</code> keyword. And, since it’s a process,
 there can be more of them one after another.</p>
-<pre><code class="language-par">dec DisplayPlusEquation : [Nat, Nat] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/Nat
+  @core/String
+}
+
+dec DisplayPlusEquation : [Nat, Nat] String
 def DisplayPlusEquation = [a, b] do {
   let c = Nat.Add(a, b)
   let a = Int.ToString(a)
@@ -3187,7 +3035,11 @@ session typing to this imperative-looking process syntax.</p>
 level, it’s an <a href="processes/commands/../../types/iterative.html">iterative</a> <a href="processes/commands/../../types/choice.html">choice</a>: an object that
 can be repeatedly interacted with.</p>
 <p>We construct an empty <code>String.Builder</code> using the built-in definition of the same name:</p>
-<pre><code class="language-par">def LetsBuildStrings = do {
+<pre><code class="language-par">module Main
+
+import @core/String
+
+def LetsBuildStrings = do {
   let builder = String.Builder
   // code continued below...
 </code></pre>
@@ -3255,7 +3107,11 @@ keep adding more content to it.</p>
 <h2 id="chaining-commands"><a class="header" href="#chaining-commands">Chaining commands</a></h2>
 <p>This is rather noisy, but we can improve it! Multiple consecutive <strong>commands on the same subject,</strong>
 can be <strong>chained</strong> together, without repeating the subject.</p>
-<pre><code class="language-par">def LetsBuildStrings = do {
+<pre><code class="language-par">module Main
+
+import @core/String
+
+def LetsBuildStrings = do {
   let builder = String.Builder
   builder.add("Hello")
   builder.add(", ")
@@ -3301,7 +3157,14 @@ come with their own command styles. Every type does.</p>
 <li>And <code>value[variable]</code> for receiving (peeling off) a value from a pair.</li>
 </ul>
 <p>We’re now going to demonstrate all of these by implementing a string concatenation function.</p>
-<pre><code class="language-par">dec Concat : [List&lt;String&gt;] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/List
+  @core/String
+}
+
+dec Concat : [List&lt;String&gt;] String
 </code></pre>
 <p>This function takes a list of strings, and returns them concatenated. We’ll use process syntax and
 see how it works out!</p>
@@ -3378,7 +3241,14 @@ tagging along the control flow of <code>strings</code>.</p>
     }
 </code></pre>
 <p>Which is exactly what we’ll do in the final version:</p>
-<pre><code class="language-par">dec Concat : [List&lt;String&gt;] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/List
+  @core/String
+}
+
+dec Concat : [List&lt;String&gt;] String
 def Concat = [strings] do {
   let builder = String.Builder
   strings.begin.case {
@@ -3462,7 +3332,15 @@ Precisely what we need.</p>
 <p>You can think of it as a “sink” object that receives strings and sends them to the terminal.
 Much like <code>String.Builder</code>, but the output appears directly in your console.</p>
 <p>Let’s tie it all together!</p>
-<pre><code class="language-par">def Program: ! = do {
+<pre><code class="language-par">module Main
+
+import {
+  @basic/Console
+  @core/Int
+  @core/Nat
+}
+
+def Program: ! = do {
   let console = Console.Open
   let fib = Fibonacci
 
@@ -3566,7 +3444,14 @@ some concurrency invariants Par provides.</p>
 <li>Otherwise, it returns a string of exactly <code>n</code> hash marks (<code>"#"</code>).</li>
 </ul>
 <p>Here’s how that looks:</p>
-<pre><code class="language-par">dec HashesOrNothing : [Nat] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Nat
+  @core/String
+}
+
+dec HashesOrNothing : [Nat] String
 def HashesOrNothing = [n] chan result {
   Nat.Equals(n, 0).case {
     .true! =&gt; {
@@ -3740,7 +3625,14 @@ this dual type provides a good way to communicate with them.</p>
 this type, but finally, we’re going to learn how to handle it in processes!</p>
 <p>Remember: in a <code>chan</code>, the channel you obtain inside the block always has the <strong>dual type</strong> of the expression’s
 final result. Let’s use this to construct a list step-by-step.</p>
-<pre><code class="language-par">def SmallList: List&lt;Int&gt; = chan yield {
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
+def SmallList: List&lt;Int&gt; = chan yield {
   yield.item(1)
   yield.item(2)
   yield.item(3)
@@ -3820,9 +3712,16 @@ patterns less noisy.</p>
 <p><strong>Rust’s <code>?</code> operator</strong> works by dropping remaining owned values when propagating errors. This implicit cleanup doesn’t translate to Par’s linear types, where each value must be consumed according to its specific type and context.</p>
 <p>Par needs error handling that makes cleanup fully explicit while remaining convenient to use. The <code>try</code>/<code>catch</code>/<code>throw</code> syntax sugar introduced here achieves this balance — borrowing familiar keywords from exception handling while operating very differently. Unlike traditional exceptions, Par’s error handling is purely local syntax sugar over <code>Result</code> types, with no hidden control flow or stack unwinding.</p>
 <h2 id="working-with-files-error-handling-without-sugar"><a class="header" href="#working-with-files-error-handling-without-sugar">Working with Files: Error Handling Without Sugar</a></h2>
-<p>Let’s start with a concrete example using Par’s file system operations through the <a href="quality_of_life/./builtin.html"><code>Os</code> module</a>. The <code>Os.Path</code> type provides methods for working with the filesystem — creating files, reading directories, and so on. Most of these operations can fail, so they return <code>Result</code> values.</p>
+<p>Let’s start with a concrete example using Par’s file system operations through the built-in <code>@basic/Os</code> module. The <code>Os.Path</code> type provides methods for working with the filesystem — creating files, reading directories, and so on. Most of these operations can fail, so they return <code>Result</code> values.</p>
 <p>Here’s what error handling looks like without any syntax sugar. We’ll write a program that creates a log file and writes some entries to it:</p>
-<pre><code class="language-par">def Main: ! = chan exit {
+<pre><code class="language-par">module Main
+
+import {
+  @basic/Console
+  @basic/Os
+}
+
+def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
@@ -3872,7 +3771,14 @@ patterns less noisy.</p>
 </code></pre>
 <p>Note the <code>.ok!</code> pattern here — after closing, the writer becomes a unit value <code>!</code>.</p>
 <p>Here’s the complete program:</p>
-<pre><code class="language-par">def Main: ! = chan exit {
+<pre><code class="language-par">module Main
+
+import {
+  @basic/Console
+  @basic/Os
+}
+
+def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
@@ -3918,7 +3824,14 @@ patterns less noisy.</p>
 <p>This is extremely verbose! The same error handling code is repeated for every operation that might fail. Let’s see how Par’s error handling sugar can clean this up.</p>
 <h2 id="the-same-program-with-trycatch"><a class="header" href="#the-same-program-with-trycatch">The Same Program with <code>try</code>/<code>catch</code></a></h2>
 <p>Here’s the exact same functionality using Par’s error handling syntax:</p>
-<pre><code class="language-par">def Main: ! = chan exit {
+<pre><code class="language-par">module Main
+
+import {
+  @basic/Console
+  @basic/Os
+}
+
+def Main: ! = chan exit {
   let console = Console.Open
 
   catch e =&gt; {
@@ -4180,7 +4093,15 @@ ProcessTogether(resource, otherData)
 <p>This layered approach allows you to build sophisticated error handling hierarchies while keeping each level focused and clear.</p>
 <h2 id="propagating-errors-in-functions"><a class="header" href="#propagating-errors-in-functions">Propagating Errors in Functions</a></h2>
 <p>The examples so far have shown terminal error handling — printing errors and exiting. But often you want to propagate errors up to the caller. Here’s a utility function that reads an entire file’s contents:</p>
-<pre><code class="language-par">dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @basic/Os
+  @core/Bytes
+  @core/Result
+}
+
+dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
   let try reader = path.openFile
@@ -4235,7 +4156,14 @@ full condition language, and finally see how the same ideas apply in process
 code.</p>
 <h2 id="expression-if---"><a class="header" href="#expression-if---">Expression <code>if { ... }</code></a></h2>
 <p>Let’s start with a small example:</p>
-<pre><code class="language-par">dec Describe : [Bool] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Bool
+  @core/String
+}
+
+dec Describe : [Bool] String
 def Describe = [flag] if {
   flag =&gt; "on",
   else =&gt; "off",
@@ -4294,7 +4222,14 @@ so <code>value is .less!</code> is valid, but <code>value is .less</code> is not
 }
 </code></pre>
 <p>Now an <code>if</code> can match directly on those variants:</p>
-<pre><code class="language-par">dec CompareSign : [Int, Int] String
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+dec CompareSign : [Int, Int] String
 def CompareSign = [x, y]
   let cmp = Int.Compare(x, y) in
   if {
@@ -4539,7 +4474,11 @@ They do not add new behaviour to Par. They just let you write the
 names.</p>
 <h2 id="a-first-taste"><a class="header" href="#a-first-taste">A first taste</a></h2>
 <p>Here are some helper functions that operate on numbers:</p>
-<pre><code class="language-par">def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
 def Double = [n: Nat] Nat.Add(n, n)
 def Square = [n: Nat] Nat.Mul(n, n)
 </code></pre>
@@ -4579,7 +4518,15 @@ the whole expression becomes the operation:</p>
 <p>In process syntax every command “uses” the variable on its left and stores the
 result back into that same variable. Pipes follow the same rule, which means
 you can treat any function as if it were a built-in command.</p>
-<pre><code class="language-par">dec Push : [List&lt;Nat&gt;, Nat] List&lt;Nat&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/List
+  @core/Option
+  @core/Nat
+}
+
+dec Push : [List&lt;Nat&gt;, Nat] List&lt;Nat&gt;
 def Push = [stack, value] .item(value) stack
 
 let stack = *(1, 2, 3)
@@ -4707,7 +4654,14 @@ another function, try a pipe — it’s often all the ceremony you actually need
 <p><code>poll</code>/<code>submit</code> is not a replacement for <code>.begin</code>/<code>.loop</code>. One can’t achieve the job of the other and vice versa, only in some situations.</p>
 </blockquote>
 <p><strong>Let’s compute the sum of a list:</strong></p>
-<pre><code class="language-par">dec PollSum : [List&lt;Int&gt;] Int
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/List
+}
+
+dec PollSum : [List&lt;Int&gt;] Int
 def PollSum = [nums] poll(nums) {
   list =&gt; list.case {
     .end! =&gt; submit(),
@@ -4827,7 +4781,11 @@ poll(client1, client2) {
 <p>Here, <code>poll</code> and <code>submit</code> are control-flow statements, so they don’t “return” anything. The <code>submit</code> statement simply jumps back to its <code>poll</code>, in addition to putting clients back into the pool.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-fan-pattern"><a class="header" href="#the-fan-pattern">The Fan Pattern</a></h1>
 <p>We’ve been able to merge two lists based on the timing of their items:</p>
-<pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
+<pre><code class="language-par">module Main
+
+import @core/List
+
+dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
 def MergeTwoLists = [left, right] poll(left, right) {
   list =&gt; list.case {
     .end! =&gt; submit(),
@@ -5054,7 +5012,11 @@ type IdClient = recursive either {
 </code></pre>
 <p>It’s very similar to what we saw previously, except the <code>.getId</code> variant isn’t giving out a value, it’s taking one.</p>
 <p>Here’s how we can implement such a server, with comments:</p>
-<pre><code class="language-par">dec ServeIds : [IdClient] !
+<pre><code class="language-par">module Main
+
+import @core/Nat
+
+dec ServeIds : [IdClient] !
 def ServeIds = [clients] do {
   // Initialize the internal state of the server.
   // Here it's just an `id` variable that will keep
@@ -5084,7 +5046,15 @@ def ServeIds = [clients] do {
 <p>Notice how the <code>id</code> variable gets implicitly passed to each new iteration at <code>submit</code>. The treatment of local variables in <code>poll</code>/<code>submit</code> is the same as it is with <code>.begin</code>/<code>.loop</code>. They’re kept around, always keeping their latest values.</p>
 </blockquote>
 <p>And here’s how we can use it:</p>
-<pre><code class="language-par">def SimpleClient: [String] IdClient = [name]
+<pre><code class="language-par">module Main
+
+import {
+  @core/Debug
+  @core/Nat
+  @core/String
+}
+
+def SimpleClient: [String] IdClient = [name]
   // `IdServer` and `IdClient` are dual, so we can construct
   // an `IdClient` by operating on an `IdServer`.
   chan server: IdServer {
@@ -5205,7 +5175,7 @@ def Main: ! = do {
 <h2 id="example-a-chat-server-in-the-playground"><a class="header" href="#example-a-chat-server-in-the-playground">Example: A chat server in the <a href="nondeterminism/../getting_started.html">Playground</a></a></h2>
 <p>Here’s a more involved example of both-ways communication between a server and its clients. It’s a little toy chat server that you can play with in the <a href="nondeterminism/../getting_started.html">Par’s interactive playground</a>.</p>
 <p>It’s an example of client-to-client mediation via a server.</p>
-<p>You can find a thoroughly commented code for this toy chat server in the <a href="https://github.com/faiface/par-lang/blob/main/examples/PlaygroundChat.par"><code>examples</code></a> directory.</p>
+<p>You can find a thoroughly commented code for this toy chat server in the <a href="https://github.com/faiface/par-lang/blob/main/examples/src/PlaygroundChat.par"><code>examples</code></a> directory.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="switching-modes-with-repoll"><a class="header" href="#switching-modes-with-repoll">Switching Modes With <code>repoll</code></a></h1>
 <p>Sometimes a server needs to “switch gears”.</p>
 <p>For example, imagine merging a bunch of cancelable streams into a single cancelable stream:</p>
@@ -5357,7 +5327,11 @@ def SourceFan = &lt;a&gt;[sources] sources.begin.case {
 <p>This <code>repoll()</code> does not produce any <code>a</code> values. It just drains the pool by discarding sources until it’s empty, and then returns <code>!</code>.</p>
 <h2 id="full-code"><a class="header" href="#full-code">Full code</a></h2>
 <p>Putting it all together:</p>
-<pre><code class="language-par">dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
+<pre><code class="language-par">module Main
+
+import @core/List
+
+dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
 def MergeSources = &lt;a&gt;[sources] poll(SourceFan(sources)) {
   fan =&gt; fan.case {
     .end! =&gt; submit(),

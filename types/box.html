@@ -233,7 +233,11 @@ Copying, closing, and chaining all become manual work.</p>
 <em>created outside of that expression.</em></p>
 <h2 id="a-better-map"><a class="header" href="#a-better-map">A better <code>Map</code></a></h2>
 <p>With <code>box</code>, we can rewrite the <code>Map</code> function much more cleanly:</p>
-<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
+<pre><code class="language-par">module Main
+
+import @core/List
+
+dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
 def Map = [type a, b] [list, f] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; .item(f(x)) xs.loop,
@@ -260,7 +264,15 @@ def Ints: List&lt;Int&gt; = Boxes
 <p><strong>For non-linear types, <code>T</code> and <code>box T</code> are effectively interchangeable.</strong></p>
 <h2 id="another-example-filtering-a-list"><a class="header" href="#another-example-filtering-a-list">Another example: Filtering a list</a></h2>
 <p>Let’s write a function that filters a list using a boxed predicate.</p>
-<pre><code class="language-par">dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
+<pre><code class="language-par">module Main
+
+import {
+  @core/Bool
+  @core/Int
+  @core/List
+}
+
+dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
 
 def Filter = [type a] [list, predicate] list.begin.case {
   .end! =&gt; .end!,

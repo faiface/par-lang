@@ -165,7 +165,14 @@
 compared to other languages, is their sequential syntax. While unusual, it makes pairs applicable
 to a much wider set of use-cases.</p>
 <p>A pair type consists of two types, the first enclosed in round parentheses.</p>
-<pre><code class="language-par">type Pair = (String) Int
+<pre><code class="language-par">module Main
+
+import {
+  @core/Int
+  @core/String
+}
+
+type Pair = (String) Int
 </code></pre>
 <p>If the second type is another pair, we can use <em>syntax sugar</em> to write it more concisely:</p>
 <pre><code class="language-par">type Triple1 = (String) (Int) String

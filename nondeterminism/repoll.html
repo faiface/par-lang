@@ -311,7 +311,11 @@ def SourceFan = &lt;a&gt;[sources] sources.begin.case {
 <p>This <code>repoll()</code> does not produce any <code>a</code> values. It just drains the pool by discarding sources until it’s empty, and then returns <code>!</code>.</p>
 <h2 id="full-code"><a class="header" href="#full-code">Full code</a></h2>
 <p>Putting it all together:</p>
-<pre><code class="language-par">dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
+<pre><code class="language-par">module Main
+
+import @core/List
+
+dec MergeSources : &lt;a&gt;[List&lt;Source&lt;a&gt;&gt;] Source&lt;a&gt;
 def MergeSources = &lt;a&gt;[sources] poll(SourceFan(sources)) {
   fan =&gt; fan.case {
     .end! =&gt; submit(),
