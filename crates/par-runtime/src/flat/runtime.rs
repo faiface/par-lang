@@ -273,6 +273,9 @@ pub enum Linear<Ext: Clone> {
     ///
     /// This is also created in Fanout ~ Request interactions
     ShareHole(Arc<Mutex<SharedHole<Linked>>>),
+    // This variant is similiar to Global::Variable in function
+    // but is used by external tasks.
+    Variable(Arc<Mutex<Option<Node<Ext>>>>)
 }
 
 impl From<UserData> for Linear<Linked> {
@@ -546,6 +549,22 @@ impl Runtime {
                 h.send(hole).unwrap();
                 Some(shared)
             }
+            Node::Linear(Linear::Variable(mutex)) => {
+                let mut lock = mutex.lock().unwrap();
+                match lock.take() {
+                    Some(slot) => {
+                        drop(lock);
+                        self.rewrites.share_sync += 1;
+                        Some(self.share_inner(slot)?)
+                    }
+                    _ => {
+                        self.rewrites.share_async += 1;
+                        let (hole, shared) = self.create_share_hole();
+                        lock.replace(hole);
+                        Some(shared)
+                    }
+                }
+            }
             Node::Linear(Linear::ShareHole(..)) => None,
         }
     }
@@ -745,6 +764,18 @@ impl Runtime {
             sym!(NodeRef::Global(instance, _, Global::Variable(index)), value) => {
                 self.set_var(instance, *index, value.into_node())
             }
+            sym!(NodeRef::Linear(Linear::Variable(mutex)), value) => {
+                let mut lock = mutex.lock().unwrap();
+                match lock.take() {
+                    Some(node) => {
+                        self.link(node, value.into_node());
+                    }
+                    None => {
+                        lock.replace(value.into_node());
+                    }
+                }
+
+            }
             sym!(NodeRef::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
                 self.enqueue_to_hole(&mut *lock, other.into_node());
@@ -885,6 +916,7 @@ impl Linear<Linked> {
             Linear::Value(v) => format!("Value({})", v.variant_name()),
             Linear::Request(_) => "Request".to_owned(),
             Linear::ShareHole(_) => "ShareHole".to_owned(),
+            Linear::Variable(_) => "Variable".to_owned(),
         }
     }
 }

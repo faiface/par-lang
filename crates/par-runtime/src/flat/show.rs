@@ -47,6 +47,9 @@ impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Linear<Ext>,
             Linear::Request(_sender) => {
                 write!(f, "<external request>")?;
             }
+            Linear::Variable(_mutex) => {
+                write!(f, "<external variable>")?;
+            }
             Linear::ShareHole(mutex) => match mutex.try_lock() {
                 Ok(lock) => match &*lock {
                     crate::flat::runtime::SharedHole::Filled(_sync_shared) => {
