@@ -149,7 +149,7 @@ The file name and the module declaration must match, **case-insensitively.**
 So:
 
 - `Post.par` must declare `module Post`
-- `posts.par` may also declare `module Post`
+- `post.par` may also declare `module Post`
 - `handlers/api/Posts.par` must declare `module Posts`
 
 The directories contribute to the module's **path**, not to its declared module name.
