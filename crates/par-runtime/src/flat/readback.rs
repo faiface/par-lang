@@ -41,27 +41,6 @@ fn linked_pair() -> (Node<Linked>, Node<Linked>) {
     )
 }
 
-async fn wait_for_mutex(mutex: Arc<Mutex<Option<Node<Linked>>>>) -> Node<Linked> {
-    let res: std::result::Result<Node<fn(crate::readback::Handle) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send + 'static>>>, oneshot::Receiver<Node<fn(crate::readback::Handle) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send + 'static>>>>> = {
-        let mut lock = mutex.lock().unwrap();
-        match lock.take() {
-            Some(node) => {
-                Ok(node)
-            },
-            None => {
-                let (tx, rx) = oneshot::channel::<Node<Linked>>();
-                lock.replace(Node::Linear(Linear::Request(tx)));
-                Err(rx)
-            }
-        }
-    };
-
-    match res {
-        Ok(node) => node,
-        Err(rx) => rx.await.expect("msg")
-    }
-}
-
 impl Handle {
     fn new(&self,node: Node<Linked>) -> Self {
         Self {
@@ -123,20 +102,8 @@ impl Handle {
     }
 
     pub async fn await_ready(mut self) -> Self {
-        let mut node = self.node.unwrap();
-        loop {
-            match node {
-                Node::Linear(Linear::Variable(mutex)) => {
-                    node = wait_for_mutex(mutex.clone()).await;
-                    continue;
-                },
-                _ => {
-                    break;
-                }
-            }
-        };
-        self.node = Some(node);
-        self
+        let value = self.destruct().await;
+        self.new(Node::Linear(Linear::Value(Box::new(value))))
     }
 
     pub fn provide_external_closure<Fun, Fut>(mut self, f: Fun)
@@ -270,26 +237,15 @@ impl Handle {
     // }
 
     async fn destruct(&mut self) -> Value<Node<Linked>, Linked> {
-        let mut node: Node<Linked> = std::mem::take(&mut self.node).unwrap();
-        loop {
-            match node {
-                Node::Linear(Linear::Variable(mutex)) => {
-                    node = wait_for_mutex(mutex.clone()).await;
-                    continue;
-                },
-                _ => {
-                    match self.linker.destruct(node) {
-                        Ok(v) => {
-                            return v;
-                        }
-                        Err(node2) => {
-                            node = node2;
-                            continue
-                        }
-                    }
-                }
-            }
-        }
+        let node: Node<Linked> = std::mem::take(&mut self.node).unwrap();
+        let (tx, rx) = oneshot::channel();
+        self.linker.link(
+            Node::Linear(
+                Linear::Request(tx),
+            ),
+            node
+        );
+        rx.await.unwrap()
     }
 }
 

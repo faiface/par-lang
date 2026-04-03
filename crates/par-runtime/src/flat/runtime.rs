@@ -101,8 +101,6 @@ pub enum UserData {
     ExternalFn(ExternalFn),
     /// An external function with shared captured. This is created externally
     ExternalArc(ExternalArc),
-    /// A one-timer request for a value. The value it interacts with will be send through the sender.
-    Request(oneshot::Sender<Node<Linked>>),
 }
 
 pub(crate) type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
@@ -263,7 +261,7 @@ pub enum Linear<Ext: Clone> {
     /// tasks. Whatever node it interacts with will get sent to `Node`
     /// This is not true for variable, package, or fanout nodes, which
     /// are of a higher priority than Request nodes.
-    Request(oneshot::Sender<Node<Ext>>),
+    Request(oneshot::Sender<Value<Node<Ext>, Ext>>),
     /// This variant is created on `Fanout` ~ `Variable` interactions
     /// and is substituted into the variable's slot
     /// It is a "hole" that will get filled with whatever
@@ -283,7 +281,6 @@ impl From<UserData> for Linear<Linked> {
         match this {
             UserData::ExternalFn(p) => Linear::Value(Box::new(Value::ExternalFn(p))),
             UserData::ExternalArc(p) => Linear::Value(Box::new(Value::ExternalArc(p))),
-            UserData::Request(p) => Linear::Request(p),
         }
     }
 }
@@ -543,12 +540,7 @@ impl Runtime {
                     value.map_leaves(|p| self.share_inner(p))?,
                 ))))
             }
-            Node::Linear(Linear::Request(h)) => {
-                self.rewrites.share_async += 1;
-                let (hole, shared) = self.create_share_hole();
-                h.send(hole).unwrap();
-                Some(shared)
-            }
+            Node::Linear(Linear::Request(..)) => None,
             Node::Linear(Linear::Variable(mutex)) => {
                 let mut lock = mutex.lock().unwrap();
                 match lock.take() {
@@ -790,8 +782,10 @@ impl Runtime {
                 self.fill_hole(hole, other.into_node())
             }
             sym!(NodeRef::Linear(Linear::Request(request)), other) => {
+                let node = other.into_node();
+                let value = self.destruct(node).expect("Request expects a value");
+                request.send(value).unwrap();
                 self.rewrites.ext_send += 1;
-                return Some((UserData::Request(request), other.into_node()));
             }
             sym!(
                 NodeRef::Global(instance, _, Global::Package(package, captures_in, _)),
