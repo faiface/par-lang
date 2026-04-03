@@ -227,13 +227,6 @@ impl Handle {
         self.new(Node::Shared(shared).into())
     }
 
-    // async fn retry(&mut self) {
-    //     let (tx, rx) = oneshot::channel::<Node<Linked>>();
-    //     let mut old_node = core::mem::replace(&mut self.node, rx.into());
-    //     let old_node = old_node.take().await;
-    //     self.link(old_node, Node::Linear(Linear::Request(tx)));
-    // }
-
     async fn destruct(&mut self) -> Value<Node<Linked>, Linked> {
         let node: Node<Linked> = std::mem::take(&mut self.node).unwrap();
         let (tx, rx) = oneshot::channel();
