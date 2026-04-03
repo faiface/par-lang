@@ -273,7 +273,7 @@ pub enum Linear<Ext: Clone> {
     ShareHole(Arc<Mutex<SharedHole<Linked>>>),
     // This variant is similiar to Global::Variable in function
     // but is used by external tasks.
-    Variable(Arc<Mutex<Option<Node<Ext>>>>)
+    Variable(Arc<Mutex<Option<Node<Ext>>>>),
 }
 
 impl From<UserData> for Linear<Linked> {
@@ -766,7 +766,6 @@ impl Runtime {
                         lock.replace(value.into_node());
                     }
                 }
-
             }
             sym!(NodeRef::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
