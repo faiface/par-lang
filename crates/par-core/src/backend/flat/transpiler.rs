@@ -16,6 +16,7 @@ use par_runtime::flat::runtime::{
     ExternalArc, GlobalCont, GlobalValue, Package, PackageBody, PackagePtr,
 };
 
+use crate::frontend::language::PackageId;
 use crate::runtime_impl::tree::Net;
 use par_runtime::flat::runtime::Global;
 use par_runtime::linker::{Artifact, LinkError, Linked, Unlinked, link_arena, link_package_ptr};
@@ -42,14 +43,19 @@ pub struct Transpiled<Ext: Clone> {
     pub type_defs: TypeDefs<Universal>,
 }
 
-impl Into<Artifact<Unlinked>> for Transpiled<Unlinked> {
-    fn into(self) -> Artifact<Unlinked> {
+impl Transpiled<Unlinked> {
+    pub fn into_artifact(self, root_package: &PackageId) -> Artifact<Unlinked> {
         Artifact {
             arena: self.arena.clone(),
             definition_to_package: self
                 .name_to_package
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
+                .filter(|(k, v)| &k.module.package == root_package)
+                .map(|(k, v)| {
+                    let mut path = k.module.directories.clone();
+                    path.push(k.module.module.clone());
+                    (format!("{}.{}", path.join("/"), k.primary), v.clone())
+                })
                 .collect(),
         }
     }
