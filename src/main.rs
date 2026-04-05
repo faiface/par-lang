@@ -772,7 +772,7 @@ fn run_definition_vm(binary_path: PathBuf, target: Option<String>, print_stats: 
 }
 
 fn compile(package_path: PathBuf, max_interactions: u32) {
-    let (_checked, rt_compiled, _local_modules, _sources) =
+    let (checked, rt_compiled, _local_modules, _sources) =
         match build_unlinked_package(&package_path, max_interactions) {
             Ok((checked, rt_compiled, local_modules, sources)) => {
                 (checked, rt_compiled, local_modules, sources)
@@ -783,7 +783,9 @@ fn compile(package_path: PathBuf, max_interactions: u32) {
             }
         };
 
-    let artifact: Artifact<Unlinked> = rt_compiled.code.into();
+    let artifact: Artifact<Unlinked> = rt_compiled
+        .code
+        .into_artifact(checked.workspace().root_package());
     let file = File::create("compiled.pvm").expect("Failed to create file");
     let writer = BufWriter::new(file);
     bincode::serialize_into(writer, &artifact).expect("Failed to serialize");
