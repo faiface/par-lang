@@ -66,7 +66,7 @@ impl Reducer {
         )
     }
     // this function should only be called inside run, to avoid race conditions
-    fn net_handle(&mut self) -> NetHandle {
+    async fn net_handle(&mut self) -> NetHandle {
         if let Some(sender) = self.sender.upgrade() {
             NetHandle(
                 sender,
@@ -77,6 +77,21 @@ impl Reducer {
         } else {
             // all senders have been dropped, so we can just create a new one channel
             let (tx, rx) = mpsc::unbounded_channel();
+            // forward the old messages to the new channel
+            loop {
+                match self.inbox.try_recv() {
+                    Ok(msg) => {
+                        tx.send(msg).unwrap();
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        unreachable!("All senders should have been dropped!")
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        // it's guaranteed there will never be another message
+                        break;
+                    }
+                }
+            }
             self.inbox = rx;
             self.sender = tx.downgrade();
             NetHandle(tx, 0, self.num_handles.clone())
@@ -111,7 +126,7 @@ impl Reducer {
                             (UserData::ExternalFn(f), other) => {
                                 let handle = Handle::from_node(
                                     self.runtime.arena.clone(),
-                                    self.net_handle(),
+                                    self.net_handle().await,
                                     other,
                                 );
                                 self.spawner.spawn(f(handle.into())).unwrap();
@@ -119,7 +134,7 @@ impl Reducer {
                             (UserData::ExternalArc(f), other) => {
                                 let handle = Handle::from_node(
                                     self.runtime.arena.clone(),
-                                    self.net_handle(),
+                                    self.net_handle().await,
                                     other,
                                 );
                                 self.spawner.spawn((f.0).as_ref()(handle.into())).unwrap();
