@@ -44,6 +44,17 @@ impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Linear<Ext>,
             Linear::Value(value) => {
                 write!(f, "{}", Showable(value.as_ref(), self.1))?;
             }
+            Linear::Continue => {
+                write!(f, "?")?;
+            }
+            Linear::Par(a, b) => {
+                write!(
+                    f,
+                    "[{}] {}",
+                    Showable(b.as_ref(), self.1),
+                    Showable(a.as_ref(), self.1)
+                )?;
+            }
             Linear::Request(_sender) => {
                 write!(f, "<external request>")?;
             }

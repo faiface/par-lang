@@ -40,7 +40,7 @@ use crate::flat::stats::Rewrites;
 use crate::linker::Linked;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
+use tokio::sync::oneshot::Sender;
 
 pub type PackagePtr<Ext> = Index<Ext, OnceLock<Package<Ext>>>;
 pub(crate) type GlobalPtr<Ext> = Index<Ext, Global<Ext>>;
@@ -261,7 +261,9 @@ pub enum Linear<Ext: Clone> {
     /// tasks. Whatever node it interacts with will get sent to `Node`
     /// This is not true for variable, package, or fanout nodes, which
     /// are of a higher priority than Request nodes.
-    Request(oneshot::Sender<Value<Node<Ext>, Ext>>),
+    Continue,
+    Par(Box<Node<Ext>>, Box<Node<Ext>>),
+    Request(Sender<Value<Node<Ext>, Ext>>),
     /// This variant is created on `Fanout` ~ `Variable` interactions
     /// and is substituted into the variable's slot
     /// It is a "hole" that will get filled with whatever
@@ -541,6 +543,8 @@ impl Runtime {
                 ))))
             }
             Node::Linear(Linear::Request(..)) => None,
+            Node::Linear(Linear::Continue) => None,
+            Node::Linear(Linear::Par(..)) => None,
             Node::Linear(Linear::Variable(mutex)) => {
                 let mut lock = mutex.lock().unwrap();
                 match lock.take() {
@@ -876,6 +880,26 @@ impl Runtime {
                     }
                 }
             }
+            sym!(NodeRef::Linear(Linear::Continue), other) => {
+                let value = self
+                    .destruct(other.into_node())
+                    .expect("Continue expects a value");
+                let Value::Break = value else {
+                    panic!("Unimplemented destruction between Continue and {:?}", value);
+                };
+                self.rewrites.r#continue += 1;
+            }
+            sym!(NodeRef::Linear(Linear::Par(a1, b1)), other) => {
+                let value = self
+                    .destruct(other.into_node())
+                    .expect("Continue expects a value");
+                let Value::Pair(a2, b2) = value else {
+                    panic!("Unimplemented destruction between Par and {:?}", value);
+                };
+                self.rewrites.r#receive += 1;
+                self.link(*a1, a2);
+                self.link(*b1, b2);
+            }
             (a, b) => {
                 panic!(
                     "Unimplemented reduction: {:?} {:?}",
@@ -907,6 +931,8 @@ impl Linear<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Linear::Value(v) => format!("Value({})", v.variant_name()),
+            Linear::Continue => "Continue".to_owned(),
+            Linear::Par(a, b) => format!("Par({}, {})", a.variant_name(), b.variant_name()),
             Linear::Request(_) => "Request".to_owned(),
             Linear::ShareHole(_) => "ShareHole".to_owned(),
             Linear::Variable(_) => "Variable".to_owned(),

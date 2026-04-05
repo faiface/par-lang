@@ -141,15 +141,8 @@ impl Handle {
         let (left, left_h) = linked_pair();
         let (right, right_h) = linked_pair();
         let times = core::mem::replace(&mut self.node, Some(left_h));
-        self.new(times.unwrap())
-            .concurrently(|mut this| async move {
-                let mut linker = this.linker.clone();
-                let Value::Pair(a, b) = this.destruct().await else {
-                    unreachable!();
-                };
-                linker.link(left, a);
-                linker.link(right, b);
-            });
+        let par = Node::Linear(Linear::Par(Box::new(left), Box::new(right)));
+        self.linker.link(times.unwrap(), par);
         self.new(right_h)
     }
 
@@ -200,6 +193,7 @@ impl Handle {
             {
                 ()
             }
+            Node::Linear(Linear::Continue) => (),
             node => {
                 let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
                 self.linker.link(node, other);
@@ -207,12 +201,22 @@ impl Handle {
         }
     }
 
-    pub fn continue_(self) {
-        self.concurrently(|mut this| async move {
-            let Value::Break = this.destruct().await else {
-                unreachable!()
-            };
-        })
+    pub fn continue_(mut self) {
+        match self.node.unwrap() {
+            Node::Global(_, global_index)
+                if matches!(
+                    self.linker.arena.get(global_index),
+                    Global::Value(Value::Break)
+                ) =>
+            {
+                ()
+            }
+            Node::Linear(Linear::Value(value)) if matches!(value.as_ref(), Value::Break) => (),
+            node => {
+                let other = Node::Linear(Linear::Continue);
+                self.linker.link(node, other);
+            }
+        }
     }
 
     pub fn erase(mut self) -> () {
