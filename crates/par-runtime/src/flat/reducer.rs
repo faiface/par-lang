@@ -117,12 +117,6 @@ impl Reducer {
                     let start = Instant::now();
                     if let Some((a, b)) = self.runtime.reduce() {
                         match (a, b) {
-                            (UserData::Request(a), b) => {
-                                a.send(b).unwrap();
-                            }
-                            (a, Node::Linear(Linear::Request(b))) => {
-                                b.send(Node::Linear(a.into())).unwrap();
-                            }
                             (UserData::ExternalFn(f), other) => {
                                 let handle = Handle::from_node(
                                     self.runtime.arena.clone(),

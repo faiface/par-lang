@@ -1,14 +1,12 @@
 use super::reducer::{NetHandle, ReducerMessage};
-use super::runtime::{
-    ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Shared, SyncShared, Value,
-};
+use super::runtime::{ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Value};
 use crate::flat::arena::Arena;
 use crate::flat::runtime::Linker;
 use crate::primitive::Primitive;
 use arcstr::ArcStr;
 use futures::task::FutureObj;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::linker::Linked;
 use tokio::sync::oneshot;
@@ -22,58 +20,37 @@ pub enum Error {
 
 pub(crate) type Result<T> = core::result::Result<T, Error>;
 
-pub(crate) enum HandleNode {
-    Empty,
-    Present(Node<Linked>),
-    Waiting(oneshot::Receiver<Node<Linked>>),
-}
-
-impl HandleNode {
-    fn linked_pair() -> (Node<Linked>, Self) {
-        let (tx, rx) = oneshot::channel();
-        (Node::Linear(Linear::Request(tx)), HandleNode::Waiting(rx))
-    }
-
-    async fn take(&mut self) -> Node<Linked> {
-        match core::mem::replace(self, HandleNode::Empty) {
-            HandleNode::Empty => panic!("Tried to take out empty node!"),
-            HandleNode::Present(node) => node,
-            HandleNode::Waiting(receiver) => receiver.await.expect("Sender dropped!"),
-        }
-    }
-}
-
-impl From<Node<Linked>> for HandleNode {
-    fn from(value: Node<Linked>) -> Self {
-        Self::Present(value)
-    }
-}
-impl From<oneshot::Receiver<Node<Linked>>> for HandleNode {
-    fn from(value: oneshot::Receiver<Node<Linked>>) -> Self {
-        Self::Waiting(value)
-    }
+#[derive(Clone)]
+struct HandleLinker {
+    net: NetHandle,
+    arena: Arc<Arena<Linked>>,
 }
 
 pub struct Handle {
-    net: NetHandle,
-    arena: Arc<Arena<Linked>>,
-    node: HandleNode,
+    linker: HandleLinker,
+    node: Option<Node<Linked>>,
+}
+
+fn linked_pair() -> (Node<Linked>, Node<Linked>) {
+    let mutex = Arc::new(Mutex::new(None));
+    (
+        Node::Linear(Linear::Variable(mutex.clone())),
+        Node::Linear(Linear::Variable(mutex)),
+    )
 }
 
 impl Handle {
-    fn new(&self, node: HandleNode) -> Self {
+    fn new(&self, node: Node<Linked>) -> Self {
         Self {
-            arena: self.arena.clone(),
-            net: self.net.clone(),
-            node: node,
+            linker: self.linker.clone(),
+            node: Some(node),
         }
     }
 
     pub fn from_node(arena: Arc<Arena<Linked>>, net: NetHandle, node: Node<Linked>) -> Self {
         Self {
-            arena,
-            net,
-            node: HandleNode::Present(node),
+            linker: HandleLinker { arena, net },
+            node: Some(node),
         }
     }
 
@@ -82,103 +59,69 @@ impl Handle {
         net: NetHandle,
         package: PackagePtr<Linked>,
     ) -> Result<Handle> {
-        let (node, handle) = HandleNode::linked_pair();
-        let mut handle = Handle {
-            net: net,
-            node: handle,
-            arena,
-        };
-        let root = handle.instantiate_package_captures(
+        let mut linker = HandleLinker { arena, net };
+        let root = linker.instantiate_package_captures(
             package,
             Node::Linear(Linear::Value(Box::new(Value::Break))),
         );
-        handle.link(root, node);
-        Ok(handle)
+        Ok(Self {
+            linker,
+            node: Some(root),
+        })
     }
 
-    pub fn link_with(self, mut dual: Handle) {
-        self.concurrently(|mut this| async move {
-            let node = this.node.take().await;
-            this.link(node, dual.node.take().await);
-        });
+    pub fn link_with(mut self, dual: Handle) {
+        self.linker.link(self.node.unwrap(), dual.node.unwrap());
     }
 
-    pub fn provide_external(self, ext: ExternalFn) {
+    pub fn provide_external(mut self, ext: ExternalFn) {
         // TODO add fast variant.
-        self.concurrently(|mut this| async move {
-            let node = this.node.take().await;
-            this.link(
-                node,
-                Node::Linear(Linear::Value(Box::new(Value::ExternalFn(ext)))),
-            );
-        });
+        self.linker.link(
+            self.node.unwrap(),
+            Node::Linear(Linear::Value(Box::new(Value::ExternalFn(ext)))),
+        );
     }
 
     pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
     where
         F: 'static + Send + Future<Output = ()>,
     {
-        self.net
+        self.linker
+            .net
             .0
             .clone()
             .send(ReducerMessage::Spawn(FutureObj::from(Box::new(f(self)))))
             .unwrap();
     }
 
-    fn is_ready_node(&self, node: &Node<Linked>) -> bool {
-        match node {
-            Node::Linear(Linear::ShareHole(..)) => false,
-            Node::Linear(..) => true,
-            Node::Shared(Shared::Async(..)) => false,
-            Node::Shared(Shared::Sync(shared)) => matches!(**shared, SyncShared::Value(..)),
-            Node::Global(_, global) => matches!(
-                self.arena.get(*global),
-                Global::Value(..) | Global::Destruct(..) | Global::Fanout(..)
-            ),
-        }
-    }
-
     pub async fn await_ready(mut self) -> Self {
-        loop {
-            let node = self.node.take().await;
-            if self.is_ready_node(&node) {
-                self.node = HandleNode::Present(node);
-                return self;
-            }
-            self.node = HandleNode::Present(node);
-            self.retry().await;
-        }
+        let value = self.destruct().await;
+        self.new(Node::Linear(Linear::Value(Box::new(value))))
     }
 
-    pub fn provide_external_closure<Fun, Fut>(self, f: Fun)
+    pub fn provide_external_closure<Fun, Fut>(mut self, f: Fun)
     where
         Fun: 'static + Send + Sync + Fn(Handle) -> Fut,
         Fut: 'static + Send + Future<Output = ()>,
     {
-        self.concurrently(|mut this| async move {
-            let node = this.node.take().await;
-            this.link(
-                node,
-                Node::Linear(Linear::Value(Box::new(Value::ExternalArc(
-                    super::runtime::ExternalArc(Arc::new(move |handle| Box::pin(f(handle.handle)))),
-                )))),
-            );
-        });
+        self.linker.link(
+            self.node.unwrap(),
+            Node::Linear(Linear::Value(Box::new(Value::ExternalArc(
+                super::runtime::ExternalArc(Arc::new(move |handle| Box::pin(f(handle.handle)))),
+            )))),
+        );
     }
 
-    pub fn provide_primitive(self, primitive: Primitive) {
+    pub fn provide_primitive(mut self, primitive: Primitive) {
         // TODO add fast variant.
-        self.concurrently(|mut this| async move {
-            let node = this.node.take().await;
-            this.link(
-                node,
-                Node::Linear(Linear::Value(Box::new(Value::Primitive(primitive)))),
-            );
-        });
+        self.linker.link(
+            self.node.unwrap(),
+            Node::Linear(Linear::Value(Box::new(Value::Primitive(primitive)))),
+        );
     }
 
     pub async fn primitive(mut self) -> Result<Primitive> {
-        let primitive = match self.try_destruct().await {
+        let primitive = match self.destruct().await {
             Value::Primitive(p) => p,
             node => return Err(Error::InvalidValue(node)),
         };
@@ -186,136 +129,122 @@ impl Handle {
     }
 
     pub fn send(&mut self) -> Self {
-        let (left, left_h) = HandleNode::linked_pair();
-        let (right, right_h) = HandleNode::linked_pair();
-        let par = core::mem::replace(&mut self.node, left_h);
+        let (left, left_h) = linked_pair();
+        let (right, right_h) = linked_pair();
+        let par = core::mem::replace(&mut self.node, Some(left_h));
         let times = Node::Linear(Linear::Value(Box::new(Value::Pair(left, right))));
-        self.new(par).concurrently(|mut this| async move {
-            let par = this.node.take().await;
-            this.link(par, times);
-        });
+        self.linker.link(par.unwrap(), times);
         self.new(right_h)
     }
 
     pub fn receive(&mut self) -> Self {
-        let (left, left_h) = HandleNode::linked_pair();
-        let (right, right_h) = HandleNode::linked_pair();
-        let times = core::mem::replace(&mut self.node, left_h);
-        self.new(times).concurrently(|mut this| async move {
-            let Value::Pair(a, b) = this.try_destruct().await else {
-                unreachable!();
-            };
-            this.link(left, a);
-            this.link(right, b);
-        });
+        let (left, left_h) = linked_pair();
+        let (right, right_h) = linked_pair();
+        let times = core::mem::replace(&mut self.node, Some(left_h));
+        let par = Node::Linear(Linear::Par(Box::new(left), Box::new(right)));
+        self.linker.link(times.unwrap(), par);
         self.new(right_h)
     }
 
     pub fn signal(&mut self, chosen: ArcStr) {
-        let (payload, payload_h) = HandleNode::linked_pair();
-        let chosen = self.arena.interned(chosen.as_str()).unwrap_or_else(|| {
-            // This happens when we send a signal that the program doesn't have
-            // and that also isn't present in the types
-            // It might still be handled by an "else" branch then
-            eprintln!(
-                "Attempted to signal a non-interned string: `{}`
+        let (payload, payload_h) = linked_pair();
+        let chosen = self
+            .linker
+            .arena
+            .interned(chosen.as_str())
+            .unwrap_or_else(|| {
+                // This happens when we send a signal that the program doesn't have
+                // and that also isn't present in the types
+                // It might still be handled by an "else" branch then
+                eprintln!(
+                    "Attempted to signal a non-interned string: `{}`
                 This is most likely type error with built in definitions.
                 Sending an empty signal instead, which will always trigger an `else` branch.
                 ",
-                chosen
-            );
-            self.arena.empty_string()
-        });
+                    chosen
+                );
+                self.linker.arena.empty_string()
+            });
         let either = Node::Linear(Linear::Value(Box::new(Value::Either(chosen, payload))));
-        let choice = core::mem::replace(&mut self.node, payload_h);
-        self.new(choice).concurrently(|mut this| async move {
-            let choice = this.node.take().await;
-            this.link(choice, either);
-        });
+        let choice = core::mem::replace(&mut self.node, Some(payload_h));
+        self.linker.link(choice.unwrap(), either);
     }
 
     pub async fn case(&mut self) -> ArcStr {
-        let Value::Either(name, payload) = self.try_destruct().await else {
+        let linker = self.linker.clone();
+
+        let Value::Either(name, payload) = (*self).destruct().await else {
             unreachable!()
         };
-        self.node = payload.into();
-        self.arena.get(name).into()
+        *self = Handle {
+            linker,
+            node: Some(payload),
+        };
+        self.linker.arena.get(name).into()
     }
 
-    pub fn break_(self) {
-        self.concurrently(|mut this| async move {
-            match this.node.take().await {
-                Node::Global(_, global_index)
-                    if matches!(
-                        this.arena.get(global_index),
-                        Global::Destruct(GlobalCont::Continue)
-                    ) =>
-                {
-                    ()
-                }
-                node => {
-                    let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
-                    this.link(node, other);
-                }
+    pub fn break_(mut self) {
+        match self.node.unwrap() {
+            Node::Global(_, global_index)
+                if matches!(
+                    self.linker.arena.get(global_index),
+                    Global::Destruct(GlobalCont::Continue)
+                ) =>
+            {
+                ()
             }
-        })
-    }
-
-    pub fn continue_(self) {
-        self.concurrently(|mut this| async move {
-            let Value::Break = this.try_destruct().await else {
-                unreachable!()
-            };
-        })
-    }
-
-    pub fn erase(self) -> () {
-        let (other, _) = self.create_share_hole();
-        self.concurrently(|mut this| async move {
-            let node = this.node.take().await;
-            this.link(node, other)
-        })
-    }
-
-    pub fn duplicate(&mut self) -> Handle {
-        let (other, shared) = self.create_share_hole();
-        let node = core::mem::replace(&mut self.node, Node::Shared(shared.clone()).into());
-        self.new(node).concurrently(|mut this| async move {
-            let node = this.node.take().await;
-            this.link(node, other)
-        });
-        self.new(Node::Shared(shared).into())
-    }
-
-    async fn retry(&mut self) {
-        let (tx, rx) = oneshot::channel::<Node<Linked>>();
-        let mut old_node = core::mem::replace(&mut self.node, rx.into());
-        let old_node = old_node.take().await;
-        self.link(old_node, Node::Linear(Linear::Request(tx)));
-    }
-
-    async fn try_destruct(&mut self) -> Value<Node<Linked>, Linked> {
-        loop {
-            let node = self.node.take().await;
-            match self.destruct(node) {
-                Ok(v) => {
-                    return v;
-                }
-                Err(node) => {
-                    self.node = node.into();
-                    self.retry().await;
-                }
+            Node::Linear(Linear::Continue) => (),
+            node => {
+                let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
+                self.linker.link(node, other);
             }
         }
     }
-}
 
-impl Linker for Handle {
-    fn arena(&self) -> Arc<Arena<Linked>> {
-        self.arena.clone()
+    pub fn continue_(mut self) {
+        match self.node.unwrap() {
+            Node::Global(_, global_index)
+                if matches!(
+                    self.linker.arena.get(global_index),
+                    Global::Value(Value::Break)
+                ) =>
+            {
+                ()
+            }
+            Node::Linear(Linear::Value(value)) if matches!(value.as_ref(), Value::Break) => (),
+            node => {
+                let other = Node::Linear(Linear::Continue);
+                self.linker.link(node, other);
+            }
+        }
     }
 
+    pub fn erase(mut self) -> () {
+        let (other, _) = self.linker.create_share_hole();
+        self.linker.link(self.node.unwrap(), other)
+    }
+
+    pub fn duplicate(&mut self) -> Handle {
+        let (other, shared) = self.linker.create_share_hole();
+        let node = core::mem::replace(&mut self.node, Node::Shared(shared.clone()).into());
+        self.linker.link(node.unwrap(), other);
+        self.new(Node::Shared(shared).into())
+    }
+
+    async fn destruct(&mut self) -> Value<Node<Linked>, Linked> {
+        let node: Node<Linked> = std::mem::take(&mut self.node).unwrap();
+        let (tx, rx) = oneshot::channel();
+        self.linker.link(Node::Linear(Linear::Request(tx)), node);
+        rx.await.unwrap()
+    }
+}
+
+impl Linker for HandleLinker {
     fn link(&mut self, a: Node<Linked>, b: Node<Linked>) {
         self.net.0.send(ReducerMessage::Redex(a, b)).unwrap()
+    }
+
+    fn arena(&self) -> Arc<Arena<Linked>> {
+        self.arena.clone()
     }
 }

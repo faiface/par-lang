@@ -40,7 +40,7 @@ use crate::flat::stats::Rewrites;
 use crate::linker::Linked;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
+use tokio::sync::oneshot::Sender;
 
 pub type PackagePtr<Ext> = Index<Ext, OnceLock<Package<Ext>>>;
 pub(crate) type GlobalPtr<Ext> = Index<Ext, Global<Ext>>;
@@ -101,8 +101,6 @@ pub enum UserData {
     ExternalFn(ExternalFn),
     /// An external function with shared captured. This is created externally
     ExternalArc(ExternalArc),
-    /// A one-timer request for a value. The value it interacts with will be send through the sender.
-    Request(oneshot::Sender<Node<Linked>>),
 }
 
 pub(crate) type ExternalFnRet = std::pin::Pin<Box<dyn Send + std::future::Future<Output = ()>>>;
@@ -263,7 +261,9 @@ pub enum Linear<Ext: Clone> {
     /// tasks. Whatever node it interacts with will get sent to `Node`
     /// This is not true for variable, package, or fanout nodes, which
     /// are of a higher priority than Request nodes.
-    Request(oneshot::Sender<Node<Ext>>),
+    Continue,
+    Par(Box<Node<Ext>>, Box<Node<Ext>>),
+    Request(Sender<Value<Node<Ext>, Ext>>),
     /// This variant is created on `Fanout` ~ `Variable` interactions
     /// and is substituted into the variable's slot
     /// It is a "hole" that will get filled with whatever
@@ -273,6 +273,9 @@ pub enum Linear<Ext: Clone> {
     ///
     /// This is also created in Fanout ~ Request interactions
     ShareHole(Arc<Mutex<SharedHole<Linked>>>),
+    // This variant is similiar to Global::Variable in function
+    // but is used by external tasks.
+    Variable(Arc<Mutex<Option<Node<Ext>>>>),
 }
 
 impl From<UserData> for Linear<Linked> {
@@ -280,7 +283,6 @@ impl From<UserData> for Linear<Linked> {
         match this {
             UserData::ExternalFn(p) => Linear::Value(Box::new(Value::ExternalFn(p))),
             UserData::ExternalArc(p) => Linear::Value(Box::new(Value::ExternalArc(p))),
-            UserData::Request(p) => Linear::Request(p),
         }
     }
 }
@@ -540,11 +542,24 @@ impl Runtime {
                     value.map_leaves(|p| self.share_inner(p))?,
                 ))))
             }
-            Node::Linear(Linear::Request(h)) => {
-                self.rewrites.share_async += 1;
-                let (hole, shared) = self.create_share_hole();
-                h.send(hole).unwrap();
-                Some(shared)
+            Node::Linear(Linear::Request(..)) => None,
+            Node::Linear(Linear::Continue) => None,
+            Node::Linear(Linear::Par(..)) => None,
+            Node::Linear(Linear::Variable(mutex)) => {
+                let mut lock = mutex.lock().unwrap();
+                match lock.take() {
+                    Some(slot) => {
+                        drop(lock);
+                        self.rewrites.share_sync += 1;
+                        Some(self.share_inner(slot)?)
+                    }
+                    _ => {
+                        self.rewrites.share_async += 1;
+                        let (hole, shared) = self.create_share_hole();
+                        lock.replace(hole);
+                        Some(shared)
+                    }
+                }
             }
             Node::Linear(Linear::ShareHole(..)) => None,
         }
@@ -745,6 +760,17 @@ impl Runtime {
             sym!(NodeRef::Global(instance, _, Global::Variable(index)), value) => {
                 self.set_var(instance, *index, value.into_node())
             }
+            sym!(NodeRef::Linear(Linear::Variable(mutex)), value) => {
+                let mut lock = mutex.lock().unwrap();
+                match lock.take() {
+                    Some(node) => {
+                        self.link(node, value.into_node());
+                    }
+                    None => {
+                        lock.replace(value.into_node());
+                    }
+                }
+            }
             sym!(NodeRef::Shared(Shared::Async(state)), other) => {
                 let mut lock = state.lock().unwrap();
                 self.enqueue_to_hole(&mut *lock, other.into_node());
@@ -759,8 +785,10 @@ impl Runtime {
                 self.fill_hole(hole, other.into_node())
             }
             sym!(NodeRef::Linear(Linear::Request(request)), other) => {
+                let node = other.into_node();
+                let value = self.destruct(node).expect("Request expects a value");
+                request.send(value).unwrap();
                 self.rewrites.ext_send += 1;
-                return Some((UserData::Request(request), other.into_node()));
             }
             sym!(
                 NodeRef::Global(instance, _, Global::Package(package, captures_in, _)),
@@ -852,6 +880,26 @@ impl Runtime {
                     }
                 }
             }
+            sym!(NodeRef::Linear(Linear::Continue), other) => {
+                let value = self
+                    .destruct(other.into_node())
+                    .expect("Continue expects a value");
+                let Value::Break = value else {
+                    panic!("Unimplemented destruction between Continue and {:?}", value);
+                };
+                self.rewrites.r#continue += 1;
+            }
+            sym!(NodeRef::Linear(Linear::Par(a1, b1)), other) => {
+                let value = self
+                    .destruct(other.into_node())
+                    .expect("Continue expects a value");
+                let Value::Pair(a2, b2) = value else {
+                    panic!("Unimplemented destruction between Par and {:?}", value);
+                };
+                self.rewrites.r#receive += 1;
+                self.link(*a1, a2);
+                self.link(*b1, b2);
+            }
             (a, b) => {
                 panic!(
                     "Unimplemented reduction: {:?} {:?}",
@@ -883,8 +931,11 @@ impl Linear<Linked> {
     pub fn variant_name(&self) -> String {
         match self {
             Linear::Value(v) => format!("Value({})", v.variant_name()),
+            Linear::Continue => "Continue".to_owned(),
+            Linear::Par(a, b) => format!("Par({}, {})", a.variant_name(), b.variant_name()),
             Linear::Request(_) => "Request".to_owned(),
             Linear::ShareHole(_) => "ShareHole".to_owned(),
+            Linear::Variable(_) => "Variable".to_owned(),
         }
     }
 }
