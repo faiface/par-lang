@@ -38,8 +38,6 @@ mod package_manager;
 mod package_utils;
 #[cfg(feature = "playground")]
 mod playground;
-#[cfg(feature = "playground")]
-mod readback;
 mod test;
 mod test_runner;
 mod tokio_factory;
