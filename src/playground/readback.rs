@@ -12,11 +12,13 @@ use par_core::{
     runtime::{TypedHandle, TypedReadback},
     workspace::{FileImportScope, render_type_in_scope},
 };
+use par_runtime::primitive::{format_float, parse_float_text};
 use std::sync::{Arc, Mutex};
 
 enum Request {
     Nat(String, Box<dyn Send + FnOnce(BigInt)>),
     Int(String, Box<dyn Send + FnOnce(BigInt)>),
+    Float(String, Box<dyn Send + FnOnce(f64)>),
     String(String, Box<dyn Send + FnOnce(ParString)>),
     Char(String, Box<dyn Send + FnOnce(char)>),
     Byte(String, Box<dyn Send + FnOnce(u8)>),
@@ -35,6 +37,8 @@ pub enum Event {
     NatRequest(BigInt),
     Int(BigInt),
     IntRequest(BigInt),
+    Float(f64),
+    FloatRequest(f64),
     String(String),
     StringRequest(String),
     Char(char),
@@ -70,6 +74,8 @@ impl Event {
             Self::NatRequest(_) => Polarity::Negative,
             Self::Int(_) => Polarity::Positive,
             Self::IntRequest(_) => Polarity::Negative,
+            Self::Float(_) => Polarity::Positive,
+            Self::FloatRequest(_) => Polarity::Negative,
             Self::String(_) => Polarity::Positive,
             Self::StringRequest(_) => Polarity::Negative,
             Self::Char(_) => Polarity::Positive,
@@ -177,6 +183,30 @@ impl Element {
                                     callback(number);
                                 } else {
                                     self.request = Some(Request::Int(input, callback));
+                                }
+                            }
+
+                            Request::Float(mut input, callback) => {
+                                let input_float = parse_float_text(&input);
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a float..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_float.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_float.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let number = input_float.unwrap();
+                                    self.history.push(Event::FloatRequest(number));
+                                    callback(number);
+                                } else {
+                                    self.request = Some(Request::Float(input, callback));
                                 }
                             }
 
@@ -352,6 +382,9 @@ impl Element {
                     Event::Int(i) | Event::IntRequest(i) => {
                         ui.label(RichText::from(format!("{}", i)).strong().code());
                     }
+                    Event::Float(value) | Event::FloatRequest(value) => {
+                        ui.label(RichText::from(format_float(*value)).strong().code());
+                    }
                     Event::String(s) | Event::StringRequest(s) => {
                         ui.label(RichText::from(format!("{:?}", s)).strong().code());
                     }
@@ -429,6 +462,20 @@ async fn handle_coroutine(
             TypedReadback::IntRequest(callback) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.request = Some(Request::Int(String::new(), callback));
+                refresh();
+                break;
+            }
+
+            TypedReadback::Float(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Float(value));
+                refresh();
+                break;
+            }
+
+            TypedReadback::FloatRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Float(String::new(), callback));
                 refresh();
                 break;
             }

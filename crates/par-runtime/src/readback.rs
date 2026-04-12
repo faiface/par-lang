@@ -56,6 +56,10 @@ impl Handle {
         self.handle.provide_primitive(Primitive::Int(value))
     }
 
+    pub fn provide_float(self, value: f64) {
+        self.handle.provide_primitive(Primitive::Float(value))
+    }
+
     pub fn provide_string(self, value: ParString) {
         self.handle.provide_primitive(Primitive::String(value))
     }
@@ -128,6 +132,17 @@ impl Handle {
         let Primitive::Int(value) = primitive else {
             panic!(
                 "Unexpected primitive in Handle! Expected Int, got {:?}",
+                primitive
+            )
+        };
+        value
+    }
+
+    pub async fn float(self) -> f64 {
+        let primitive = self.handle.primitive().await.unwrap();
+        let Primitive::Float(value) = primitive else {
+            panic!(
+                "Unexpected primitive in Handle! Expected Float, got {:?}",
                 primitive
             )
         };

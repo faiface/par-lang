@@ -3,9 +3,10 @@
 Before taking a stroll in the diverse garden of Par's types, let's stop by the most basic ones:
 the _primitives._
 
-At the moment, Par has six primitive types:
+At the moment, Par has seven primitive types:
 - **`Int`** — Integers, positive and negative whole numbers, arbitrary size.
 - **`Nat`** — Natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
+- **`Float`** — IEEE-754 double-precision floating-point numbers.
 - **`String`** — UTF-8 encoded sequence of Unicode characters. They are a subtype of `Bytes`.
 - **`Char`** — Singular Unicode character. They are a subtype of `String`.
 - **`Byte`** — Singular data unit that consists of eight bits. They are a subtype of `Bytes`.
@@ -22,10 +23,10 @@ At the moment, Par has six primitive types:
 
 Primitives are manipulated using magical built-in functions.
 
-Primitive **literals** are special: you can write values such as `42`, `"Hello"`, `<<65>>`, or
+Primitive **literals** are special: you can write values such as `42`, `3.14`, `"Hello"`, `<<65>>`, or
 `<<65 66>>` without importing anything.
 
-But the module names `Int`, `Nat`, `String`, `Char`, `Byte`, and `Bytes` are **not** automatically
+But the module names `Int`, `Nat`, `Float`, `String`, `Char`, `Byte`, and `Bytes` are **not** automatically
 in scope. So if you want to:
 - mention one of these types explicitly
 - or call functions from their modules, such as `Int.Add` or `String.Reader`
@@ -152,6 +153,48 @@ def Num12: Nat = Int.Abs(-1000)     // = 1000
 Unlike `Int`s, natural numbers can be looped on using `Nat.Repeat`, which is one of their main
 uses. We'll learn more about that in the section on [recursive](../types/recursive.md) types.
 
+## `Float`
+
+Floats are IEEE-754 double-precision numbers. Unlike `Nat`, they are **not** a subtype of `Int`.
+They have their own representation and their own built-in operations.
+
+Float literals require both a whole and a fractional part, and may use scientific notation:
+
+```par
+def F1 = 3.14
+def F2 = -0.5
+def F3 = 6.02e23
+```
+
+To work with them explicitly, import `@core/Float`:
+
+```par
+module Main
+
+import {
+  @core/Float
+  @core/Int
+}
+
+def Radius = 2.5
+def Circumference = Float.Mul(2.0, Float.Mul(Float.Pi, Radius))
+def Truncated = Float.ToInt(Circumference)
+def BackToFloat = Float.FromInt(Truncated)
+```
+
+`Float.Equals` compares with a tolerance:
+
+```par
+def CloseEnough = Float.Equals(1.0, 1.05, 0.1)  // = .true!
+```
+
+And special values are available through constants:
+
+```par
+def Special = Float.NaN
+def Infinite = Float.Inf
+```
+
 ## `String`
 
 Strings are represented as UTF-8 encoded sequences of Unicode characters. Their literals are
@@ -184,7 +227,7 @@ To be able to use it, more knowledge of the language is needed first. But, feel
 free to play with it in the playground, or check out the `StringManipulation.par` example in
 the `examples/src/` folder.
 
-Numbers can be converted to strings using `Int.ToString`:
+Numbers can be converted to strings using `Int.ToString` or `Float.ToString`:
 
 ```par
 module Main

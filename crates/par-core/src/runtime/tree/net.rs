@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use num_bigint::BigInt;
 
 use par_runtime::fan_behavior::FanBehavior;
-use par_runtime::primitive::{ParString, Primitive};
+use par_runtime::primitive::{ParString, Primitive, format_float};
 
 pub(crate) type VarId = usize;
 
@@ -670,6 +670,9 @@ impl<Ext: Clone> Net<Ext> {
             }
 
             Tree::Primitive(Primitive::Int(i)) => format!("primitive({})", i),
+            Tree::Primitive(Primitive::Float(value)) => {
+                format!("primitive({})", format_float(*value))
+            }
             Tree::Primitive(Primitive::String(s)) => format!("primitive({:?})", s),
             Tree::Primitive(Primitive::Bytes(b)) => format!("primitive({:?})", b),
 

@@ -5,7 +5,7 @@ use winnow::{
     combinator::{alt, not, opt, peek, preceded, repeat},
     error::{EmptyError, ParserError},
     stream::{ParseSlice, TokenSlice},
-    token::{any, literal, take, take_while},
+    token::{any, literal, take_while},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -33,6 +33,7 @@ pub enum TokenKind {
     Star,
     Link,
 
+    Float,
     Integer,
     String,
 
@@ -151,6 +152,7 @@ impl TokenKind {
             TokenKind::Star => "*",
             TokenKind::Link => "<>",
 
+            TokenKind::Float => "float",
             TokenKind::Integer => "integer",
             TokenKind::String => "string",
 
@@ -239,6 +241,59 @@ pub(crate) fn lex<'s>(input: &'s str, file: &FileName) -> Vec<Token<'s>> {
     lex_with_comments(input, file).tokens
 }
 
+fn scan_digit_run(input: &str, start: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    if !matches!(bytes.get(start), Some(b'0'..=b'9')) {
+        return None;
+    }
+
+    let mut idx = start + 1;
+    while let Some(&byte) = bytes.get(idx) {
+        match byte {
+            b'0'..=b'9' => idx += 1,
+            b'_' if matches!(bytes.get(idx + 1), Some(b'0'..=b'9')) => idx += 1,
+            _ => break,
+        }
+    }
+
+    Some(idx)
+}
+
+fn scan_number_token(input: &str) -> Option<(&str, TokenKind, usize)> {
+    let bytes = input.as_bytes();
+    let mut idx = 0;
+
+    if matches!(bytes.get(idx), Some(b'+' | b'-')) {
+        idx += 1;
+    }
+
+    idx = scan_digit_run(input, idx)?;
+
+    if matches!(bytes.get(idx), Some(b'.')) {
+        let frac_start = idx + 1;
+        if let Some(frac_end) = scan_digit_run(input, frac_start) {
+            idx = frac_end;
+            if matches!(bytes.get(idx), Some(b'e' | b'E')) {
+                let exp_start = idx;
+                idx += 1;
+                if matches!(bytes.get(idx), Some(b'+' | b'-')) {
+                    idx += 1;
+                }
+                if let Some(exp_end) = scan_digit_run(input, idx) {
+                    idx = exp_end;
+                } else {
+                    idx = exp_start;
+                }
+            }
+            let raw = &input[..idx];
+            return Some((raw, TokenKind::Float, idx));
+        }
+    }
+
+    let raw = &input[..idx];
+    Some((raw, TokenKind::Integer, idx))
+}
+
 pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s> {
     type Error = EmptyError;
     (|input: &'s str| -> Result<Lexed<'s>, Error> {
@@ -253,34 +308,26 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
             let column = last_newline - input.len(); // starting column
             let Some((raw, kind, len)) = (match c {
                 '-' => {
-                    let (raw, mut kind) = alt((
-                        ("->").map(|raw| (raw, TokenKind::ThinArrow)),
-                        (
-                            take(1usize),
-                            take_while(0.., |c| matches!(c, '0'..='9' | '_')),
-                        )
-                            .take()
-                            .map(|raw| (raw, TokenKind::Integer)),
-                    ))
-                    .parse_next(input)?;
-                    if let TokenKind::Integer = kind {
-                        if !raw.contains(|c| matches!(c, '0'..='9')) {
-                            kind = TokenKind::Unknown;
-                        }
+                    let source = *input;
+                    if let Some(rest) = source.strip_prefix("->") {
+                        *input = rest;
+                        Some(("->", TokenKind::ThinArrow, 2))
+                    } else if let Some((raw, kind, len)) = scan_number_token(source) {
+                        *input = &source[len..];
+                        Some((raw, kind, len))
+                    } else {
+                        let raw = any::<&str, Error>.take().parse_next(input)?;
+                        Some((raw, TokenKind::Unknown, raw.len()))
                     }
-                    Some((raw, kind, raw.len()))
                 }
                 '0'..='9' | '+' => {
-                    let raw = (
-                        take(1usize),
-                        take_while(0.., |c| matches!(c, '0'..='9' | '_')),
-                    )
-                        .take()
-                        .parse_next(input)?;
-                    if !raw.contains(|c| matches!(c, '0'..='9')) {
-                        Some((raw, TokenKind::Unknown, raw.len()))
+                    let source = *input;
+                    if let Some((raw, kind, len)) = scan_number_token(source) {
+                        *input = &source[len..];
+                        Some((raw, kind, len))
                     } else {
-                        Some((raw, TokenKind::Integer, raw.len()))
+                        let raw = any::<&str, Error>.take().parse_next(input)?;
+                        Some((raw, TokenKind::Unknown, raw.len()))
                     }
                 }
                 '"' => {
@@ -668,5 +715,25 @@ mod lexer_test {
                 }
             ]
         )
+    }
+
+    #[test]
+    fn float_literals_tokenize_as_single_tokens() {
+        let tokens = lex("1.0 -0.5 +3.25 1_000.25 6.02e23 1.0e-6", &FILE);
+        assert_eq!(
+            tokens.iter().map(|token| token.kind).collect::<Vec<_>>(),
+            vec![
+                TokenKind::Float,
+                TokenKind::Float,
+                TokenKind::Float,
+                TokenKind::Float,
+                TokenKind::Float,
+                TokenKind::Float,
+            ]
+        );
+        assert_eq!(
+            tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
+            vec!["1.0", "-0.5", "+3.25", "1_000.25", "6.02e23", "1.0e-6"]
+        );
     }
 }

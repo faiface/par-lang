@@ -1564,7 +1564,28 @@ fn expr_condition(input: &mut Input) -> Result<Expression<Unresolved>> {
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
-    alt((expr_literal_int, expr_literal_string, expr_literal_bytes)).parse_next(input)
+    alt((
+        expr_literal_float,
+        expr_literal_int,
+        expr_literal_string,
+        expr_literal_bytes,
+    ))
+    .parse_next(input)
+}
+
+fn expr_literal_float(input: &mut Input) -> Result<Expression<Unresolved>> {
+    literal_float
+        .map(|(span, value)| Expression::Primitive(span, Primitive::Float(value)))
+        .parse_next(input)
+}
+
+fn literal_float(input: &mut Input) -> Result<(Span, f64)> {
+    t(TokenKind::Float)
+        .map(|token| {
+            let s: String = token.raw.chars().filter(|c| *c != '_').collect();
+            (token.span(), s.parse::<f64>().unwrap())
+        })
+        .parse_next(input)
 }
 
 fn expr_list(input: &mut Input) -> Result<Expression<Unresolved>> {
@@ -3644,5 +3665,34 @@ dec Run : !
         );
         assert_eq!(parsed.body.type_defs[0].doc, None);
         assert_eq!(parsed.body.declarations[0].doc, None);
+    }
+
+    #[test]
+    fn test_parse_float_literals() {
+        let source = "\
+module Main
+
+def A = 1.0
+def B = -0.5
+def C = +3.25
+def D = 1_000.25
+def E = 6.02e23
+def F = 1.0e-6
+";
+        assert!(parse_module(source, "float_literals.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_reject_invalid_float_literals() {
+        for source in [
+            "module Main\ndef Bad = .5\n",
+            "module Main\ndef Bad = 1.\n",
+            "module Main\ndef Bad = 1e10\n",
+            "module Main\ndef Bad = 1._0\n",
+            "module Main\ndef Bad = 1.0e\n",
+            "module Main\ndef Bad = 1.0e+\n",
+        ] {
+            assert!(parse_module(source, "bad_float.par".into()).is_err());
+        }
     }
 }

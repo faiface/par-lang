@@ -10,6 +10,7 @@ use par_runtime::readback::Handle;
 pub enum TypedReadback {
     Nat(BigInt),
     Int(BigInt),
+    Float(f64),
     String(ParString),
     Char(char),
     Byte(u8),
@@ -17,6 +18,7 @@ pub enum TypedReadback {
 
     NatRequest(Box<dyn Send + FnOnce(BigInt)>),
     IntRequest(Box<dyn Send + FnOnce(BigInt)>),
+    FloatRequest(Box<dyn Send + FnOnce(f64)>),
     StringRequest(Box<dyn Send + FnOnce(ParString)>),
     CharRequest(Box<dyn Send + FnOnce(char)>),
     ByteRequest(Box<dyn Send + FnOnce(u8)>),
@@ -56,6 +58,9 @@ impl TypedHandle {
         match typ {
             Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.handle.nat().await),
             Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.handle.int().await),
+            Type::Primitive(_, PrimitiveType::Float) => {
+                TypedReadback::Float(self.handle.float().await)
+            }
             Type::Primitive(_, PrimitiveType::String) => {
                 TypedReadback::String(self.handle.string().await)
             }
@@ -76,6 +81,10 @@ impl TypedHandle {
             Type::DualPrimitive(_, PrimitiveType::Int) => {
                 let handle = self.handle;
                 TypedReadback::IntRequest(Box::new(move |value| handle.provide_int(value)))
+            }
+            Type::DualPrimitive(_, PrimitiveType::Float) => {
+                let handle = self.handle;
+                TypedReadback::FloatRequest(Box::new(move |value| handle.provide_float(value)))
             }
             Type::DualPrimitive(_, PrimitiveType::String) => {
                 let handle = self.handle;

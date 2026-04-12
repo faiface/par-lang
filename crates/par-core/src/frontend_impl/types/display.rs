@@ -284,6 +284,7 @@ fn write_primitive_type(f: &mut impl Write, primitive: &PrimitiveType) -> fmt::R
     let text = match primitive {
         PrimitiveType::Nat => "Nat",
         PrimitiveType::Int => "Int",
+        PrimitiveType::Float => "Float",
         PrimitiveType::String => "String",
         PrimitiveType::Char => "Char",
         PrimitiveType::Byte => "Byte",

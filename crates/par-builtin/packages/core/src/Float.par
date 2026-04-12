@@ -1,0 +1,197 @@
+// Floating-point operations and constants.
+export module Float
+
+import {
+  Bool
+  Int
+  String
+}
+
+export {
+  // The IEEE-754 "not a number" value.
+  dec NaN : Float
+
+  // Positive infinity.
+  dec Inf : Float
+
+  // Negative infinity.
+  dec NegInf : Float
+
+  // Archimedes' constant.
+  dec Pi : Float
+
+  // Euler's number.
+  dec E : Float
+
+  // Tests whether a float is `NaN`.
+  dec IsNaN : [Float] Bool
+
+  // Tests whether a float is finite.
+  dec IsFinite : [Float] Bool
+
+  // Tests whether a float is positive or negative infinity.
+  dec IsInfinite : [Float] Bool
+
+  // Converts an integer to a float.
+  dec FromInt : [Int] Float
+
+  // Truncates a float toward zero.
+  // Returns `0` for `NaN`, `Inf`, and `NegInf`.
+  dec ToInt : [Float] Int
+
+  // Converts a float to a string accepted by `Float.FromString`.
+  dec ToString : [Float] String
+
+  // Parses a float literal or one of `NaN`, `Inf`, `-Inf`, `Infinity`, `-Infinity`.
+  dec FromString : [String] either {
+    .ok Float,
+    .err!,
+  }
+
+  // Negates a float.
+  dec Neg : [Float] Float
+
+  // Returns the absolute value.
+  dec Abs : [Float] Float
+
+  // Rounds down toward negative infinity.
+  dec Floor : [Float] Float
+
+  // Rounds up toward positive infinity.
+  dec Ceil : [Float] Float
+
+  // Rounds to the nearest integer, ties away from zero.
+  dec Round : [Float] Float
+
+  // Returns the sum of two floats.
+  dec Add : [Float, Float] Float
+
+  // Returns the difference of two floats.
+  dec Sub : [Float, Float] Float
+
+  // Returns the product of two floats.
+  dec Mul : [Float, Float] Float
+
+  // Returns the quotient of two floats.
+  dec Div : [Float, Float] Float
+
+  // `Float.Pow(base, exponent)` returns `base` raised to the power `exponent`.
+  dec Pow : [Float, Float] Float
+
+  // Returns the smaller input, or `NaN` if either input is `NaN`.
+  dec Min : [Float, Float] Float
+
+  // Returns the larger input, or `NaN` if either input is `NaN`.
+  dec Max : [Float, Float] Float
+
+  // `Float.Clamp(value)(lo, hi)` computes `Float.Max(Float.Min(value, hi), lo)`.
+  dec Clamp : [Float] [Float, Float] Float
+
+  // `Float.Equals(left, right, tolerance)` tests whether `left` and `right`
+  // differ by at most `tolerance`.
+  // Returns `.false!` if any argument is `NaN`.
+  dec Equals : [Float, Float, Float] Bool
+
+  // Square root.
+  dec Sqrt : [Float] Float
+
+  // Exponential function.
+  dec Exp : [Float] Float
+
+  // Natural logarithm.
+  dec Ln : [Float] Float
+
+  // Sine.
+  dec Sin : [Float] Float
+
+  // Cosine.
+  dec Cos : [Float] Float
+
+  // Tangent.
+  dec Tan : [Float] Float
+
+  // `Float.Atan2(y, x)` is the two-argument arctangent of `(y, x)`.
+  dec Atan2 : [Float, Float] Float
+}
+
+dec NaN_ : [!] Float
+dec Inf_ : [!] Float
+dec NegInf_ : [!] Float
+dec Pi_ : [!] Float
+dec E_ : [!] Float
+
+def NaN_ = external
+
+def Inf_ = external
+
+def NegInf_ = external
+
+def Pi_ = external
+
+def E_ = external
+
+def NaN = NaN_(!)
+
+def Inf = Inf_(!)
+
+def NegInf = NegInf_(!)
+
+def Pi = Pi_(!)
+
+def E = E_(!)
+
+def IsNaN = external
+
+def IsFinite = external
+
+def IsInfinite = external
+
+def FromInt = external
+
+def ToInt = external
+
+def ToString = external
+
+def FromString = external
+
+def Neg = external
+
+def Abs = external
+
+def Floor = external
+
+def Ceil = external
+
+def Round = external
+
+def Add = external
+
+def Sub = external
+
+def Mul = external
+
+def Div = external
+
+def Pow = external
+
+def Min = external
+
+def Max = external
+
+def Clamp = external
+
+def Equals = external
+
+def Sqrt = external
+
+def Exp = external
+
+def Ln = external
+
+def Sin = external
+
+def Cos = external
+
+def Tan = external
+
+def Atan2 = external

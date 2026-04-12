@@ -28,6 +28,7 @@ impl LoopId {
 pub enum PrimitiveType {
     Nat,
     Int,
+    Float,
     String,
     Char,
     Byte,
@@ -81,6 +82,7 @@ pub(crate) fn get_primitive_type<S: Clone>(primitive: &Primitive) -> Type<S> {
     match primitive {
         Primitive::Int(n) if n >= &BigInt::ZERO => Type::nat(),
         Primitive::Int(_) => Type::int(),
+        Primitive::Float(_) => Type::float(),
         Primitive::String(s) if is_single_char(s.as_str()) => Type::char(),
         Primitive::String(_) => Type::string(),
         Primitive::Bytes(b) if b.len() == 1 => Type::byte(),
@@ -344,6 +346,10 @@ impl<S: Clone> Type<S> {
 
     pub fn int() -> Self {
         Self::Primitive(Span::None, PrimitiveType::Int)
+    }
+
+    pub fn float() -> Self {
+        Self::Primitive(Span::None, PrimitiveType::Float)
     }
 
     pub fn string() -> Self {

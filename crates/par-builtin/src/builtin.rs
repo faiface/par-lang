@@ -5,6 +5,7 @@ mod bytes;
 mod char_;
 mod console;
 mod debug;
+mod float;
 #[cfg(not(target_family = "wasm"))]
 mod http;
 mod int;
@@ -84,6 +85,10 @@ const CORE_SOURCE_FILES: &[BuiltinSourceFile] = &[
     BuiltinSourceFile {
         relative_path_from_src: "Debug.par",
         source: include_str!("../packages/core/src/Debug.par"),
+    },
+    BuiltinSourceFile {
+        relative_path_from_src: "Float.par",
+        source: include_str!("../packages/core/src/Float.par"),
     },
     BuiltinSourceFile {
         relative_path_from_src: "Cell.par",
