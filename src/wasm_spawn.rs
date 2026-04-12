@@ -1,5 +1,3 @@
-use std::future::IntoFuture;
-
 use futures::task::Spawn;
 use wasm_bindgen_futures::spawn_local;
 pub struct WasmSpawn {}

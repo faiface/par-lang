@@ -18,6 +18,7 @@ use par_core::{
 };
 use par_doc::DocOptions;
 use tokio::time::Instant;
+#[cfg(not(target_family = "wasm"))]
 use url::Url;
 
 use par_runtime::linker::{Artifact, Linked, Unlinked};
@@ -911,6 +912,7 @@ fn generate_docs(plan: DocCommandPlan) -> Result<(), String> {
         generated.out_dir.display()
     );
 
+    #[cfg(not(target_family = "wasm"))]
     if plan.open {
         let url = file_url_for_path(&generated.index_file)?;
         webbrowser::open(url.as_str()).map_err(|error| error.to_string())?;
@@ -924,6 +926,7 @@ fn generate_docs(plan: DocCommandPlan) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn file_url_for_path(path: &Path) -> Result<Url, String> {
     let absolute_path = fs::canonicalize(path).unwrap_or_else(|_| {
         if path.is_absolute() {
@@ -1079,6 +1082,7 @@ mod tests {
         assert!(matches!(error, NewPackageError::DirectoryNotEmpty(path) if path == package_dir));
     }
 
+    #[cfg(not(target_family = "wasm"))]
     #[test]
     fn file_url_for_path_accepts_relative_paths() {
         let unique = SystemTime::now()

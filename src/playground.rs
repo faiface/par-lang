@@ -32,6 +32,7 @@ use par_core::{
     },
 };
 use par_runtime::linker::Linked;
+#[cfg(not(target_family = "wasm"))]
 use par_runtime::spawn::TokioSpawn;
 use std::fmt::Write;
 use tokio_util::sync::CancellationToken;
@@ -231,7 +232,7 @@ pub struct Playground {
     element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (u32, u32),
     theme_mode: ThemeMode,
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(target_family = "wasm"))]
     _rt: tokio::runtime::Runtime,
     spawner: Arc<dyn Spawn + Send + Sync + 'static>,
     cancel_token: Option<CancellationToken>,
@@ -351,6 +352,7 @@ impl Playground {
             element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
+            #[cfg(not(target_family = "wasm"))]
             _rt: runtime,
             spawner,
             cancel_token: None,
