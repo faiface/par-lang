@@ -9,6 +9,7 @@ mod float;
 #[cfg(not(target_family = "wasm"))]
 mod http;
 mod int;
+mod json;
 mod list;
 mod map;
 mod nat;
@@ -101,6 +102,10 @@ const CORE_SOURCE_FILES: &[BuiltinSourceFile] = &[
     BuiltinSourceFile {
         relative_path_from_src: "Int.par",
         source: include_str!("../packages/core/src/Int.par"),
+    },
+    BuiltinSourceFile {
+        relative_path_from_src: "Json.par",
+        source: include_str!("../packages/core/src/Json.par"),
     },
     BuiltinSourceFile {
         relative_path_from_src: "List.par",

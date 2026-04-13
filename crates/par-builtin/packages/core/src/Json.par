@@ -1,0 +1,43 @@
+// JSON encoding/decoding.
+export module Json
+
+import {
+  Bool
+  BoxMap
+  Float
+  List
+  Result
+  String
+}
+
+export {
+  // Human-readable JSON parse/decode errors.
+  type Error = String
+
+  // A materialized JSON value.
+  //
+  // Notes:
+  // - `.number` uses `Float`.
+  // - Encoding `.number(Float.NaN)`, `.number(Float.Inf)`, or
+  //   `.number(Float.NegInf)` produces JSON `null`.
+  // - Object keys are normalized through `BoxMap.Readonly`, so duplicate
+  //   source keys and original key order are not preserved.
+  type Json = recursive either {
+    .null!,
+    .bool Bool,
+    .string String,
+    .number Float,
+    .list List<self>,
+    .object BoxMap.Readonly<String, self>,
+  }
+
+  // Encodes a `Json` value into compact JSON text.
+  dec Encode : [Json] String
+
+  // Decodes JSON text into a materialized `Json` value.
+  dec Decode : [String] Result<Error, Json>
+}
+
+def Encode = external
+
+def Decode = external
