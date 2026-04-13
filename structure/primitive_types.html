@@ -163,10 +163,11 @@
                         <h1 id="primitive-types"><a class="header" href="#primitive-types">Primitive Types</a></h1>
 <p>Before taking a stroll in the diverse garden of Par’s types, let’s stop by the most basic ones:
 the <em>primitives.</em></p>
-<p>At the moment, Par has six primitive types:</p>
+<p>At the moment, Par has seven primitive types:</p>
 <ul>
 <li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
 <li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
+<li><strong><code>Float</code></strong> — IEEE-754 double-precision floating-point numbers.</li>
 <li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters. They are a subtype of <code>Bytes</code>.</li>
 <li><strong><code>Char</code></strong> — Singular Unicode character. They are a subtype of <code>String</code>.</li>
 <li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
@@ -181,9 +182,9 @@ that are operated on using magical built-in functions. This is necessary to achi
 efficient representation.</p>
 </blockquote>
 <p>Primitives are manipulated using magical built-in functions.</p>
-<p>Primitive <strong>literals</strong> are special: you can write values such as <code>42</code>, <code>"Hello"</code>, <code>&lt;&lt;65&gt;&gt;</code>, or
+<p>Primitive <strong>literals</strong> are special: you can write values such as <code>42</code>, <code>3.14</code>, <code>"Hello"</code>, <code>&lt;&lt;65&gt;&gt;</code>, or
 <code>&lt;&lt;65 66&gt;&gt;</code> without importing anything.</p>
-<p>But the module names <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code>, <code>Byte</code>, and <code>Bytes</code> are <strong>not</strong> automatically
+<p>But the module names <code>Int</code>, <code>Nat</code>, <code>Float</code>, <code>String</code>, <code>Char</code>, <code>Byte</code>, and <code>Bytes</code> are <strong>not</strong> automatically
 in scope. So if you want to:</p>
 <ul>
 <li>mention one of these types explicitly</li>
@@ -286,6 +287,34 @@ def Num12: Nat = Int.Abs(-1000)     // = 1000
 </code></pre>
 <p>Unlike <code>Int</code>s, natural numbers can be looped on using <code>Nat.Repeat</code>, which is one of their main
 uses. We’ll learn more about that in the section on <a href="../types/recursive.html">recursive</a> types.</p>
+<h2 id="float"><a class="header" href="#float"><code>Float</code></a></h2>
+<p>Floats are IEEE-754 double-precision numbers. Unlike <code>Nat</code>, they are <strong>not</strong> a subtype of <code>Int</code>.
+They have their own representation and their own built-in operations.</p>
+<p>Float literals require both a whole and a fractional part, and may use scientific notation:</p>
+<pre><code class="language-par">def F1 = 3.14
+def F2 = -0.5
+def F3 = 6.02e23
+</code></pre>
+<p>To work with them explicitly, import <code>@core/Float</code>:</p>
+<pre><code class="language-par">module Main
+
+import {
+  @core/Float
+  @core/Int
+}
+
+def Radius = 2.5
+def Circumference = Float.Mul(2.0, Float.Mul(Float.Pi, Radius))
+def Truncated = Float.ToInt(Circumference)
+def BackToFloat = Float.FromInt(Truncated)
+</code></pre>
+<p><code>Float.Equals</code> compares with a tolerance:</p>
+<pre><code class="language-par">def CloseEnough = Float.Equals(1.0, 1.05, 0.1)  // = .true!
+</code></pre>
+<p>And special values are available through constants:</p>
+<pre><code class="language-par">def Special = Float.NaN
+def Infinite = Float.Inf
+</code></pre>
 <h2 id="string"><a class="header" href="#string"><code>String</code></a></h2>
 <p>Strings are represented as UTF-8 encoded sequences of Unicode characters. Their literals are
 enclosed in double quotes (<code>"</code>), and may contain escape sequences, such as <code>\n</code>, familiar from
@@ -310,7 +339,7 @@ def Str3 = String.Builder
 To be able to use it, more knowledge of the language is needed first. But, feel
 free to play with it in the playground, or check out the <code>StringManipulation.par</code> example in
 the <code>examples/src/</code> folder.</p>
-<p>Numbers can be converted to strings using <code>Int.ToString</code>:</p>
+<p>Numbers can be converted to strings using <code>Int.ToString</code> or <code>Float.ToString</code>:</p>
 <pre><code class="language-par">module Main
 
 import @core/Int
