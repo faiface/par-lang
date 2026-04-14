@@ -633,10 +633,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             .shift_remove(&index)
             .expect("block should have been registered");
         if contexts.is_empty() {
-            panic!(
-                "block has no incoming paths at index {} span {:?}",
-                index, span
-            );
+            // Ill-typed synthesized condition blocks can become unreachable during recovery.
+            return Arc::new(Process::Block(
+                span.clone(),
+                index,
+                Arc::new(Process::Unreachable(span.clone())),
+                typed_then,
+            ));
         }
         let free = body.free_variables();
         let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free, emit);
@@ -2454,7 +2457,16 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             .shift_remove(&index)
             .expect("block should have been registered");
         if contexts.is_empty() {
-            panic!("block has no incoming paths");
+            // Ill-typed synthesized condition blocks can become unreachable during recovery.
+            return (
+                Arc::new(Process::Block(
+                    span.clone(),
+                    index,
+                    Arc::new(Process::Unreachable(span.clone())),
+                    typed_then,
+                )),
+                then_type,
+            );
         }
         let free = body.free_variables();
         let contexts: Vec<_> = contexts
