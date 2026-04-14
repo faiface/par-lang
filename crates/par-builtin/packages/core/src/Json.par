@@ -2,17 +2,18 @@
 export module Json
 
 import {
-  Bool
+  Bool as CoreBool
   BoxMap
   Float
-  List
+  List as CoreList
+  Option
   Result
-  String
+  String as CoreString
 }
 
 export {
   // Human-readable JSON parse/decode errors.
-  type Error = String
+  type Error = CoreString
 
   // A materialized JSON value.
   //
@@ -24,20 +25,284 @@ export {
   //   source keys and original key order are not preserved.
   type Json = recursive either {
     .null!,
-    .bool Bool,
-    .string String,
+    .bool CoreBool,
+    .string CoreString,
     .number Float,
-    .list List<self>,
-    .object BoxMap.Readonly<String, self>,
+    .list CoreList<self>,
+    .object BoxMap.Readonly<CoreString, self>,
+  }
+
+  // A reusable parser from a materialized `Json` value into a typed value.
+  //
+  // A `Format<a>` exposes a single `.parse` operation that returns `.ok value`
+  // on success or `.err!` on mismatch.
+  type Format<a> = box choice {
+    .parse(Json) => Option<a>
+  }
+
+  // A reusable parser specialized to JSON objects.
+  //
+  // Use `Json.Object(...)` to lift an `ObjectFormat<a>` into a full
+  // `Format<a>`.
+  type ObjectFormat<a> = box choice {
+    .parseObject(BoxMap.Readonly<CoreString, Json>) => Option<a>,
   }
 
   // Encodes a `Json` value into compact JSON text.
-  dec Encode : [Json] String
+  dec Encode : [Json] CoreString
 
   // Decodes JSON text into a materialized `Json` value.
-  dec Decode : [String] Result<Error, Json>
+  dec Decode : [CoreString] Result<Error, Json>
+
+  // Tests two `Json` values for structural equality.
+  //
+  // Object key order does not matter, because objects are normalized through
+  // `BoxMap.Readonly`.
+  dec Equals : [Json, Json] CoreBool
+
+  // Applies a pure mapping function to a successful parse result.
+  //
+  // Use `Json.Map` when parsing cannot fail once the underlying format
+  // succeeds. Use `Json.Then` for fallible post-processing.
+  dec Map : <a>[Format<a>] [type b] [box [a] b] Format<b>
+
+  // Applies a fallible post-processing step to a successful parse result.
+  //
+  // The mapping function returns `.ok value` to accept the parsed result or
+  // `.err!` to reject it.
+  dec Then : <a>[Format<a>] [type b] [box [a] Option<b>] Format<b>
+
+  // Matches exactly one JSON value.
+  dec Literal : [Json] Format<!>
+  
+  // Matches JSON `null`.
+  dec Null : Format<!>
+
+  // Parses a JSON boolean.
+  dec Bool : Format<CoreBool>
+
+  // Parses a JSON string.
+  dec String : Format<CoreString>
+
+  // Parses a JSON number.
+  dec Number : Format<Float>
+
+  // Parses a JSON array with the given item format.
+  //
+  // The item format returns `box a` because earlier parsed items may need to be
+  // discarded if a later item fails to parse.
+  dec List : <a>[Format<box a>] Format<CoreList<a>>
+
+  // Parses a JSON object with the given object format.
+  dec Object : <a>[ObjectFormat<a>] Format<a>
+
+  // Parses a required object field with the given format.
+  //
+  // For example, `Json.Field("name", Json.String)` accepts an object whose
+  // `"name"` field is a JSON string.
+  dec Field : [CoreString] <a>[Format<a>] ObjectFormat<a>
+
+  // Parses an optional object field with the given format.
+  //
+  // Missing fields produce `.ok .err!`. Present fields must parse successfully.
+  dec OptionalField : [CoreString] <a>[Format<a>] ObjectFormat<Option<a>>
+
+  // Runs two object formats against the same object and returns both results.
+  //
+  // The result shape is `(right) left`, so
+  // `Json.Field("age", Json.Number)->Json.And(Json.Field("name", Json.String))`
+  // returns `(String) Float`.
+  //
+  // Both object formats return boxed values because either side may need to be
+  // discarded if the other side fails.
+  dec And : <a>[ObjectFormat<box a>] <b>[ObjectFormat<box b>] ObjectFormat<(b) a>
+
+  // Tries multiple formats in order and returns the first successful result.
+  //
+  // Each branch may parse to its own intermediate type before mapping into the
+  // shared result type.
+  //
+  // ```par
+  // type Answer = either {
+  //   .yes!,
+  //   .text String,
+  // }
+  //
+  // def AnswerFormat = Json.Union(type Answer)(*(
+  //   (Json.Literal(.string "yes")) box [!] .yes!,
+  //   (Json.String) box [text] .text text,
+  // ))
+  // ```
+  dec Union : [type a] [CoreList<<b>(Format<b>) box [b] a>] Format<a>
+
+  // Parses tagged JSON objects by matching one field against literal JSON tags.
+  //
+  // The first argument selects the field to inspect. Each branch provides a tag
+  // literal, an object format, and a mapper into the result type. Tags are
+  // compared with `Json.Equals`, so they may be strings, numbers, booleans, or
+  // `null`, not just strings.
+  //
+  // ```par
+  // type Command = either {
+  //   .sleep Float,
+  //   .say String,
+  // }
+  //
+  // def CommandFormat = Json.Tagged(type Command)("operation", *(
+  //   (.string "sleep", Json.Field("seconds", Json.Number)) box [seconds] .sleep seconds,
+  //   (.string "say", Json.Field("message", Json.String)) box [message] .say message,
+  // ))
+  // ```
+  dec Tagged : [type a] [CoreString, CoreList<(Json) <b>(ObjectFormat<b>) box [b] a>] Format<a>
+
+  // Accepts JSON `null` as `.ok .err!`, otherwise parses with the given format
+  // and wraps the result in `.ok`.
+  dec OrNull : <a>[Format<a>] Format<Option<a>>
 }
 
 def Encode = external
 
 def Decode = external
+
+def Equals = [json1, json2] json1.begin.case {
+  .null! => json2 is .null!,
+  .bool b1 => json2 is .bool b2 and {b1 and b2 or not b1 and not b2},
+  .string s1 => json2 is .string s2 and s1->CoreString.Equals(s2),
+  .number n1 => json2 is .number n2 and n1->Float.Equals(n2, 0.0),
+  .list l1 => json2 is .list l2 and l1->CoreList.Equals(l2, box [json1, json2] json1.loop),
+  .object o1 => json2 is .object o2 and o1.list->CoreList.Equals(o2.list, box [(k1) json1, (k2) json2] {
+    k1->CoreString.Equals(k2) and json1.loop
+  })
+}
+
+def Map = <a>[format] [type b] [f] box case {
+  .parse(json) => format.parse(json).case {
+    .ok value => .ok f(value),
+    .err! => .err!,
+  }
+}
+
+def Then = <a>[format] [type b] [f] box case {
+  .parse(json) => format.parse(json).case {
+    .ok value => f(value),
+    .err! => .err!,
+  }
+}
+
+def Literal = [json1] box case {
+  .parse(json2) => if {
+    json1->Equals(json2) => .ok!,
+    else => .err!,
+  }
+}
+
+def Null = box case {
+  .parse(json) => json.case {
+    .null! => .ok!,
+    else _ => .err!,
+  }
+}
+
+def Bool = box case {
+  .parse(json) => json.case {
+    .bool b => .ok b,
+    else _ => .err!,
+  }
+}
+
+def String = box case {
+  .parse(json) => json.case {
+    .string s => .ok s,
+    else _ => .err!,
+  }
+}
+
+def Number = box case {
+  .parse(json) => json.case {
+    .number n => .ok n,
+    else _ => .err!,
+  }
+}
+
+def List = <a>[item] box case {
+  .parse(json) => json.case {
+    .list xs => xs.begin.case {
+      .end! => .ok .end!,
+      .item(x) xs => if {
+        not item.parse(x) is .ok x1 => .err!,
+        not xs.loop is .ok xs1 => .err!,
+        else => .ok .item(x1) xs1,
+      }
+    }
+    else _ => .err!,
+  }
+}
+
+def Object = <a>[format] box case {
+  .parse(json) => json.case {
+    .object o => format.parseObject(o),
+    else _ => .err!,
+  }
+}
+
+def Field = [key] <a>[format] box case {
+  .parseObject(object) => if {
+    not object.get(key) is .ok json => .err!,
+    not format.parse(json) is .ok value => .err!,
+    else => .ok value,
+  }
+}
+
+def OptionalField = [key] <a>[format] box case {
+  .parseObject(object) => object.get(key).case {
+    .ok json => format.parse(json).case {
+      .ok value => .ok .ok value,
+      .err! => .err!,
+    },
+    .err! => .ok .err!,
+  }
+}
+
+def And = <a>[format1] <b>[format2] box case {
+  .parseObject(object) => if {
+    not format2.parseObject(object) is .ok y => .err!,
+    not format1.parseObject(object) is .ok x => .err!,
+    else => .ok (y) x,
+  }
+}
+
+def Union = [type a] [variants] box case {
+  .parse(json) => variants.begin.case {
+    .item(<b>(format) map) rest => format.parse(json).case {
+      .ok value => .ok map(value),
+      .err! => rest.loop,
+    }
+    .end! => .err!,
+  }
+}
+
+def Tagged = [type a] [tagKey, variants] box case {
+  .parse(json) => if {
+    json is .object o and o.get(tagKey) is .ok actualTag => variants.begin.case {
+      .item((tag) <b>(format) map) rest => if {
+        tag->Equals(actualTag) => format.parseObject(o).case {
+          .ok value => .ok map(value),
+          .err! => .err!,
+        }
+        else => rest.loop,
+      }
+      .end! => .err!,
+    }
+    else => .err!,
+  }
+}
+
+def OrNull = <a>[format] box case {
+  .parse(json) => json.case {
+    .null! => .ok .err!,
+    else json => format.parse(json).case {
+      .ok value => .ok .ok value,
+      .err! => .err!,
+    },
+  }
+}
