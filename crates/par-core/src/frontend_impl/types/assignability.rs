@@ -218,12 +218,12 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
         ctx.visited.insert(pair.clone());
         let (type1, type2) = pair;
 
-        if let Some(result) = Type::is_subtype_box(&type1, &type2, &ctx)? {
-            return Ok(result.ttl_dec());
-        }
-
         if let Some(result) = Type::is_subtype_fixpoint_guard(&type1, &type2) {
             return Ok(result);
+        }
+
+        if let Some(result) = Type::is_subtype_box_positive(&type1, &type2, &ctx)? {
+            return Ok(result.ttl_dec());
         }
 
         if let Some(result) = Type::is_subtype_expand_fixpoints(&type1, &type2, &ctx)? {
@@ -258,6 +258,26 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                 Some(Compatible)
             }
             _ => None,
+        }
+    }
+
+    fn is_subtype_box_positive(
+        type1: &Type<S>,
+        type2: &Type<S>,
+        ctx: &SubtypeContext<S>,
+    ) -> Result<Option<SubtypeResult<S>>, TypeError<S>> {
+        match (type1, type2) {
+            (t1, Self::Box(_, t2)) if t1.is_positive(ctx.type_defs)? => Ok(Some(
+                Type::is_subtype_helper(t1.clone(), t2.as_ref().clone(), ctx.clone())?,
+            )),
+            (Self::DualBox(_, t1), t2) if t1.is_positive(ctx.type_defs)? => {
+                Ok(Some(Type::is_subtype_helper(
+                    t1.as_ref().clone().dual(Span::None),
+                    t2.clone(),
+                    ctx.clone(),
+                )?))
+            }
+            _ => Ok(None),
         }
     }
 
@@ -391,46 +411,30 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                 Incompatible
             }),
 
-            (t1, t2) => Type::is_subtype_pair_like(t1, t2, ctx),
+            (t1, t2) => Type::is_subtype_box_structural(t1, t2, ctx),
         }
     }
 
-    fn is_subtype_box(
-        type1: &Type<S>,
-        type2: &Type<S>,
-        ctx: &SubtypeContext<S>,
-    ) -> Result<Option<SubtypeResult<S>>, TypeError<S>> {
+    fn is_subtype_box_structural(
+        type1: Self,
+        type2: Self,
+        ctx: SubtypeContext<S>,
+    ) -> Result<SubtypeResult<S>, TypeError<S>> {
         match (type1, type2) {
-            (t1, Self::Box(_, t2)) if t1.is_positive(ctx.type_defs)? => Ok(Some(
-                Type::is_subtype_helper(t1.clone(), t2.as_ref().clone(), ctx.clone())?,
-            )),
-            (Self::DualBox(_, t1), t2) if t1.is_positive(ctx.type_defs)? => {
-                Ok(Some(Type::is_subtype_helper(
-                    t1.as_ref().clone().dual(Span::None),
-                    t2.clone(),
-                    ctx.clone(),
-                )?))
+            (Self::Box(_, t1), Self::Box(_, t2)) => {
+                Type::is_subtype_helper(t1.as_ref().clone(), t2.as_ref().clone(), ctx)
             }
-            (Self::Box(_, t1), Self::Box(_, t2)) => Ok(Some(Type::is_subtype_helper(
-                t1.as_ref().clone(),
-                t2.as_ref().clone(),
-                ctx.clone(),
-            )?)),
-            (Self::Box(_, t1), t2) => Ok(Some(Type::is_subtype_helper(
-                t1.as_ref().clone(),
-                t2.clone(),
-                ctx.clone(),
-            )?)),
+            (Self::Box(_, t1), t2) => Type::is_subtype_helper(t1.as_ref().clone(), t2, ctx),
             (Self::DualBox(_, t1), Self::DualBox(_, t2)) => {
                 let t1 = t1.as_ref().clone().dual(Span::None);
                 let t2 = t2.as_ref().clone().dual(Span::None);
-                Ok(Some(Type::is_subtype_helper(t1, t2, ctx.clone())?))
+                Type::is_subtype_helper(t1, t2, ctx)
             }
             (t1, Self::DualBox(_, t2)) => {
                 let t2 = t2.as_ref().clone().dual(Span::None);
-                Ok(Some(Type::is_subtype_helper(t1.clone(), t2, ctx.clone())?))
+                Type::is_subtype_helper(t1, t2, ctx)
             }
-            _ => Ok(None),
+            (t1, t2) => Type::is_subtype_pair_like(t1, t2, ctx),
         }
     }
 
