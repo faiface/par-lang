@@ -42,7 +42,7 @@ export {
   dec Builder : [type a] Builder<a>
 
   // Tests two lists for equality with respect to the provided item comparator.
-  dec Equals : <a>[List<box a>] [List<box a>, box [a, a] Bool] Bool
+  dec Equals : <a>[List<box a>] <b>[List<box b>] [box [a, b] Bool] Bool
 
   // Applies `f` to each element of a list.
   //
@@ -103,7 +103,7 @@ def Builder = [type a]
     .build => append(.end!),
   }
 
-def Equals = <a>[list1] [list2, eq] list1.begin.case {
+def Equals = <a>[list1] <b>[list2] [eq] list1.begin.case {
   .end! => list2 is .end!,
   .item(x) list1 => list2 is .item(y) list2 and eq(x, y) and list1.loop
 }
