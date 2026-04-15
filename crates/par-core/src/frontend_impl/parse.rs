@@ -1415,14 +1415,14 @@ fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
 }
 
 fn condition_bool(input: &mut Input) -> Result<Condition<Unresolved>> {
-    expression_no_condition
+    application
         .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
         .parse_next(input)
 }
 
 fn condition_is(input: &mut Input) -> Result<Condition<Unresolved>> {
     (
-        expression_no_condition,
+        application,
         t(TokenKind::Is),
         t(TokenKind::Dot),
         local_name,
@@ -1523,7 +1523,33 @@ fn expression(input: &mut Input) -> Result<Expression<Unresolved>> {
         .parse_next(input)
 }
 
+fn expression_without_construction(input: &mut Input) -> Result<Expression<Unresolved>> {
+    if looks_like_condition(input) {
+        let checkpoint = input.checkpoint();
+        match expr_condition.parse_next(input) {
+            Ok(expr) => return Ok(expr),
+            Err(ErrMode::Backtrack(_)) => {
+                input.reset(&checkpoint);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    expression_no_condition_without_construction
+        .context(StrContext::Label("expression"))
+        .parse_next(input)
+}
+
 fn expression_no_condition(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((
+        expression_no_condition_without_construction,
+        construction.map(|(span, construct)| Expression::Construction(span, construct)),
+    ))
+    .parse_next(input)
+}
+
+fn expression_no_condition_without_construction(
+    input: &mut Input,
+) -> Result<Expression<Unresolved>> {
     alt((
         expr_literal,
         expr_list,
@@ -1539,7 +1565,6 @@ fn expression_no_condition(input: &mut Input) -> Result<Expression<Unresolved>> 
         expr_box,
         expr_chan,
         application,
-        construction.map(|(span, construct)| Expression::Construction(span, construct)),
         expr_grouped,
     ))
     .parse_next(input)
@@ -1951,7 +1976,6 @@ fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         cons_begin,
         cons_unfounded,
         cons_loop,
-        cons_then,
         cons_signal,
         cons_case,
         cons_break,
@@ -1960,34 +1984,19 @@ fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         cons_recv_type,
         cons_receive,
         cons_generic_receive,
+        cons_then,
     ))
     .context(StrContext::Label("construction"))
     .parse_next(input)
 }
 
 fn cons_then(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
-    alt((
-        expr_literal,
-        expr_list,
-        expr_if,
-        expr_box,
-        expr_chan,
-        expr_let,
-        expr_throw,
-        expr_catch,
-        expr_do,
-        expr_type_in,
-        expr_poll,
-        expr_repoll,
-        expr_submit,
-        application,
-        expr_grouped,
-    ))
-    .map(|expr| {
-        let span = expr.span();
-        (span, Construct::Then(Box::new(expr)))
-    })
-    .parse_next(input)
+    expression_without_construction
+        .map(|expr| {
+            let span = expr.span();
+            (span, Construct::Then(Box::new(expr)))
+        })
+        .parse_next(input)
 }
 
 fn cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
@@ -3585,15 +3594,27 @@ mod test {
 
     #[test]
     fn test_parse_if_syntax() {
-        let expr_program = "def IfExpr = if { .true! => .false!, else => .true!, }";
+        let expr_program = "def IfExpr = [flag] if { flag => .false!, else => .true!, }";
         assert!(parse_module(expr_program, "if_expr.par".into()).is_ok());
 
         let proc_program =
-            "def IfProc: ! = chan exit { if { .true! => { exit! } else => { exit! } } }";
+            "def IfProc = [flag] chan exit { if { flag => { exit! } else => { exit! } } }";
         assert!(parse_module(proc_program, "if_proc.par".into()).is_ok());
 
-        let inline_program = "def IfInline: ! = chan exit { if .true! => { exit! } exit! }";
+        let inline_program = "def IfInline = [flag] chan exit { if flag => { exit! } exit! }";
         assert!(parse_module(inline_program, "if_inline.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_function_body_condition_after_receive() {
+        let source = "\
+module Minimal
+
+import @core/Bool
+
+def And = [a: Bool, b: Bool] a and b
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
     }
 
     #[test]
