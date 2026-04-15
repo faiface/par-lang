@@ -67,7 +67,7 @@ def ServeFile = [path, respond] chan finish {
 
 dec ServeDir : [Os.Path, List<Os.Path>, [Http.Response] Result<Http.Error, !>] !
 def ServeDir = [root, paths, respond] chan finish {
-  let content = Bytes.PipeReader(type Http.Error)([w] catch ! => .ok! in do {
+  let content = Bytes.PipeReader(type Http.Error, [w] catch ! => .ok! in do {
     w.write("<ul>").try
 
     paths.begin.case {

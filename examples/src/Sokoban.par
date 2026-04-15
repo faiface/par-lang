@@ -177,9 +177,9 @@ def State =
       let (playerX, playerY)! = playerPosition in
       let picture =
         String.Join(
-          Int.Range(-10, 11)->List.Map(type String)(box [y]
+          Int.Range(-10, 11)->List.Map(type String, box [y]
             String.Concat(
-              Int.Range(-10, 11)->List.Map(type Char)(box [x] chan return {
+              Int.Range(-10, 11)->List.Map(type Char, box [x] chan return {
                 if x->Int.Equals(playerX) and y->Int.Equals(playerY) => {
                   return <> PictureOfPlayer(lastDirection)
                 }

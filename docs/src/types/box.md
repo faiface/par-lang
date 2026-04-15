@@ -45,8 +45,8 @@ This protocol gives us:
 Here's a `Map` function that uses it:
 
 ```par
-dec Map : [type a, b] [List<a>, Mapper<a, b>] List<b>
-def Map = [type a, b] [list, mapper] list.begin.case {
+dec Map : [type a, type b, List<a>, Mapper<a, b>] List<b>
+def Map = [type a, type b, list, mapper] list.begin.case {
   .end! => let ! = mapper.close in .end!,
   .item(x) xs => let (x1) mapper = mapper.apply(x) in .item(x1) xs.loop,
 }
@@ -55,7 +55,7 @@ def Map = [type a, b] [list, mapper] list.begin.case {
 And using it:
 
 ```par
-def NumberStrings = Map(type Int, String)(Int.Range(1, 100), begin case {
+def NumberStrings = Map(type Int, type String, Int.Range(1, 100), begin case {
   .close => !,
   .apply(n) => (Int.ToString(n)) loop,
 })
@@ -102,8 +102,8 @@ module Main
 
 import @core/List
 
-dec Map : [type a, b] [List<a>, box [a] b] List<b>
-def Map = [type a, b] [list, f] list.begin.case {
+dec Map : [type a, type b, List<a>, box [a] b] List<b>
+def Map = [type a, type b, list, f] list.begin.case {
   .end! => .end!,
   .item(x) xs => .item(f(x)) xs.loop,
 }
@@ -112,10 +112,7 @@ def Map = [type a, b] [list, f] list.begin.case {
 Let’s try it out:
 
 ```par
-def NumberStrings = Map(type Int, String)(
-  Int.Range(1, 100),
-  box Int.ToString,
-)
+def NumberStrings = Map(type Int, type String, Int.Range(1, 100), box Int.ToString)
 ```
 
 No wrappers, no manual protocols. The boxed function can be used freely, because the `box` type makes
@@ -154,9 +151,9 @@ import {
   @core/List
 }
 
-dec Filter : [type a] [List<box a>, box [a] Bool] List<a>
+dec Filter : [type a, List<box a>, box [a] Bool] List<a>
 
-def Filter = [type a] [list, predicate] list.begin.case {
+def Filter = [type a, list, predicate] list.begin.case {
   .end! => .end!,
   .item(x) xs => predicate(x).case {
     .true! => .item(x) xs.loop,
@@ -172,10 +169,7 @@ Note the types:
 Let’s try it out:
 
 ```par
-def Evens = Filter(type Int)(
-  Int.Range(1, 100),
-  box [n] Int.Equals(0, Int.Mod(n, 2)),
-)
+def Evens = Filter(type Int, Int.Range(1, 100), box [n] Int.Equals(0, Int.Mod(n, 2)))
 ```
 
 Here:
@@ -187,7 +181,7 @@ This avoids bloating the result type with redundant boxes — keeping things cle
 And if we were filtering a list of boxed values already?
 
 ```par
-Filter(type box T)(listOfBoxT, predicate)
+Filter(type box T, listOfBoxT, predicate)
 ```
 
 That works too. Thanks to subtyping, everything lines up as you'd expect.

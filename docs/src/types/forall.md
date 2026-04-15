@@ -54,20 +54,20 @@ A forall type **consists of two parts:**
 ```par
 dec None : [type a] Option<a>
 
-dec Swap : [type a] [type b] [(a, b)!] (b, a)!
+dec Swap : [type a, type b, (a, b)!] (b, a)!
 ```
 
 After erasing the previous concrete definitions for `None`, these will be their generic types. As we can
 see, these look just like functions, but taking types!
 
-If the result of a forall type is another forall types — like with `Swap` — we can use syntax sugar to
-put them both in one pair of square brackets:
+If a forall continues into more explicit type binders or value arguments — like with `Swap` — we keep
+them together in one pair of square brackets, repeating `type` for each explicit type binder:
 
 ```par
-dec Swap : [type a, b] [(a, b)!] (b, a)!
+dec Swap : [type a, type b, (a, b)!] (b, a)!
 ```
 
-This looks better. The two ways are, however, completely equivalent.
+This keeps the whole input list visible at once.
 
 Just like functions, foralls are [**linear**](../types_and_expressions.md#linearity). Variables containing them can't be dropped, nor
 copied, only destructed by calling.
@@ -83,16 +83,16 @@ Completing the definitions above:
 dec None : [type a] Option<a>
 def None = [type a] .none!
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 ```
 
 > A common complaint at this point is:
-> **Why do I have to write `[type a, b]` in both the declaration, and the definition?** After all,
+> **Why do I have to write `type a` and `type b` in both the declaration, and the definition?** After all,
 > it doesn't seem like they're used in the definition. However, they are! What's the type of `first`?
-> It's `a`. And `second`? It's `b`. If you called them `[type kek, dek]`, they would be `kek` and `dek`.
+> It's `a`. And `second`? It's `b`. If you called them `type kek` and `type dek`, they would be `kek` and `dek`.
 > Par's type checker never makes type names up.
 >
 > Additionally, if you do end up needing to use those type variables — for example, to call another
@@ -107,6 +107,6 @@ prefixed with the keyword `type`.
 def NoneInt = None(type Int)  // type inferred as `Option<Int>`
 
 def Pair    = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 //          = (42, "Hello!")!
 ```

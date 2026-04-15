@@ -557,7 +557,7 @@ dec ReadAll : [Os.Path] Result<Os.Error, Bytes>
 def ReadAll = [path] chan return {
   catch e => { return <> .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type Os.Error)(reader)
+  let parser = Bytes.ParseReader(type Os.Error, reader)
   let try contents = parser.remainder
   return <> .ok contents
 }
@@ -594,7 +594,7 @@ Sometimes you don’t want to propagate an error — you want to replace it with
   ```par
   dec Counts : [List<String>] List<(String) Nat>
   def Counts = [words] do {
-    let counts = Map.String(type Nat)(*())
+    let counts = Map.String(type Nat, *())
     words.begin.case {
       .end! => {}
       .item(word) => {

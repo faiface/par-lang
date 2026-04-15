@@ -219,7 +219,7 @@ directly, as if they were expanded.
 For example, here's a function to take the first element from a sequence and close it:
 
 ```par
-def Head = [type a] [seq: Sequence<a>]
+def Head = [type a, seq: Sequence<a>]
   let (x) seq = seq.next
   in let ! = seq.close
   in x
@@ -229,8 +229,8 @@ Using [recursion](./recursive.md), we can destruct an iterative type many times.
 take the first N elements of a sequence and return them in a list:
 
 ```par
-dec Take : [type a] [Nat, Sequence<a>] List<a>
-def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
+dec Take : [type a, Nat, Sequence<a>] List<a>
+def Take = [type a, n, seq] Nat.Repeat(n).begin.case {
   .end! => let ! = seq.close in .end!,
   .step remaining =>
     let (x) seq = seq.next

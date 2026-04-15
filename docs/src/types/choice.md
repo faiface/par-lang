@@ -124,19 +124,17 @@ type Option<a> = either {
 }
 
 dec MapOption :
-  [type a, b]
-  [Option<a>]
-  [CancellableFunction<a, b>]
+  [type a, type b, Option<a>, CancellableFunction<a, b>]
   Option<b>
 
-def MapOption = [type a, b] [option, func] option.case {
+def MapOption = [type a, type b, option, func] option.case {
   .none! => let ! = func.cancel in .none!,
 //                  \_________/
   .some x => let y = func.apply(x) in .some y,
 //                   \________/
 }
 
-def Result = MapOption(type Int, String)(.some 42, IntToString)  // = .some "42"
+def Result = MapOption(type Int, type String, .some 42, IntToString)  // = .some "42"
 ```
 
 This example also shows that in Par, you don't have to be shy about writing your types on

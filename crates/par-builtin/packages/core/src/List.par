@@ -2,7 +2,7 @@
 //
 // ```par
 // let xs = *(1, 2, 3)
-// xs->List.Map(type Int)(box [n] Int.Mul(n, 2))
+// xs->List.Map(type Int, box [n] Int.Mul(n, 2))
 // ```
 export module List
 
@@ -47,13 +47,13 @@ export {
   // Applies `f` to each element of a list.
   //
   // ```par
-  // {*(1, 2, 3)}->List.Map(type Int)(box [n] Int.Mul(n, 2))
+  // {*(1, 2, 3)}->List.Map(type Int, box [n] Int.Mul(n, 2))
   // // = *(2, 4, 6)
   // ```
-  dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
+  dec Map : <a>[List<a>] [type b, box [a] b] List<b>
 
   // Applies `f` to each element and concatenates the resulting lists.
-  dec FlatMap : <a>[List<a>] [type b] [box [a] List<b>] List<b>
+  dec FlatMap : <a>[List<a>] [type b, box [a] List<b>] List<b>
 
   // Keeps the elements for which the predicate returns `.true!`.
   dec Filter : <a>[List<box a>] [box [a] Bool] List<a>
@@ -108,12 +108,12 @@ def Equals = <a>[list1] <b>[list2] [eq] list1.begin.case {
   .item(x) list1 => list2 is .item(y) list2 and eq(x, y) and list1.loop
 }
 
-def Map = <a>[list] [type b] [f] list.begin.case {
+def Map = <a>[list] [type b, f] list.begin.case {
   .end! => .end!
   .item(v) list => .item(f(v)) list.loop,
 }
 
-def FlatMap = <a>[list] [type b] [f] list.begin.case {
+def FlatMap = <a>[list] [type b, f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).begin@flat.case {
     .end! => list.loop,

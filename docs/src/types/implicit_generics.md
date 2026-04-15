@@ -10,8 +10,8 @@ import {
   @core/String
 }
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 ```
@@ -20,7 +20,7 @@ With `forall`, callers pass types explicitly when they use `Swap`:
 
 ```par
 def Pair = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 ```
 
 That is precise and fully explicit. But in many everyday cases, the types are
@@ -189,7 +189,7 @@ Many “map-like” APIs therefore prefer to infer the input type and keep the
 output type explicit, e.g.:
 
 ```par
-dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
+dec Map : <a>[List<a>] [type b, box [a] b] List<b>
 ```
 
 With this type, the mapper is checked against the expected type `box [a] b`, so
@@ -216,7 +216,7 @@ type AnyDrop = <a>(a) box choice {
 This is the implicit counterpart of the existential type:
 
 ```par
-type DropMe = (type a) (a) box choice {
+type DropMe = (type a, a) box choice {
   .drop(a) => !,
 }
 ```

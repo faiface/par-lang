@@ -5,8 +5,8 @@ import @core/Nat
 import @core/List
 import @core/Ordering
 
-dec Quicksort: [type a] [box [a] [a] (a) (a) Ordering] [List<a>] List<a>
-def Quicksort = [type a] [cmp] [input] chan out: dual List<a> {
+dec Quicksort: [type a, box [a] [a] (a) (a) Ordering, List<a>] List<a>
+def Quicksort = [type a, cmp, input] chan out: dual List<a> {
     let suffix: List<a> = .end!
 	input.unfounded@outer
 	input.case {
@@ -151,8 +151,8 @@ def Cmp : [BNat] [BNat] Ordering = [a] [b] chan out {
 
 def RT: [Nat] Nat = [x] ToNat(FromNat(x))
 
-dec ListMap : [type a, b] [List<a>, box [a] b] List<b>
-def ListMap = [type a, b] [list, f] list.begin.case {
+dec ListMap : [type a, type b, List<a>, box [a] b] List<b>
+def ListMap = [type a, type b, list, f] list.begin.case {
   .end! => .end!
   .item(x) list => .item(f(x)) list.loop,
 }
@@ -170,7 +170,7 @@ def TestRoundtrip: [Test]! = [test] chan user {
     user!
 }
 
-def Reverse: [type a] [List<a>] List<a> = [type a] [list] chan yield {
+def Reverse: [type a, List<a>] List<a> = [type a, list] chan yield {
 	let tail: List<a> = .end!
 	list.begin.case {
 		.item(head) => {
@@ -185,17 +185,17 @@ def Reverse: [type a] [List<a>] List<a> = [type a] [list] chan yield {
 
 def Main = chan user {
     let list = Nat.Range(0, 256)
-    let list = Reverse(type Nat)(list)
-    let list = ListMap(type Nat)(type BNat)(list)(box FromNat)
-    let list = Quicksort(type BNat)(box [a] [b] (a) (b) Cmp(a, b))(list)
-    let list = ListMap(type BNat)(type Nat)(list)(box ToNat)
+    let list = Reverse(type Nat, list)
+    let list = ListMap(type Nat, type BNat, list, box FromNat)
+    let list = Quicksort(type BNat, box [a] [b] (a) (b) Cmp(a, b), list)
+    let list = ListMap(type BNat, type Nat, list, box ToNat)
     user!
 }
 def TestQuicksort: [Test]! = [test] chan user {
-    let list = Reverse(type Nat)(Nat.Range(0, 32))
-    let list = ListMap(type Nat)(type BNat)(list)(box FromNat)
-    let list = Quicksort(type BNat)(box [a] [b] (a) (b) Cmp(a, b))(list)
-    let list = ListMap(type BNat)(type Nat)(list)(box ToNat)
+    let list = Reverse(type Nat, Nat.Range(0, 32))
+    let list = ListMap(type Nat, type BNat, list, box FromNat)
+    let list = Quicksort(type BNat, box [a] [b] (a) (b) Cmp(a, b), list)
+    let list = ListMap(type BNat, type Nat, list, box ToNat)
     test.done?
     user!
 }

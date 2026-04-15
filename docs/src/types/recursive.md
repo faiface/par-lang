@@ -393,15 +393,15 @@ eventually reversing the whole list. In Haskell, this requires a helper recursiv
 In Par, it doesn't!
 
 ```par
-dec Reverse : [type a] [List<Int>] List<Int>
-def Reverse = [type a] [list]
+dec Reverse : [type a, List<Int>] List<Int>
+def Reverse = [type a, list]
   let acc: List<a> = .end!
   in list.begin.case {
     .end!       => acc,
     .item(x) xs => let acc = .item(x) acc in xs.loop,
   }
 
-def TestReverse = Reverse(type Int)(*(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
+def TestReverse = Reverse(type Int, *(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
 ```
 
 And there we go! All we had to do was to re-assign `acc` with the new value, and continue with `xs.loop`.

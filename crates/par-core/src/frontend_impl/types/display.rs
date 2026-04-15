@@ -220,12 +220,8 @@ fn write_type_with_options<S: Clone, N: GlobalNameWriter<S>>(
             write!(f, "dual box ")?;
             write_type_with_options(f, names, body, options)
         }
-        Type::Pair(_, arg, then, vars) => {
-            write_pair_like(f, names, "(", ")", arg, then, vars, false, options)
-        }
-        Type::Function(_, arg, then, vars) => {
-            write_pair_like(f, names, "[", "]", arg, then, vars, true, options)
-        }
+        Type::Pair(_, _, _, _) => write_pair_like(f, names, "(", ")", typ, false, options),
+        Type::Function(_, _, _, _) => write_pair_like(f, names, "[", "]", typ, true, options),
         Type::Either(_, branches) => {
             write_braced_branches(f, names, "either", branches, false, options)
         }
@@ -268,12 +264,8 @@ fn write_type_with_options<S: Clone, N: GlobalNameWriter<S>>(
             }
             Ok(())
         }
-        Type::Exists(_, name, then) => {
-            write_quantified_type(f, names, "(", ")", name, then, true, options)
-        }
-        Type::Forall(_, name, then) => {
-            write_quantified_type(f, names, "[", "]", name, then, false, options)
-        }
+        Type::Exists(_, _, _) => write_pair_like(f, names, "(", ")", typ, false, options),
+        Type::Forall(_, _, _) => write_pair_like(f, names, "[", "]", typ, true, options),
         Type::Hole(_, name, _) => write!(f, "%{name}"),
         Type::DualHole(_, name, _) => write!(f, "dual %{name}"),
         Type::Fail(_) => write!(f, "<error>"),
@@ -318,44 +310,68 @@ fn write_pair_like<S: Clone, N: GlobalNameWriter<S>>(
     names: &N,
     open: &str,
     close: &str,
-    arg: &Type<S>,
-    then: &Type<S>,
-    vars: &[LocalName],
+    typ: &Type<S>,
     function: bool,
     options: TypeRenderOptions,
 ) -> fmt::Result {
-    let mut then = then;
-    if !vars.is_empty() {
-        write!(f, "<{}", vars[0])?;
-        for var in vars.iter().skip(1) {
-            write!(f, ", {var}")?;
-        }
-        write!(f, ">{open}")?;
-        write_type_with_options(f, names, arg, options)?;
-    } else {
-        write!(f, "{open}")?;
-        write_type_with_options(f, names, arg, options)?;
-        while let Some((next_arg, next_then, next_vars)) = if function {
-            match then {
-                Type::Function(_, next_arg, next_then, next_vars) => {
-                    Some((next_arg.as_ref(), next_then.as_ref(), next_vars.as_slice()))
-                }
-                _ => None,
+    let mut then = typ;
+    let mut wrote_prefix_item = false;
+
+    match typ {
+        Type::Function(_, arg, next_then, vars) if function && !vars.is_empty() => {
+            write!(f, "<{}", vars[0])?;
+            for var in vars.iter().skip(1) {
+                write!(f, ", {var}")?;
             }
-        } else {
-            match then {
-                Type::Pair(_, next_arg, next_then, next_vars) => {
-                    Some((next_arg.as_ref(), next_then.as_ref(), next_vars.as_slice()))
-                }
-                _ => None,
-            }
-        } {
-            if !next_vars.is_empty() {
-                break;
-            }
-            write!(f, ", ")?;
-            write_type_with_options(f, names, next_arg, options)?;
+            write!(f, ">{open}")?;
+            write_type_with_options(f, names, arg, options)?;
             then = next_then;
+        }
+        Type::Pair(_, arg, next_then, vars) if !function && !vars.is_empty() => {
+            write!(f, "<{}", vars[0])?;
+            for var in vars.iter().skip(1) {
+                write!(f, ", {var}")?;
+            }
+            write!(f, ">{open}")?;
+            write_type_with_options(f, names, arg, options)?;
+            then = next_then;
+        }
+        _ => {
+            write!(f, "{open}")?;
+            loop {
+                match then {
+                    Type::Forall(_, name, next_then) if function => {
+                        if wrote_prefix_item {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "type {name}")?;
+                        then = next_then;
+                    }
+                    Type::Exists(_, name, next_then) if !function => {
+                        if wrote_prefix_item {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "type {name}")?;
+                        then = next_then;
+                    }
+                    Type::Function(_, arg, next_then, vars) if function && vars.is_empty() => {
+                        if wrote_prefix_item {
+                            write!(f, ", ")?;
+                        }
+                        write_type_with_options(f, names, arg, options)?;
+                        then = next_then;
+                    }
+                    Type::Pair(_, arg, next_then, vars) if !function && vars.is_empty() => {
+                        if wrote_prefix_item {
+                            write!(f, ", ")?;
+                        }
+                        write_type_with_options(f, names, arg, options)?;
+                        then = next_then;
+                    }
+                    _ => break,
+                }
+                wrote_prefix_item = true;
+            }
         }
     }
 
@@ -374,35 +390,6 @@ fn write_pair_like<S: Clone, N: GlobalNameWriter<S>>(
         write!(f, "{close} ")?;
         write_type_with_options(f, names, then, options)
     }
-}
-
-fn write_quantified_type<S: Clone, N: GlobalNameWriter<S>>(
-    f: &mut impl Write,
-    names: &N,
-    open: &str,
-    close: &str,
-    name: &LocalName,
-    then: &Type<S>,
-    existential: bool,
-    options: TypeRenderOptions,
-) -> fmt::Result {
-    let mut then = then;
-    write!(f, "{open}type {name}")?;
-    loop {
-        match then {
-            Type::Exists(_, next_name, next_then) if existential => {
-                write!(f, ", {next_name}")?;
-                then = next_then;
-            }
-            Type::Forall(_, next_name, next_then) if !existential => {
-                write!(f, ", {next_name}")?;
-                then = next_then;
-            }
-            _ => break,
-        }
-    }
-    write!(f, "{close} ")?;
-    write_type_with_options(f, names, then, options)
 }
 
 fn write_braced_branches<S: Clone, N: GlobalNameWriter<S>>(

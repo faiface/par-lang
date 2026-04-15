@@ -3,7 +3,7 @@ export module Bench
 
 export {
   // Identity function intended for benchmarks.
-  dec BlackBox : [type a] [a] a
+  dec BlackBox : [type a, a] a
 }
 
 def BlackBox = external

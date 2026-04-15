@@ -18,7 +18,7 @@ Here are two simple examples of existential types:
 ```par
 type Any = (type a) a
 
-type DropMe = (type a) (a) choice {
+type DropMe = (type a, a) choice {
   .drop(a) => !,
 }
 ```
@@ -51,7 +51,7 @@ variable.
 Let’s now look at a slightly more interesting example:
 
 ```par
-type DropMe = (type a) (a) choice {
+type DropMe = (type a, a) choice {
   .drop(a) => !,
 }
 ```
@@ -62,7 +62,7 @@ dropping a value of that type.
 Here’s how we can construct a value of `DropMe`:
 
 ```par
-def Drop42: DropMe = (type Int) (42) case {
+def Drop42: DropMe = (type Int, 42) case {
   .drop(n) => !,  // `n`, being an `Int`, is dropped by being unused
 }
 ```
@@ -76,10 +76,10 @@ Here’s an example that unpacks and uses a `DropMe`:
 
 ```par
 def UseDrop: ! =
-  let (type a) (x) dropper = Drop42
+  let (type a, x) dropper = Drop42
   in dropper.drop(x)
 ```
-The pattern `(type a) (x) dropper` means:
+The pattern `(type a, x) dropper` means:
 - `a` becomes the name of the hidden type, a local type variable.
 - `x` is the stored value of type `a`.
 - `dropper` is the [choice](./choice.md) with the `.drop` method.
@@ -89,7 +89,7 @@ a `DropMe` and drops its inner value:
 
 ```par
 dec DropIt : [DropMe] !
-def DropIt = [(type a) (x) dropper] dropper.drop(x)
+def DropIt = [(type a, x) dropper] dropper.drop(x)
 ```
 
 ## A Real Example
@@ -124,8 +124,8 @@ import {
 
 type Eq<a> = box [a, a] Bool
 
-dec ListSet : [type a] [Eq<box a>] SetModule<box a>
-def ListSet = [type a] [eq] (type List<box a>) box case {
+dec ListSet : [type a, Eq<box a>] SetModule<box a>
+def ListSet = [type a, eq] (type List<box a>) box case {
   .empty => .end!,
 
   .insert(x, set) => .item(x) set,
@@ -153,8 +153,8 @@ The consumer of the `SetModule` doesn’t know that these sets are implemented a
 Let’s now use that in a function:
 
 ```par
-dec Deduplicate : [type a] [SetModule<a>, List<box a>] List<a>
-def Deduplicate = [type a] [(type set) mSet, list]
+dec Deduplicate : [type a, SetModule<a>, List<box a>] List<a>
+def Deduplicate = [type a, (type set) mSet, list]
   let visited = mSet.empty
   in list.begin.case {
     .end! => .end!,
@@ -173,17 +173,17 @@ It doesn’t know how the set works — just that it supports `.empty`, `.insert
 Let's test it!
 
 ```par
-dec Map : [type a, b] [box [a] b, List<a>] List<b>
-def Map = [type a, b] [f, list] list.begin.case {
+dec Map : [type a, type b, box [a] b, List<a>] List<b>
+def Map = [type a, type b, f, list] list.begin.case {
   .end! => .end!,
   .item(x) xs => .item(f(x)) xs.loop,
 }
 
-def IntListSet = ListSet(type Int)(box Int.Equals)
+def IntListSet = ListSet(type Int, box Int.Equals)
 
 def TestDedup =
-  Deduplicate(type Int)(IntListSet)
-    (Map(type Int, Int)(box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
+  Deduplicate(type Int, IntListSet)
+    (Map(type Int, type Int, box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
 ```
 
 This deduplicates a list of numbers modulo 7 — using:

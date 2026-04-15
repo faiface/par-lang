@@ -34,19 +34,19 @@ export {
 
   // Builds a `Map<String, v>` from `(key) value` pairs.
   // If a key appears more than once, the last pair wins.
-  dec OfString : [type v] [List<(String) box v>] Map<String, v>
+  dec OfString : [type v, List<(String) box v>] Map<String, v>
 
   // Builds a `Map<Bytes, v>` from `(key) value` pairs.
   // If a key appears more than once, the last pair wins.
-  dec OfBytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
+  dec OfBytes : [type v, List<(Bytes) box v>] Map<Bytes, v>
 
   // Builds a `Map<Int, v>` from `(key) value` pairs.
   // If a key appears more than once, the last pair wins.
-  dec OfInt : [type v] [List<(Int) box v>] Map<Int, v>
+  dec OfInt : [type v, List<(Int) box v>] Map<Int, v>
 
   // Builds a `Map<Nat, v>` from `(key) value` pairs.
   // If a key appears more than once, the last pair wins.
-  dec OfNat : [type v] [List<(Nat) box v>] Map<Nat, v>
+  dec OfNat : [type v, List<(Nat) box v>] Map<Nat, v>
 }
 
 def OfString = external

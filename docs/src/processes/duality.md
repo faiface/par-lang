@@ -185,7 +185,7 @@ Let’s now use this style to implement something meaningful. We’ll write a fu
 a nested list:
 
 ```par
-dec Flatten : [type a] [List<List<a>>] List<a>
+dec Flatten : [type a, List<List<a>>] List<a>
 ```
 
 It's a generic function, using the [forall](../types/forall.md) for polymorphism.
@@ -193,7 +193,7 @@ It's a generic function, using the [forall](../types/forall.md) for polymorphism
 Here's the full implementation, imperative-style:
 
 ```par
-def Flatten = [type a] [lists] chan yield {
+def Flatten = [type a, lists] chan yield {
   lists.begin@outer.case {
     .end! => {
       yield.end!

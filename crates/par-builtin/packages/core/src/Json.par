@@ -64,13 +64,13 @@ export {
   //
   // Use `Json.Map` when parsing cannot fail once the underlying format
   // succeeds. Use `Json.Then` for fallible post-processing.
-  dec Map : <a>[Format<a>] [type b] [box [a] b] Format<b>
+  dec Map : <a>[Format<a>] [type b, box [a] b] Format<b>
 
   // Applies a fallible post-processing step to a successful parse result.
   //
   // The mapping function returns `.ok value` to accept the parsed result or
   // `.err!` to reject it.
-  dec Then : <a>[Format<a>] [type b] [box [a] Option<b>] Format<b>
+  dec Then : <a>[Format<a>] [type b, box [a] Option<b>] Format<b>
 
   // Matches exactly one JSON value.
   dec Literal : [Json] Format<!>
@@ -128,12 +128,12 @@ export {
   //   .text String,
   // }
   //
-  // def AnswerFormat = Json.Union(type Answer)(*(
+  // def AnswerFormat = Json.Union(type Answer, *(
   //   (Json.Literal(.string "yes")) box [!] .yes!,
   //   (Json.String) box [text] .text text,
   // ))
   // ```
-  dec Union : [type a] [CoreList<<b>(Format<b>) box [b] a>] Format<a>
+  dec Union : [type a, CoreList<<b>(Format<b>) box [b] a>] Format<a>
 
   // Parses tagged JSON objects by matching one field against literal JSON tags.
   //
@@ -148,12 +148,12 @@ export {
   //   .say String,
   // }
   //
-  // def CommandFormat = Json.Tagged(type Command)("operation", *(
+  // def CommandFormat = Json.Tagged(type Command, "operation", *(
   //   (.string "sleep", Json.Field("seconds", Json.Number)) box [seconds] .sleep seconds,
   //   (.string "say", Json.Field("message", Json.String)) box [message] .say message,
   // ))
   // ```
-  dec Tagged : [type a] [CoreString, CoreList<(Json) <b>(ObjectFormat<b>) box [b] a>] Format<a>
+  dec Tagged : [type a, CoreString, CoreList<(Json) <b>(ObjectFormat<b>) box [b] a>] Format<a>
 
   // Accepts JSON `null` as `.ok .err!`, otherwise parses with the given format
   // and wraps the result in `.ok`.
@@ -175,14 +175,14 @@ def Equals = [json1, json2] json1.begin.case {
   })
 }
 
-def Map = <a>[format] [type b] [f] box case {
+def Map = <a>[format] [type b, f] box case {
   .parse(json) => format.parse(json).case {
     .ok value => .ok f(value),
     .err! => .err!,
   }
 }
 
-def Then = <a>[format] [type b] [f] box case {
+def Then = <a>[format] [type b, f] box case {
   .parse(json) => format.parse(json).case {
     .ok value => f(value),
     .err! => .err!,
@@ -271,7 +271,7 @@ def And = <a>[format1] <b>[format2] box case {
   }
 }
 
-def Union = [type a] [variants] box case {
+def Union = [type a, variants] box case {
   .parse(json) => variants.begin.case {
     .item(<b>(format) map) rest => format.parse(json).case {
       .ok value => .ok map(value),
@@ -281,7 +281,7 @@ def Union = [type a] [variants] box case {
   }
 }
 
-def Tagged = [type a] [tagKey, variants] box case {
+def Tagged = [type a, tagKey, variants] box case {
   .parse(json) => if {
     json is .object o and o.get(tagKey) is .ok actualTag => variants.begin.case {
       .item((tag) <b>(format) map) rest => if {
