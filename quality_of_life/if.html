@@ -198,12 +198,9 @@ def Describe = [flag] if {
   else =&gt; &lt;expression&gt;,
 }
 </code></pre>
-<p>Values of the <code>Bool</code> type (an <code>either { .true!, .false! }</code>) can be used as
-conditions. A plain boolean condition must be an <strong>application expression</strong>.
-Bare variables are fine, and so are function calls and method chains, but
-construction expressions do not fit there directly. For example, <code>.true!</code> is a
-construction expression, so if you want to use it in a condition, group it:
-<code>{.true!} and {.false!}</code>.</p>
+<p>Values of the <code>Bool</code> type (an <code>either { .true!, .false! }</code>) can be used directly
+as conditions, so any expression producing <code>Bool</code> can be used on the left of
+<code>=&gt;</code>.</p>
 <p>Unlike the common <code>if ... else if ... else</code> chain found in many languages, Par’s
 “normal” <code>if</code> is a single <code>if { ... }</code> block with any number of branches.</p>
 <p>To evaluate an <code>if { ... }</code>, read it like this:</p>
@@ -231,10 +228,6 @@ type Option&lt;a&gt; = Result&lt;!, a&gt;
 </code></pre>
 <p>The payload pattern is always present. For a unit payload you still write <code>!</code>,
 so <code>value is .less!</code> is valid, but <code>value is .less</code> is not.</p>
-<p>The left side of <code>is</code> must be an <strong>application expression</strong>. Bare variables are
-fine, and so are calls like <code>Int.Compare(x, y)</code>, but construction expressions
-do not fit there directly. When you need a larger expression, wrap it in
-<code>{ ... }</code>.</p>
 <p>Here is the return type of <code>Int.Compare</code>:</p>
 <pre><code class="language-par">type Ordering = either {
   .less!,
@@ -272,14 +265,6 @@ values; use normal boolean expressions for those.</p>
 control-flow constructs: they short-circuit, and those success/failure paths are
 how bindings from <code>is</code> become available (or not available) later in the
 condition and inside the branch.</p>
-<p>There is one parsing rule worth keeping in mind:</p>
-<ul>
-<li>the left and right sides of <code>and</code> and <code>or</code></li>
-<li>the condition after <code>not</code></li>
-<li>the left side of <code>is</code></li>
-</ul>
-<p>must be <strong>application expressions</strong>, not construction expressions. If you want
-to use something larger, put it in <code>{ ... }</code>.</p>
 <h3 id="and-with-an-extra-predicate"><a class="header" href="#and-with-an-extra-predicate"><code>and</code> with an extra predicate</a></h3>
 <pre><code class="language-par">dec CountStatus : [Option&lt;Nat&gt;] String
 def CountStatus = [count] if {
@@ -350,10 +335,6 @@ def EmptyOrSpace = [result] if {
 </code></pre>
 <p>These braces group the condition. They are different from the braces after
 <code>if</code> in <code>if { ... }</code>, which contain the branches.</p>
-<p>They are also the standard way to use larger expressions where a condition
-expects an application expression. For example, this is valid:</p>
-<pre><code class="language-par">{.true!} and {.false!}
-</code></pre>
 <h2 id="not-bindings-move-to-the-failure-path"><a class="header" href="#not-bindings-move-to-the-failure-path"><code>not</code>: bindings move to the failure path</a></h2>
 <p><code>not</code> is different from most languages here: it flips success and failure, and
 that flip also affects bindings. Any bindings introduced inside the condition
