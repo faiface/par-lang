@@ -46,12 +46,9 @@ if {
 }
 ```
 
-Values of the `Bool` type (an `either { .true!, .false! }`) can be used as
-conditions. A plain boolean condition must be an **application expression**.
-Bare variables are fine, and so are function calls and method chains, but
-construction expressions do not fit there directly. For example, `.true!` is a
-construction expression, so if you want to use it in a condition, group it:
-`{.true!} and {.false!}`.
+Values of the `Bool` type (an `either { .true!, .false! }`) can be used directly
+as conditions, so any expression producing `Bool` can be used on the left of
+`=>`.
 
 Unlike the common `if ... else if ... else` chain found in many languages, Par’s
 “normal” `if` is a single `if { ... }` block with any number of branches.
@@ -89,11 +86,6 @@ An `is` condition checks an `either` and binds its payload. Its shape is:
 
 The payload pattern is always present. For a unit payload you still write `!`,
 so `value is .less!` is valid, but `value is .less` is not.
-
-The left side of `is` must be an **application expression**. Bare variables are
-fine, and so are calls like `Int.Compare(x, y)`, but construction expressions
-do not fit there directly. When you need a larger expression, wrap it in
-`{ ... }`.
 
 Here is the return type of `Int.Compare`:
 
@@ -140,15 +132,6 @@ In Par, `and`/`or`/`not` are not just boolean algebra operators. They are
 control-flow constructs: they short-circuit, and those success/failure paths are
 how bindings from `is` become available (or not available) later in the
 condition and inside the branch.
-
-There is one parsing rule worth keeping in mind:
-
-- the left and right sides of `and` and `or`
-- the condition after `not`
-- the left side of `is`
-
-must be **application expressions**, not construction expressions. If you want
-to use something larger, put it in `{ ... }`.
 
 ### `and` with an extra predicate
 
@@ -233,13 +216,6 @@ def EmptyOrSpace = [result] if {
 
 These braces group the condition. They are different from the braces after
 `if` in `if { ... }`, which contain the branches.
-
-They are also the standard way to use larger expressions where a condition
-expects an application expression. For example, this is valid:
-
-```par
-{.true!} and {.false!}
-```
 
 ## `not`: bindings move to the failure path
 

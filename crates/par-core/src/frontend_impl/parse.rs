@@ -1415,14 +1415,14 @@ fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
 }
 
 fn condition_bool(input: &mut Input) -> Result<Condition<Unresolved>> {
-    application
+    data_expression
         .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
         .parse_next(input)
 }
 
 fn condition_is(input: &mut Input) -> Result<Condition<Unresolved>> {
     (
-        application,
+        data_expression,
         t(TokenKind::Is),
         t(TokenKind::Dot),
         local_name,
@@ -1568,6 +1568,18 @@ fn expression_no_condition_without_construction(
         expr_grouped,
     ))
     .parse_next(input)
+}
+
+fn data_expression(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((
+        data_expression_terminal,
+        data_construction.map(|(span, construct)| Expression::Construction(span, construct)),
+    ))
+    .parse_next(input)
+}
+
+fn data_expression_terminal(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((expr_literal, expr_list, application, expr_grouped)).parse_next(input)
 }
 
 fn expr_grouped(input: &mut Input) -> Result<Expression<Unresolved>> {
@@ -1990,8 +2002,28 @@ fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     .parse_next(input)
 }
 
+fn data_construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
+    alt((
+        data_cons_signal,
+        data_cons_break,
+        data_cons_send,
+        data_cons_then,
+    ))
+    .context(StrContext::Label("data construction"))
+    .parse_next(input)
+}
+
 fn cons_then(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     expression_without_construction
+        .map(|expr| {
+            let span = expr.span();
+            (span, Construct::Then(Box::new(expr)))
+        })
+        .parse_next(input)
+}
+
+fn data_cons_then(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
+    data_expression_terminal
         .map(|expr| {
             let span = expr.span();
             (span, Construct::Then(Box::new(expr)))
@@ -2003,6 +2035,22 @@ fn cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
         (list1(expression), t(TokenKind::RParen), construction),
+    )
+    .map(|(open, (args, close, (then_full_span, then)))| {
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let construct = args.into_iter().rfold(then, |then, arg| {
+            Construct::Send(short_span.clone(), Box::new(arg), Box::new(then))
+        });
+        (full_span, construct)
+    })
+    .parse_next(input)
+}
+
+fn data_cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
+    commit_after(
+        t(TokenKind::LParen),
+        (list1(expression), t(TokenKind::RParen), data_construction),
     )
     .map(|(open, (args, close, (then_full_span, then)))| {
         let short_span = open.span.join(close.span());
@@ -2029,6 +2077,28 @@ fn cons_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         (full_span, construct)
     })
     .parse_next(input)
+}
+
+fn data_cons_signal(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
+    (t(TokenKind::Dot), (local_name, data_construction))
+        .map(|(pre, (chosen, (then_full_span, construct)))| {
+            let short_span = pre.span.join(chosen.span());
+            let full_span = pre.span.join(then_full_span);
+            (
+                full_span,
+                Construct::Signal(short_span, chosen, Box::new(construct)),
+            )
+        })
+        .parse_next(input)
+}
+
+fn data_cons_break(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
+    t(TokenKind::Bang)
+        .map(|token| {
+            let span = token.span();
+            (span.clone(), Construct::Break(span))
+        })
+        .parse_next(input)
 }
 
 fn cons_generic_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
@@ -3594,14 +3664,14 @@ mod test {
 
     #[test]
     fn test_parse_if_syntax() {
-        let expr_program = "def IfExpr = [flag] if { flag => .false!, else => .true!, }";
+        let expr_program = "def IfExpr = if { .true! => .false!, else => .true!, }";
         assert!(parse_module(expr_program, "if_expr.par".into()).is_ok());
 
         let proc_program =
-            "def IfProc = [flag] chan exit { if { flag => { exit! } else => { exit! } } }";
+            "def IfProc: ! = chan exit { if { .true! => { exit! } else => { exit! } } }";
         assert!(parse_module(proc_program, "if_proc.par".into()).is_ok());
 
-        let inline_program = "def IfInline = [flag] chan exit { if flag => { exit! } exit! }";
+        let inline_program = "def IfInline: ! = chan exit { if .true! => { exit! } exit! }";
         assert!(parse_module(inline_program, "if_inline.par".into()).is_ok());
     }
 
@@ -3613,6 +3683,16 @@ module Minimal
 import @core/Bool
 
 def And = [a: Bool, b: Bool] a and b
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_data_construction_condition_operands() {
+        let source = "\
+module Minimal
+
+def BoolAnd = .true! and .false!
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
     }
