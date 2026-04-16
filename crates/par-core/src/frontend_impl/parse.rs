@@ -1409,8 +1409,11 @@ fn condition_primary(input: &mut Input) -> Result<Condition<Unresolved>> {
 }
 
 fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
-    commit_after(t(TokenKind::LCurly), (condition, t(TokenKind::RCurly)))
-        .map(|(_open, (cond, _close))| cond)
+    commit_after(t(TokenKind::LCurly), (expression, t(TokenKind::RCurly)))
+        .map(|(_open, (expr, _close))| match expr {
+            Expression::Condition(_, cond) => *cond,
+            other => Condition::Bool(other.span(), Box::new(other)),
+        })
         .parse_next(input)
 }
 
@@ -1985,6 +1988,7 @@ fn expr_chan(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     alt((
+        cons_then,
         cons_begin,
         cons_unfounded,
         cons_loop,
@@ -1996,7 +2000,6 @@ fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         cons_recv_type,
         cons_receive,
         cons_generic_receive,
-        cons_then,
     ))
     .context(StrContext::Label("construction"))
     .parse_next(input)
@@ -2006,6 +2009,7 @@ fn data_construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)>
     alt((
         data_cons_signal,
         data_cons_break,
+        data_cons_send_type,
         data_cons_send,
         data_cons_then,
     ))
@@ -2057,6 +2061,22 @@ fn data_cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         let full_span = open.span.join(then_full_span);
         let construct = args.into_iter().rfold(then, |then, arg| {
             Construct::Send(short_span.clone(), Box::new(arg), Box::new(then))
+        });
+        (full_span, construct)
+    })
+    .parse_next(input)
+}
+
+fn data_cons_send_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
+    commit_after(
+        tn!("(type": TokenKind::LParen, TokenKind::Type),
+        (list1(typ), t(TokenKind::RParen), data_construction),
+    )
+    .map(|((open, _), (types, close, (then_full_span, then)))| {
+        let short_span = open.span.join(close.span());
+        let full_span = open.span.join(then_full_span);
+        let construct = types.into_iter().rfold(then, |then, typ| {
+            Construct::SendType(short_span.clone(), typ, Box::new(then))
         });
         (full_span, construct)
     })
@@ -3693,6 +3713,20 @@ def And = [a: Bool, b: Bool] a and b
 module Minimal
 
 def BoolAnd = .true! and .false!
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_condition_operands_with_grouping_and_receive() {
+        let source = "\
+module Minimal
+
+def AfterReceive = [a: Bool] .true! and .false!
+def AfterReceiveVariable = [a: Bool] .true! and a
+def GroupedTypeIn = {type Bool in .true!} and {type Bool in .false!}
+def GroupedReceive = {[a: Bool] a} and {type Bool in .false!}
+def SendTypeData = (type Bool) .true! and .false!
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
     }
