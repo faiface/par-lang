@@ -1436,8 +1436,11 @@ fn condition_primary(input: &mut Input) -> Result<Condition<Unresolved>> {
 }
 
 fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
-    commit_after(t(TokenKind::LCurly), (condition, t(TokenKind::RCurly)))
-        .map(|(_open, (cond, _close))| cond)
+    commit_after(t(TokenKind::LCurly), (expression, t(TokenKind::RCurly)))
+        .map(|(_open, (expr, _close))| match expr {
+            Expression::Condition(_, cond) => *cond,
+            other => Condition::Bool(other.span(), Box::new(other)),
+        })
         .parse_next(input)
 }
 
@@ -1995,6 +1998,7 @@ fn expr_chan(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     alt((
+        cons_then,
         cons_begin,
         cons_unfounded,
         cons_loop,
@@ -2004,7 +2008,6 @@ fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         cons_send,
         cons_receive,
         cons_generic_receive,
-        cons_then,
     ))
     .context(StrContext::Label("construction"))
     .parse_next(input)
@@ -2065,14 +2068,21 @@ fn cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
 fn data_cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(expression), t(TokenKind::RParen), data_construction),
+        (
+            list1(|input: &mut Input| send_prefix_item(TokenKind::RParen, input)),
+            t(TokenKind::RParen),
+            data_construction,
+        ),
     )
-    .map(|(open, (args, close, (then_full_span, then)))| {
+    .map(|(open, (items, close, (then_full_span, then)))| {
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(then_full_span);
-        let construct = args.into_iter().rfold(then, |then, arg| {
-            Construct::Send(short_span.clone(), Box::new(arg), Box::new(then))
-        });
+        let construct = fold_send_prefix(
+            items,
+            then,
+            |typ, then| Construct::SendType(short_span.clone(), typ, Box::new(then)),
+            |arg, then| Construct::Send(short_span.clone(), Box::new(arg), Box::new(then)),
+        );
         (full_span, construct)
     })
     .parse_next(input)
@@ -3624,6 +3634,20 @@ module Minimal
 
 def Pack = [type a, x, type b, y] (x) y
 def Packed = Pack(type String, \"left\", type Int, 1)
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_condition_operands_with_grouping_and_receive() {
+        let source = "\
+module Minimal
+
+def AfterReceive = [a: Bool] .true! and .false!
+def AfterReceiveVariable = [a: Bool] .true! and a
+def GroupedTypeIn = {type Bool in .true!} and {type Bool in .false!}
+def GroupedReceive = {[a: Bool] a} and {type Bool in .false!}
+def SendTypeData = (type Bool) .true! and .false!
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
     }
