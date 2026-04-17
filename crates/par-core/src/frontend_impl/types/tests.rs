@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::frontend_impl::language::{GlobalName, LocalName, PackageId, Universal};
+    use crate::frontend_impl::language::{
+        GlobalName, LocalName, PackageId, TypeParameter, Universal,
+    };
     use crate::frontend_impl::types::{GlobalNameWriter, Type, TypeDefs};
     use crate::location::Span;
     use crate::workspace::render_type_in_scope;
@@ -53,7 +55,7 @@ mod tests {
                 ),
             ]),
         );
-        let params = vec![key, value];
+        let params = vec![TypeParameter::any(key), TypeParameter::any(value)];
         let defs = TypeDefs::new_with_validation([(&span, &map_name, &params, &body)].into_iter())
             .unwrap();
         (defs, map_name)

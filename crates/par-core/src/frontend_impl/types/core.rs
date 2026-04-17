@@ -1,4 +1,4 @@
-use super::super::language::{GlobalName, LocalName, Unresolved};
+use super::super::language::{GlobalName, LocalName, TypeParameter, Unresolved};
 use crate::frontend_impl::types::visit::Polarity;
 use crate::frontend_impl::types::{TypeDefs, TypeError, visit};
 use crate::location::{Span, Spanning};
@@ -197,8 +197,8 @@ pub enum Type<S> {
     DualName(Span, GlobalName<S>, Vec<Self>),
     Box(Span, Box<Self>),
     DualBox(Span, Box<Self>),
-    Pair(Span, Box<Self>, Box<Self>, Vec<LocalName>),
-    Function(Span, Box<Self>, Box<Self>, Vec<LocalName>),
+    Pair(Span, Box<Self>, Box<Self>, Vec<TypeParameter>),
+    Function(Span, Box<Self>, Box<Self>, Vec<TypeParameter>),
     Either(Span, BTreeMap<LocalName, Self>),
     Choice(Span, BTreeMap<LocalName, Self>),
     Break(Span),
@@ -223,8 +223,8 @@ pub enum Type<S> {
     },
     Self_(Span, Option<LocalName>),
     DualSelf(Span, Option<LocalName>),
-    Exists(Span, LocalName, Box<Self>),
-    Forall(Span, LocalName, Box<Self>),
+    Exists(Span, TypeParameter, Box<Self>),
+    Forall(Span, TypeParameter, Box<Self>),
     Hole(Span, LocalName, Hole<S>),
     DualHole(Span, LocalName, Hole<S>),
     /// A type that could not be determined due to a type error.
@@ -402,9 +402,11 @@ impl<S: Clone> Type<S> {
             Box::new(t),
             Box::new(u),
             vars.into_iter()
-                .map(|name| LocalName {
-                    span: Span::None,
-                    string: ArcStr::from(name),
+                .map(|name| {
+                    TypeParameter::any(LocalName {
+                        span: Span::None,
+                        string: ArcStr::from(name),
+                    })
                 })
                 .collect(),
         )
@@ -420,12 +422,44 @@ impl<S: Clone> Type<S> {
             Box::new(t),
             Box::new(u),
             vars.into_iter()
-                .map(|name| LocalName {
-                    span: Span::None,
-                    string: ArcStr::from(name),
+                .map(|name| {
+                    TypeParameter::any(LocalName {
+                        span: Span::None,
+                        string: ArcStr::from(name),
+                    })
                 })
                 .collect(),
         )
+    }
+
+    pub(crate) fn with_type_parameters<R>(
+        defs: &TypeDefs<S>,
+        params: &[TypeParameter],
+        f: impl FnOnce(&TypeDefs<S>) -> Result<R, TypeError<S>>,
+    ) -> Result<R, TypeError<S>>
+    where
+        S: Clone + Eq + std::hash::Hash,
+    {
+        if params.is_empty() {
+            f(defs)
+        } else {
+            let mut defs = defs.clone();
+            defs.extend_vars(params.iter().cloned());
+            f(&defs)
+        }
+    }
+
+    pub(crate) fn with_type_parameter<R>(
+        defs: &TypeDefs<S>,
+        param: &TypeParameter,
+        f: impl FnOnce(&TypeDefs<S>) -> Result<R, TypeError<S>>,
+    ) -> Result<R, TypeError<S>>
+    where
+        S: Clone + Eq + std::hash::Hash,
+    {
+        let mut defs = defs.clone();
+        defs.insert_var(param.clone());
+        f(&defs)
     }
 
     pub fn either(branches: Vec<(&'static str, Self)>) -> Self {
@@ -518,10 +552,10 @@ impl<S: Clone> Type<S> {
     pub fn forall(var: &'static str, body: Self) -> Self {
         Self::Forall(
             Span::None,
-            LocalName {
+            TypeParameter::any(LocalName {
                 span: Span::None,
                 string: ArcStr::from(var),
-            },
+            }),
             Box::new(body),
         )
     }

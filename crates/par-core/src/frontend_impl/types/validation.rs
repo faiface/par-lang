@@ -1,42 +1,91 @@
 use super::TypeDefs;
 use super::core::Type;
 use super::error::TypeError;
-use super::visit;
+use crate::frontend::PrimitiveType;
+use crate::frontend_impl::language::TypeConstraint;
+use crate::location::Spanning;
 
 impl<S: Clone + Eq + std::hash::Hash> Type<S> {
     pub fn is_linear(&self, type_defs: &TypeDefs<S>) -> Result<bool, TypeError<S>> {
-        Ok(!self.is_positive(type_defs)?)
+        Ok(!self.satisfies_constraint(TypeConstraint::Box, type_defs)?)
     }
 
-    pub fn is_positive(&self, type_defs: &TypeDefs<S>) -> Result<bool, TypeError<S>> {
-        fn visit<S: Clone + Eq + std::hash::Hash>(
-            result: &mut bool,
-            typ: &Type<S>,
-            type_defs: &TypeDefs<S>,
-        ) -> Result<(), TypeError<S>> {
-            match typ {
-                // Box is always positive
-                Type::Box(..) => {}
-
-                // Negative cases
-                Type::DualPrimitive(_, _)
-                | Type::Var(_, _)
-                | Type::DualVar(_, _)
-                | Type::DualBox(_, _)
-                | Type::Function(_, _, _, _)
-                | Type::Choice(_, _)
-                | Type::Continue(_) => {
-                    *result = false;
-                }
-                _ => {
-                    visit::continue_deref(typ, type_defs, |child| visit(result, child, type_defs))?;
-                }
-            }
-            Ok(())
+    pub fn satisfies_constraint(
+        &self,
+        constraint: TypeConstraint,
+        defs: &TypeDefs<S>,
+    ) -> Result<bool, TypeError<S>>
+    where
+        S: Clone + Eq + std::hash::Hash,
+    {
+        if constraint == TypeConstraint::Any {
+            return Ok(true);
         }
-        let mut result = true;
 
-        visit(&mut result, self, type_defs)?;
-        Ok(result)
+        let satisfies_at_least = |minimum| -> bool { constraint.is_broader_or_equal_than(minimum) };
+
+        match self {
+            Type::Primitive(_, PrimitiveType::Nat | PrimitiveType::Int | PrimitiveType::Float) => {
+                Ok(satisfies_at_least(TypeConstraint::Number))
+            }
+            Type::Primitive(..) | Type::Break(_) | Type::Self_(..) | Type::DualSelf(..) => {
+                Ok(satisfies_at_least(TypeConstraint::Data))
+            }
+            Type::Var(_, name) => Ok(defs
+                .var_constraint(name)
+                .is_some_and(|actual| constraint.is_broader_or_equal_than(actual))),
+            Type::DualName(_, name, args) => defs
+                .get_dual(&self.span(), name, args)
+                .and_then(|typ| typ.satisfies_constraint(constraint, defs)),
+            Type::Name(_, name, args) => defs
+                .get(&self.span(), name, args)
+                .and_then(|typ| typ.satisfies_constraint(constraint, defs)),
+            Type::Box(..) => Ok(satisfies_at_least(TypeConstraint::Box)),
+            Type::Pair(_, left, right, vars) => {
+                let minimum = if vars.is_empty() {
+                    TypeConstraint::Data
+                } else {
+                    TypeConstraint::Box
+                };
+                if !satisfies_at_least(minimum) {
+                    return Ok(false);
+                }
+                Self::with_type_parameters(defs, vars, |defs| {
+                    Ok(left.satisfies_constraint(constraint, defs)?
+                        && right.satisfies_constraint(constraint, defs)?)
+                })
+            }
+            Type::Either(_, branches) => {
+                if !satisfies_at_least(TypeConstraint::Data) {
+                    return Ok(false);
+                }
+                branches.values().try_fold(true, |acc, branch| {
+                    Ok(acc && branch.satisfies_constraint(constraint, defs)?)
+                })
+            }
+            Type::Recursive { body, .. } | Type::Iterative { body, .. } => {
+                if !satisfies_at_least(TypeConstraint::Data) {
+                    return Ok(false);
+                }
+                body.satisfies_constraint(constraint, defs)
+            }
+            Type::Exists(_, param, body) | Type::Forall(_, param, body) => {
+                if !satisfies_at_least(TypeConstraint::Box) {
+                    return Ok(false);
+                }
+                Self::with_type_parameter(defs, param, |defs| {
+                    body.satisfies_constraint(constraint, defs)
+                })
+            }
+            Type::Fail(_) => Ok(true),
+            Type::DualPrimitive(..)
+            | Type::DualVar(..)
+            | Type::DualBox(..)
+            | Type::Function(..)
+            | Type::Choice(..)
+            | Type::Continue(_)
+            | Type::Hole(..)
+            | Type::DualHole(..) => Ok(false),
+        }
     }
 }

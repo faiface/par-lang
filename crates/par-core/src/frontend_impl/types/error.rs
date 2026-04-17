@@ -1,4 +1,4 @@
-use crate::frontend_impl::language::{GlobalName, LocalName, Universal};
+use crate::frontend_impl::language::{GlobalName, LocalName, TypeConstraint, Universal};
 use crate::frontend_impl::types::{LoopId, Operation, Type};
 use crate::location::{Span, Spanning};
 use crate::workspace::{FileImportScope, render_global_name_in_scope, render_type_in_scope};
@@ -32,6 +32,8 @@ pub enum TypeError<S> {
     TypeMustBeKnownAtThisPoint(Span, #[allow(unused)] LocalName),
     ParameterTypeMustBeKnown(Span, LocalName),
     CannotAssignFromTo(Span, Type<S>, Type<S>),
+    TypeDoesNotSatisfyConstraint(Span, LocalName, Type<S>, TypeConstraint),
+    TypeParameterConstraintMismatch(Span, LocalName, TypeConstraint, TypeConstraint),
     UnfulfilledObligations(Span, Vec<LocalName>),
     InvalidOperation(Span, #[allow(unused)] Operation, Type<S>),
     InvalidBranch(Span, LocalName, Type<S>),
@@ -300,6 +302,37 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                     from_type_str,
                 )
             }
+            Self::TypeDoesNotSatisfyConstraint(span, name, typ, constraint) => {
+                let labels = labels_from_span(code, span);
+                let typ_str = render_type(typ, 1);
+                miette::miette!(
+                    labels = labels,
+                    "Type argument for `{}` must satisfy the `{}` constraint, but got:\n\n  {}\n",
+                    name,
+                    constraint,
+                    typ_str,
+                )
+            }
+            Self::TypeParameterConstraintMismatch(span, name, written, expected) => {
+                let labels = labels_from_span(code, span);
+                let written = if *written == TypeConstraint::Any {
+                    String::from("no constraint")
+                } else {
+                    format!("`{written}`")
+                };
+                let expected = if *expected == TypeConstraint::Any {
+                    String::from("no constraint")
+                } else {
+                    format!("`{expected}`")
+                };
+                miette::miette!(
+                    labels = labels,
+                    "Type parameter `{}` is annotated with {}, but {} is required here.",
+                    name,
+                    written,
+                    expected,
+                )
+            }
             Self::UnfulfilledObligations(span, names) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
@@ -557,6 +590,8 @@ impl<S: Clone + Eq + std::hash::Hash> TypeError<S> {
             | Self::TypeMustBeKnownAtThisPoint(span, _)
             | Self::ParameterTypeMustBeKnown(span, _)
             | Self::CannotAssignFromTo(span, _, _)
+            | Self::TypeDoesNotSatisfyConstraint(span, _, _, _)
+            | Self::TypeParameterConstraintMismatch(span, _, _, _)
             | Self::UnfulfilledObligations(span, _)
             | Self::InvalidOperation(span, _, _)
             | Self::InvalidBranch(span, _, _)

@@ -1,4 +1,4 @@
-use super::super::language::LocalName;
+use super::super::language::{LocalName, TypeConstraint, TypeParameter};
 use super::super::process::{Captures, Command, Expression, PollKind, Process, VariableUsage};
 use super::context::{PollPointScope, PollScope};
 use super::core::{LoopId, Operation, Type, get_primitive_type};
@@ -34,6 +34,59 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             }
         }
     }
+
+    fn resolve_type_parameter(
+        &self,
+        parameter: &TypeParameter,
+        expected: &TypeParameter,
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> TypeParameter {
+        if parameter.constraint != expected.constraint {
+            emit(TypeError::TypeParameterConstraintMismatch(
+                parameter.span(),
+                parameter.name.clone(),
+                parameter.constraint,
+                expected.constraint,
+            ));
+        }
+        TypeParameter {
+            name: parameter.name.clone(),
+            constraint: expected.constraint,
+        }
+    }
+
+    fn resolve_type_parameters(
+        &self,
+        parameters: &[TypeParameter],
+        expected: &[TypeParameter],
+        emit: &mut impl FnMut(TypeError<S>),
+    ) -> Vec<TypeParameter> {
+        parameters
+            .iter()
+            .zip(expected)
+            .map(|(parameter, expected)| self.resolve_type_parameter(parameter, expected, emit))
+            .collect()
+    }
+
+    fn check_type_constraint(
+        &self,
+        span: &Span,
+        parameter: &TypeParameter,
+        typ: &Type<S>,
+        emit: &mut impl FnMut(TypeError<S>),
+    ) {
+        match typ.satisfies_constraint(parameter.constraint, &self.type_defs) {
+            Ok(true) => {}
+            Ok(false) => emit(TypeError::TypeDoesNotSatisfyConstraint(
+                span.clone(),
+                parameter.name.clone(),
+                typ.clone(),
+                parameter.constraint,
+            )),
+            Err(error) => emit(error),
+        }
+    }
+
     pub(crate) fn check_process(
         &mut self,
         process: &Process<(), S>,
@@ -712,7 +765,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             return self.check_command(inference_subject, span, object, inner, command, mode, emit);
         }
         if let Type::DualBox(_, inner) = typ {
-            if inner.is_positive(&self.type_defs).unwrap_or(false) {
+            if inner
+                .satisfies_constraint(TypeConstraint::Box, &self.type_defs)
+                .unwrap_or(false)
+            {
                 return self.check_command(
                     inference_subject,
                     span,
@@ -953,7 +1009,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         process: &Arc<Process<(), S>>,
         argument_type: &Type<S>,
         then_type: &Type<S>,
-        vars: &Vec<LocalName>,
+        vars: &[TypeParameter],
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
@@ -967,7 +1023,9 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         )
         .unwrap_or_else(|e| {
             emit(e);
-            BTreeMap::new()
+            vars.iter()
+                .map(|var| (var.name.clone(), Type::Fail(span.clone())))
+                .collect()
         });
         let then_type = then_type
             .clone()
@@ -1027,7 +1085,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         parameter: &LocalName,
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
-        type_parameters: &[LocalName],
+        type_parameters: &[TypeParameter],
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
@@ -1119,27 +1177,40 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         parameter: &LocalName,
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
-        type_names: &[LocalName],
+        type_names: &[TypeParameter],
         param_type: &Type<S>,
         then_type: &Type<S>,
-        type_parameters: &[LocalName],
+        type_parameters: &[TypeParameter],
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        let type_parameters = self.resolve_type_parameters(type_parameters, type_names, emit);
         let type_vars: Vec<Type<S>> = type_parameters
             .iter()
-            .map(|v| Type::Var(Span::None, v.clone()))
+            .map(|v| Type::Var(Span::None, v.name.clone()))
             .collect();
         let then_type = then_type
             .clone()
-            .substitute(type_names.iter().zip(type_vars.iter()).collect())
+            .substitute(
+                type_names
+                    .iter()
+                    .map(|name| &name.name)
+                    .zip(type_vars.iter())
+                    .collect(),
+            )
             .unwrap_or_else(|e| {
                 emit(e);
                 Type::Fail(span.clone())
             });
         let param_type = param_type
             .clone()
-            .substitute(type_names.iter().zip(type_vars.iter()).collect())
+            .substitute(
+                type_names
+                    .iter()
+                    .map(|name| &name.name)
+                    .zip(type_vars.iter())
+                    .collect(),
+            )
             .unwrap_or_else(|e| {
                 emit(e);
                 Type::Fail(span.clone())
@@ -1150,8 +1221,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             parameter,
             annotation,
             process,
-            type_names,
-            type_parameters,
+            &type_parameters,
             param_type,
             then_type,
             mode,
@@ -1166,21 +1236,21 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         parameter: &LocalName,
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
-        type_names: &[LocalName],
+        type_names: &[TypeParameter],
         param_type: &Type<S>,
         then_type: &Type<S>,
-        type_parameters: &[LocalName],
+        type_parameters: &[TypeParameter],
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        let type_parameters = self.resolve_type_parameters(type_parameters, type_names, emit);
         self.finish_check_command_receive(
             span,
             object,
             parameter,
             annotation,
             process,
-            type_names,
-            type_parameters,
+            &type_parameters,
             param_type.clone(),
             then_type.clone(),
             mode,
@@ -1195,14 +1265,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         parameter: &LocalName,
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
-        type_names: &[LocalName],
-        type_parameters: &[LocalName],
+        type_parameters: &[TypeParameter],
         param_type: Type<S>,
         then_type: Type<S>,
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
-        self.type_defs.vars.extend(type_parameters.iter().cloned());
+        self.type_defs.extend_vars(type_parameters.iter().cloned());
 
         if let Some(annotated_type) = annotation {
             if let Err(e) = self.type_defs.validate_type(annotated_type) {
@@ -1225,7 +1294,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                 annotation.clone(),
                 param_type,
                 process,
-                type_names.to_vec(),
+                type_parameters.to_vec(),
             ),
             inferred_types,
         )
@@ -1680,9 +1749,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             let (process, inferred) = self.analyze_process(process, mode, emit);
             return (Command::SendType(argument.clone(), process), inferred);
         };
+        self.check_type_constraint(span, type_name, argument, emit);
         let then_type = then_type
             .clone()
-            .substitute(BTreeMap::from([(type_name, argument)]))
+            .substitute(BTreeMap::from([(&type_name.name, argument)]))
             .unwrap_or_else(|e| {
                 emit(e);
                 Type::Fail(span.clone())
@@ -1699,7 +1769,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         span: &Span,
         object: &LocalName,
         typ: &Type<S>,
-        parameter: &LocalName,
+        parameter: &TypeParameter,
         process: &Arc<Process<(), S>>,
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
@@ -1717,17 +1787,18 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             let (process, inferred) = self.analyze_process(process, mode, emit);
             return (Command::ReceiveType(parameter.clone(), process), inferred);
         };
+        let parameter = self.resolve_type_parameter(parameter, type_name, emit);
         let then_type = then_type
             .clone()
             .substitute(BTreeMap::from([(
-                type_name,
-                &Type::Var(span.clone(), parameter.clone()),
+                &type_name.name,
+                &Type::Var(span.clone(), parameter.name.clone()),
             )]))
             .unwrap_or_else(|e| {
                 emit(e);
                 Type::Fail(span.clone())
             });
-        self.type_defs.vars.insert(parameter.clone());
+        self.type_defs.insert_var(parameter.clone());
         if let Err(e) = self.put(span, object.clone(), then_type) {
             emit(e);
         }
@@ -2607,12 +2678,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         parameter: &LocalName,
         annotation: &Option<Type<S>>,
         process: &Arc<Process<(), S>>,
-        vars: &[LocalName],
+        vars: &[TypeParameter],
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Type<S>) {
-        for var in vars.iter() {
-            self.type_defs.vars.insert(var.clone());
-        }
+        self.type_defs.extend_vars(vars.iter().cloned());
         let Some(param_type) = annotation else {
             emit(TypeError::ParameterTypeMustBeKnown(
                 span.clone(),
@@ -2637,7 +2706,6 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         if let Err(e) = self.put(span, parameter.clone(), param_type.clone()) {
             emit(e);
         }
-        self.type_defs.vars.extend(vars.iter().cloned());
         let (process, then_type) = self.infer_process(process, subject, emit);
         (
             Command::Receive(
@@ -2779,11 +2847,11 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         &mut self,
         span: &Span,
         subject: &LocalName,
-        parameter: &LocalName,
+        parameter: &TypeParameter,
         process: &Arc<Process<(), S>>,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Type<S>) {
-        self.type_defs.vars.insert(parameter.clone());
+        self.type_defs.insert_var(parameter.clone());
         let (process, then_type) = self.infer_process(process, subject, emit);
         (
             Command::ReceiveType(parameter.clone(), process),

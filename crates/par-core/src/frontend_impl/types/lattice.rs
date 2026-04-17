@@ -192,27 +192,33 @@ fn union_types_branching<S: Clone + Eq + std::hash::Hash>(
         }
         (Type::Forall(_, name1, body1), Type::Forall(_, name2, body2)) => Ok(Type::Forall(
             span.clone(),
-            name1.clone(),
+            crate::frontend_impl::language::TypeParameter {
+                name: name1.name.clone(),
+                constraint: name1.constraint.narrower(name2.constraint),
+            },
             Box::new(union_types(
                 typedefs,
                 span,
                 body1,
                 &body2.clone().substitute(BTreeMap::from([(
-                    name2,
-                    &Type::Var(Span::None, name1.clone()),
+                    &name2.name,
+                    &Type::Var(Span::None, name1.name.clone()),
                 )]))?,
             )?),
         )),
         (Type::Exists(_, name1, body1), Type::Exists(_, name2, body2)) => Ok(Type::Exists(
             span.clone(),
-            name1.clone(),
+            crate::frontend_impl::language::TypeParameter {
+                name: name1.name.clone(),
+                constraint: name1.constraint.narrower(name2.constraint),
+            },
             Box::new(union_types(
                 typedefs,
                 span,
                 body1,
                 &body2.clone().substitute(BTreeMap::from([(
-                    name2,
-                    &Type::Var(Span::None, name1.clone()),
+                    &name2.name,
+                    &Type::Var(Span::None, name1.name.clone()),
                 )]))?,
             )?),
         )),
@@ -354,27 +360,33 @@ fn intersect_types_branching<S: Clone + Eq + std::hash::Hash>(
         }
         (Type::Forall(_, name1, body1), Type::Forall(_, name2, body2)) => Ok(Type::Forall(
             span.clone(),
-            name1.clone(),
+            crate::frontend_impl::language::TypeParameter {
+                name: name1.name.clone(),
+                constraint: name1.constraint.broader(name2.constraint),
+            },
             Box::new(intersect_types(
                 typedefs,
                 span,
                 body1,
                 &body2.clone().substitute(BTreeMap::from([(
-                    name2,
-                    &Type::Var(Span::None, name1.clone()),
+                    &name2.name,
+                    &Type::Var(Span::None, name1.name.clone()),
                 )]))?,
             )?),
         )),
         (Type::Exists(_, name1, body1), Type::Exists(_, name2, body2)) => Ok(Type::Exists(
             span.clone(),
-            name1.clone(),
+            crate::frontend_impl::language::TypeParameter {
+                name: name1.name.clone(),
+                constraint: name1.constraint.broader(name2.constraint),
+            },
             Box::new(intersect_types(
                 typedefs,
                 span,
                 body1,
                 &body2.clone().substitute(BTreeMap::from([(
-                    name2,
-                    &Type::Var(Span::None, name1.clone()),
+                    &name2.name,
+                    &Type::Var(Span::None, name1.name.clone()),
                 )]))?,
             )?),
         )),

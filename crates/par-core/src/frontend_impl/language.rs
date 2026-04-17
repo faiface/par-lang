@@ -25,6 +25,92 @@ pub struct LocalName {
     pub string: ArcStr,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum TypeConstraint {
+    #[default]
+    Any,
+    Box,
+    Data,
+    Number,
+}
+
+impl TypeConstraint {
+    pub fn is_broader_or_equal_than(self, other: Self) -> bool {
+        self.rank() <= other.rank()
+    }
+
+    pub fn broader(self, other: Self) -> Self {
+        if self.is_broader_or_equal_than(other) {
+            self
+        } else {
+            other
+        }
+    }
+
+    pub fn narrower(self, other: Self) -> Self {
+        if self.is_broader_or_equal_than(other) {
+            other
+        } else {
+            self
+        }
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            TypeConstraint::Any => 0,
+            TypeConstraint::Box => 1,
+            TypeConstraint::Data => 2,
+            TypeConstraint::Number => 3,
+        }
+    }
+}
+
+impl Display for TypeConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeConstraint::Any => Ok(()),
+            TypeConstraint::Box => write!(f, "box"),
+            TypeConstraint::Data => write!(f, "data"),
+            TypeConstraint::Number => write!(f, "number"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeParameter {
+    pub name: LocalName,
+    pub constraint: TypeConstraint,
+}
+
+impl TypeParameter {
+    pub fn any(name: LocalName) -> Self {
+        Self {
+            name,
+            constraint: TypeConstraint::Any,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        self.name.span()
+    }
+}
+
+impl Display for TypeParameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if self.constraint != TypeConstraint::Any {
+            write!(f, ": {}", self.constraint)?;
+        }
+        Ok(())
+    }
+}
+
+impl Spanning for TypeParameter {
+    fn span(&self) -> Span {
+        self.name.span()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unresolved {
     pub qualifier: Option<String>,
@@ -174,9 +260,9 @@ impl LocalName {
 #[derive(Clone, Debug)]
 pub enum Pattern<S> {
     Name(Span, LocalName, Option<Type<S>>),
-    Receive(Span, Box<Self>, Box<Self>, Vec<LocalName>),
+    Receive(Span, Box<Self>, Box<Self>, Vec<TypeParameter>),
     Continue(Span),
-    ReceiveType(Span, LocalName, Box<Self>),
+    ReceiveType(Span, TypeParameter, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
     Default(Span, Box<Expression<S>>, Box<Self>),
 }
@@ -280,7 +366,7 @@ pub enum Construct<S> {
     /// wraps an expression
     Then(Box<Expression<S>>),
     Send(Span, Box<Expression<S>>, Box<Self>),
-    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<TypeParameter>),
     /// constructs an either type
     Signal(Span, LocalName, Box<Self>),
     /// constructs a choice type
@@ -295,7 +381,7 @@ pub enum Construct<S> {
     },
     Loop(Span, Option<LocalName>),
     SendType(Span, Type<S>, Box<Self>),
-    ReceiveType(Span, LocalName, Box<Self>),
+    ReceiveType(Span, TypeParameter, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -304,8 +390,8 @@ pub struct ConstructBranches<S>(pub BTreeMap<LocalName, ConstructBranch<S>>);
 #[derive(Clone, Debug)]
 pub enum ConstructBranch<S> {
     Then(Span, Expression<S>),
-    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
-    ReceiveType(Span, LocalName, Box<Self>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<TypeParameter>),
+    ReceiveType(Span, TypeParameter, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
@@ -333,9 +419,9 @@ pub struct ApplyBranches<S>(pub BTreeMap<LocalName, ApplyBranch<S>>);
 #[derive(Clone, Debug)]
 pub enum ApplyBranch<S> {
     Then(Span, LocalName, Expression<S>),
-    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<TypeParameter>),
     Continue(Span, Expression<S>),
-    ReceiveType(Span, LocalName, Box<Self>),
+    ReceiveType(Span, TypeParameter, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
     Default(Span, Box<Expression<S>>, Box<Self>),
 }
@@ -394,7 +480,7 @@ pub enum Command<S> {
     Then(Box<Process<S>>),
     Link(Span, Box<Expression<S>>),
     Send(Span, Expression<S>, Box<Self>),
-    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<TypeParameter>),
     Signal(Span, LocalName, Box<Self>),
     Case(
         Span,
@@ -412,7 +498,7 @@ pub enum Command<S> {
     },
     Loop(Span, Option<LocalName>),
     SendType(Span, Type<S>, Box<Self>),
-    ReceiveType(Span, LocalName, Box<Self>),
+    ReceiveType(Span, TypeParameter, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
     Default(Span, Box<Expression<S>>, Box<Self>),
     Pipe(Span, Box<Expression<S>>, Box<Self>),
@@ -425,9 +511,9 @@ pub struct CommandBranches<S>(pub BTreeMap<LocalName, CommandBranch<S>>);
 pub enum CommandBranch<S> {
     Then(Span, Process<S>),
     BindThen(Span, LocalName, Process<S>),
-    Receive(Span, Pattern<S>, Box<Self>, Vec<LocalName>),
+    Receive(Span, Pattern<S>, Box<Self>, Vec<TypeParameter>),
     Continue(Span, Process<S>),
-    ReceiveType(Span, LocalName, Box<Self>),
+    ReceiveType(Span, TypeParameter, Box<Self>),
     Try(Span, Option<LocalName>, Box<Self>),
     Default(Span, Box<Expression<S>>, Box<Self>),
 }
@@ -1142,7 +1228,7 @@ impl Context {
         span: &Span,
         subject: &LocalName,
         process: Arc<process::Process<(), Unresolved>>,
-        vars: Vec<LocalName>,
+        vars: Vec<TypeParameter>,
     ) -> Result<Arc<process::Process<(), Unresolved>>, CompileError> {
         if let Pattern::Name(_, name, annotation) = pattern {
             return Ok(Arc::new(process::Process::Do {

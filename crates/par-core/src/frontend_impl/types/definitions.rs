@@ -1,4 +1,4 @@
-use crate::frontend_impl::language::{GlobalName, LocalName};
+use crate::frontend_impl::language::{GlobalName, LocalName, TypeConstraint, TypeParameter};
 use crate::frontend_impl::types::core::NamedTypeDisplay;
 use crate::frontend_impl::types::{Type, TypeError, visit};
 use crate::location::Span;
@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct TypeDefs<S> {
-    pub globals: Arc<IndexMap<GlobalName<S>, (Span, Vec<LocalName>, Type<S>)>>,
-    pub vars: IndexSet<LocalName>,
+    pub globals: Arc<IndexMap<GlobalName<S>, (Span, Vec<TypeParameter>, Type<S>)>>,
+    pub vars: IndexMap<LocalName, TypeConstraint>,
 }
 
 impl<S: Clone + Eq + std::hash::Hash> Default for TypeDefs<S> {
@@ -22,7 +22,14 @@ impl<S: Clone + Eq + std::hash::Hash> Default for TypeDefs<S> {
 
 impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
     pub fn new_with_validation<'a>(
-        globals: impl Iterator<Item = (&'a Span, &'a GlobalName<S>, &'a Vec<LocalName>, &'a Type<S>)>,
+        globals: impl Iterator<
+            Item = (
+                &'a Span,
+                &'a GlobalName<S>,
+                &'a Vec<TypeParameter>,
+                &'a Type<S>,
+            ),
+        >,
     ) -> Result<Self, TypeError<S>>
     where
         S: 'a,
@@ -42,7 +49,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
 
         let type_defs = Self {
             globals: Arc::new(globals_map),
-            vars: IndexSet::new(),
+            vars: Default::default(),
         };
 
         let mut deps_map: IndexMap<GlobalName<S>, Vec<GlobalName<S>>> = Default::default();
@@ -56,9 +63,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
 
         for (_, (_, params, typ)) in type_defs.globals.iter() {
             let mut type_defs = type_defs.clone();
-            for param in params {
-                type_defs.vars.insert(param.clone());
-            }
+            type_defs.extend_vars(params.iter().cloned());
             type_defs.validate_type(typ)?;
         }
 
@@ -92,7 +97,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                 }
                 let typ = typ
                     .clone()
-                    .substitute(params.iter().zip(args).collect())?
+                    .substitute(params.iter().map(|param| &param.name).zip(args).collect())?
                     .with_display_hint(NamedTypeDisplay::new(name.clone(), args.to_vec(), false));
                 Ok((definition_span, typ))
             }
@@ -129,12 +134,30 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                 let typ = typ
                     .clone()
                     .dual(Span::None)
-                    .substitute(params.iter().zip(args).collect())?
+                    .substitute(params.iter().map(|param| &param.name).zip(args).collect())?
                     .with_display_hint(NamedTypeDisplay::new(name.clone(), args.to_vec(), true));
                 Ok((definition_span, typ))
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
+    }
+
+    pub fn insert_var(&mut self, param: TypeParameter) {
+        self.vars.insert(param.name.clone(), param.constraint);
+    }
+
+    pub fn extend_vars(&mut self, params: impl IntoIterator<Item = TypeParameter>) {
+        for param in params {
+            self.insert_var(param);
+        }
+    }
+
+    pub fn contains_var(&self, name: &LocalName) -> bool {
+        self.vars.contains_key(name)
+    }
+
+    pub fn var_constraint(&self, name: &LocalName) -> Option<TypeConstraint> {
+        self.vars.get(name).copied()
     }
 
     pub fn validate_acyclic(
@@ -196,7 +219,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                     })?;
                 }
                 Type::Function(span, arg, res, vars) if !vars.is_empty() => {
-                    ctx.defs.vars.extend(vars.iter().cloned());
+                    ctx.defs.extend_vars(vars.iter().cloned());
                     visit::continue_deref_polarized(typ, positive, &ctx.defs, |_typ, positive| {
                         inner(
                             &Type::Function(span.clone(), arg.clone(), res.clone(), vec![]),
@@ -206,7 +229,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                     })?;
                 }
                 Type::Pair(span, arg, res, vars) if !vars.is_empty() => {
-                    ctx.defs.vars.extend(vars.iter().cloned());
+                    ctx.defs.extend_vars(vars.iter().cloned());
                     visit::continue_deref_polarized(typ, positive, &ctx.defs, |_typ, positive| {
                         inner(
                             &Type::Pair(span.clone(), arg.clone(), res.clone(), vec![]),
@@ -215,14 +238,14 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                         )
                     })?;
                 }
-                Type::Exists(_span, name, _body) | Type::Forall(_span, name, _body) => {
-                    ctx.defs.vars.insert(name.clone());
+                Type::Exists(_span, param, _body) | Type::Forall(_span, param, _body) => {
+                    ctx.defs.insert_var(param.clone());
                     visit::continue_deref_polarized(typ, positive, &ctx.defs, |typ, positive| {
                         inner(typ, positive, ctx.clone())
                     })?;
                 }
                 Type::Var(span, name) | Type::DualVar(span, name) => {
-                    if ctx.defs.vars.contains(name) {
+                    if ctx.defs.contains_var(name) {
                         ()
                     } else {
                         return Err(TypeError::TypeVariableNotDefined(

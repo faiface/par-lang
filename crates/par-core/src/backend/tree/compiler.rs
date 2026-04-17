@@ -9,7 +9,7 @@ use crate::frontend_impl::process::VariableUsage;
 use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::types::core::get_primitive_type;
 use crate::frontend_impl::{
-    language::{GlobalName, LocalName, Universal},
+    language::{GlobalName, LocalName, TypeParameter, Universal},
     process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
 };
@@ -989,15 +989,19 @@ impl Compiler {
         &mut self,
         name: LocalName,
         usage: &VariableUsage,
-        parameter: &LocalName,
+        parameter: &TypeParameter,
         process: &Arc<Process<Type<Universal>, Universal>>,
     ) -> Result<()> {
         let subject = self.use_variable(&name, usage, true)?;
-        let was_empty_before = self.type_defs.vars.insert(parameter.clone());
+        let was_empty_before = self
+            .type_defs
+            .vars
+            .insert(parameter.name.clone(), parameter.constraint)
+            .is_none();
         self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
         self.compile_process(process)?;
         if was_empty_before {
-            self.type_defs.vars.shift_remove(parameter);
+            self.type_defs.vars.shift_remove(&parameter.name);
         }
         Ok(())
     }

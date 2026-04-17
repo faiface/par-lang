@@ -18,17 +18,17 @@ impl<S: Clone> Type<S> {
                 Type::DualVar(_span, name) if map.contains_key(name) => {
                     *typ = map.get(name).cloned().cloned().unwrap().dual(Span::None);
                 }
-                Type::Exists(_span, name, body) | Type::Forall(_span, name, body) => {
-                    let old_name = name.clone();
-                    while map.values().any(|t| t.contains_var(&name)) {
-                        name.string = arcstr::format!("{}'", name.string);
+                Type::Exists(_span, param, body) | Type::Forall(_span, param, body) => {
+                    let old_name = param.name.clone();
+                    while map.values().any(|t| t.contains_var(&param.name)) {
+                        param.name.string = arcstr::format!("{}'", param.name.string);
                     }
-                    if &old_name != name {
+                    if old_name != param.name {
                         inner(
                             body,
                             &BTreeMap::from([(
                                 &old_name,
-                                &Type::Var(name.span.clone(), name.clone()),
+                                &Type::Var(param.name.span.clone(), param.name.clone()),
                             )]),
                         )?;
                     }
@@ -67,7 +67,9 @@ impl<S: Clone> Type<S> {
                 Type::Var(_span, name) | Type::DualVar(_span, name) if name == target_name => {
                     *result = true;
                 }
-                Type::Forall(_, name, _) | Type::Exists(_, name, _) if name == target_name => {
+                Type::Forall(_, param, _) | Type::Exists(_, param, _)
+                    if &param.name == target_name =>
+                {
                     // var is shadowed
                 }
                 _ => {

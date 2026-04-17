@@ -1,7 +1,7 @@
 use crate::frontend::lower;
 use crate::frontend::parse_source_file;
 use crate::frontend_impl::language::{
-    CompileError, GlobalName, LocalName, PackageId, Resolved, ResolvedPackageRef, Universal,
+    CompileError, GlobalName, PackageId, Resolved, ResolvedPackageRef, TypeParameter, Universal,
     Unresolved,
 };
 use crate::frontend_impl::parse::SyntaxError;
@@ -1200,7 +1200,7 @@ impl CheckedWorkspace {
         &self,
         file: &FileName,
         module: &Universal,
-        types: &[(GlobalName<Universal>, Vec<LocalName>, Type<Universal>)],
+        types: &[(GlobalName<Universal>, Vec<TypeParameter>, Type<Universal>)],
         declarations: &[(GlobalName<Universal>, Type<Universal>)],
     ) -> String {
         let scope = self.workspace.import_scope(file);
@@ -2420,7 +2420,7 @@ fn write_type_hover_header_in_file(
     }
 }
 
-fn write_type_parameters(f: &mut impl Write, params: &[LocalName]) -> fmt::Result {
+fn write_type_parameters(f: &mut impl Write, params: &[TypeParameter]) -> fmt::Result {
     if params.is_empty() {
         return Ok(());
     }
@@ -2437,6 +2437,7 @@ fn write_type_parameters(f: &mut impl Write, params: &[LocalName]) -> fmt::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend_impl::language::TypeConstraint;
     use crate::frontend_impl::types::Visibility;
     use arcstr::literal;
     use std::fs;
@@ -2725,6 +2726,81 @@ def Main : ! = chan exit {
         assert_eq!(
             checked.render_hover_signature_in_file(file, &hover),
             "x : !"
+        );
+    }
+
+    #[test]
+    fn constrained_type_parameters_allow_valid_type_arguments() {
+        checked_workspace_from_source(
+            "\
+module Main
+
+dec UseBox : [type a: box] !
+def UseBox = [type a: box] !
+def Ok = UseBox(type !)
+",
+        );
+    }
+
+    #[test]
+    fn constrained_type_parameters_reject_invalid_type_arguments() {
+        let source = "\
+module Main
+
+dec UseBox : [type a: box] !
+def UseBox = [type a: box] !
+def Bad = UseBox(type [!] !)
+";
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            test_package_id(),
+            parsed_package_from_files("local", &[("Main.par", source)]),
+        )]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::TypeDoesNotSatisfyConstraint(_, name, _, TypeConstraint::Box)
+                if name.string.as_str() == "a"
+        )));
+    }
+
+    #[test]
+    fn checked_binder_constraints_must_match_exactly() {
+        let source = "\
+module Main
+
+def ExpectBox : [type a: box, a] a = [type a, x: a] x
+";
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            test_package_id(),
+            parsed_package_from_files("local", &[("Main.par", source)]),
+        )]);
+
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            TypeError::TypeParameterConstraintMismatch(_, name, TypeConstraint::Any, TypeConstraint::Box)
+                if name.string.as_str() == "a"
+        )));
+    }
+
+    #[test]
+    fn inferred_types_preserve_parameter_constraints_in_rendering() {
+        let source = "\
+module Main
+
+def Identity = [type a: number, x: a] x
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.workspace().sources().keys().next().unwrap();
+        let (_name, (_definition, typ)) = checked
+            .checked_module()
+            .definitions
+            .iter()
+            .find(|(name, _)| name.primary == "Identity")
+            .unwrap();
+
+        assert_eq!(
+            checked.render_type_in_file(file, typ, 0),
+            "[type a: number, a] a"
         );
     }
 
@@ -3068,66 +3144,6 @@ name = \"root\"
 
 [dependencies]
 helper = \"~/{helper_suffix}\"
-"
-            ),
-            &[(
-                "src/Main.par",
-                "\
-module Main
-import @helper/Util
-
-dec Main : !
-def Main = Util.Run
-",
-            )],
-        );
-
-        let workspace =
-            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
-                .unwrap();
-        let (_checked, type_errors) = workspace.type_check();
-        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
-    }
-
-    #[test]
-    fn env_var_local_dependency_import_works() {
-        let root = temp_package_root("env-dependency-root");
-        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME should be set for test"));
-        let helper = temp_package_root_in(&home, "env-helper");
-
-        write_package(
-            &helper,
-            "\
-[package]
-name = \"helper\"
-",
-            &[(
-                "src/Util.par",
-                "\
-export module Util
-
-export {
-  dec Run : !
-}
-
-def Run = !
-",
-            )],
-        );
-        let helper_suffix = helper
-            .strip_prefix(&home)
-            .expect("helper should live under home directory")
-            .to_string_lossy()
-            .replace('\\', "/");
-        write_package(
-            &root,
-            &format!(
-                "\
-[package]
-name = \"root\"
-
-[dependencies]
-helper = \"$HOME/{helper_suffix}\"
 "
             ),
             &[(

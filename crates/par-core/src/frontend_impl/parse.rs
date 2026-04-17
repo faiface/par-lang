@@ -2,7 +2,7 @@ use super::{
     language::{
         Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Condition,
         Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
-        Unresolved,
+        TypeConstraint, TypeParameter, Unresolved,
     },
     lexer::{Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments},
 };
@@ -1038,12 +1038,12 @@ enum SendOrReceive {
 }
 
 enum TypePrefixItem {
-    Explicit(LocalName),
+    Explicit(TypeParameter),
     Value(Type<Unresolved>),
 }
 
 enum PatternPrefixItem {
-    Explicit(LocalName),
+    Explicit(TypeParameter),
     Value(Pattern<Unresolved>),
 }
 
@@ -1055,7 +1055,7 @@ enum SendPrefixItem {
 fn fold_type_prefix<T>(
     items: Vec<TypePrefixItem>,
     rest: T,
-    mut explicit: impl FnMut(LocalName, T) -> T,
+    mut explicit: impl FnMut(TypeParameter, T) -> T,
     mut value: impl FnMut(Type<Unresolved>, T) -> T,
 ) -> T {
     items.into_iter().rfold(rest, |rest, item| match item {
@@ -1067,7 +1067,7 @@ fn fold_type_prefix<T>(
 fn fold_pattern_prefix<T>(
     items: Vec<PatternPrefixItem>,
     rest: T,
-    mut explicit: impl FnMut(LocalName, T) -> T,
+    mut explicit: impl FnMut(TypeParameter, T) -> T,
     mut value: impl FnMut(Pattern<Unresolved>, T) -> T,
 ) -> T {
     items.into_iter().rfold(rest, |rest, item| match item {
@@ -1088,15 +1088,48 @@ fn fold_send_prefix<T>(
     })
 }
 
-fn explicit_type_name(input: &mut Input) -> Result<LocalName> {
-    commit_after(t(TokenKind::Type), local_name)
-        .map(|(_, name)| name)
+fn type_constraint(input: &mut Input) -> Result<TypeConstraint> {
+    let checkpoint = input.checkpoint();
+    if t::<Error>(TokenKind::Box).parse_next(input).is_ok() {
+        return Ok(TypeConstraint::Box);
+    }
+    input.reset(&checkpoint);
+
+    let name = local_name
+        .context(StrContext::Label("type constraint"))
+        .parse_next(input)?;
+    match name.string.as_str() {
+        "data" => Ok(TypeConstraint::Data),
+        "number" => Ok(TypeConstraint::Number),
+        _ => Err(ErrMode::Backtrack(ParseContextError::from_input(input))),
+    }
+}
+
+fn type_parameter(input: &mut Input) -> Result<TypeParameter> {
+    (
+        local_name,
+        opt(commit_after(t(TokenKind::Colon), type_constraint)),
+    )
+        .map(|(name, constraint)| TypeParameter {
+            name,
+            constraint: constraint.map(|(_, c)| c).unwrap_or(TypeConstraint::Any),
+        })
+        .parse_next(input)
+}
+
+fn unconstrained_type_parameter(input: &mut Input) -> Result<TypeParameter> {
+    local_name.map(TypeParameter::any).parse_next(input)
+}
+
+fn explicit_type_parameter(input: &mut Input) -> Result<TypeParameter> {
+    commit_after(t(TokenKind::Type), type_parameter)
+        .map(|(_, parameter)| parameter)
         .parse_next(input)
 }
 
 fn type_prefix_item(input: &mut Input) -> Result<TypePrefixItem> {
     alt((
-        explicit_type_name.map(TypePrefixItem::Explicit),
+        explicit_type_parameter.map(TypePrefixItem::Explicit),
         typ.map(TypePrefixItem::Value),
     ))
     .parse_next(input)
@@ -1104,7 +1137,7 @@ fn type_prefix_item(input: &mut Input) -> Result<TypePrefixItem> {
 
 fn pattern_prefix_item(input: &mut Input) -> Result<PatternPrefixItem> {
     alt((
-        explicit_type_name.map(PatternPrefixItem::Explicit),
+        explicit_type_parameter.map(PatternPrefixItem::Explicit),
         pattern.map(PatternPrefixItem::Value),
     ))
     .parse_next(input)
@@ -1153,7 +1186,7 @@ fn typ_generic(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             alt((typ_simple_send, typ_simple_receive)),
         ),
@@ -1246,10 +1279,10 @@ fn typ_self(input: &mut Input) -> Result<Type<Unresolved>> {
     .parse_next(input)
 }
 
-fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
+fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<TypeParameter>)>> {
     opt(commit_after(
         t(TokenKind::Lt),
-        (list1(local_name), t(TokenKind::Gt)),
+        (list1(unconstrained_type_parameter), t(TokenKind::Gt)),
     ))
     .map(|opt| opt.map(|(open, (names, close))| (open.span.join(close.span()), names)))
     .parse_next(input)
@@ -1346,7 +1379,7 @@ fn pattern_generic_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LParen),
             pattern,
@@ -2137,7 +2170,7 @@ fn cons_generic_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LBrack),
             pattern,
@@ -2293,7 +2326,7 @@ fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch<Unre
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LParen),
             pattern,
@@ -2606,7 +2639,7 @@ fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch<Unresol
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LBrack),
             pattern,
@@ -3158,7 +3191,7 @@ fn cmd_generic_receive(input: &mut Input) -> Result<(Span, Command<Unresolved>)>
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LBrack),
             pattern,
@@ -3487,7 +3520,7 @@ fn cmd_branch_generic_receive(input: &mut Input) -> Result<CommandBranch<Unresol
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LParen),
             pattern,
@@ -3650,6 +3683,29 @@ def GroupedReceive = {[a: Bool] a} and {type Bool in .false!}
 def SendTypeData = (type Bool) .true! and .false!
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_constrained_type_parameters() {
+        let source = "\
+module Minimal
+
+dec Explicit : [type a: number, (a) !] !
+dec Implicit : <a: box>[a] a
+def Explicit = [type a: number, p] !
+def Implicit = <a: box>[x] x
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_reject_constrained_type_definition_parameters() {
+        let source = "\
+module Minimal
+
+type Boxed<a: box> = a
+";
+        assert!(parse_module(source, "minimal.par".into()).is_err());
     }
 
     #[test]
