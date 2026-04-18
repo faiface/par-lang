@@ -87,7 +87,7 @@ pub fn format_float(value: f64) -> String {
     text
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Primitive {
     Int(BigInt),
     Float(f64),

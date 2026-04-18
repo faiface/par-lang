@@ -1,3 +1,5 @@
+pub use crate::data::Data;
+
 use crate::primitive::{ParString, Primitive};
 use arcstr::ArcStr;
 use bytes::Bytes;
@@ -44,6 +46,10 @@ impl Handle {
         Handle::from(self.handle.receive())
     }
 
+    pub async fn receive_data(&mut self) -> Data {
+        self.handle.receive_data().await.unwrap()
+    }
+
     pub fn duplicate(&mut self) -> Handle {
         Handle::from(self.handle.duplicate())
     }
@@ -78,6 +84,14 @@ impl Handle {
     pub fn provide_byte(self, value: u8) {
         self.handle
             .provide_primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value])))
+    }
+
+    pub fn send_data(&mut self, value: &Data) {
+        self.handle.send_data(value)
+    }
+
+    pub fn provide_data(self, value: &Data) {
+        self.handle.provide_data(value)
     }
 
     pub async fn byte(self) -> u8 {
@@ -158,6 +172,10 @@ impl Handle {
             )
         };
         value
+    }
+
+    pub async fn data(self) -> Data {
+        self.handle.data().await.unwrap()
     }
 
     pub fn link(self, dual: Handle) {

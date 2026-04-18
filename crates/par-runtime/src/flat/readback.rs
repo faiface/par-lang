@@ -1,6 +1,7 @@
 use super::reducer::{NetHandle, ReducerMessage};
 use super::runtime::{ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, Value};
-use crate::flat::arena::Arena;
+use crate::data::Data;
+use crate::flat::arena::{Arena, Index};
 use crate::flat::runtime::Linker;
 use crate::primitive::Primitive;
 use arcstr::ArcStr;
@@ -120,12 +121,22 @@ impl Handle {
         );
     }
 
+    pub fn provide_data(mut self, data: &Data) {
+        let node = self.data_node(data);
+        self.linker.link(self.node.unwrap(), node);
+    }
+
     pub async fn primitive(mut self) -> Result<Primitive> {
         let primitive = match self.destruct().await {
             Value::Primitive(p) => p,
             node => return Err(Error::InvalidValue(node)),
         };
         Ok(primitive)
+    }
+
+    pub async fn data(mut self) -> Result<Data> {
+        let value = self.destruct().await;
+        self.data_from_value(value).await
     }
 
     pub fn send(&mut self) -> Self {
@@ -137,6 +148,12 @@ impl Handle {
         self.new(right_h)
     }
 
+    pub fn send_data(&mut self, data: &Data) {
+        let right = self.send();
+        let left = core::mem::replace(self, right);
+        left.provide_data(data);
+    }
+
     pub fn receive(&mut self) -> Self {
         let (left, left_h) = linked_pair();
         let (right, right_h) = linked_pair();
@@ -144,6 +161,15 @@ impl Handle {
         let par = Node::Linear(Linear::Par(Box::new(left), Box::new(right)));
         self.linker.link(times.unwrap(), par);
         self.new(right_h)
+    }
+
+    pub async fn receive_data(&mut self) -> Result<Data> {
+        let value = self.destruct().await;
+        let Value::Pair(left, right) = value else {
+            return Err(Error::InvalidValue(value));
+        };
+        self.node = Some(right);
+        self.new(left).data().await
     }
 
     pub fn signal(&mut self, chosen: ArcStr) {
@@ -236,6 +262,59 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.linker.link(Node::Linear(Linear::Request(tx)), node);
         rx.await.unwrap()
+    }
+
+    fn data_node(&self, data: &Data) -> Node<Linked> {
+        match data {
+            Data::Unit => Node::Linear(Linear::Value(Box::new(Value::Break))),
+            Data::Pair(left, right) => Node::Linear(Linear::Value(Box::new(Value::Pair(
+                self.data_node(left),
+                self.data_node(right),
+            )))),
+            Data::Either(label, payload) => Node::Linear(Linear::Value(Box::new(Value::Either(
+                self.intern_signal(&label),
+                self.data_node(payload),
+            )))),
+            Data::Primitive(primitive) => {
+                Node::Linear(Linear::Value(Box::new(Value::Primitive(primitive.clone()))))
+            }
+        }
+    }
+
+    fn intern_signal(&self, chosen: &ArcStr) -> Index<Linked, str> {
+        self.linker
+            .arena
+            .interned(chosen.as_str())
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "Attempted to provide non-interned signal data: `{}`
+                This is most likely a type error with built in definitions.
+                Providing an empty signal instead, which will always trigger an `else` branch.
+                ",
+                    chosen
+                );
+                self.linker.arena.empty_string()
+            })
+    }
+
+    async fn data_from_value(&self, value: Value<Node<Linked>, Linked>) -> Result<Data> {
+        match value {
+            Value::Break => Ok(Data::Unit),
+            Value::Pair(left, right) => {
+                let left = Box::pin(self.new(left).data()).await?;
+                let right = Box::pin(self.new(right).data()).await?;
+                Ok(Data::Pair(Box::new(left), Box::new(right)))
+            }
+            Value::Either(name, payload) => {
+                let payload = Box::pin(self.new(payload).data()).await?;
+                Ok(Data::Either(
+                    self.linker.arena.get(name).into(),
+                    Box::new(payload),
+                ))
+            }
+            Value::Primitive(primitive) => Ok(Data::Primitive(primitive)),
+            other => Err(Error::InvalidValue(other)),
+        }
     }
 }
 
