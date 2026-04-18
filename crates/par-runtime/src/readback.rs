@@ -1,4 +1,5 @@
 pub use crate::data::Data;
+pub use crate::primitive::Number;
 
 use crate::primitive::{ParString, Primitive};
 use arcstr::ArcStr;
@@ -46,6 +47,10 @@ impl Handle {
         Handle::from(self.handle.receive())
     }
 
+    pub async fn receive_number(&mut self) -> Number {
+        self.handle.receive_number().await.unwrap()
+    }
+
     pub async fn receive_data(&mut self) -> Data {
         self.handle.receive_data().await.unwrap()
     }
@@ -84,6 +89,14 @@ impl Handle {
     pub fn provide_byte(self, value: u8) {
         self.handle
             .provide_primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value])))
+    }
+
+    pub fn send_number(&mut self, value: &Number) {
+        self.handle.send_number(value)
+    }
+
+    pub fn provide_number(self, value: &Number) {
+        self.handle.provide_number(value)
     }
 
     pub fn send_data(&mut self, value: &Data) {
@@ -172,6 +185,10 @@ impl Handle {
             )
         };
         value
+    }
+
+    pub async fn number(self) -> Number {
+        self.handle.number().await.unwrap()
     }
 
     pub async fn data(self) -> Data {

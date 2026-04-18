@@ -429,6 +429,10 @@ impl<Ext: Clone> Net<Ext> {
 
     fn primitive_interact(&mut self, p: Primitive, tree: Tree<Ext>) {
         match (p, tree) {
+            (Primitive::Zero, Tree::IntRequest(resp)) => {
+                resp.send(BigInt::ZERO).expect("receiver dropped");
+                self.rewrites.resp += 1;
+            }
             (Primitive::Int(i), Tree::IntRequest(resp)) => {
                 resp.send(i).expect("receiver dropped");
                 self.rewrites.resp += 1;
@@ -669,6 +673,7 @@ impl<Ext: Clone> Net<Ext> {
                 )
             }
 
+            Tree::Primitive(Primitive::Zero) => String::from("primitive(0)"),
             Tree::Primitive(Primitive::Int(i)) => format!("primitive({})", i),
             Tree::Primitive(Primitive::Float(value)) => {
                 format!("primitive({})", format_float(*value))

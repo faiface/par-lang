@@ -80,6 +80,7 @@ impl<S> NamedTypeDisplay<S> {
 
 pub(crate) fn get_primitive_type<S: Clone>(primitive: &Primitive) -> Type<S> {
     match primitive {
+        Primitive::Zero => Type::nat(),
         Primitive::Int(n) if n >= &BigInt::ZERO => Type::nat(),
         Primitive::Int(_) => Type::int(),
         Primitive::Float(_) => Type::float(),

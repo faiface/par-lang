@@ -32,7 +32,7 @@ pub mod frontend {
         GlobalNameWriter, Operation, PrimitiveType, Type, TypeDefs, TypeError,
     };
     pub use par_runtime::data::Data;
-    pub use par_runtime::primitive::{ParString, Primitive};
+    pub use par_runtime::primitive::{Number, ParString, Primitive};
 
     pub type HighLevelModule =
         Module<language::Expression<language::Unresolved>, language::Unresolved>;
@@ -101,6 +101,7 @@ pub mod runtime {
     pub use crate::runtime_impl::{Compiled, RuntimeCompilerError};
     pub use crate::typed_readback::{TypedHandle, TypedReadback};
     pub use par_runtime::data::Data;
+    pub use par_runtime::primitive::Number;
 }
 
 pub mod execution {

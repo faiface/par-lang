@@ -3,7 +3,7 @@ use super::runtime::{ExternalFn, Global, GlobalCont, Linear, Node, PackagePtr, V
 use crate::data::Data;
 use crate::flat::arena::{Arena, Index};
 use crate::flat::runtime::Linker;
-use crate::primitive::Primitive;
+use crate::primitive::{Number, Primitive};
 use arcstr::ArcStr;
 use futures::task::FutureObj;
 use std::future::Future;
@@ -16,6 +16,7 @@ use tokio::sync::oneshot;
 pub enum Error {
     InvalidNode(Node<Linked>),
     InvalidValue(Value<Node<Linked>, Linked>),
+    InvalidPrimitive(Primitive),
     Panicked,
 }
 
@@ -121,6 +122,14 @@ impl Handle {
         );
     }
 
+    pub fn provide_number(self, number: &Number) {
+        self.provide_primitive(match number {
+            Number::Zero => Primitive::Zero,
+            Number::Int(value) => Primitive::Int(value.clone()),
+            Number::Float(value) => Primitive::Float(*value),
+        })
+    }
+
     pub fn provide_data(mut self, data: &Data) {
         let node = self.data_node(data);
         self.linker.link(self.node.unwrap(), node);
@@ -132,6 +141,16 @@ impl Handle {
             node => return Err(Error::InvalidValue(node)),
         };
         Ok(primitive)
+    }
+
+    pub async fn number(self) -> Result<Number> {
+        let primitive = self.primitive().await?;
+        match primitive {
+            Primitive::Zero => Ok(Number::Zero),
+            Primitive::Int(value) => Ok(Number::Int(value)),
+            Primitive::Float(value) => Ok(Number::Float(value)),
+            primitive => Err(Error::InvalidPrimitive(primitive)),
+        }
     }
 
     pub async fn data(mut self) -> Result<Data> {
@@ -154,6 +173,12 @@ impl Handle {
         left.provide_data(data);
     }
 
+    pub fn send_number(&mut self, number: &Number) {
+        let right = self.send();
+        let left = core::mem::replace(self, right);
+        left.provide_number(number);
+    }
+
     pub fn receive(&mut self) -> Self {
         let (left, left_h) = linked_pair();
         let (right, right_h) = linked_pair();
@@ -168,8 +193,17 @@ impl Handle {
         let Value::Pair(left, right) = value else {
             return Err(Error::InvalidValue(value));
         };
-        self.node = Some(right);
-        self.new(left).data().await
+        self.node = Some(left);
+        self.new(right).data().await
+    }
+
+    pub async fn receive_number(&mut self) -> Result<Number> {
+        let value = self.destruct().await;
+        let Value::Pair(left, right) = value else {
+            return Err(Error::InvalidValue(value));
+        };
+        self.node = Some(left);
+        self.new(right).number().await
     }
 
     pub fn signal(&mut self, chosen: ArcStr) {
@@ -268,8 +302,8 @@ impl Handle {
         match data {
             Data::Unit => Node::Linear(Linear::Value(Box::new(Value::Break))),
             Data::Pair(left, right) => Node::Linear(Linear::Value(Box::new(Value::Pair(
-                self.data_node(left),
                 self.data_node(right),
+                self.data_node(left),
             )))),
             Data::Either(label, payload) => Node::Linear(Linear::Value(Box::new(Value::Either(
                 self.intern_signal(&label),
@@ -300,9 +334,9 @@ impl Handle {
     async fn data_from_value(&self, value: Value<Node<Linked>, Linked>) -> Result<Data> {
         match value {
             Value::Break => Ok(Data::Unit),
-            Value::Pair(left, right) => {
-                let left = Box::pin(self.new(left).data()).await?;
-                let right = Box::pin(self.new(right).data()).await?;
+            Value::Pair(left_node, right_node) => {
+                let right = Box::pin(self.new(left_node).data()).await?;
+                let left = Box::pin(self.new(right_node).data()).await?;
                 Ok(Data::Pair(Box::new(left), Box::new(right)))
             }
             Value::Either(name, payload) => {

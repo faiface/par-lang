@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt::{self, Write},
     ops::RangeBounds,
 };
@@ -87,17 +88,51 @@ pub fn format_float(value: f64) -> String {
     text
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Primitive {
+    Zero,
     Int(BigInt),
     Float(f64),
     String(ParString),
     Bytes(Bytes),
 }
 
+#[derive(Clone, Debug)]
+pub enum Number {
+    Zero,
+    Int(BigInt),
+    Float(f64),
+}
+
+impl PartialEq for Number {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Number {}
+
+impl PartialOrd for Number {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Number {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Zero, Self::Zero) => Ordering::Equal,
+            (Self::Int(left), Self::Int(right)) => left.cmp(right),
+            (Self::Float(left), Self::Float(right)) => left.total_cmp(right),
+            (left, right) => number_kind_rank(left).cmp(&number_kind_rank(right)),
+        }
+    }
+}
+
 impl Primitive {
     pub fn pretty(&self, f: &mut impl Write, _indent: usize) -> fmt::Result {
         match self {
+            Self::Zero => write!(f, "0"),
             Self::Int(i) => write!(f, "{}", i),
             Self::Float(value) => write!(f, "{}", format_float(*value)),
             Self::String(s) => write!(f, "{:?}", s.as_str()),
@@ -119,6 +154,51 @@ impl Primitive {
         let mut buf = String::new();
         self.pretty(&mut buf, 0).unwrap();
         buf
+    }
+}
+
+impl PartialEq for Primitive {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Primitive {}
+
+impl PartialOrd for Primitive {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Primitive {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Zero, Self::Zero) => Ordering::Equal,
+            (Self::Int(left), Self::Int(right)) => left.cmp(right),
+            (Self::Float(left), Self::Float(right)) => left.total_cmp(right),
+            (Self::String(left), Self::String(right)) => left.as_str().cmp(right.as_str()),
+            (Self::Bytes(left), Self::Bytes(right)) => left.cmp(right),
+            (left, right) => primitive_kind_rank(left).cmp(&primitive_kind_rank(right)),
+        }
+    }
+}
+
+fn primitive_kind_rank(primitive: &Primitive) -> u8 {
+    match primitive {
+        Primitive::Zero => 0,
+        Primitive::Int(_) => 1,
+        Primitive::Float(_) => 2,
+        Primitive::String(_) => 3,
+        Primitive::Bytes(_) => 4,
+    }
+}
+
+fn number_kind_rank(number: &Number) -> u8 {
+    match number {
+        Number::Zero => 0,
+        Number::Int(_) => 1,
+        Number::Float(_) => 2,
     }
 }
 

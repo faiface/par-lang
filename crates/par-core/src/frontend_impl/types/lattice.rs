@@ -226,7 +226,11 @@ fn union_types_branching<S: Clone + Eq + std::hash::Hash>(
         )),
         (Type::Box(_, t1), t2) => union_types(typedefs, span, t1, t2),
         (t1, Type::Box(_, t2)) => union_types(typedefs, span, t1, t2),
-        (t1, t2) => Err(TypeError::TypesCannotBeUnified(span.clone(), t1.clone(), t2.clone())),
+        (t1, t2) => Err(TypeError::TypesCannotBeUnified(
+            span.clone(),
+            t1.clone(),
+            t2.clone(),
+        )),
     }
 }
 
@@ -396,6 +400,10 @@ fn intersect_types_branching<S: Clone + Eq + std::hash::Hash>(
         )),
         (Type::Box(_, t1), t2) => intersect_types(typedefs, span, t1, t2),
         (t1, Type::Box(_, t2)) => intersect_types(typedefs, span, t1, t2),
-        (t1, t2) => Err(TypeError::TypesCannotBeUnified(span.clone(), t1.clone(), t2.clone())),
+        (t1, t2) => Err(TypeError::TypesCannotBeUnified(
+            span.clone(),
+            t1.clone(),
+            t2.clone(),
+        )),
     }
 }
