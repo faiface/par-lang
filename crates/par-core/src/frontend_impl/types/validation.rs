@@ -25,8 +25,11 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
         let satisfies_at_least = |minimum| -> bool { constraint.is_broader_or_equal_than(minimum) };
 
         match self {
-            Type::Primitive(_, PrimitiveType::Nat | PrimitiveType::Int | PrimitiveType::Float) => {
+            Type::Primitive(_, PrimitiveType::Nat) => {
                 Ok(satisfies_at_least(TypeConstraint::Number))
+            }
+            Type::Primitive(_, PrimitiveType::Int | PrimitiveType::Float) => {
+                Ok(satisfies_at_least(TypeConstraint::Signed))
             }
             Type::Primitive(..) | Type::Break(_) | Type::Self_(..) | Type::DualSelf(..) => {
                 Ok(satisfies_at_least(TypeConstraint::Data))
@@ -40,7 +43,8 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
             Type::Name(_, name, args) => defs
                 .get(&self.span(), name, args)
                 .and_then(|typ| typ.satisfies_constraint(constraint, defs)),
-            Type::Box(..) => Ok(satisfies_at_least(TypeConstraint::Box)),
+            Type::Box(_, typ) => Ok(satisfies_at_least(TypeConstraint::Box)
+                || typ.satisfies_constraint(constraint, defs)?),
             Type::Pair(_, left, right, vars) => {
                 let minimum = if vars.is_empty() {
                     TypeConstraint::Data

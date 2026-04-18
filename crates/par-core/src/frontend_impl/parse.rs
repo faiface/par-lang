@@ -1101,6 +1101,7 @@ fn type_constraint(input: &mut Input) -> Result<TypeConstraint> {
     match name.string.as_str() {
         "data" => Ok(TypeConstraint::Data),
         "number" => Ok(TypeConstraint::Number),
+        "signed" => Ok(TypeConstraint::Signed),
         _ => Err(ErrMode::Backtrack(ParseContextError::from_input(input))),
     }
 }
@@ -3691,9 +3692,9 @@ def SendTypeData = (type Bool) .true! and .false!
 module Minimal
 
 dec Explicit : [type a: number, (a) !] !
-dec Implicit : <a: box>[a] a
+dec Implicit : <a: signed>[a] a
 def Explicit = [type a: number, p] !
-def Implicit = <a: box>[x] x
+def Implicit = <a: signed>[x] x
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
     }

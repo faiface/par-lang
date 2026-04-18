@@ -1,6 +1,6 @@
 use crate::frontend_impl::language::{GlobalName, LocalName, TypeConstraint, Universal};
 use crate::frontend_impl::types::{LoopId, Operation, Type};
-use crate::location::{Span, Spanning};
+use crate::location::Span;
 use crate::workspace::{FileImportScope, render_global_name_in_scope, render_type_in_scope};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 use std::fmt::Write;
@@ -41,7 +41,7 @@ pub enum TypeError<S> {
     RedundantBranch(Span, LocalName, Type<S>),
     MergeVariableMissing(Span, LocalName),
     MergeVariableTypesCannotBeUnified(Span, LocalName, Type<S>, Type<S>),
-    TypesCannotBeUnified(Type<S>, Type<S>),
+    TypesCannotBeUnified(Span, Type<S>, Type<S>),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] LoopId),
     CannotUnrollAscendantIterative(Span, #[allow(unused)] Option<LocalName>),
@@ -408,16 +408,10 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                     t2s
                 )
             }
-            Self::TypesCannotBeUnified(typ1, typ2) => {
+            Self::TypesCannotBeUnified(span, _typ1, _typ2) => {
                 miette::miette!(
-                    labels = two_labels_from_two_spans(
-                        code,
-                        &typ1.span(),
-                        &typ2.span(),
-                        "this".to_owned(),
-                        "should operate on the same type as this".to_owned()
-                    ),
-                    "Operations cannot be performed on the same type."
+                    labels = labels_from_span(code, span),
+                    "Types could not be unified here."
                 )
             }
             Self::NoSuchLoopPoint(span, _) => {
@@ -617,7 +611,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeError<S> {
             | Self::NonExhaustiveIf(span)
             | Self::CannotUnrollAscendantIterative(span, _) => (span.clone(), None),
 
-            Self::TypesCannotBeUnified(typ1, typ2) => (typ1.span(), Some(typ2.span())),
+            Self::TypesCannotBeUnified(span, _typ1, _typ2) => (span.clone(), None),
         }
     }
 }

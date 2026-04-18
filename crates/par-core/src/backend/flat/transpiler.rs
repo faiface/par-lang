@@ -50,7 +50,7 @@ impl Transpiled<Unlinked> {
             definition_to_package: self
                 .name_to_package
                 .iter()
-                .filter(|(k, v)| &k.module.package == root_package)
+                .filter(|(k, _)| &k.module.package == root_package)
                 .map(|(k, v)| {
                     let mut path = k.module.directories.clone();
                     path.push(k.module.module.clone());

@@ -113,6 +113,7 @@ fn union_types_atoms<S: Clone + Eq + std::hash::Hash>(
         (Type::Primitive(_, p1), Type::Primitive(_, p2)) if p1 == p2 => {
             let Some(p) = union_primitives::<S>(p1, p2) else {
                 return Err(TypeError::TypesCannotBeUnified(
+                    span.clone(),
                     type1.clone(),
                     type2.clone(),
                 ));
@@ -122,6 +123,7 @@ fn union_types_atoms<S: Clone + Eq + std::hash::Hash>(
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
             let Some(p) = intersect_primitives::<S>(p1, p2) else {
                 return Err(TypeError::TypesCannotBeUnified(
+                    span.clone(),
                     type1.clone(),
                     type2.clone(),
                 ));
@@ -224,7 +226,7 @@ fn union_types_branching<S: Clone + Eq + std::hash::Hash>(
         )),
         (Type::Box(_, t1), t2) => union_types(typedefs, span, t1, t2),
         (t1, Type::Box(_, t2)) => union_types(typedefs, span, t1, t2),
-        (t1, t2) => Err(TypeError::TypesCannotBeUnified(t1.clone(), t2.clone())),
+        (t1, t2) => Err(TypeError::TypesCannotBeUnified(span.clone(), t1.clone(), t2.clone())),
     }
 }
 
@@ -281,6 +283,7 @@ fn intersect_types_atoms<S: Clone + Eq + std::hash::Hash>(
         (Type::Primitive(_, p1), Type::Primitive(_, p2)) if p1 == p2 => {
             let Some(p) = intersect_primitives::<S>(p1, p2) else {
                 return Err(TypeError::TypesCannotBeUnified(
+                    span.clone(),
                     type1.clone(),
                     type2.clone(),
                 ));
@@ -290,6 +293,7 @@ fn intersect_types_atoms<S: Clone + Eq + std::hash::Hash>(
         (Type::DualPrimitive(_, p1), Type::DualPrimitive(_, p2)) if p1 == p2 => {
             let Some(p) = union_primitives::<S>(p1, p2) else {
                 return Err(TypeError::TypesCannotBeUnified(
+                    span.clone(),
                     type1.clone(),
                     type2.clone(),
                 ));
@@ -392,6 +396,6 @@ fn intersect_types_branching<S: Clone + Eq + std::hash::Hash>(
         )),
         (Type::Box(_, t1), t2) => intersect_types(typedefs, span, t1, t2),
         (t1, Type::Box(_, t2)) => intersect_types(typedefs, span, t1, t2),
-        (t1, t2) => Err(TypeError::TypesCannotBeUnified(t1.clone(), t2.clone())),
+        (t1, t2) => Err(TypeError::TypesCannotBeUnified(span.clone(), t1.clone(), t2.clone())),
     }
 }

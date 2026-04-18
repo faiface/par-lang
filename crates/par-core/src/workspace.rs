@@ -2805,6 +2805,26 @@ def Identity = [type a: number, x: a] x
     }
 
     #[test]
+    fn signed_inference_promotes_nat_lower_bounds_to_int() {
+        let source = "\
+module Main
+
+def SignedId : <a: signed>[a] a = <a: signed>[x] x
+def Result = SignedId(5)
+";
+        let checked = checked_workspace_from_source(source);
+        let file = checked.workspace().sources().keys().next().unwrap();
+        let (_name, (_definition, typ)) = checked
+            .checked_module()
+            .definitions
+            .iter()
+            .find(|(name, _)| name.primary == "Result")
+            .unwrap();
+
+        assert_eq!(checked.render_type_in_file(file, typ, 0), "Int");
+    }
+
+    #[test]
     fn empty_local_command_chain_reports_missing_variable() {
         let source = "\
 module Main

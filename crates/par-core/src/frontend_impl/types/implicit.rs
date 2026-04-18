@@ -1,4 +1,4 @@
-use crate::frontend_impl::language::{LocalName, TypeParameter};
+use crate::frontend_impl::language::{LocalName, TypeConstraint, TypeParameter};
 use crate::frontend_impl::types::core::Hole;
 use crate::frontend_impl::types::lattice::{intersect_types, union_types};
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError};
@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 fn solve_constraints<S: Clone + Eq + std::hash::Hash>(
     hole: &Hole<S>,
+    constraint: TypeConstraint,
     type_defs: &TypeDefs<S>,
     span: &Span,
 ) -> Result<Option<Type<S>>, TypeError<S>> {
@@ -20,8 +21,18 @@ fn solve_constraints<S: Clone + Eq + std::hash::Hash>(
     for typ in upper_bounds {
         upper = intersect_types(type_defs, span, &upper, &typ)?;
     }
-    if !Type::is_assignable_to(&lower, &upper, type_defs)? {
+    if !lower.is_assignable_to(&upper, type_defs)? {
         return Ok(None);
+    }
+
+    if matches!(constraint, TypeConstraint::Signed)
+        && lower.is_assignable_to(&Type::nat(), type_defs)?
+        && Type::nat().is_assignable_to(&lower, type_defs)?
+    {
+        let promoted = Type::int();
+        if promoted.is_assignable_to(&upper, type_defs)? {
+            return Ok(Some(promoted));
+        }
     }
 
     if let Type::Choice(_, branches) = &upper {
@@ -56,7 +67,7 @@ pub(crate) fn infer_holes<S: Clone + Eq + std::hash::Hash>(
             .substitute(BTreeMap::from([(&name.name, &hole_typ)]))?;
     }
 
-    if !Type::is_assignable_to(typ, &holed_pattern, type_defs)? {
+    if !typ.is_assignable_to(&holed_pattern, type_defs)? {
         return Err(TypeError::CannotAssignFromTo(
             span.clone(),
             typ.clone(),
@@ -68,7 +79,7 @@ pub(crate) fn infer_holes<S: Clone + Eq + std::hash::Hash>(
 
     for name in names {
         let hole = holes_map.get(&name.name).unwrap();
-        match solve_constraints(hole, type_defs, span)? {
+        match solve_constraints(hole, name.constraint, type_defs, span)? {
             Some(solved_type) => {
                 if !solved_type.satisfies_constraint(name.constraint, type_defs)? {
                     return Err(TypeError::TypeDoesNotSatisfyConstraint(

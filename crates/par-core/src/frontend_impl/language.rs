@@ -32,6 +32,7 @@ pub enum TypeConstraint {
     Box,
     Data,
     Number,
+    Signed,
 }
 
 impl TypeConstraint {
@@ -61,6 +62,7 @@ impl TypeConstraint {
             TypeConstraint::Box => 1,
             TypeConstraint::Data => 2,
             TypeConstraint::Number => 3,
+            TypeConstraint::Signed => 4,
         }
     }
 }
@@ -72,6 +74,7 @@ impl Display for TypeConstraint {
             TypeConstraint::Box => write!(f, "box"),
             TypeConstraint::Data => write!(f, "data"),
             TypeConstraint::Number => write!(f, "number"),
+            TypeConstraint::Signed => write!(f, "signed"),
         }
     }
 }
