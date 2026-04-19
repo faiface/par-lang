@@ -45,3 +45,56 @@ def TestComparisonOperators: [Test] ! = [test] do {
       (0) 0 < (0) 1 < (0) 2,
     )
 } in !
+
+def CompoundAssignNatInChan : [Nat] Nat = [value] chan out {
+  value += 3
+  out <> value
+}
+
+def CompoundAssignIntInChan : [Int] Int = [value] chan out {
+  value -= 7
+  out <> value
+}
+
+def CompoundAssignCaseBranch : [Nat] Nat = [value] chan out {
+  Nat.Compare(value, 5).case {
+    .less! => {
+      value += 1
+      out <> value
+    }
+    .equal! => {
+      value *= 2
+      out <> value
+    }
+    .greater! => {
+      value /= 2
+      out <> value
+    }
+  }
+}
+
+def TestProcessCompoundAssignments: [Test] ! = [test] do {
+  let natValue = 4
+  natValue += 3
+  natValue *= 2
+  natValue /= 7
+
+  let floatValue = 1.5
+  floatValue *= 4.0
+  floatValue /= 2.0
+
+  let chanNat = CompoundAssignNatInChan(2)
+  let chanInt = CompoundAssignIntInChan(5)
+  let caseLow = CompoundAssignCaseBranch(4)
+  let caseEqual = CompoundAssignCaseBranch(5)
+  let caseHigh = CompoundAssignCaseBranch(8)
+
+  test
+    .assert("Process += works in do blocks", Nat.Equals(natValue, 2))
+    .assert("Process *= and /= work in do blocks", Float.Equals(floatValue, 3.0, 0.0))
+    .assert("Process += works in chan blocks", Nat.Equals(chanNat, 5))
+    .assert("Process -= works in chan blocks", Int.Equals(chanInt, -2))
+    .assert("Process compound assignment works in case less branches", Nat.Equals(caseLow, 5))
+    .assert("Process compound assignment works in case equal branches", Nat.Equals(caseEqual, 10))
+    .assert("Process compound assignment works in case greater branches", Nat.Equals(caseHigh, 4))
+} in !

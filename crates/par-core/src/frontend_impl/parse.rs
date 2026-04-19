@@ -2910,6 +2910,7 @@ fn process(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
         proc_repoll,
         proc_submit,
         proc_let,
+        proc_compound_assign,
         proc_catch,
         proc_throw,
         global_command,
@@ -2940,6 +2941,51 @@ fn proc_let(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
                 pattern,
                 then,
                 value: Box::new(expression),
+            },
+        )
+    })
+    .parse_next(input)
+}
+
+fn compound_assign_operator(input: &mut Input) -> Result<(Span, ArithmeticOperator)> {
+    alt((
+        t(TokenKind::PlusEq).map(|token| (token.span(), ArithmeticOperator::Add)),
+        t(TokenKind::MinusEq).map(|token| (token.span(), ArithmeticOperator::Sub)),
+        t(TokenKind::StarEq).map(|token| (token.span(), ArithmeticOperator::Mul)),
+        t(TokenKind::SlashEq).map(|token| (token.span(), ArithmeticOperator::Div)),
+    ))
+    .parse_next(input)
+}
+
+fn proc_compound_assign(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
+    commit_after(
+        (local_name, compound_assign_operator),
+        (expression, opt(process)),
+    )
+    .map(|((name, (op_span, op)), (right, then_opt))| {
+        let left = Expression::Variable(name.span(), name.clone());
+        let value = Expression::Arithmetic {
+            span: left.span().join(right.span()),
+            op_span,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let span = name.span.join(value.span());
+        let (full_span, then) = match then_opt {
+            Some((then_full_span, then)) => (name.span.join(then_full_span), Box::new(then)),
+            None => (
+                span.clone(),
+                Box::new(Process::Fallthrough(value.span().only_end())),
+            ),
+        };
+        (
+            full_span,
+            Process::Let {
+                span,
+                pattern: Pattern::Name(name.span(), name, None),
+                value: Box::new(value),
+                then,
             },
         )
     })
@@ -3811,6 +3857,14 @@ mod test {
         match &parsed.body.definitions[0].body {
             DefinitionBody::Par(expr) => expr.clone(),
             DefinitionBody::External(_) => panic!("expected Par definition body"),
+        }
+    }
+
+    fn parse_single_definition_process(source: &str) -> Process<Unresolved> {
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+        match &parsed.body.definitions[0].body {
+            DefinitionBody::Par(Expression::Chan { process, .. }) => *process.clone(),
+            other => panic!("expected chan definition body, got {other:#?}"),
         }
     }
 

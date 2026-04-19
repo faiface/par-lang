@@ -22,6 +22,7 @@ pub enum TokenKind {
     GtEq,
 
     Slash,
+    SlashEq,
     At,
     Colon,
     Semicolon,
@@ -35,8 +36,11 @@ pub enum TokenKind {
     BangEq,
     Quest,
     Star,
+    StarEq,
     Plus,
+    PlusEq,
     Minus,
+    MinusEq,
     Link,
 
     Float,
@@ -148,6 +152,7 @@ impl TokenKind {
             TokenKind::GtEq => ">=",
 
             TokenKind::Slash => "/",
+            TokenKind::SlashEq => "/=",
             TokenKind::At => "@",
             TokenKind::Colon => ":",
             TokenKind::Semicolon => ";",
@@ -161,8 +166,11 @@ impl TokenKind {
             TokenKind::BangEq => "!=",
             TokenKind::Quest => "?",
             TokenKind::Star => "*",
+            TokenKind::StarEq => "*=",
             TokenKind::Plus => "+",
+            TokenKind::PlusEq => "+=",
             TokenKind::Minus => "-",
+            TokenKind::MinusEq => "-=",
             TokenKind::Link => "<>",
 
             TokenKind::Float => "float",
@@ -326,6 +334,9 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                     if let Some(rest) = source.strip_prefix("->") {
                         *input = rest;
                         Some(("->", TokenKind::ThinArrow, 2))
+                    } else if let Some(rest) = source.strip_prefix("-=") {
+                        *input = rest;
+                        Some(("-=", TokenKind::MinusEq, 2))
                     } else if let Some((raw, kind, len)) = scan_number_token(source) {
                         *input = &source[len..];
                         Some((raw, kind, len))
@@ -336,7 +347,10 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                 }
                 '0'..='9' | '+' => {
                     let source = *input;
-                    if let Some((raw, kind, len)) = scan_number_token(source) {
+                    if let Some(rest) = source.strip_prefix("+=") {
+                        *input = rest;
+                        Some(("+=", TokenKind::PlusEq, 2))
+                    } else if let Some((raw, kind, len)) = scan_number_token(source) {
                         *input = &source[len..];
                         Some((raw, kind, len))
                     } else {
@@ -486,6 +500,7 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                     let (comment_kind, raw) = alt((
                         line_comment().map(|raw| (Some(CommentKind::Line), raw)),
                         block_comment().map(|raw| (Some(CommentKind::Block), raw)),
+                        "/=".map(|raw| (None, raw)),
                         any.take().map(|x| (None, x)),
                     ))
                     .parse_next(input)?;
@@ -512,7 +527,12 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                         idx += raw.len();
                         None
                     } else {
-                        Some((raw, TokenKind::Slash, raw.len()))
+                        let kind = if raw == "/=" {
+                            TokenKind::SlashEq
+                        } else {
+                            TokenKind::Slash
+                        };
+                        Some((raw, kind, raw.len()))
                     }
                 }
                 '@' => {
@@ -549,8 +569,12 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                     Some((raw, TokenKind::Quest, raw.len()))
                 }
                 '*' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Star, raw.len()))
+                    let (raw, kind) = alt((
+                        "*=".map(|raw| (raw, TokenKind::StarEq)),
+                        "*".map(|raw| (raw, TokenKind::Star)),
+                    ))
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
                 }
                 _ => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
@@ -764,7 +788,10 @@ mod lexer_test {
 
     #[test]
     fn operator_tokens_coexist_with_attached_signed_literals() {
-        let tokens = lex("x-1 x+1 x - 1 x + 1 neg <= >= == !=", &FILE);
+        let tokens = lex(
+            "x-1 x+1 x - 1 x + 1 x += 1 y -= 2 z *= 3 w /= 4 neg <= >= == !=",
+            &FILE,
+        );
         assert_eq!(
             tokens.iter().map(|token| token.kind).collect::<Vec<_>>(),
             vec![
@@ -778,6 +805,18 @@ mod lexer_test {
                 TokenKind::LowercaseIdentifier,
                 TokenKind::Plus,
                 TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::PlusEq,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::MinusEq,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::StarEq,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::SlashEq,
+                TokenKind::Integer,
                 TokenKind::Neg,
                 TokenKind::LtEq,
                 TokenKind::GtEq,
@@ -788,7 +827,8 @@ mod lexer_test {
         assert_eq!(
             tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
             vec![
-                "x", "-1", "x", "+1", "x", "-", "1", "x", "+", "1", "neg", "<=", ">=", "==", "!=",
+                "x", "-1", "x", "+1", "x", "-", "1", "x", "+", "1", "x", "+=", "1", "y", "-=", "2",
+                "z", "*=", "3", "w", "/=", "4", "neg", "<=", ">=", "==", "!=",
             ]
         );
     }

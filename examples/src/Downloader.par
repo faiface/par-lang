@@ -100,7 +100,7 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
     .chunk(bytes) => {
       file.write(bytes).try@clearResp
 
-      let bytesSinceLastEvent = bytesSinceLastEvent + Bytes.Length(bytes)
+      bytesSinceLastEvent += Bytes.Length(bytes)
       if timeOfLastEvent + 100 <= Time.Now(!) => {
         yield.item((dest) .progressed bytesSinceLastEvent)
         let bytesSinceLastEvent = 0
@@ -213,19 +213,19 @@ def NewProgressTracker: ProgressTracker = do {
   } in case {
     .started(newExpected) => do {
       filesInProgress.put((startTime, newExpected, downloaded)!)
-      sumExpected->Int.Sub(expected)
-      sumExpected->Int.Add(newExpected)
+      sumExpected -= expected
+      sumExpected -= newExpected
     } in loop,
 
     .ended => do {
       filesInProgress.delete
-      sumExpected->Int.Sub(expected)
-      sumDownloaded->Int.Sub(downloaded)
+      sumExpected -= expected
+      sumDownloaded -= downloaded
     } in (startTime, downloaded) loop,
 
     .progressed(size) => do {
       filesInProgress.put((startTime, expected, downloaded + size)!)
-      sumDownloaded->Int.Add(size)
+      sumDownloaded += size
     } in loop,
   }
 }
