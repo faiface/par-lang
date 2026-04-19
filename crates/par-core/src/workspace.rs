@@ -3126,17 +3126,10 @@ def Main = Util.Run
     }
 
     #[test]
-<<<<<<< HEAD
-    fn tilde_local_dependency_import_works() {
-        let root = temp_package_root("tilde-dependency-root");
-        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME should be set for test"));
-        let helper = temp_package_root_in(&home, "tilde-helper");
-=======
     fn env_var_local_dependency_import_works() {
         let root = temp_package_root("env-dependency-root");
         let home = PathBuf::from(std::env::var_os("HOME").expect("HOME should be set for test"));
         let helper = temp_package_root_in(&home, "env-helper");
->>>>>>> main
 
         write_package(
             &helper,
@@ -3170,11 +3163,7 @@ def Run = !
 name = \"root\"
 
 [dependencies]
-<<<<<<< HEAD
-helper = \"~/{helper_suffix}\"
-=======
 helper = \"$HOME/{helper_suffix}\"
->>>>>>> main
 "
             ),
             &[(
