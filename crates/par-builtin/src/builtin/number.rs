@@ -54,6 +54,16 @@ inventory::submit!(ExternalDef {
     f: |handle| Box::pin(number_div(handle)),
 });
 
+inventory::submit!(ExternalDef {
+    path: DefinitionRef {
+        package: PackageRef::Special("core"),
+        path: &[],
+        module: "Number",
+        name: "Neg"
+    },
+    f: |handle| Box::pin(number_neg(handle)),
+});
+
 async fn number_zero(mut handle: Handle) {
     handle.receive().continue_();
     handle.provide_number(&Number::Zero);
@@ -136,6 +146,18 @@ async fn number_div(mut handle: Handle) {
         (Number::Float(x), Number::Zero) => Number::Float(x / 0.0),
         (Number::Float(x), Number::Float(y)) => Number::Float(x / y),
         _ => panic!("Invalid generic number combination"),
+    };
+
+    handle.provide_number(&result);
+}
+
+async fn number_neg(mut handle: Handle) {
+    let value = handle.receive_number().await;
+
+    let result = match value {
+        Number::Zero => Number::Zero,
+        Number::Int(value) => Number::Int(-value),
+        Number::Float(value) => Number::Float(-value),
     };
 
     handle.provide_number(&result);

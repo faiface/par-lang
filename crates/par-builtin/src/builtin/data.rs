@@ -29,8 +29,9 @@ async fn data_to_string(mut handle: Handle) {
 }
 
 async fn data_compare(mut handle: Handle) {
-    let left = handle.receive().data().await;
-    let right = handle.receive().data().await;
+    let mut pair = handle.receive();
+    let left = pair.receive_data().await;
+    let right = pair.data().await;
     match left.cmp(&right) {
         std::cmp::Ordering::Less => handle.signal(literal!("less")),
         std::cmp::Ordering::Equal => handle.signal(literal!("equal")),

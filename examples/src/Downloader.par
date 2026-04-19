@@ -51,7 +51,7 @@ def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
         next.loop
       }
 
-      if String.Equals(method, "POST") => {
+      if method == "POST" => {
         let try sourceUrl = catch e => .err e in
           String.ParserFromReader(body)
             .remainder.try
@@ -80,7 +80,7 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
   let headers = BoxMap.OfString(type Bytes, headers)
   catch@clearResp err => { body.close; throw err }
 
-  if not status->Nat.Equals(200) => {
+  if status != 200 => {
     throw@clearResp "Bad server response"
   }
 
@@ -100,8 +100,8 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
     .chunk(bytes) => {
       file.write(bytes).try@clearResp
 
-      bytesSinceLastEvent->Nat.Add(Bytes.Length(bytes))
-      if Time.Now(!)->Nat.Compare(timeOfLastEvent->Nat.Add(100)) is .greater! => {
+      let bytesSinceLastEvent = bytesSinceLastEvent + Bytes.Length(bytes)
+      if timeOfLastEvent + 100 <= Time.Now(!) => {
         yield.item((dest) .progressed bytesSinceLastEvent)
         let bytesSinceLastEvent = 0
         let timeOfLastEvent = Time.Now(!)
@@ -156,8 +156,8 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
 
         .finished! => {
           tracker.file(name).ended[startTime, downloadedSize]
-          let duration = Time.Now(!)->Int.Sub(startTime)
-          let speed = downloadedSize->Int.Mul(1000)->Int.Div(duration)
+          let duration = Time.Now(!) - startTime
+          let speed = downloadedSize * 1000 / duration
           stdout.write(String.Concat(*(
             "\nFinished downloading ", name, "\n",
             "    Size:  ", downloadedSize->Int.ToString, " B\n",
@@ -224,7 +224,7 @@ def NewProgressTracker: ProgressTracker = do {
     } in (startTime, downloaded) loop,
 
     .progressed(size) => do {
-      filesInProgress.put((startTime, expected, downloaded->Nat.Add(size))!)
+      filesInProgress.put((startTime, expected, downloaded + size)!)
       sumDownloaded->Int.Add(size)
     } in loop,
   }

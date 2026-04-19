@@ -1,0 +1,47 @@
+module InfixOperators
+
+import {
+  @core/Float
+  @core/Int
+  @core/Nat
+  @core/Test
+}
+
+def TestArithmeticOperators: [Test] ! = [test] do {
+  let natSum = 2 + 3
+  let intDiff = 5 - 3
+  let floatProduct = 1.5 * 2.0
+  let natQuotient = 8 / 2
+  let negated = neg 5
+  let precedence = 1 + 2 * 3
+  let grouped = {1 + 2} * 3
+  let negatedProduct = neg 2 * 3
+
+  test
+    .assert("Infix + works on numbers", Nat.Equals(natSum, 5))
+    .assert("Infix - works on signed numbers", Int.Equals(intDiff, 2))
+    .assert("Infix * works on numbers", Float.Equals(floatProduct, 3.0, 0.0))
+    .assert("Infix / works on numbers", Nat.Equals(natQuotient, 4))
+    .assert("Prefix neg works on signed numbers", Int.Equals(negated, -5))
+    .assert("Multiplication binds tighter than addition", Nat.Equals(precedence, 7))
+    .assert("Grouping still overrides precedence", Nat.Equals(grouped, 9))
+    .assert("neg binds tighter than multiplication", Int.Equals(negatedProduct, -6))
+} in !
+
+def TestComparisonOperators: [Test] ! = [test] do {
+  let pairLeft: (Nat) Nat = (0) 0
+  let pairRight: (Nat) Nat = (0) 2
+
+  test
+    .assert("Infix < works on data", 1 < 2)
+    .assert("Infix > works on data", 2 > 1)
+    .assert("Infix <= works on data", 2 <= 2)
+    .assert("Infix >= works on data", 2 >= 2)
+    .assert("Infix == works on data", pairLeft == (0) 0)
+    .assert("Infix != works on data", pairLeft != pairRight)
+    .assert("Comparison chains work on primitive data", 1 < 2 < 3)
+    .assert(
+      "Comparison chains work with non-primitive middle operands",
+      (0) 0 < (0) 1 < (0) 2,
+    )
+} in !

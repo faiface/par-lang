@@ -1,8 +1,9 @@
 use super::{
     language::{
-        Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Condition,
-        Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
-        TypeConstraint, TypeParameter, Unresolved,
+        Apply, ApplyBranch, ApplyBranches, ArithmeticOperator, Command, CommandBranch,
+        CommandBranches, ComparisonOperator, ComparisonStep, Condition, Construct, ConstructBranch,
+        ConstructBranches, Expression, GlobalName, Pattern, Process, TypeConstraint, TypeParameter,
+        Unresolved,
     },
     lexer::{Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments},
 };
@@ -142,8 +143,9 @@ fn lowercase_identifier(input: &mut Input) -> Result<(Span, String)> {
     alt((
         literal(TokenKind::LowercaseIdentifier),
         literal(TokenKind::And),
-        literal(TokenKind::Or),
+        literal(TokenKind::Neg),
         literal(TokenKind::Not),
+        literal(TokenKind::Or),
     ))
     .context(StrContext::Expected(StrContextValue::CharLiteral('_')))
     .context(StrContext::Expected(StrContextValue::Description(
@@ -183,14 +185,14 @@ fn global_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
                 }
                 None => (first_span, None, first),
             };
-            GlobalName::new(span, Unresolved { qualifier: module }, primary)
+            GlobalName::new(span, Unresolved::Path { qualifier: module }, primary)
         })
         .parse_next(input)
 }
 
 fn global_binding_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
     uppercase_identifier
-        .map(|(span, primary)| GlobalName::new(span, Unresolved { qualifier: None }, primary))
+        .map(|(span, primary)| GlobalName::new(span, Unresolved::Path { qualifier: None }, primary))
         .parse_next(input)
 }
 
@@ -1421,87 +1423,7 @@ fn pattern_default(input: &mut Input) -> Result<Pattern<Unresolved>> {
 }
 
 fn condition(input: &mut Input) -> Result<Condition<Unresolved>> {
-    condition_or(input)
-}
-
-fn condition_or(input: &mut Input) -> Result<Condition<Unresolved>> {
-    (
-        condition_and,
-        repeat(0.., (t(TokenKind::Or), condition_and)),
-    )
-        .map(
-            |(first, rest): (Condition<Unresolved>, Vec<(_, Condition<Unresolved>)>)| {
-                rest.into_iter().fold(first, |left, (_or_tok, right)| {
-                    let span = left.span().join(right.span());
-                    Condition::Or(span, Box::new(left), Box::new(right))
-                })
-            },
-        )
-        .parse_next(input)
-}
-
-fn condition_and(input: &mut Input) -> Result<Condition<Unresolved>> {
-    (
-        condition_not,
-        repeat(0.., (t(TokenKind::And), condition_not)),
-    )
-        .map(
-            |(first, rest): (Condition<Unresolved>, Vec<(_, Condition<Unresolved>)>)| {
-                rest.into_iter().fold(first, |left, (_and_tok, right)| {
-                    let span = left.span().join(right.span());
-                    Condition::And(span, Box::new(left), Box::new(right))
-                })
-            },
-        )
-        .parse_next(input)
-}
-
-fn condition_not(input: &mut Input) -> Result<Condition<Unresolved>> {
-    alt((
-        (t(TokenKind::Not), cut_err(condition_not))
-            .map(|(not_tok, cond)| Condition::Not(not_tok.span.join(cond.span()), Box::new(cond))),
-        condition_primary,
-    ))
-    .parse_next(input)
-}
-
-fn condition_primary(input: &mut Input) -> Result<Condition<Unresolved>> {
-    alt((condition_grouped, condition_is, condition_bool)).parse_next(input)
-}
-
-fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
-    commit_after(t(TokenKind::LCurly), (expression, t(TokenKind::RCurly)))
-        .map(|(_open, (expr, _close))| match expr {
-            Expression::Condition(_, cond) => *cond,
-            other => Condition::Bool(other.span(), Box::new(other)),
-        })
-        .parse_next(input)
-}
-
-fn condition_bool(input: &mut Input) -> Result<Condition<Unresolved>> {
-    data_expression
-        .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
-        .parse_next(input)
-}
-
-fn condition_is(input: &mut Input) -> Result<Condition<Unresolved>> {
-    (
-        data_expression,
-        t(TokenKind::Is),
-        t(TokenKind::Dot),
-        local_name,
-        condition_payload_pattern,
-    )
-        .map(|(value, _is_tok, _, variant, pattern)| {
-            let end_span = pattern.span();
-            Condition::Is {
-                span: value.span().join(end_span),
-                value,
-                variant,
-                pattern,
-            }
-        })
-        .parse_next(input)
+    infix_or(input).map(expression_to_condition)
 }
 
 fn condition_payload_pattern(input: &mut Input) -> Result<Pattern<Unresolved>> {
@@ -1525,39 +1447,342 @@ fn pattern_payload_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     .parse_next(input)
 }
 
-fn looks_like_condition(input: &Input) -> bool {
+fn expression_to_condition(expr: Expression<Unresolved>) -> Condition<Unresolved> {
+    match expr {
+        Expression::Condition(_, cond) => *cond,
+        other => Condition::Bool(other.span(), Box::new(other)),
+    }
+}
+
+fn wrap_condition_expression(condition: Condition<Unresolved>) -> Expression<Unresolved> {
+    let span = condition.span();
+    Expression::Condition(span, Box::new(condition))
+}
+
+fn fold_condition_expression(
+    left: Expression<Unresolved>,
+    right: Expression<Unresolved>,
+    build: impl FnOnce(Span, Condition<Unresolved>, Condition<Unresolved>) -> Condition<Unresolved>,
+) -> Expression<Unresolved> {
+    let left_span = left.span();
+    let right_span = right.span();
+    wrap_condition_expression(build(
+        left_span.join(right_span.clone()),
+        expression_to_condition(left),
+        expression_to_condition(right),
+    ))
+}
+
+fn comparison_operator(input: &mut Input) -> Result<(Span, ComparisonOperator)> {
+    alt((
+        t(TokenKind::LtEq).map(|token| (token.span(), ComparisonOperator::LessOrEqual)),
+        t(TokenKind::GtEq).map(|token| (token.span(), ComparisonOperator::GreaterOrEqual)),
+        t(TokenKind::EqEq).map(|token| (token.span(), ComparisonOperator::Equal)),
+        t(TokenKind::BangEq).map(|token| (token.span(), ComparisonOperator::NotEqual)),
+        t(TokenKind::Lt).map(|token| (token.span(), ComparisonOperator::Less)),
+        t(TokenKind::Gt).map(|token| (token.span(), ComparisonOperator::Greater)),
+    ))
+    .parse_next(input)
+}
+
+fn additive_operator(input: &mut Input) -> Result<(Span, ArithmeticOperator)> {
+    alt((
+        t(TokenKind::Plus).map(|token| (token.span(), ArithmeticOperator::Add)),
+        t(TokenKind::Minus).map(|token| (token.span(), ArithmeticOperator::Sub)),
+    ))
+    .parse_next(input)
+}
+
+fn multiplicative_operator(input: &mut Input) -> Result<(Span, ArithmeticOperator)> {
+    alt((
+        t(TokenKind::Star).map(|token| (token.span(), ArithmeticOperator::Mul)),
+        t(TokenKind::Slash).map(|token| (token.span(), ArithmeticOperator::Div)),
+    ))
+    .parse_next(input)
+}
+
+fn infix_or(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (infix_and, repeat(0.., (t(TokenKind::Or), infix_and)))
+        .map(
+            |(first, rest): (Expression<Unresolved>, Vec<(_, Expression<Unresolved>)>)| {
+                rest.into_iter().fold(first, |left, (_or_tok, right)| {
+                    fold_condition_expression(left, right, |span, left, right| {
+                        Condition::Or(span, Box::new(left), Box::new(right))
+                    })
+                })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_and(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (infix_not, repeat(0.., (t(TokenKind::And), infix_not)))
+        .map(
+            |(first, rest): (Expression<Unresolved>, Vec<(_, Expression<Unresolved>)>)| {
+                rest.into_iter().fold(first, |left, (_and_tok, right)| {
+                    fold_condition_expression(left, right, |span, left, right| {
+                        Condition::And(span, Box::new(left), Box::new(right))
+                    })
+                })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_not(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((
+        (t(TokenKind::Not), infix_not).map(|(not_tok, expr)| {
+            wrap_condition_expression(Condition::Not(
+                not_tok.span.join(expr.span()),
+                Box::new(expression_to_condition(expr)),
+            ))
+        }),
+        infix_is,
+    ))
+    .parse_next(input)
+}
+
+fn infix_is(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        condition_bool,
+        opt((
+            t(TokenKind::Is),
+            t(TokenKind::Dot),
+            local_name,
+            condition_payload_pattern,
+        )),
+    )
+        .map(|(value, suffix)| match suffix {
+            Some((_is_tok, _, variant, pattern)) => {
+                let end_span = pattern.span();
+                wrap_condition_expression(Condition::Is {
+                    span: value.span().join(end_span),
+                    value,
+                    variant,
+                    pattern,
+                })
+            }
+            None => value,
+        })
+        .parse_next(input)
+}
+
+fn condition_bool(input: &mut Input) -> Result<Expression<Unresolved>> {
+    infix_comparison(input)
+}
+
+fn infix_comparison(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        infix_additive,
+        repeat(0.., (comparison_operator, infix_additive)),
+    )
+        .map(
+            |(first, rest): (
+                Expression<Unresolved>,
+                Vec<((Span, ComparisonOperator), Expression<Unresolved>)>,
+            )| {
+                if rest.is_empty() {
+                    first
+                } else {
+                    let span = first.span().join(rest.last().unwrap().1.span());
+                    Expression::ComparisonChain {
+                        span,
+                        first: Box::new(first),
+                        rest: rest
+                            .into_iter()
+                            .map(|((op_span, op), expr)| ComparisonStep { op_span, op, expr })
+                            .collect(),
+                    }
+                }
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_additive(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        infix_multiplicative,
+        repeat(0.., (additive_operator, infix_multiplicative)),
+    )
+        .map(
+            |(first, rest): (
+                Expression<Unresolved>,
+                Vec<((Span, ArithmeticOperator), Expression<Unresolved>)>,
+            )| {
+                rest.into_iter()
+                    .fold(first, |left, ((op_span, op), right)| {
+                        let span = left.span().join(right.span());
+                        Expression::Arithmetic {
+                            span,
+                            op_span,
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        }
+                    })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_multiplicative(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        infix_unary,
+        repeat(0.., (multiplicative_operator, infix_unary)),
+    )
+        .map(
+            |(first, rest): (
+                Expression<Unresolved>,
+                Vec<((Span, ArithmeticOperator), Expression<Unresolved>)>,
+            )| {
+                rest.into_iter()
+                    .fold(first, |left, ((op_span, op), right)| {
+                        let span = left.span().join(right.span());
+                        Expression::Arithmetic {
+                            span,
+                            op_span,
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        }
+                    })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_unary(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((
+        (t(TokenKind::Neg), infix_unary).map(|(neg_tok, expr)| Expression::Neg {
+            span: neg_tok.span.join(expr.span()),
+            op_span: neg_tok.span(),
+            expr: Box::new(expr),
+        }),
+        data_expression,
+    ))
+    .parse_next(input)
+}
+
+fn starts_data_expression_token(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Float
+            | TokenKind::Integer
+            | TokenKind::String
+            | TokenKind::LParen
+            | TokenKind::LCurly
+            | TokenKind::LBrack
+            | TokenKind::Dot
+            | TokenKind::Bang
+            | TokenKind::LowercaseIdentifier
+            | TokenKind::UppercaseIdentifier
+            | TokenKind::And
+            | TokenKind::Or
+            | TokenKind::Not
+            | TokenKind::Neg
+    )
+}
+
+fn ends_data_expression_token(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Float
+            | TokenKind::Integer
+            | TokenKind::String
+            | TokenKind::RParen
+            | TokenKind::RCurly
+            | TokenKind::RBrack
+            | TokenKind::Bang
+            | TokenKind::LowercaseIdentifier
+            | TokenKind::UppercaseIdentifier
+            | TokenKind::And
+            | TokenKind::Or
+            | TokenKind::Not
+            | TokenKind::Neg
+    )
+}
+
+fn starts_condition_token(kind: TokenKind) -> bool {
+    matches!(kind, TokenKind::Not) || starts_data_expression_token(kind)
+}
+
+fn looks_like_infix(input: &Input) -> bool {
+    let tokens = input.iter().collect::<Vec<_>>();
     let mut depth = 0usize;
-    for token in input.iter() {
+
+    for (index, token) in tokens.iter().enumerate() {
         match token.kind {
             TokenKind::LParen | TokenKind::LCurly | TokenKind::LBrack => {
                 depth += 1;
+                continue;
             }
             TokenKind::RParen | TokenKind::RCurly | TokenKind::RBrack => {
                 if depth == 0 {
                     return false;
                 }
                 depth -= 1;
+                continue;
             }
-            TokenKind::Comma | TokenKind::FatArrow => {
-                if depth == 0 {
-                    return false;
-                }
+            TokenKind::Comma | TokenKind::FatArrow if depth == 0 => {
+                return false;
             }
-            TokenKind::Is | TokenKind::And | TokenKind::Or | TokenKind::Not => {
-                if depth == 0 {
-                    return true;
-                }
+            TokenKind::Dec
+            | TokenKind::Def
+            | TokenKind::Type
+            | TokenKind::Module
+            | TokenKind::Import
+            | TokenKind::Export
+                if depth == 0 && index > 0 =>
+            {
+                return false;
             }
             _ => {}
         }
+
+        if depth != 0 {
+            continue;
+        }
+
+        let prev = index.checked_sub(1).map(|i| tokens[i].kind);
+        let next = tokens.get(index + 1).map(|token| token.kind);
+        let is_infix = match token.kind {
+            TokenKind::Or | TokenKind::And => {
+                prev.is_some_and(ends_data_expression_token)
+                    && next.is_some_and(starts_condition_token)
+            }
+            TokenKind::Not => next.is_some_and(starts_condition_token),
+            TokenKind::Is => {
+                prev.is_some_and(ends_data_expression_token) && matches!(next, Some(TokenKind::Dot))
+            }
+            TokenKind::Lt
+            | TokenKind::Gt
+            | TokenKind::LtEq
+            | TokenKind::GtEq
+            | TokenKind::EqEq
+            | TokenKind::BangEq
+            | TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::Star
+            | TokenKind::Slash => {
+                prev.is_some_and(ends_data_expression_token)
+                    && next.is_some_and(starts_data_expression_token)
+            }
+            TokenKind::Neg => next.is_some_and(starts_data_expression_token),
+            _ => false,
+        };
+
+        if is_infix {
+            return true;
+        }
     }
+
     false
 }
 
 fn expression(input: &mut Input) -> Result<Expression<Unresolved>> {
-    if looks_like_condition(input) {
+    if looks_like_infix(input) {
         let checkpoint = input.checkpoint();
-        match expr_condition.parse_next(input) {
+        match expr_infix.parse_next(input) {
             Ok(expr) => return Ok(expr),
             Err(ErrMode::Backtrack(_)) => {
                 input.reset(&checkpoint);
@@ -1571,9 +1796,9 @@ fn expression(input: &mut Input) -> Result<Expression<Unresolved>> {
 }
 
 fn expression_without_construction(input: &mut Input) -> Result<Expression<Unresolved>> {
-    if looks_like_condition(input) {
+    if looks_like_infix(input) {
         let checkpoint = input.checkpoint();
-        match expr_condition.parse_next(input) {
+        match expr_infix.parse_next(input) {
             Ok(expr) => return Ok(expr),
             Err(ErrMode::Backtrack(_)) => {
                 input.reset(&checkpoint);
@@ -1637,14 +1862,8 @@ fn expr_grouped(input: &mut Input) -> Result<Expression<Unresolved>> {
         .parse_next(input)
 }
 
-fn expr_condition(input: &mut Input) -> Result<Expression<Unresolved>> {
-    let cond = condition.parse_next(input)?;
-    if matches!(cond, Condition::Bool(_, _)) {
-        Err(ErrMode::Backtrack(ParseContextError::from_input(input)))
-    } else {
-        let span = cond.span();
-        Ok(Expression::Condition(span, Box::new(cond)))
-    }
+fn expr_infix(input: &mut Input) -> Result<Expression<Unresolved>> {
+    infix_or(input)
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
@@ -3587,6 +3806,14 @@ fn label(input: &mut Input) -> Result<Option<LocalName>> {
 mod test {
     use super::*;
 
+    fn parse_single_definition_expression(source: &str) -> Expression<Unresolved> {
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+        match &parsed.body.definitions[0].body {
+            DefinitionBody::Par(expr) => expr.clone(),
+            DefinitionBody::External(_) => panic!("expected Par definition body"),
+        }
+    }
+
     #[test]
     fn test_parse_examples() {
         let input = include_str!(concat!(
@@ -3646,6 +3873,203 @@ module Minimal
 def BoolAnd = .true! and .false!
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_infix_operator_precedence() {
+        let expr = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = 1 + 2 * 3
+",
+        );
+
+        match expr {
+            Expression::Arithmetic {
+                op: ArithmeticOperator::Add,
+                left,
+                right,
+                ..
+            } => {
+                assert!(matches!(*left, Expression::Primitive(_, Primitive::Int(_))));
+                assert!(matches!(
+                    *right,
+                    Expression::Arithmetic {
+                        op: ArithmeticOperator::Mul,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_comparison_chains_and_grouping() {
+        let chained = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = a < b < c
+",
+        );
+        match chained {
+            Expression::ComparisonChain { first, rest, .. } => {
+                assert!(matches!(
+                    *first,
+                    Expression::Variable(_, LocalName { ref string, .. }) if string.as_str() == "a"
+                ));
+                assert_eq!(rest.len(), 2);
+                assert_eq!(rest[0].op, ComparisonOperator::Less);
+                assert_eq!(rest[1].op, ComparisonOperator::Less);
+                assert!(matches!(
+                    rest[0].expr,
+                    Expression::Variable(_, LocalName { ref string, .. }) if string.as_str() == "b"
+                ));
+                assert!(matches!(
+                    rest[1].expr,
+                    Expression::Variable(_, LocalName { ref string, .. }) if string.as_str() == "c"
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+
+        let grouped = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = {a < b} < c
+",
+        );
+        match grouped {
+            Expression::ComparisonChain { first, rest, .. } => {
+                assert_eq!(rest.len(), 1);
+                assert!(matches!(
+                    *first,
+                    Expression::Grouped(_, inner)
+                        if matches!(*inner, Expression::ComparisonChain { .. })
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_not_and_neg_as_identifiers() {
+        let source = "\
+module Main
+
+def UseNot = let not = 1 in not
+def UseNeg = let neg = 2 in neg
+";
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+        assert!(matches!(
+            &parsed.body.definitions[0].body,
+            DefinitionBody::Par(Expression::Let {
+                pattern: Pattern::Name(_, LocalName { string, .. }, _),
+                then,
+                ..
+            })
+                if string.as_str() == "not"
+                    && matches!(
+                        **then,
+                        Expression::Variable(_, LocalName { ref string, .. })
+                            if string.as_str() == "not"
+                    )
+        ));
+        assert!(matches!(
+            &parsed.body.definitions[1].body,
+            DefinitionBody::Par(Expression::Let {
+                pattern: Pattern::Name(_, LocalName { string, .. }, _),
+                then,
+                ..
+            })
+                if string.as_str() == "neg"
+                    && matches!(
+                        **then,
+                        Expression::Variable(_, LocalName { ref string, .. })
+                            if string.as_str() == "neg"
+                    )
+        ));
+    }
+
+    #[test]
+    fn test_parse_send_prefix_followed_by_box_case() {
+        let source = "\
+module Main
+
+def Value = [type a, eq] (type List<box a>) box case {
+  .empty => .end!,
+}
+";
+        assert!(parse_module(source, "main.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_send_prefix_followed_by_loop() {
+        let source = "\
+module Main
+
+def Value = [x] (x) loop
+";
+        assert!(parse_module(source, "main.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_deduplicate_example() {
+        let input = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/src/Deduplicate.par"
+        ));
+        assert!(parse_module(input, "Deduplicate.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_sieve_test_module() {
+        let input = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/src/Sieve.par"
+        ));
+        assert!(parse_module(input, "Sieve.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_box_case_with_multiple_branches() {
+        let source = "\
+module Main
+
+def Value = [type a, eq] (type List<box a>) box case {
+  .empty => .end!,
+  .insert(x, set) => .item(x) set,
+  .contains(y, set) => set.begin.case {
+    .end! => .false!,
+    .item(x) xs => eq(x, y).case {
+      .true! => .true!,
+      .false! => xs.loop,
+    },
+  },
+}
+";
+        assert!(parse_module(source, "main.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_deduplicate_final_box_receive_call() {
+        let source = "\
+module Deduplicate
+
+import {
+  @core/Int
+}
+
+def IntListSet = ListSet(type Int, box Int.Equals)
+
+def TestDedup =
+  Deduplicate(type Int, IntListSet)
+    (Map(type Int, type Int, box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
+";
+        assert!(parse_module(source, "Deduplicate.par".into()).is_ok());
     }
 
     #[test]

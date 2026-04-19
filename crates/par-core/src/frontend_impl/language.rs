@@ -114,9 +114,16 @@ impl Spanning for TypeParameter {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BuiltinOperatorModule {
+    Data,
+    Number,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Unresolved {
-    pub qualifier: Option<String>,
+pub enum Unresolved {
+    Path { qualifier: Option<String> },
+    BuiltinOperator(BuiltinOperatorModule),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -126,10 +133,13 @@ pub enum ResolvedPackageRef {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Resolved {
-    pub package: ResolvedPackageRef,
-    pub directories: Vec<String>,
-    pub module: String,
+pub enum Resolved {
+    Path {
+        package: ResolvedPackageRef,
+        directories: Vec<String>,
+        module: String,
+    },
+    BuiltinOperator(BuiltinOperatorModule),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -157,11 +167,19 @@ impl GlobalName<Unresolved> {
     pub fn external(module: Option<&'static str>, primary: &'static str) -> Self {
         Self::new(
             Default::default(),
-            Unresolved {
+            Unresolved::Path {
                 qualifier: module.map(String::from),
             },
             String::from(primary),
         )
+    }
+
+    pub fn builtin_operator(
+        span: Span,
+        module: BuiltinOperatorModule,
+        primary: impl Into<String>,
+    ) -> Self {
+        Self::new(span, Unresolved::BuiltinOperator(module), primary.into())
     }
 }
 
@@ -284,6 +302,31 @@ pub enum Condition<S> {
     Not(Span, Box<Self>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArithmeticOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComparisonOperator {
+    Less,
+    Greater,
+    LessOrEqual,
+    GreaterOrEqual,
+    Equal,
+    NotEqual,
+}
+
+#[derive(Clone, Debug)]
+pub struct ComparisonStep<S> {
+    pub op_span: Span,
+    pub op: ComparisonOperator,
+    pub expr: Expression<S>,
+}
+
 impl<S> Condition<S> {
     pub fn span(&self) -> Span {
         match self {
@@ -359,6 +402,23 @@ pub enum Expression<S> {
         span: Span,
         pattern: Pattern<S>,
         process: Box<Process<S>>,
+    },
+    Arithmetic {
+        span: Span,
+        op_span: Span,
+        op: ArithmeticOperator,
+        left: Box<Self>,
+        right: Box<Self>,
+    },
+    Neg {
+        span: Span,
+        op_span: Span,
+        expr: Box<Self>,
+    },
+    ComparisonChain {
+        span: Span,
+        first: Box<Self>,
+        rest: Vec<ComparisonStep<S>>,
     },
     Construction(Span, Construct<S>),
     Application(Span, Box<Self>, Apply<S>),
@@ -550,21 +610,28 @@ impl Display for LocalName {
 
 impl Display for Resolved {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let package = match &self.package {
-            ResolvedPackageRef::Local => None,
-            ResolvedPackageRef::Dependency(name) => Some(format!("@{name}")),
-        };
-        match (&package, self.directories.is_empty()) {
-            (None, true) => write!(f, "{}", self.module),
-            (None, false) => write!(f, "{}/{}", self.directories.join("/"), self.module),
-            (Some(package), true) => write!(f, "{package}/{}", self.module),
-            (Some(package), false) => {
-                write!(
-                    f,
-                    "{package}/{}/{}",
-                    self.directories.join("/"),
-                    self.module
-                )
+        match self {
+            Resolved::Path {
+                package,
+                directories,
+                module,
+            } => {
+                let package = match package {
+                    ResolvedPackageRef::Local => None,
+                    ResolvedPackageRef::Dependency(name) => Some(format!("@{name}")),
+                };
+                match (&package, directories.is_empty()) {
+                    (None, true) => write!(f, "{module}"),
+                    (None, false) => write!(f, "{}/{}", directories.join("/"), module),
+                    (Some(package), true) => write!(f, "{package}/{module}"),
+                    (Some(package), false) => {
+                        write!(f, "{package}/{}/{}", directories.join("/"), module)
+                    }
+                }
+            }
+            Resolved::BuiltinOperator(BuiltinOperatorModule::Data) => write!(f, "<builtin-data>"),
+            Resolved::BuiltinOperator(BuiltinOperatorModule::Number) => {
+                write!(f, "<builtin-number>")
             }
         }
     }
@@ -572,9 +639,17 @@ impl Display for Resolved {
 
 impl Display for Unresolved {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.qualifier {
-            Some(qualifier) => write!(f, "{}", qualifier),
-            None => Ok(()),
+        match self {
+            Unresolved::Path { qualifier } => match qualifier {
+                Some(qualifier) => write!(f, "{qualifier}"),
+                None => Ok(()),
+            },
+            Unresolved::BuiltinOperator(BuiltinOperatorModule::Data) => {
+                write!(f, "<builtin-data>")
+            }
+            Unresolved::BuiltinOperator(BuiltinOperatorModule::Number) => {
+                write!(f, "<builtin-number>")
+            }
         }
     }
 }
@@ -787,6 +862,216 @@ impl Context {
 
     fn get_poll_index(&mut self) -> usize {
         self.passes.get_poll_index()
+    }
+
+    fn fresh_infix_temp(&mut self, span: Span) -> LocalName {
+        LocalName {
+            span,
+            string: arcstr::format!("#infix{}", self.get_block_index()),
+        }
+    }
+
+    fn operator_global(
+        span: &Span,
+        module: BuiltinOperatorModule,
+        primary: &'static str,
+    ) -> Expression<Unresolved> {
+        Expression::Global(
+            span.clone(),
+            GlobalName::builtin_operator(span.clone(), module, primary),
+        )
+    }
+
+    fn operator_local_name(span: &Span, name: &'static str) -> LocalName {
+        LocalName {
+            span: span.clone(),
+            string: ArcStr::from(name),
+        }
+    }
+
+    fn expression_to_condition(expr: Expression<Unresolved>) -> Condition<Unresolved> {
+        match expr {
+            Expression::Condition(_, condition) => *condition,
+            other => {
+                let span = other.span();
+                Condition::Bool(span, Box::new(other))
+            }
+        }
+    }
+
+    fn wrap_condition_expression(condition: Condition<Unresolved>) -> Expression<Unresolved> {
+        let span = condition.span();
+        Expression::Condition(span, Box::new(condition))
+    }
+
+    fn apply_expression(
+        span: &Span,
+        function: Expression<Unresolved>,
+        argument: Expression<Unresolved>,
+    ) -> Expression<Unresolved> {
+        Expression::Application(
+            span.clone(),
+            Box::new(function),
+            Apply::Send(
+                span.clone(),
+                Box::new(argument),
+                Box::new(Apply::Noop(span.clone())),
+            ),
+        )
+    }
+
+    fn pair_expression(
+        span: &Span,
+        left: Expression<Unresolved>,
+        right: Expression<Unresolved>,
+    ) -> Expression<Unresolved> {
+        Expression::Construction(
+            span.clone(),
+            Construct::Send(
+                span.clone(),
+                Box::new(left),
+                Box::new(Construct::Then(Box::new(right))),
+            ),
+        )
+    }
+
+    fn and_expression(
+        left: Expression<Unresolved>,
+        right: Expression<Unresolved>,
+    ) -> Expression<Unresolved> {
+        let left_span = left.span();
+        let right_span = right.span();
+        Self::wrap_condition_expression(Condition::And(
+            left_span.join(right_span),
+            Box::new(Self::expression_to_condition(left)),
+            Box::new(Self::expression_to_condition(right)),
+        ))
+    }
+
+    fn desugar_neg_expression(
+        op_span: &Span,
+        expr: Expression<Unresolved>,
+    ) -> Expression<Unresolved> {
+        Self::apply_expression(
+            op_span,
+            Self::operator_global(op_span, BuiltinOperatorModule::Number, "Neg"),
+            expr,
+        )
+    }
+
+    fn desugar_arithmetic_expression(
+        op_span: &Span,
+        op: ArithmeticOperator,
+        left: Expression<Unresolved>,
+        right: Expression<Unresolved>,
+    ) -> Expression<Unresolved> {
+        let builtin = match op {
+            ArithmeticOperator::Add => "Add",
+            ArithmeticOperator::Sub => "Sub",
+            ArithmeticOperator::Mul => "Mul",
+            ArithmeticOperator::Div => "Div",
+        };
+        Self::apply_expression(
+            op_span,
+            Self::operator_global(op_span, BuiltinOperatorModule::Number, builtin),
+            Self::pair_expression(op_span, left, right),
+        )
+    }
+
+    fn desugar_comparison_expression(
+        op_span: &Span,
+        op: ComparisonOperator,
+        left: Expression<Unresolved>,
+        right: Expression<Unresolved>,
+    ) -> Expression<Unresolved> {
+        let (variant, negate) = match op {
+            ComparisonOperator::Less => ("less", false),
+            ComparisonOperator::Greater => ("greater", false),
+            ComparisonOperator::LessOrEqual => ("greater", true),
+            ComparisonOperator::GreaterOrEqual => ("less", true),
+            ComparisonOperator::Equal => ("equal", false),
+            ComparisonOperator::NotEqual => ("equal", true),
+        };
+
+        let compare = Self::apply_expression(
+            op_span,
+            Self::operator_global(op_span, BuiltinOperatorModule::Data, "Compare"),
+            Self::pair_expression(op_span, left, right),
+        );
+        let condition = Condition::Is {
+            span: op_span.clone(),
+            value: compare,
+            variant: Self::operator_local_name(op_span, variant),
+            pattern: Pattern::Continue(op_span.clone()),
+        };
+
+        if negate {
+            Self::wrap_condition_expression(Condition::Not(op_span.clone(), Box::new(condition)))
+        } else {
+            Self::wrap_condition_expression(condition)
+        }
+    }
+
+    fn desugar_comparison_chain_expression(
+        &mut self,
+        first: Expression<Unresolved>,
+        rest: &[ComparisonStep<Unresolved>],
+    ) -> Expression<Unresolved> {
+        match rest {
+            [] => first,
+            [step] => Self::desugar_comparison_expression(
+                &step.op_span,
+                step.op,
+                first,
+                step.expr.clone(),
+            ),
+            _ => {
+                let temporaries = rest
+                    .iter()
+                    .take(rest.len() - 1)
+                    .map(|step| {
+                        let span = step.expr.span();
+                        (self.fresh_infix_temp(span), step.expr.clone())
+                    })
+                    .collect::<Vec<_>>();
+
+                let mut left = first;
+                let mut comparisons = Vec::with_capacity(rest.len());
+
+                for (index, step) in rest.iter().enumerate() {
+                    let right = if let Some((name, _binding)) = temporaries.get(index) {
+                        Expression::Variable(name.span.clone(), name.clone())
+                    } else {
+                        step.expr.clone()
+                    };
+                    let next_left = right.clone();
+                    comparisons.push(Self::desugar_comparison_expression(
+                        &step.op_span,
+                        step.op,
+                        left,
+                        right,
+                    ));
+                    left = next_left;
+                }
+
+                let mut combined = comparisons
+                    .into_iter()
+                    .reduce(Self::and_expression)
+                    .expect("comparison chains always contain at least one comparison");
+
+                for (name, binding) in temporaries.into_iter().rev() {
+                    let binding_span = binding.span();
+                    combined = Expression::Let {
+                        span: binding_span.join(combined.span()),
+                        pattern: Pattern::Name(binding_span.clone(), name, None),
+                        expression: Box::new(binding),
+                        then: Box::new(combined),
+                    };
+                }
+
+                combined
+            }
+        }
     }
 
     fn without_fallthrough(
@@ -1563,6 +1848,33 @@ impl Context {
                     expr_type: (),
                     process,
                 })
+            }
+
+            Expression::Arithmetic {
+                op_span,
+                op,
+                left,
+                right,
+                ..
+            } => {
+                let desugared = Self::desugar_arithmetic_expression(
+                    op_span,
+                    *op,
+                    left.as_ref().clone(),
+                    right.as_ref().clone(),
+                );
+                self.compile_expression(&desugared)?
+            }
+
+            Expression::Neg { op_span, expr, .. } => {
+                let desugared = Self::desugar_neg_expression(op_span, expr.as_ref().clone());
+                self.compile_expression(&desugared)?
+            }
+
+            Expression::ComparisonChain { first, rest, .. } => {
+                let desugared =
+                    self.desugar_comparison_chain_expression(first.as_ref().clone(), rest);
+                self.compile_expression(&desugared)?
             }
 
             Expression::Grouped(_, expression) => self.compile_expression(expression)?,
@@ -3075,6 +3387,9 @@ impl<S> Spanning for Expression<S> {
             | Self::Do { span, .. }
             | Self::Box(span, _)
             | Self::Chan { span, .. }
+            | Self::Arithmetic { span, .. }
+            | Self::Neg { span, .. }
+            | Self::ComparisonChain { span, .. }
             | Self::Application(span, _, _)
             | Self::Construction(span, _) => span.clone(),
         }

@@ -155,36 +155,36 @@ impl Handle {
     }
 
     pub async fn int(self) -> BigInt {
-        let primitive = self.handle.primitive().await.unwrap();
-        let Primitive::Int(value) = primitive else {
-            panic!(
-                "Unexpected primitive in Handle! Expected Int, got {:?}",
-                primitive
-            )
-        };
-        value
+        match self.number().await {
+            Number::Zero => BigInt::ZERO,
+            Number::Int(value) => value,
+            number => panic!(
+                "Unexpected number in Handle! Expected Int, got {:?}",
+                number
+            ),
+        }
     }
 
     pub async fn float(self) -> f64 {
-        let primitive = self.handle.primitive().await.unwrap();
-        let Primitive::Float(value) = primitive else {
-            panic!(
-                "Unexpected primitive in Handle! Expected Float, got {:?}",
-                primitive
-            )
-        };
-        value
+        match self.number().await {
+            Number::Zero => 0.0,
+            Number::Float(value) => value,
+            number => panic!(
+                "Unexpected number in Handle! Expected Float, got {:?}",
+                number
+            ),
+        }
     }
 
     pub async fn nat(self) -> BigInt {
-        let primitive = self.handle.primitive().await.unwrap();
-        let Primitive::Int(value) = primitive else {
-            panic!(
-                "Unexpected primitive in Handle! Expected Int, got {:?}",
-                primitive
-            )
-        };
-        value
+        match self.number().await {
+            Number::Zero => BigInt::ZERO,
+            Number::Int(value) if value >= BigInt::ZERO => value,
+            number => panic!(
+                "Unexpected number in Handle! Expected Int, got {:?}",
+                number
+            ),
+        }
     }
 
     pub async fn number(self) -> Number {

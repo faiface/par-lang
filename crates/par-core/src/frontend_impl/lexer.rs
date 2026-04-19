@@ -18,6 +18,8 @@ pub enum TokenKind {
     RBrack,
     Lt,
     Gt,
+    LtEq,
+    GtEq,
 
     Slash,
     At,
@@ -26,11 +28,15 @@ pub enum TokenKind {
     Comma,
     Dot,
     Eq,
+    EqEq,
     FatArrow,
     ThinArrow,
     Bang,
+    BangEq,
     Quest,
     Star,
+    Plus,
+    Minus,
     Link,
 
     Float,
@@ -64,6 +70,7 @@ pub enum TokenKind {
     And,
     As,
     Module,
+    Neg,
     Or,
     Not,
     Loop,
@@ -137,6 +144,8 @@ impl TokenKind {
             TokenKind::RBrack => "]",
             TokenKind::Lt => "<",
             TokenKind::Gt => ">",
+            TokenKind::LtEq => "<=",
+            TokenKind::GtEq => ">=",
 
             TokenKind::Slash => "/",
             TokenKind::At => "@",
@@ -145,11 +154,15 @@ impl TokenKind {
             TokenKind::Comma => ",",
             TokenKind::Dot => ".",
             TokenKind::Eq => "=",
+            TokenKind::EqEq => "==",
             TokenKind::FatArrow => "=>",
             TokenKind::ThinArrow => "->",
             TokenKind::Bang => "!",
+            TokenKind::BangEq => "!=",
             TokenKind::Quest => "?",
             TokenKind::Star => "*",
+            TokenKind::Plus => "+",
+            TokenKind::Minus => "-",
             TokenKind::Link => "<>",
 
             TokenKind::Float => "float",
@@ -183,6 +196,7 @@ impl TokenKind {
             TokenKind::And => "and",
             TokenKind::As => "as",
             TokenKind::Module => "module",
+            TokenKind::Neg => "neg",
             TokenKind::Or => "or",
             TokenKind::Not => "not",
             TokenKind::Loop => "loop",
@@ -317,7 +331,7 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                         Some((raw, kind, len))
                     } else {
                         let raw = any::<&str, Error>.take().parse_next(input)?;
-                        Some((raw, TokenKind::Unknown, raw.len()))
+                        Some((raw, TokenKind::Minus, raw.len()))
                     }
                 }
                 '0'..='9' | '+' => {
@@ -327,7 +341,7 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                         Some((raw, kind, len))
                     } else {
                         let raw = any::<&str, Error>.take().parse_next(input)?;
-                        Some((raw, TokenKind::Unknown, raw.len()))
+                        Some((raw, TokenKind::Plus, raw.len()))
                     }
                 }
                 '"' => {
@@ -382,6 +396,7 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                         "and" => TokenKind::And,
                         "as" => TokenKind::As,
                         "module" => TokenKind::Module,
+                        "neg" => TokenKind::Neg,
                         "or" => TokenKind::Or,
                         "not" => TokenKind::Not,
                         "loop" => TokenKind::Loop,
@@ -453,14 +468,19 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                 '<' => {
                     let (raw, kind) = alt((
                         "<>".map(|raw| (raw, TokenKind::Link)),
+                        "<=".map(|raw| (raw, TokenKind::LtEq)),
                         "<".map(|raw| (raw, TokenKind::Lt)),
                     ))
                     .parse_next(input)?;
                     Some((raw, kind, raw.len()))
                 }
                 '>' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Gt, raw.len()))
+                    let (raw, kind) = alt((
+                        ">=".map(|raw| (raw, TokenKind::GtEq)),
+                        ">".map(|raw| (raw, TokenKind::Gt)),
+                    ))
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
                 }
                 '/' => {
                     let (comment_kind, raw) = alt((
@@ -510,14 +530,19 @@ pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s
                 '=' => {
                     let (raw, kind) = alt((
                         ("=>").map(|raw| (raw, TokenKind::FatArrow)),
+                        ("==").map(|raw| (raw, TokenKind::EqEq)),
                         ("=").map(|raw| (raw, TokenKind::Eq)),
                     ))
                     .parse_next(input)?;
                     Some((raw, kind, raw.len()))
                 }
                 '!' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Bang, raw.len()))
+                    let (raw, kind) = alt((
+                        ("!=").map(|raw| (raw, TokenKind::BangEq)),
+                        ("!").map(|raw| (raw, TokenKind::Bang)),
+                    ))
+                    .parse_next(input)?;
+                    Some((raw, kind, raw.len()))
                 }
                 '?' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
@@ -734,6 +759,37 @@ mod lexer_test {
         assert_eq!(
             tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
             vec!["1.0", "-0.5", "+3.25", "1_000.25", "6.02e23", "1.0e-6"]
+        );
+    }
+
+    #[test]
+    fn operator_tokens_coexist_with_attached_signed_literals() {
+        let tokens = lex("x-1 x+1 x - 1 x + 1 neg <= >= == !=", &FILE);
+        assert_eq!(
+            tokens.iter().map(|token| token.kind).collect::<Vec<_>>(),
+            vec![
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Minus,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Plus,
+                TokenKind::Integer,
+                TokenKind::Neg,
+                TokenKind::LtEq,
+                TokenKind::GtEq,
+                TokenKind::EqEq,
+                TokenKind::BangEq,
+            ]
+        );
+        assert_eq!(
+            tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
+            vec![
+                "x", "-1", "x", "+1", "x", "-", "1", "x", "+", "1", "neg", "<=", ">=", "==", "!=",
+            ]
         );
     }
 }

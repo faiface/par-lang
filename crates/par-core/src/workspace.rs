@@ -1,8 +1,8 @@
 use crate::frontend::lower;
 use crate::frontend::parse_source_file;
 use crate::frontend_impl::language::{
-    CompileError, GlobalName, PackageId, Resolved, ResolvedPackageRef, TypeParameter, Universal,
-    Unresolved,
+    BuiltinOperatorModule, CompileError, GlobalName, PackageId, Resolved, ResolvedPackageRef,
+    TypeParameter, Universal, Unresolved,
 };
 use crate::frontend_impl::parse::SyntaxError;
 use crate::frontend_impl::process;
@@ -1844,10 +1844,10 @@ fn build_file_import_aliases(
     module_lookup: &BTreeMap<AbsoluteModuleLookupKey, ModulePath>,
 ) -> Result<BTreeMap<String, Resolved>, WorkspaceError> {
     let mut aliases = BTreeMap::new();
-    aliases.insert(
-        current_module_path.module.clone(),
-        current_module_path.clone(),
-    );
+    let Resolved::Path { module, .. } = current_module_path else {
+        unreachable!("current module path should always be a real module path")
+    };
+    aliases.insert(module.clone(), current_module_path.clone());
 
     for import in &file.source_file.imports {
         let imported_module = resolve_imported_module(
@@ -1860,7 +1860,12 @@ fn build_file_import_aliases(
         let alias = import
             .alias
             .clone()
-            .unwrap_or_else(|| imported_module.module.clone());
+            .unwrap_or_else(|| match &imported_module {
+                Resolved::Path { module, .. } => module.clone(),
+                Resolved::BuiltinOperator(_) => {
+                    unreachable!("imports should not resolve to builtin operator modules")
+                }
+            });
 
         match aliases.entry(alias.clone()) {
             Entry::Vacant(vacant) => {
@@ -1917,25 +1922,43 @@ fn universalize_module_path(
     dependencies: &BTreeMap<String, PackageId>,
     file_source: Arc<str>,
 ) -> Result<Universal, WorkspaceError> {
-    let package = match &module.package {
-        ResolvedPackageRef::Local => current_package.clone(),
-        ResolvedPackageRef::Dependency(alias) => {
-            let Some(package_id) = dependencies.get(alias).cloned() else {
-                return Err(WorkspaceError::UnknownDependency {
-                    source: file_source,
-                    span: Span::None,
-                    dependency: alias.clone(),
-                });
+    match module {
+        Resolved::Path {
+            package,
+            directories,
+            module,
+        } => {
+            let package = match package {
+                ResolvedPackageRef::Local => current_package.clone(),
+                ResolvedPackageRef::Dependency(alias) => {
+                    let Some(package_id) = dependencies.get(alias).cloned() else {
+                        return Err(WorkspaceError::UnknownDependency {
+                            source: file_source,
+                            span: Span::None,
+                            dependency: alias.clone(),
+                        });
+                    };
+                    package_id
+                }
             };
-            package_id
-        }
-    };
 
-    Ok(Universal {
-        package,
-        directories: module.directories.clone(),
-        module: module.module.clone(),
-    })
+            Ok(Universal {
+                package,
+                directories: directories.clone(),
+                module: module.clone(),
+            })
+        }
+        Resolved::BuiltinOperator(BuiltinOperatorModule::Data) => Ok(Universal {
+            package: PackageId::Special(arcstr::literal!("core")),
+            directories: vec![],
+            module: String::from("Data"),
+        }),
+        Resolved::BuiltinOperator(BuiltinOperatorModule::Number) => Ok(Universal {
+            package: PackageId::Special(arcstr::literal!("core")),
+            directories: vec![],
+            module: String::from("Number"),
+        }),
+    }
 }
 
 fn imported_aliases(
@@ -1943,7 +1966,9 @@ fn imported_aliases(
     current_module_path: &Resolved,
 ) -> BTreeSet<String> {
     let mut imported = aliases.keys().cloned().collect::<BTreeSet<_>>();
-    imported.remove(&current_module_path.module);
+    if let Resolved::Path { module, .. } = current_module_path {
+        imported.remove(module);
+    }
     imported
 }
 
@@ -2026,7 +2051,7 @@ fn resolve_imported_module(
                 import_path: format_import_path(&import.path),
             })?;
 
-    Ok(Resolved {
+    Ok(Resolved::Path {
         package: resolved_package,
         directories: canonical.directories.clone(),
         module: canonical.module.clone(),
@@ -2083,7 +2108,19 @@ fn resolve_name_to_resolved(
     current_module_path: &Resolved,
     file_source: Arc<str>,
 ) -> Result<GlobalName<Resolved>, WorkspaceError> {
-    if let Some(module_qualifier) = name.module.qualifier.take() {
+    if let Unresolved::BuiltinOperator(module) = name.module {
+        return Ok(GlobalName::new(
+            name.span,
+            Resolved::BuiltinOperator(module),
+            name.primary,
+        ));
+    }
+
+    let Unresolved::Path { qualifier } = &mut name.module else {
+        unreachable!("builtin operator case should have returned above")
+    };
+
+    if let Some(module_qualifier) = qualifier.take() {
         let Some(target_module) = imports.get(module_qualifier.as_str()) else {
             return Err(WorkspaceError::UnknownModuleQualifier {
                 source: file_source,
@@ -2110,7 +2147,11 @@ fn resolve_name_to_resolved(
     }
 
     let (module, primary) = if let Some(target_module) = imports.get(&name.primary) {
-        (target_module.clone(), target_module.module.clone())
+        let primary = match target_module {
+            Resolved::Path { module, .. } => module.clone(),
+            Resolved::BuiltinOperator(_) => name.primary.clone(),
+        };
+        (target_module.clone(), primary)
     } else {
         (current_module_path.clone(), name.primary)
     };
@@ -2123,29 +2164,45 @@ fn resolve_name_to_universal(
     dependencies: &BTreeMap<String, PackageId>,
     file_source: Arc<str>,
 ) -> Result<GlobalName<Universal>, WorkspaceError> {
-    let package = match &name.module.package {
-        ResolvedPackageRef::Local => current_package.clone(),
-        ResolvedPackageRef::Dependency(alias) => {
-            let Some(package_id) = dependencies.get(alias).cloned() else {
-                return Err(WorkspaceError::UnknownDependency {
-                    source: file_source,
-                    span: name.span.clone(),
-                    dependency: alias.clone(),
-                });
+    let module = match name.module {
+        Resolved::Path {
+            package,
+            directories,
+            module,
+        } => {
+            let package = match package {
+                ResolvedPackageRef::Local => current_package.clone(),
+                ResolvedPackageRef::Dependency(alias) => {
+                    let Some(package_id) = dependencies.get(&alias).cloned() else {
+                        return Err(WorkspaceError::UnknownDependency {
+                            source: file_source,
+                            span: name.span.clone(),
+                            dependency: alias.clone(),
+                        });
+                    };
+                    package_id
+                }
             };
-            package_id
+
+            Universal {
+                package,
+                directories,
+                module,
+            }
         }
+        Resolved::BuiltinOperator(BuiltinOperatorModule::Data) => Universal {
+            package: PackageId::Special(arcstr::literal!("core")),
+            directories: vec![],
+            module: String::from("Data"),
+        },
+        Resolved::BuiltinOperator(BuiltinOperatorModule::Number) => Universal {
+            package: PackageId::Special(arcstr::literal!("core")),
+            directories: vec![],
+            module: String::from("Number"),
+        },
     };
 
-    Ok(GlobalName::new(
-        name.span,
-        Universal {
-            package,
-            directories: name.module.directories,
-            module: name.module.module,
-        },
-        name.primary,
-    ))
+    Ok(GlobalName::new(name.span, module, name.primary))
 }
 
 fn module_lookup_key(
@@ -2161,7 +2218,7 @@ fn module_lookup_key(
 }
 
 fn resolved_module_path(local: &ModulePath, package: ResolvedPackageRef) -> Resolved {
-    Resolved {
+    Resolved::Path {
         package,
         directories: local.directories.clone(),
         module: local.module.clone(),

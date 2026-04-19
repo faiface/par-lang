@@ -10,6 +10,8 @@ export {
   dec Mul : <a: number>[(a) a] a
 
   dec Div : <a: number>[(a) a] a
+
+  dec Neg : <a: signed>[a] a
 }
 
 dec Zero_ : [type a: number, !] a
@@ -25,3 +27,5 @@ def Sub = external
 def Mul = external
 
 def Div = external
+
+def Neg = external

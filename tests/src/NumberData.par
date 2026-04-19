@@ -38,25 +38,26 @@ def TestGenericNumberOperations: [Test] ! = [test] do {
   let signedDiff = Number.Sub((5) 3)
   let floatProduct = Number.Mul((1.5) 2.0)
   let intSumWithZero = Number.Add((Number.Zero(type Int)) 3)
+  let intNegated = Number.Neg(5)
 
   test
     .assert("Number.Add keeps nat arithmetic", Nat.Equals(natSum, 5))
     .assert("Number.Sub infers signed ints", Int.Equals(signedDiff, 2))
     .assert("Number.Mul keeps float arithmetic", Float.Equals(floatProduct, 3.0, 0.0))
     .assert("Number.Add handles the Zero variant", Int.Equals(intSumWithZero, 3))
+    .assert("Number.Neg negates signed inputs", Int.Equals(intNegated, -5))
 } in !
 
 def TestDataGenericFunctions: [Test] ! = [test]
   let pairData: (Nat) Bool = (1) .true! in
-  let trueData: Bool = .true! in
-  let rightData: (Nat) Nat = (1) 2 in
+  let rightData: (Nat) Bool = (2) .false! in
   let rendered = Data.ToString(pairData) in
-  let ordering = Data.Compare(trueData)(rightData) in
+  let ordering = Data.Compare((pairData) rightData) in
   do {
     test
       .assert(
         "Data.ToString renders nested data",
-        String.Equals(rendered, "(1) .true!"),
+        String.Equals(rendered, "(1) .true !"),
       )
-      .assert("Data.Compare orders either before pair", IsLess(ordering))
+      .assert("Data.Compare compares paired same-type data", IsLess(ordering))
   } in !
