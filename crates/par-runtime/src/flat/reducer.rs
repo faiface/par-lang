@@ -84,7 +84,11 @@ impl Reducer {
                         tx.send(msg).unwrap();
                     }
                     Err(mpsc::error::TryRecvError::Empty) => {
-                        unreachable!("All senders should have been dropped!")
+                        if self.inbox.is_closed() {
+                            break;
+                        } else {
+                            unreachable!("All senders should have been dropped!")
+                        }
                     }
                     Err(mpsc::error::TryRecvError::Disconnected) => {
                         // it's guaranteed there will never be another message
