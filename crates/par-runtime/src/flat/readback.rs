@@ -180,6 +180,15 @@ impl Handle {
     }
 
     pub fn receive(&mut self) -> Self {
+        let node = self.node.take().unwrap();
+        match self.linker.destruct(node) {
+            Ok(value) => {
+                let Value::Pair(a, b) = value else {unreachable!()};
+                self.node = Some(a);
+                return self.new(b);
+            }
+            Err(node) => {self.node = Some(node)}
+        }
         let (left, left_h) = linked_pair();
         let (right, right_h) = linked_pair();
         let times = core::mem::replace(&mut self.node, Some(left_h));
@@ -293,9 +302,17 @@ impl Handle {
 
     async fn destruct(&mut self) -> Value<Node<Linked>, Linked> {
         let node: Node<Linked> = std::mem::take(&mut self.node).unwrap();
-        let (tx, rx) = oneshot::channel();
-        self.linker.link(Node::Linear(Linear::Request(tx)), node);
-        rx.await.unwrap()
+        let node = self.linker.deref(node);
+        match self.linker.destruct(node) {
+            Ok(value) => {
+                return value;
+            },
+            Err(node) => {
+                let (tx, rx) = oneshot::channel();
+                self.linker.link(Node::Linear(Linear::Request(tx)), node);
+                rx.await.unwrap()
+            }
+        }
     }
 
     fn data_node(&self, data: &Data) -> Node<Linked> {

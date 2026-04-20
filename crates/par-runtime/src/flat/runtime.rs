@@ -348,6 +348,52 @@ pub(crate) trait Linker {
         }
     }
 
+    fn deref(&mut self, node: Node<Linked>) -> Node<Linked> {
+        let arena = self.arena();
+        let mut node = node;
+        loop {
+            match node {
+                Node::Global(instance, index) => {
+                    let global = arena.get(index);
+                    match global {
+                        Global::Variable(i) => {
+                            let mut lock = instance.vars.0.lock().unwrap();
+                            let slot = lock.get_mut(*i).unwrap().take();
+                            drop(lock);
+                            match slot {
+                                None => {
+                                    return Node::Global(instance, index);
+                                },
+                                Some(node2) => {
+                                    node = node2;
+                                }
+                            }
+                        },
+                        _ => {
+                            return Node::Global(instance, index);
+                        }
+                    }
+                },
+                Node::Linear(Linear::Variable(mutex)) => {
+                    let mut lock = mutex.lock().unwrap();
+                    let slot = lock.take();
+                    drop(lock);
+                    match slot {
+                        None => {
+                            return Node::Linear(Linear::Variable(mutex));
+                        },
+                        Some(node2) => {
+                            node = node2;
+                        }
+                    }
+                },
+                node => {
+                    return node;
+                }
+            }
+        }
+    }
+
     // Package-related methods
     fn create_package_instance(&mut self, package: &Package<Linked>) -> Instance {
         let num_vars = package.num_vars;

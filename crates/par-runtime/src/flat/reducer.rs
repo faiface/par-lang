@@ -28,14 +28,7 @@ impl Clone for NetHandle {
             self.2.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
             self.2.clone(),
         );
-        new.0.send(ReducerMessage::Created(new.1)).unwrap();
         new
-    }
-}
-
-impl Drop for NetHandle {
-    fn drop(&mut self) {
-        let _ = self.0.send(ReducerMessage::Dropped(self.1));
     }
 }
 

@@ -1,6 +1,7 @@
 //package: core
 use arcstr::literal;
 use num_bigint::BigInt;
+use par_runtime::data::Data;
 use std::cmp::Ordering;
 
 use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
@@ -240,12 +241,15 @@ async fn nat_equals(mut handle: Handle) {
 async fn nat_compare(mut handle: Handle) {
     let x = handle.receive().nat().await;
     let y = handle.receive().nat().await;
+    
     match x.cmp(&y) {
-        Ordering::Less => handle.signal(literal!("less")),
-        Ordering::Equal => handle.signal(literal!("equal")),
-        Ordering::Greater => handle.signal(literal!("greater")),
+        Ordering::Less => handle.provide_data(
+            &Data::Either(literal!("less"), Box::new(Data::Unit))),
+        Ordering::Equal => handle.provide_data(
+            &Data::Either(literal!("equal"), Box::new(Data::Unit))),
+        Ordering::Greater => handle.provide_data(
+            &Data::Either(literal!("greater"), Box::new(Data::Unit))),
     };
-    handle.break_();
 }
 
 async fn nat_repeat(mut handle: Handle) {
