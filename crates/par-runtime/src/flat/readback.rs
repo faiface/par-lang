@@ -183,11 +183,13 @@ impl Handle {
         let node = self.node.take().unwrap();
         match self.linker.destruct(node) {
             Ok(value) => {
-                let Value::Pair(a, b) = value else {unreachable!()};
+                let Value::Pair(a, b) = value else {
+                    unreachable!()
+                };
                 self.node = Some(a);
                 return self.new(b);
             }
-            Err(node) => {self.node = Some(node)}
+            Err(node) => self.node = Some(node),
         }
         let (left, left_h) = linked_pair();
         let (right, right_h) = linked_pair();
@@ -306,7 +308,7 @@ impl Handle {
         match self.linker.destruct(node) {
             Ok(value) => {
                 return value;
-            },
+            }
             Err(node) => {
                 let (tx, rx) = oneshot::channel();
                 self.linker.link(Node::Linear(Linear::Request(tx)), node);

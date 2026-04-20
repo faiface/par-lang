@@ -363,17 +363,17 @@ pub(crate) trait Linker {
                             match slot {
                                 None => {
                                     return Node::Global(instance, index);
-                                },
+                                }
                                 Some(node2) => {
                                     node = node2;
                                 }
                             }
-                        },
+                        }
                         _ => {
                             return Node::Global(instance, index);
                         }
                     }
-                },
+                }
                 Node::Linear(Linear::Variable(mutex)) => {
                     let mut lock = mutex.lock().unwrap();
                     let slot = lock.take();
@@ -381,12 +381,12 @@ pub(crate) trait Linker {
                     match slot {
                         None => {
                             return Node::Linear(Linear::Variable(mutex));
-                        },
+                        }
                         Some(node2) => {
                             node = node2;
                         }
                     }
-                },
+                }
                 node => {
                     return node;
                 }
