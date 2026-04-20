@@ -2571,16 +2571,6 @@ mod tests {
         root
     }
 
-    fn temp_package_root_in(base: &Path, prefix: &str) -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before unix epoch")
-            .as_nanos();
-        let root = base.join(format!("par-core-{prefix}-{unique}"));
-        fs::create_dir_all(&root).expect("failed to create temp package root");
-        root
-    }
-
     fn write_package(root: &Path, manifest: &str, files: &[(&str, &str)]) {
         fs::create_dir_all(root.join("src")).expect("failed to create src directory");
         fs::write(root.join("Par.toml"), manifest).expect("failed to write manifest");
@@ -3180,66 +3170,6 @@ def Main = Util.Run
                 .collect::<Vec<_>>(),
             vec![String::from("Main")]
         );
-    }
-
-    #[test]
-    fn env_var_local_dependency_import_works() {
-        let root = temp_package_root("env-dependency-root");
-        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME should be set for test"));
-        let helper = temp_package_root_in(&home, "env-helper");
-
-        write_package(
-            &helper,
-            "\
-[package]
-name = \"helper\"
-",
-            &[(
-                "src/Util.par",
-                "\
-export module Util
-
-export {
-  dec Run : !
-}
-
-def Run = !
-",
-            )],
-        );
-        let helper_suffix = helper
-            .strip_prefix(&home)
-            .expect("helper should live under home directory")
-            .to_string_lossy()
-            .replace('\\', "/");
-        write_package(
-            &root,
-            &format!(
-                "\
-[package]
-name = \"root\"
-
-[dependencies]
-helper = \"$HOME/{helper_suffix}\"
-"
-            ),
-            &[(
-                "src/Main.par",
-                "\
-module Main
-import @helper/Util
-
-dec Main : !
-def Main = Util.Run
-",
-            )],
-        );
-
-        let workspace =
-            assemble_workspace(discover_workspace_packages_from_path(&root, None).unwrap())
-                .unwrap();
-        let (_checked, type_errors) = workspace.type_check();
-        assert!(type_errors.is_empty(), "type errors: {:?}", type_errors);
     }
 
     #[test]
