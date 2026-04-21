@@ -41,13 +41,15 @@ use crate::linker::Linked;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot::Sender;
+use atomicbox::AtomicOptionBox;
+use std::sync::atomic::Ordering::AcqRel;
 
 pub type PackagePtr<Ext> = Index<Ext, OnceLock<Package<Ext>>>;
 pub(crate) type GlobalPtr<Ext> = Index<Ext, Global<Ext>>;
 type Str<Ext> = Index<Ext, str>;
 
 #[derive(Debug)]
-struct InstanceInner(Mutex<Box<[Option<Node<Linked>>]>>);
+struct InstanceInner(Box<[AtomicOptionBox<Node<Linked>>]>);
 
 #[derive(Clone, Debug)]
 /// An `Instance` stores the state associated to an instance of a Global node.
@@ -306,7 +308,7 @@ pub enum SharedHole<Ext: Clone> {
 }
 pub struct Runtime {
     pub arena: Arc<Arena<Linked>>,
-    pub redexes: Vec<(Node<Linked>, Node<Linked>)>,
+    pub redexes: Vec<(Box<Node<Linked>>, Box<Node<Linked>>)>,
     pub rewrites: Rewrites,
 }
 
@@ -314,7 +316,7 @@ pub struct Runtime {
 /// and that holds a pointer to the arena. This prevents duplication between [`Runtime`] and
 /// [`Handle`], which are the two implementors of this trait.
 pub(crate) trait Linker {
-    fn link(&mut self, a: Node<Linked>, b: Node<Linked>);
+    fn link(&mut self, a: Box<Node<Linked>>, b: Box<Node<Linked>>);
     fn arena(&self) -> Arc<Arena<Linked>>;
 
     fn show<'a, 'b>(&'b self, node: &'a Node<Linked>) -> String {
@@ -357,15 +359,13 @@ pub(crate) trait Linker {
                     let global = arena.get(index);
                     match global {
                         Global::Variable(i) => {
-                            let mut lock = instance.vars.0.lock().unwrap();
-                            let slot = lock.get_mut(*i).unwrap().take();
-                            drop(lock);
+                            let slot = instance.vars.0.get(*i).unwrap().take(AcqRel);
                             match slot {
                                 None => {
                                     return Node::Global(instance, index);
                                 }
                                 Some(node2) => {
-                                    node = node2;
+                                    node = *node2;
                                 }
                             }
                         }
@@ -399,10 +399,10 @@ pub(crate) trait Linker {
         let num_vars = package.num_vars;
         let mut vars = Vec::with_capacity(num_vars);
         for _ in 0..num_vars {
-            vars.push(None);
+            vars.push(AtomicOptionBox::none());
         }
         Instance {
-            vars: Arc::new(InstanceInner(Mutex::new(vars.into_boxed_slice()))),
+            vars: Arc::new(InstanceInner(vars.into_boxed_slice())),
         }
     }
 
@@ -413,8 +413,8 @@ pub(crate) trait Linker {
     ) -> (Node<Linked>, Node<Linked>) {
         self.arena().get(body.redexes).iter().for_each(|(a, b)| {
             self.link(
-                Node::Global(instance.clone(), *a),
-                Node::Global(instance.clone(), *b),
+                Box::new(Node::Global(instance.clone(), *a)),
+                Box::new(Node::Global(instance.clone(), *b)),
             );
         });
         (
@@ -446,7 +446,7 @@ pub(crate) trait Linker {
         captures: Node<Linked>,
     ) -> Node<Linked> {
         let (root, captures_in) = self.instatiate_package_body(instance, package);
-        self.link(captures_in, captures);
+        self.link(Box::new(captures_in), Box::new(captures));
         root
     }
 
@@ -455,8 +455,8 @@ pub(crate) trait Linker {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
                 self.link(
-                    Node::Shared(Shared::Sync(Arc::new(sync_shared_value.clone()))),
-                    cont,
+                    Box::new(Node::Shared(Shared::Sync(Arc::new(sync_shared_value.clone())))),
+                    Box::new(cont),
                 );
             }
             SharedHole::Unfilled(values) => values.push(cont),
@@ -486,7 +486,7 @@ macro_rules! sym {
 }
 
 impl Linker for Runtime {
-    fn link(&mut self, a: Node<Linked>, b: Node<Linked>) {
+    fn link(&mut self, a: Box<Node<Linked>>, b: Box<Node<Linked>>) {
         self.redexes.push((a, b));
     }
     fn arena(&self) -> Arc<Arena<Linked>> {
@@ -496,16 +496,15 @@ impl Linker for Runtime {
 
 impl Runtime {
     // Misc methods.
-    fn set_var(&mut self, instance: Instance, index: usize, value: Node<Linked>) {
-        let mut lock = instance.vars.0.lock().unwrap();
-        let slot = lock.get_mut(index).expect("Invalid index in variable!");
-        match slot {
-            Some(..) => {
-                self.link(slot.take().unwrap(), value);
+    fn set_var(&mut self, instance: Instance, index: usize, value: Box<Node<Linked>>) {
+        let slot = instance.vars.0.get(index).expect("Invalid index in variable!");
+        let other = slot.swap(Some(value), AcqRel);
+        match other {
+            Some(other) => {
+                let value = slot.take(AcqRel).unwrap();
+                self.link(other, value);
             }
-            None => {
-                *slot = Some(value);
-            }
+            None => {}
         }
     }
     pub fn status(&self) {
@@ -565,18 +564,16 @@ impl Runtime {
                     ))))
                 }
                 Global::Variable(id) => {
-                    let mut lock = instance.vars.0.lock().unwrap();
-                    let slot = &mut lock[*id];
-                    match slot.take() {
+                    let slot = &instance.vars.0[*id];
+                    match slot.take(AcqRel) {
                         Some(slot) => {
-                            drop(lock);
                             self.rewrites.share_sync += 1;
-                            Some(self.share_inner(slot)?)
+                            Some(self.share_inner(*slot)?)
                         }
                         _ => {
                             self.rewrites.share_async += 1;
                             let (hole, shared) = self.create_share_hole();
-                            slot.replace(hole);
+                            slot.swap(Some(Box::new(hole)), AcqRel);
                             Some(shared)
                         }
                     }
@@ -626,7 +623,7 @@ impl Runtime {
                     unreachable!()
                 };
                 for i in continuations {
-                    self.link(i, Node::Shared(Shared::Sync(value.clone())));
+                    self.link(Box::new(i), Box::new(Node::Shared(Shared::Sync(value.clone()))));
                 }
             }
         }
@@ -643,8 +640,8 @@ impl Runtime {
         let other = self.share(other).unwrap();
         for dest in destinations {
             self.redexes.push((
-                Node::Global(instance.clone(), dest.clone()),
-                Node::Shared(other.clone()),
+                Box::new(Node::Global(instance.clone(), dest.clone())),
+                Box::new(Node::Shared(other.clone())),
             ));
         }
     }
@@ -656,7 +653,7 @@ impl Runtime {
     ) {
         self.rewrites.instantiate += 1;
         let root = self.instantiate_package_captures(package, captures_in);
-        self.link(root, other);
+        self.link(Box::new(root), Box::new(other));
     }
     fn lookup_case_branch(
         &mut self,
@@ -672,7 +669,7 @@ impl Runtime {
     /// Carry out an interaction between two nodes.
     /// Returns Some if an external operation with `UserData` was attempted.
     /// and None otherwise
-    fn interact(&mut self, a: Node<Linked>, b: Node<Linked>) -> Option<(UserData, Node<Linked>)> {
+    fn interact(&mut self, a: Box<Node<Linked>>, b: Box<Node<Linked>>) -> Option<(UserData, Node<Linked>)> {
         /// NodeRef is an internal structure to make matching on Nodes easier.
         /// It is like a Node but includes a reference to the Global in the Global branch
         /// to allow matching on it
@@ -708,13 +705,13 @@ impl Runtime {
                         Some(ext.clone())
                     }
                     NodeRef::Shared(Shared::Sync(shared))
-                        if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
-                    {
-                        let SyncShared::Value(Value::ExternalFn(ext)) = shared.as_ref() else {
-                            unreachable!()
-                        };
-                        Some(ext.clone())
-                    }
+                    if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
+                        {
+                            let SyncShared::Value(Value::ExternalFn(ext)) = shared.as_ref() else {
+                                unreachable!()
+                            };
+                            Some(ext.clone())
+                        }
                     _ => None,
                 }
             }
@@ -728,19 +725,19 @@ impl Runtime {
                         Some(ext.clone())
                     }
                     NodeRef::Shared(Shared::Sync(shared))
-                        if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
-                    {
-                        let SyncShared::Value(Value::ExternalArc(ext)) = shared.as_ref() else {
-                            unreachable!()
-                        };
-                        Some(ext.clone())
-                    }
+                    if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
+                        {
+                            let SyncShared::Value(Value::ExternalArc(ext)) = shared.as_ref() else {
+                                unreachable!()
+                            };
+                            Some(ext.clone())
+                        }
                     _ => None,
                 }
             }
         }
-        let a = NodeRef::from_node(&self.arena, a);
-        let b = NodeRef::from_node(&self.arena, b);
+        let a = NodeRef::from_node(&self.arena, *a);
+        let b = NodeRef::from_node(&self.arena, *b);
         // This is the match expression that is the core of the runtime
         // The priority order is very important and is probably
         // one of the most complex parts of the V3 runtime.
@@ -804,13 +801,13 @@ impl Runtime {
                 );
             }
             sym!(NodeRef::Global(instance, _, Global::Variable(index)), value) => {
-                self.set_var(instance, *index, value.into_node())
+                self.set_var(instance, *index, Box::new(value.into_node()))
             }
             sym!(NodeRef::Linear(Linear::Variable(mutex)), value) => {
                 let mut lock = mutex.lock().unwrap();
                 match lock.take() {
                     Some(node) => {
-                        self.link(node, value.into_node());
+                        self.link(Box::new(node), Box::new(value.into_node()));
                     }
                     None => {
                         lock.replace(value.into_node());
@@ -847,18 +844,18 @@ impl Runtime {
                 );
             }
             sym!(NodeRef::Shared(Shared::Sync(x)), other)
-                if matches!(&*x, SyncShared::Package(..)) =>
-            {
-                self.rewrites.instantiate += 1;
-                let SyncShared::Package(package, captures_in) = &*x else {
-                    unreachable!()
-                };
-                self.interact_instantiate(
-                    *package,
-                    Node::Shared(captures_in.clone()),
-                    other.into_node(),
-                );
-            }
+            if matches!(&*x, SyncShared::Package(..)) =>
+                {
+                    self.rewrites.instantiate += 1;
+                    let SyncShared::Package(package, captures_in) = &*x else {
+                        unreachable!()
+                    };
+                    self.interact_instantiate(
+                        *package,
+                        Node::Shared(captures_in.clone()),
+                        other.into_node(),
+                    );
+                }
 
             sym!(node, other) if node.as_external_fn().is_some() => {
                 let Some(ext) = node.as_external_fn() else {
@@ -889,8 +886,8 @@ impl Runtime {
                     }
                     (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
                         self.rewrites.receive += 1;
-                        self.link(a0, Node::Global(instance.clone(), b0));
-                        self.link(a1, Node::Global(instance, b1));
+                        self.link(Box::new(a0), Box::new(Node::Global(instance.clone(), b0)));
+                        self.link(Box::new(a1), Box::new(Node::Global(instance, b1)));
                     }
                     (Value::Either(signal, payload), GlobalCont::Choice(context, options)) => {
                         self.rewrites.r#match += 1;
@@ -902,7 +899,7 @@ impl Runtime {
                                 &package,
                                 Node::Global(instance, context),
                             );
-                            self.link(root, payload);
+                            self.link(Box::new(root), Box::new(payload));
                         } else {
                             let branch =
                                 self.lookup_case_branch(options, self.arena.empty_string());
@@ -914,10 +911,10 @@ impl Runtime {
                             // TODO: Optimize this; we're reconstructing the `Either` branch.
                             // This could make us lose sharing.
                             self.link(
-                                Node::Linear(Linear::Value(Box::new(Value::Either(
+                                Box::new(Node::Linear(Linear::Value(Box::new(Value::Either(
                                     signal, payload,
-                                )))),
-                                root,
+                                ))))),
+                                Box::new(root),
                             );
                         }
                     }
@@ -943,8 +940,8 @@ impl Runtime {
                     panic!("Unimplemented destruction between Par and {:?}", value);
                 };
                 self.rewrites.r#receive += 1;
-                self.link(*a1, a2);
-                self.link(*b1, b2);
+                self.link(a1, Box::new(a2));
+                self.link(b1, Box::new(b2));
             }
             (a, b) => {
                 panic!(

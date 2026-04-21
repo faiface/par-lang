@@ -9,7 +9,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 pub enum ReducerMessage {
-    Redex(Node<Linked>, Node<Linked>),
+    Redex(Box<Node<Linked>>, Box<Node<Linked>>),
     Spawn(FutureObj<'static, ()>),
     Dropped(usize),
     Created(usize),
