@@ -81,7 +81,9 @@ impl Handle {
         // TODO add fast variant.
         self.linker.link(
             self.node,
-            Box::new(Node::Linear(Linear::Value(Box::new(Value::ExternalFn(ext))))),
+            Box::new(Node::Linear(Linear::Value(Box::new(Value::ExternalFn(
+                ext,
+            ))))),
         );
     }
 
@@ -93,8 +95,8 @@ impl Handle {
             .net
             .0
             .clone()
-            .send(ReducerMessage::Spawn(FutureObj::from(Box::new(f(self))))).unwrap()
-            ;
+            .send(ReducerMessage::Spawn(FutureObj::from(Box::new(f(self)))))
+            .unwrap();
     }
 
     pub async fn await_ready(mut self) -> Self {
@@ -119,7 +121,9 @@ impl Handle {
         // TODO add fast variant.
         self.linker.link(
             self.node,
-            Box::new(Node::Linear(Linear::Value(Box::new(Value::Primitive(primitive))))),
+            Box::new(Node::Linear(Linear::Value(Box::new(Value::Primitive(
+                primitive,
+            ))))),
         );
     }
 
@@ -298,7 +302,10 @@ impl Handle {
 
     pub fn duplicate(&mut self) -> Handle {
         let (other, shared) = self.linker.create_share_hole();
-        let node = core::mem::replace(&mut self.node, Box::new(Node::Shared(shared.clone())).into());
+        let node = core::mem::replace(
+            &mut self.node,
+            Box::new(Node::Shared(shared.clone())).into(),
+        );
         self.linker.link(node, Box::new(other));
         self.new(Node::Shared(shared).into())
     }
@@ -312,7 +319,8 @@ impl Handle {
             }
             Err(node) => {
                 let (tx, rx) = oneshot::channel();
-                self.linker.link(Box::new(Node::Linear(Linear::Request(tx))), Box::new(node));
+                self.linker
+                    .link(Box::new(Node::Linear(Linear::Request(tx))), Box::new(node));
                 rx.await.unwrap()
             }
         }

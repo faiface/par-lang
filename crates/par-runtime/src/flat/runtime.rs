@@ -38,11 +38,11 @@ use super::arena::*;
 use crate::fan_behavior::FanBehavior;
 use crate::flat::stats::Rewrites;
 use crate::linker::Linked;
+use atomicbox::AtomicOptionBox;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering::AcqRel;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot::Sender;
-use atomicbox::AtomicOptionBox;
-use std::sync::atomic::Ordering::AcqRel;
 
 pub type PackagePtr<Ext> = Index<Ext, OnceLock<Package<Ext>>>;
 pub(crate) type GlobalPtr<Ext> = Index<Ext, Global<Ext>>;
@@ -456,7 +456,9 @@ pub(crate) trait Linker {
         match hole {
             SharedHole::Filled(sync_shared_value) => {
                 self.link(
-                    Box::new(Node::Shared(Shared::Sync(Arc::new(sync_shared_value.clone())))),
+                    Box::new(Node::Shared(Shared::Sync(Arc::new(
+                        sync_shared_value.clone(),
+                    )))),
                     Box::new(cont),
                 );
             }
@@ -498,7 +500,11 @@ impl Linker for Runtime {
 impl Runtime {
     // Misc methods.
     fn set_var(&mut self, instance: Instance, index: usize, value: Box<Node<Linked>>) {
-        let slot = instance.vars.0.get(index).expect("Invalid index in variable!");
+        let slot = instance
+            .vars
+            .0
+            .get(index)
+            .expect("Invalid index in variable!");
         let other = slot.swap(Some(value), AcqRel);
         match other {
             Some(other) => {
@@ -625,7 +631,10 @@ impl Runtime {
                     unreachable!()
                 };
                 for i in continuations {
-                    self.link(Box::new(i), Box::new(Node::Shared(Shared::Sync(value.clone()))));
+                    self.link(
+                        Box::new(i),
+                        Box::new(Node::Shared(Shared::Sync(value.clone()))),
+                    );
                 }
             }
         }
@@ -671,7 +680,11 @@ impl Runtime {
     /// Carry out an interaction between two nodes.
     /// Returns Some if an external operation with `UserData` was attempted.
     /// and None otherwise
-    fn interact(&mut self, mut a: Box<Node<Linked>>, mut b: Box<Node<Linked>>) -> Option<(UserData, Node<Linked>)> {
+    fn interact(
+        &mut self,
+        mut a: Box<Node<Linked>>,
+        mut b: Box<Node<Linked>>,
+    ) -> Option<(UserData, Node<Linked>)> {
         /// NodeRef is an internal structure to make matching on Nodes easier.
         /// It is like a Node but includes a reference to the Global in the Global branch
         /// to allow matching on it
@@ -708,13 +721,13 @@ impl Runtime {
                         Some(ext.clone())
                     }
                     NodeRef::Shared(Shared::Sync(shared))
-                    if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
-                        {
-                            let SyncShared::Value(Value::ExternalFn(ext)) = shared.as_ref() else {
-                                unreachable!()
-                            };
-                            Some(ext.clone())
-                        }
+                        if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalFn(_))) =>
+                    {
+                        let SyncShared::Value(Value::ExternalFn(ext)) = shared.as_ref() else {
+                            unreachable!()
+                        };
+                        Some(ext.clone())
+                    }
                     _ => None,
                 }
             }
@@ -728,13 +741,13 @@ impl Runtime {
                         Some(ext.clone())
                     }
                     NodeRef::Shared(Shared::Sync(shared))
-                    if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
-                        {
-                            let SyncShared::Value(Value::ExternalArc(ext)) = shared.as_ref() else {
-                                unreachable!()
-                            };
-                            Some(ext.clone())
-                        }
+                        if matches!(shared.as_ref(), SyncShared::Value(Value::ExternalArc(_))) =>
+                    {
+                        let SyncShared::Value(Value::ExternalArc(ext)) = shared.as_ref() else {
+                            unreachable!()
+                        };
+                        Some(ext.clone())
+                    }
                     _ => None,
                 }
             }
@@ -798,11 +811,7 @@ impl Runtime {
                 other
             ) => {
                 let _ = std::mem::replace(b.as_mut(), other.into_node());
-                self.interact_instantiate(
-                    *package,
-                    Node::Global(instance, *captures_in),
-                    b,
-                );
+                self.interact_instantiate(*package, Node::Global(instance, *captures_in), b);
             }
             sym!(NodeRef::Global(instance, _, Global::Variable(index)), value) => {
                 let _ = std::mem::replace(b.as_mut(), value.into_node());
@@ -845,26 +854,18 @@ impl Runtime {
                 other
             ) => {
                 let _ = std::mem::replace(b.as_mut(), other.into_node());
-                self.interact_instantiate(
-                    *package,
-                    Node::Global(instance, *captures_in),
-                    b,
-                );
+                self.interact_instantiate(*package, Node::Global(instance, *captures_in), b);
             }
             sym!(NodeRef::Shared(Shared::Sync(x)), other)
-            if matches!(&*x, SyncShared::Package(..)) =>
-                {
-                    self.rewrites.instantiate += 1;
-                    let SyncShared::Package(package, captures_in) = &*x else {
-                        unreachable!()
-                    };
-                    let _ = std::mem::replace(b.as_mut(), other.into_node());
-                    self.interact_instantiate(
-                        *package,
-                        Node::Shared(captures_in.clone()),
-                        b,
-                    );
-                }
+                if matches!(&*x, SyncShared::Package(..)) =>
+            {
+                self.rewrites.instantiate += 1;
+                let SyncShared::Package(package, captures_in) = &*x else {
+                    unreachable!()
+                };
+                let _ = std::mem::replace(b.as_mut(), other.into_node());
+                self.interact_instantiate(*package, Node::Shared(captures_in.clone()), b);
+            }
 
             sym!(node, other) if node.as_external_fn().is_some() => {
                 let Some(ext) = node.as_external_fn() else {
@@ -894,8 +895,10 @@ impl Runtime {
                     NodeRef::Linear(Linear::Value(v)) => Ok(*v),
                     NodeRef::Shared(Shared::Sync(shared)) => match &*shared {
                         SyncShared::Package(package, shared) => {
-                            let node =
-                                self.instantiate_package_captures(*package, Node::Shared(shared.clone()));
+                            let node = self.instantiate_package_captures(
+                                *package,
+                                Node::Shared(shared.clone()),
+                            );
                             self.destruct(node)
                         }
                         SyncShared::Value(shared) => Ok(shared
@@ -903,18 +906,13 @@ impl Runtime {
                             .map_leaves(|x| Some(Node::Shared(x)))
                             .unwrap()),
                     },
-                    NodeRef::Global(instance, global_index, Global::Value(v)) =>  {
-                        Ok(v
-                            .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
-                            .unwrap())
-                    },
+                    NodeRef::Global(instance, global_index, Global::Value(v)) => Ok(v
+                        .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
+                        .unwrap()),
                     node => Err(node.into_node()),
                 };
                 let value = value.expect("Continue expects a value");
-                match (
-                    value,
-                    destructor,
-                ) {
+                match (value, destructor) {
                     (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
                         self.rewrites.receive += 1;
                         let _ = std::mem::replace(a.as_mut(), a0);
@@ -945,14 +943,14 @@ impl Runtime {
                             );
                             // TODO: Optimize this; we're reconstructing the `Either` branch.
                             // This could make us lose sharing.
-                            let _ = std::mem::replace(a.as_mut(), Node::Linear(Linear::Value(Box::new(Value::Either(
-                                signal, payload,
-                            )))));
-                            let _ = std::mem::replace(b.as_mut(), root);
-                            self.link(
-                                a,
-                                b,
+                            let _ = std::mem::replace(
+                                a.as_mut(),
+                                Node::Linear(Linear::Value(Box::new(Value::Either(
+                                    signal, payload,
+                                )))),
                             );
+                            let _ = std::mem::replace(b.as_mut(), root);
+                            self.link(a, b);
                         }
                     }
                     (a, b) => {
@@ -965,17 +963,19 @@ impl Runtime {
                 self.rewrites.r#continue += 1;
             }
             sym!(NodeRef::Linear(Linear::Par(a1, b1)), other) => {
-                let (a2,b2) = match other {
+                let (a2, b2) = match other {
                     NodeRef::Linear(Linear::Value(v)) => {
-                        let Value::Pair(a,b) = *v else {
+                        let Value::Pair(a, b) = *v else {
                             unreachable!("Expected Pair")
                         };
-                        (a,b)
-                    },
+                        (a, b)
+                    }
                     NodeRef::Shared(Shared::Sync(shared)) => match &*shared {
                         SyncShared::Package(package, shared) => {
-                            let node =
-                                self.instantiate_package_captures(*package, Node::Shared(shared.clone()));
+                            let node = self.instantiate_package_captures(
+                                *package,
+                                Node::Shared(shared.clone()),
+                            );
                             let value = self.destruct(node).expect("Expected value");
                             let Value::Pair(a, b) = value else {
                                 unreachable!("Expected pair")
@@ -983,24 +983,21 @@ impl Runtime {
                             (a, b)
                         }
                         SyncShared::Value(shared) => {
-                            let Value::Pair(a,b) = shared else {
+                            let Value::Pair(a, b) = shared else {
                                 unreachable!("Expected pair")
                             };
-                            (
-                                Node::Shared(a.clone()),
-                                Node::Shared(b.clone())
-                            )
-                        },
+                            (Node::Shared(a.clone()), Node::Shared(b.clone()))
+                        }
                     },
-                    NodeRef::Global(instance, global_index, Global::Value(v)) =>  {
-                        let Value::Pair(a,b) = v else {
+                    NodeRef::Global(instance, global_index, Global::Value(v)) => {
+                        let Value::Pair(a, b) = v else {
                             unreachable!("Expected pair")
                         };
                         (
                             Node::Global(instance.clone(), *a),
-                            Node::Global(instance, *b)
+                            Node::Global(instance, *b),
                         )
-                    },
+                    }
                     _node => unreachable!("Expected pair"),
                 };
                 // let value = value.expect("Continue expects a value");
