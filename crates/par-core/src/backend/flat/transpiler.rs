@@ -187,7 +187,6 @@ impl ProgramTranspiler {
         PackageBody {
             root: root,
             captures: captures,
-            debug_name,
             redexes,
         }
     }

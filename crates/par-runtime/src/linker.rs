@@ -136,7 +136,6 @@ fn link_package_body(body: &PackageBody<Unlinked>) -> Result<PackageBody<Linked>
     Ok(PackageBody {
         root: Index(body.root.0.clone()),
         captures: Index(body.captures.0.clone()),
-        debug_name: body.debug_name.clone(),
         redexes: Index(body.redexes.0.clone()),
     })
 }

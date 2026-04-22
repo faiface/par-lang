@@ -147,7 +147,6 @@ pub struct PackageBody<Ext: Clone> {
     pub root: Index<Ext, Global<Ext>>,
     pub captures: Index<Ext, Global<Ext>>,
 
-    pub debug_name: String,
     // TODO: Store this inline in the arena.
     pub redexes: Index<Ext, [(Index<Ext, Global<Ext>>, Index<Ext, Global<Ext>>)]>,
 }
@@ -682,7 +681,7 @@ impl Runtime {
         self.arena
             .get(options)
             .iter()
-            .find(|(a, _)| a.clone() == variant)
+            .find(|(a, _)| a == &variant)
             .map(|(_, b)| b.clone())
     }
     /// Carry out an interaction between two nodes.

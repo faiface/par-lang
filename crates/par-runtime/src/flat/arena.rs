@@ -118,9 +118,6 @@ impl<Ext: Clone> std::fmt::Display for Arena<Ext> {
                 continue;
             };
             let lock = &lock.body;
-            if lock.debug_name.len() > 0 {
-                write!(f, "// {}\n", lock.debug_name)?;
-            }
             write!(f, "@{} = {}", idx, Showable(&lock.root, &shower))?;
             write!(f, "\n    $ {}", Showable(&lock.captures, &shower))?;
             for (a, b) in self.get(lock.redexes.clone()) {

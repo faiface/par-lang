@@ -225,9 +225,6 @@ impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a OnceLock<Pac
 impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a PackageBody<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let package = self.0;
-        if package.debug_name.len() > 0 {
-            write!(f, "/* {} */", package.debug_name)?;
-        }
         write!(f, "@{}", Showable(&package.root, self.1))?;
         write!(f, "${}", Showable(&package.captures, self.1))?;
         for (a, b) in self.1.arena.get(package.redexes.clone()) {
