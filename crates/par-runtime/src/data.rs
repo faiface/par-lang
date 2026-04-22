@@ -15,7 +15,13 @@ impl fmt::Display for Data {
         match self {
             Self::Unit => write!(f, "!"),
             Self::Pair(left, right) => write!(f, "({left}) {right}"),
-            Self::Either(label, payload) => write!(f, ".{label} {payload}"),
+            Self::Either(label, payload) => {
+                write!(f, ".{label}")?;
+                if !matches!(payload.as_ref(), Self::Unit | Self::Pair(_, _)) {
+                    write!(f, " ")?;
+                }
+                write!(f, "{payload}")
+            }
             Self::Primitive(primitive) => primitive.pretty(f, 0),
         }
     }
