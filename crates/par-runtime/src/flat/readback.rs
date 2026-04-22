@@ -256,10 +256,10 @@ impl Handle {
     }
 
     pub fn break_(mut self) {
-        match *self.node {
+        match self.node.as_ref() {
             Node::Global(_, global_index)
                 if matches!(
-                    self.linker.arena.get(global_index),
+                    self.linker.arena.get(*global_index),
                     Global::Destruct(GlobalCont::Continue)
                 ) =>
             {
@@ -268,16 +268,16 @@ impl Handle {
             Node::Linear(Linear::Continue) => (),
             node => {
                 let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
-                self.linker.link(Box::new(node), Box::new(other));
+                self.linker.link(self.node, Box::new(other));
             }
         }
     }
 
     pub fn continue_(mut self) {
-        match *self.node {
+        match self.node.as_ref() {
             Node::Global(_, global_index)
                 if matches!(
-                    self.linker.arena.get(global_index),
+                    self.linker.arena.get(*global_index),
                     Global::Value(Value::Break)
                 ) =>
             {
@@ -286,7 +286,7 @@ impl Handle {
             Node::Linear(Linear::Value(value)) if matches!(value.as_ref(), Value::Break) => (),
             node => {
                 let other = Node::Linear(Linear::Continue);
-                self.linker.link(Box::new(node), Box::new(other));
+                self.linker.link(self.node, Box::new(other));
             }
         }
     }
