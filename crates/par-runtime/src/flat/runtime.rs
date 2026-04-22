@@ -329,7 +329,7 @@ pub(crate) trait Linker {
         node: Node<Linked>,
     ) -> Result<Value<Node<Linked>, Linked>, Node<Linked>> {
         match node {
-            Node::Linear(Linear::Value(v)) => Ok(v.map_leaves(|x| Some(x)).unwrap()),
+            Node::Linear(Linear::Value(v)) => Ok(*v),
             Node::Shared(Shared::Sync(shared)) => match &*shared {
                 SyncShared::Package(package, shared) => {
                     let node =
@@ -884,15 +884,37 @@ impl Runtime {
                 NodeRef::Global(instance, _, Global::Destruct(destructor)),
                 node
             ) => {
-                let node = node.into_node();
+                if let GlobalCont::Continue = destructor {
+                    self.rewrites.r#continue += 1;
+                    return None;
+                }
                 let destructor = destructor.clone();
+                // let node = node.into_node();
+                let value = match node {
+                    NodeRef::Linear(Linear::Value(v)) => Ok(*v),
+                    NodeRef::Shared(Shared::Sync(shared)) => match &*shared {
+                        SyncShared::Package(package, shared) => {
+                            let node =
+                                self.instantiate_package_captures(*package, Node::Shared(shared.clone()));
+                            self.destruct(node)
+                        }
+                        SyncShared::Value(shared) => Ok(shared
+                            .clone()
+                            .map_leaves(|x| Some(Node::Shared(x)))
+                            .unwrap()),
+                    },
+                    NodeRef::Global(instance, global_index, Global::Value(v)) =>  {
+                        Ok(v
+                            .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
+                            .unwrap())
+                    },
+                    node => Err(node.into_node()),
+                };
+                let value = value.expect("Continue expects a value");
                 match (
-                    self.destruct(node).expect("Continuation-continuation!"),
+                    value,
                     destructor,
                 ) {
-                    (Value::Break, GlobalCont::Continue) => {
-                        self.rewrites.r#continue += 1;
-                    }
                     (Value::Pair(a0, a1), GlobalCont::Par(b0, b1)) => {
                         self.rewrites.receive += 1;
                         let _ = std::mem::replace(a.as_mut(), a0);
@@ -938,22 +960,57 @@ impl Runtime {
                     }
                 }
             }
-            sym!(NodeRef::Linear(Linear::Continue), other) => {
-                let value = self
-                    .destruct(other.into_node())
-                    .expect("Continue expects a value");
-                let Value::Break = value else {
-                    panic!("Unimplemented destruction between Continue and {:?}", value);
-                };
+            sym!(NodeRef::Linear(Linear::Continue), _other) => {
+                // we can just drop it
                 self.rewrites.r#continue += 1;
             }
             sym!(NodeRef::Linear(Linear::Par(a1, b1)), other) => {
-                let value = self
-                    .destruct(other.into_node())
-                    .expect("Continue expects a value");
-                let Value::Pair(a2, b2) = value else {
-                    panic!("Unimplemented destruction between Par and {:?}", value);
+                let (a2,b2) = match other {
+                    NodeRef::Linear(Linear::Value(v)) => {
+                        let Value::Pair(a,b) = *v else {
+                            unreachable!("Expected Pair")
+                        };
+                        (a,b)
+                    },
+                    NodeRef::Shared(Shared::Sync(shared)) => match &*shared {
+                        SyncShared::Package(package, shared) => {
+                            let node =
+                                self.instantiate_package_captures(*package, Node::Shared(shared.clone()));
+                            let value = self.destruct(node).expect("Expected value");
+                            let Value::Pair(a, b) = value else {
+                                unreachable!("Expected pair")
+                            };
+                            (a, b)
+                        }
+                        SyncShared::Value(shared) => {
+                            let Value::Pair(a,b) = shared else {
+                                unreachable!("Expected pair")
+                            };
+                            (
+                                Node::Shared(a.clone()),
+                                Node::Shared(b.clone())
+                            )
+                        },
+                    },
+                    NodeRef::Global(instance, global_index, Global::Value(v)) =>  {
+                        let Value::Pair(a,b) = v else {
+                            unreachable!("Expected pair")
+                        };
+                        (
+                            Node::Global(instance.clone(), *a),
+                            Node::Global(instance, *b)
+                        )
+                    },
+                    _node => unreachable!("Expected pair"),
                 };
+                // let value = value.expect("Continue expects a value");
+
+                // let value = self
+                //     .destruct(other.into_node())
+                //     .expect("Continue expects a value");
+                // let Value::Pair(a2, b2) = value else {
+                //     panic!("Unimplemented destruction between Par and {:?}", value);
+                // };
                 self.rewrites.r#receive += 1;
                 let _ = std::mem::replace(a.as_mut(), a2);
                 let _ = std::mem::replace(b.as_mut(), b2);
