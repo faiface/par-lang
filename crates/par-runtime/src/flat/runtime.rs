@@ -332,9 +332,17 @@ pub(crate) trait Linker {
             Node::Linear(Linear::Value(v)) => Ok(*v),
             Node::Shared(Shared::Sync(shared)) => match &*shared {
                 SyncShared::Package(package, shared) => {
-                    let node =
-                        self.instantiate_package_captures(*package, Node::Shared(shared.clone()));
-                    self.destruct(node)
+                    let Node::Global(instance, global_index) =
+                        self.instantiate_package_captures(*package, Node::Shared(shared.clone()))
+                    else {
+                        unreachable!("should be a global")
+                    };
+                    match self.arena().get(global_index) {
+                        Global::Value(v) => Ok(v
+                            .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
+                            .unwrap()),
+                        _ => Err(Node::Global(instance, global_index)),
+                    }
                 }
                 SyncShared::Value(shared) => Ok(shared
                     .clone()
@@ -899,7 +907,15 @@ impl Runtime {
                                 *package,
                                 Node::Shared(shared.clone()),
                             );
-                            self.destruct(node)
+                            let Node::Global(instance, global_index) = node else {
+                                unreachable!("should be global")
+                            };
+                            match self.arena().get(global_index) {
+                                Global::Value(v) => Ok(v
+                                    .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
+                                    .unwrap()),
+                                _ => Err(Node::Global(instance, global_index)),
+                            }
                         }
                         SyncShared::Value(shared) => Ok(shared
                             .clone()
