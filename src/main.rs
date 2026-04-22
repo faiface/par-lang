@@ -32,6 +32,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[cfg(not(target_family = "wasm"))]
 mod language_server;
 mod package_manager;

@@ -25,6 +25,7 @@ pub(crate) struct Showable<'a, 'b, P, Ext: Clone>(pub P, pub &'b Shower<'a, Ext>
 impl<'a, 'b, Ext: Clone> std::fmt::Display for Showable<'a, 'b, &'a Node<Ext>, Ext> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
+            Node::Empty => unreachable!(),
             Node::Linear(linear) => write!(f, "-{}", Showable(linear, self.1)),
             Node::Shared(shared) => write!(f, "&{}", Showable(shared, self.1)),
             Node::Global(_, global) => write!(f, "'{}", Showable(global, self.1)),
