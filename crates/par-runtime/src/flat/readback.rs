@@ -191,7 +191,7 @@ impl Handle {
                 let Value::Pair(a, b) = value else {
                     unreachable!()
                 };
-                mem::replace(self.node.as_mut(), a);
+                let _ = mem::replace(self.node.as_mut(), a);
                 return self.new(b);
             }
             Err(node) => self.node = Box::new(node),
@@ -270,7 +270,7 @@ impl Handle {
                 ()
             }
             Node::Linear(Linear::Continue) => (),
-            node => {
+            _ => {
                 let other = Node::Linear(Linear::Value(Box::new(Value::Break)));
                 self.linker.link(self.node, Box::new(other));
             }
@@ -288,7 +288,7 @@ impl Handle {
                 ()
             }
             Node::Linear(Linear::Value(value)) if matches!(value.as_ref(), Value::Break) => (),
-            node => {
+            _ => {
                 let other = Node::Linear(Linear::Continue);
                 self.linker.link(self.node, Box::new(other));
             }

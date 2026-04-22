@@ -906,7 +906,7 @@ impl Runtime {
                             .map_leaves(|x| Some(Node::Shared(x)))
                             .unwrap()),
                     },
-                    NodeRef::Global(instance, global_index, Global::Value(v)) => Ok(v
+                    NodeRef::Global(instance, _, Global::Value(v)) => Ok(v
                         .map_ref_leaves(|x| Some(Node::Global(instance.clone(), *x)))
                         .unwrap()),
                     node => Err(node.into_node()),
@@ -989,7 +989,7 @@ impl Runtime {
                             (Node::Shared(a.clone()), Node::Shared(b.clone()))
                         }
                     },
-                    NodeRef::Global(instance, global_index, Global::Value(v)) => {
+                    NodeRef::Global(instance, _, Global::Value(v)) => {
                         let Value::Pair(a, b) = v else {
                             unreachable!("Expected pair")
                         };
