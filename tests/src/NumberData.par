@@ -57,7 +57,7 @@ def TestDataGenericFunctions: [Test] ! = [test]
     test
       .assert(
         "Data.ToString renders nested data",
-        String.Equals(rendered, "(1) .true !"),
+        String.Equals(rendered, "(1) .true!"),
       )
       .assert("Data.Compare compares paired same-type data", IsLess(ordering))
   } in !
