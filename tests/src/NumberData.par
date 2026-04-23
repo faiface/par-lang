@@ -5,6 +5,7 @@ import {
   @core/Data
   @core/Float
   @core/Int
+  @core/List
   @core/Nat
   @core/Number
   @core/Ordering
@@ -61,3 +62,31 @@ def TestDataGenericFunctions: [Test] ! = [test]
       )
       .assert("Data.Compare compares paired same-type data", IsLess(ordering))
   } in !
+
+type Format = List<either {
+  .str String,
+  .dat<a: data>(a)!,
+}>
+
+dec RenderFormat : [Format] String
+def RenderFormat = [fmt] do {
+  let builder = String.Builder
+  fmt.begin.case {
+    .item(i) => {
+      i.case {
+        .str s => { builder.add(s) }
+        .dat<a: data>(x)! => { builder.add(x->Data.ToString) }
+      }
+      fmt.loop
+    }
+    .end! => {}
+  }
+} in builder.build
+
+def TestFormatDropsBranchLocalData: [Test] ! = [test] do {
+  let fmt: Format = *(.str "x=", .dat(3)!, .str ", ok=", .dat(.true!)!)
+  test.assert(
+    "Case fallthrough drops branch-local data values",
+    String.Equals(RenderFormat(fmt), "x=3, ok=.true!"),
+  )
+} in !
