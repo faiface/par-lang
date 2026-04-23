@@ -41,6 +41,7 @@ pub enum TypeError<S> {
     RedundantBranch(Span, LocalName, Type<S>),
     MergeVariableMissing(Span, LocalName),
     MergeVariableTypesCannotBeUnified(Span, LocalName, Type<S>, Type<S>),
+    VariableEscapesTypeScope(Span, LocalName),
     TypesCannotBeUnified(Span, Type<S>, Type<S>),
     NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
     DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] LoopId),
@@ -408,6 +409,14 @@ impl<S: Clone + Eq + std::hash::Hash + std::fmt::Display> TypeError<S> {
                     t2s
                 )
             }
+            Self::VariableEscapesTypeScope(span, name) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(
+                    labels = labels,
+                    "Variable `{}` cannot escape the scope of a local type variable.",
+                    name,
+                )
+            }
             Self::TypesCannotBeUnified(span, _typ1, _typ2) => {
                 miette::miette!(
                     labels = labels_from_span(code, span),
@@ -593,6 +602,7 @@ impl<S: Clone + Eq + std::hash::Hash> TypeError<S> {
             | Self::RedundantBranch(span, _, _)
             | Self::MergeVariableMissing(span, _)
             | Self::MergeVariableTypesCannotBeUnified(span, _, _, _)
+            | Self::VariableEscapesTypeScope(span, _)
             | Self::NoSuchLoopPoint(span, _)
             | Self::DoesNotDescendSubjectOfBegin(span, _)
             | Self::LoopVariableNotPreserved(span, _)

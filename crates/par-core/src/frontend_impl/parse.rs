@@ -3860,14 +3860,6 @@ mod test {
         }
     }
 
-    fn parse_single_definition_process(source: &str) -> Process<Unresolved> {
-        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
-        match &parsed.body.definitions[0].body {
-            DefinitionBody::Par(Expression::Chan { process, .. }) => *process.clone(),
-            other => panic!("expected chan definition body, got {other:#?}"),
-        }
-    }
-
     #[test]
     fn test_parse_examples() {
         let input = include_str!(concat!(

@@ -1,6 +1,6 @@
 use super::super::language::{LocalName, TypeConstraint, TypeParameter};
 use super::super::process::{Captures, Command, Expression, PollKind, Process, VariableUsage};
-use super::context::{PollPointScope, PollScope};
+use super::context::{BlockPathContext, BlockScope, PollPointScope, PollScope};
 use super::core::{LoopId, Operation, Type, get_primitive_type};
 use super::error::TypeError;
 use super::lattice::union_types;
@@ -677,15 +677,29 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         then: &Process<(), S>,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> Arc<Process<Type<S>, S>> {
-        if self.blocks.insert(index, Vec::new()).is_some() {
+        let target_type_vars = self.type_defs.vars.clone();
+        if self
+            .blocks
+            .insert(
+                index,
+                BlockScope {
+                    target_type_vars,
+                    paths: Vec::new(),
+                },
+            )
+            .is_some()
+        {
             panic!("block {} already defined", index);
         }
         let typed_then = self.check_process(then, emit);
-        let contexts = self
+        let scope = self
             .blocks
             .shift_remove(&index)
             .expect("block should have been registered");
-        if contexts.is_empty() {
+        let mut target_type_defs = self.type_defs.clone();
+        target_type_defs.vars = scope.target_type_vars;
+        if scope.paths.is_empty() {
+            self.type_defs = target_type_defs;
             // Ill-typed synthesized condition blocks can become unreachable during recovery.
             return Arc::new(Process::Block(
                 span.clone(),
@@ -695,12 +709,15 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             ));
         }
         let free = body.free_variables();
-        let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free, emit);
+        let contexts = filter_block_path_contexts(&target_type_defs, span, scope.paths, emit);
+        let merged = merge_path_contexts(&target_type_defs, span, &contexts, &free, emit);
 
         let saved = self.variables.clone();
         self.variables = merged;
+        self.type_defs = target_type_defs.clone();
         let typed_body = self.check_process(body, emit);
         self.variables = saved;
+        self.type_defs = target_type_defs;
 
         Arc::new(Process::Block(span.clone(), index, typed_body, typed_then))
     }
@@ -713,7 +730,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         _emit: &mut impl FnMut(TypeError<S>),
     ) -> Arc<Process<Type<S>, S>> {
         let entry = self.blocks.get_mut(&index).unwrap();
-        entry.push(self.variables.clone());
+        entry.paths.push(BlockPathContext {
+            variables: self.variables.clone(),
+            type_vars: self.type_defs.vars.clone(),
+        });
         self.variables.clear();
         Arc::new(Process::Goto(span.clone(), index, caps.clone()))
     }
@@ -2519,15 +2539,29 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         inference_subject: &LocalName,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
-        if self.blocks.insert(index, Vec::new()).is_some() {
+        let target_type_vars = self.type_defs.vars.clone();
+        if self
+            .blocks
+            .insert(
+                index,
+                BlockScope {
+                    target_type_vars,
+                    paths: Vec::new(),
+                },
+            )
+            .is_some()
+        {
             panic!("block {} already defined", index);
         }
         let (typed_then, then_type) = self.infer_process(then, inference_subject, emit);
-        let contexts = self
+        let scope = self
             .blocks
             .shift_remove(&index)
             .expect("block should have been registered");
-        if contexts.is_empty() {
+        let mut target_type_defs = self.type_defs.clone();
+        target_type_defs.vars = scope.target_type_vars;
+        if scope.paths.is_empty() {
+            self.type_defs = target_type_defs;
             // Ill-typed synthesized condition blocks can become unreachable during recovery.
             return (
                 Arc::new(Process::Block(
@@ -2540,21 +2574,23 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             );
         }
         let free = body.free_variables();
-        let contexts: Vec<_> = contexts
+        let contexts = filter_block_path_contexts(&target_type_defs, span, scope.paths, emit)
             .into_iter()
             .map(|mut ctx| {
                 ctx.shift_remove(inference_subject);
                 ctx
             })
             .collect();
-        let merged = merge_path_contexts(&self.type_defs, span, &contexts, &free, emit);
+        let merged = merge_path_contexts(&target_type_defs, span, &contexts, &free, emit);
 
         let saved = self.variables.clone();
         self.variables = merged;
+        self.type_defs = target_type_defs.clone();
         let (typed_body, body_type) = self.infer_process(body, inference_subject, emit);
         self.variables = saved;
+        self.type_defs = target_type_defs.clone();
 
-        let final_type = intersect_types(&self.type_defs, span, &then_type, &body_type)
+        let final_type = intersect_types(&target_type_defs, span, &then_type, &body_type)
             .unwrap_or_else(|e| {
                 emit(e);
                 Type::Fail(span.clone())
@@ -2574,7 +2610,10 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         _emit: &mut impl FnMut(TypeError<S>),
     ) -> (Arc<Process<Type<S>, S>>, Type<S>) {
         let entry = self.blocks.get_mut(&index).unwrap();
-        entry.push(self.variables.clone());
+        entry.paths.push(BlockPathContext {
+            variables: self.variables.clone(),
+            type_vars: self.type_defs.vars.clone(),
+        });
         self.variables.clear();
         (
             Arc::new(Process::Goto(span.clone(), index, caps.clone())),
@@ -3333,6 +3372,96 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
             Type::Fail(Span::None),
         )
     }
+}
+
+fn free_type_vars<S>(typ: &Type<S>) -> IndexSet<LocalName> {
+    fn inner<S>(typ: &Type<S>, bound: &mut Vec<LocalName>, out: &mut IndexSet<LocalName>) {
+        match typ {
+            Type::Var(_, name) | Type::DualVar(_, name) => {
+                if !bound.iter().any(|bound| bound == name) {
+                    out.insert(name.clone());
+                }
+            }
+            Type::Name(_, _, args) | Type::DualName(_, _, args) => {
+                for arg in args {
+                    inner(arg, bound, out);
+                }
+            }
+            Type::Box(_, body) | Type::DualBox(_, body) => inner(body, bound, out),
+            Type::Pair(_, left, right, vars) | Type::Function(_, left, right, vars) => {
+                for var in vars {
+                    bound.push(var.name.clone());
+                }
+                inner(left, bound, out);
+                inner(right, bound, out);
+                for _ in vars {
+                    bound.pop();
+                }
+            }
+            Type::Either(_, branches) | Type::Choice(_, branches) => {
+                for branch in branches.values() {
+                    inner(branch, bound, out);
+                }
+            }
+            Type::Recursive { body, .. } | Type::Iterative { body, .. } => {
+                inner(body, bound, out);
+            }
+            Type::Exists(_, param, body) | Type::Forall(_, param, body) => {
+                bound.push(param.name.clone());
+                inner(body, bound, out);
+                bound.pop();
+            }
+            Type::Primitive(..)
+            | Type::DualPrimitive(..)
+            | Type::Hole(..)
+            | Type::DualHole(..)
+            | Type::Break(..)
+            | Type::Continue(..)
+            | Type::Self_(..)
+            | Type::DualSelf(..)
+            | Type::Fail(..) => {}
+        }
+    }
+
+    let mut out = IndexSet::new();
+    inner(typ, &mut Vec::new(), &mut out);
+    out
+}
+
+fn filter_block_path_contexts<S: Clone + Eq + std::hash::Hash>(
+    target_type_defs: &TypeDefs<S>,
+    span: &Span,
+    paths: Vec<BlockPathContext<S>>,
+    emit: &mut impl FnMut(TypeError<S>),
+) -> Vec<IndexMap<LocalName, Type<S>>> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let mut path_type_defs = target_type_defs.clone();
+            path_type_defs.vars = path.type_vars;
+            path.variables
+                .into_iter()
+                .filter_map(|(name, typ)| {
+                    let escapes_type_scope = free_type_vars(&typ)
+                        .iter()
+                        .any(|var| !target_type_defs.vars.contains_key(var));
+
+                    if !escapes_type_scope {
+                        return Some((name, typ));
+                    }
+
+                    if typ.is_linear(&path_type_defs).unwrap_or(true) {
+                        emit(TypeError::VariableEscapesTypeScope(
+                            span.clone(),
+                            name.clone(),
+                        ));
+                    }
+
+                    None
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn merge_path_contexts<S: Clone + Eq + std::hash::Hash>(
