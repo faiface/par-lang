@@ -214,7 +214,7 @@ def NewProgressTracker: ProgressTracker = do {
     .started(newExpected) => do {
       filesInProgress.put((startTime, newExpected, downloaded)!)
       sumExpected -= expected
-      sumExpected -= newExpected
+      sumExpected += newExpected
     } in loop,
 
     .ended => do {
