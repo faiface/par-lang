@@ -2861,9 +2861,9 @@ fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch<Unresol
         (
             list1(type_parameter),
             t(TokenKind::Gt),
-            t(TokenKind::LBrack),
+            t(TokenKind::LParen),
             pattern,
-            t(TokenKind::RBrack),
+            t(TokenKind::RParen),
             apply_branch,
         ),
     )
