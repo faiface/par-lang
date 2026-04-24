@@ -1958,6 +1958,11 @@ fn universalize_module_path(
             directories: vec![],
             module: String::from("Number"),
         }),
+        Resolved::BuiltinOperator(BuiltinOperatorModule::String) => Ok(Universal {
+            package: PackageId::Special(arcstr::literal!("core")),
+            directories: vec![],
+            module: String::from("String"),
+        }),
     }
 }
 
@@ -2199,6 +2204,11 @@ fn resolve_name_to_universal(
             package: PackageId::Special(arcstr::literal!("core")),
             directories: vec![],
             module: String::from("Number"),
+        },
+        Resolved::BuiltinOperator(BuiltinOperatorModule::String) => Universal {
+            package: PackageId::Special(arcstr::literal!("core")),
+            directories: vec![],
+            module: String::from("String"),
         },
     };
 
@@ -2808,6 +2818,42 @@ def Bad = UseBox(type [!] !)
             TypeError::TypeDoesNotSatisfyConstraint(_, name, _, TypeConstraint::Box)
                 if name.string.as_str() == "a"
         )));
+    }
+
+    #[test]
+    fn template_string_interpolation_requires_string() {
+        let source = "\
+module Main
+
+def Bad = `${1}`
+";
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            test_package_id(),
+            parsed_package_from_files("local", &[("Main.par", source)]),
+        )]);
+
+        assert!(
+            !errors.is_empty(),
+            "non-string template interpolation should produce a type error"
+        );
+    }
+
+    #[test]
+    fn template_data_interpolation_requires_data() {
+        let source = "\
+module Main
+
+def Bad = `#{[x: !] x}`
+";
+        let errors = workspace_type_errors(vec![WorkspacePackage::new(
+            test_package_id(),
+            parsed_package_from_files("local", &[("Main.par", source)]),
+        )]);
+
+        assert!(
+            !errors.is_empty(),
+            "non-data template interpolation should produce a type error"
+        );
     }
 
     #[test]

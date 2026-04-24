@@ -32,9 +32,9 @@ def Main =
 
 dec YieldDownloadRequests : [String, Os.Path] List<(Url, Os.Path)!>
 def YieldDownloadRequests = [listenUrl, rootPath] chan yield {
-  Debug.Log(String.Concat(*("Listening on ", listenUrl, "...")))
+  Debug.Log(`Listening on ${listenUrl}...`)
   catch e => {
-    Debug.Log(String.Concat(*("Listening error: ", e)))
+    Debug.Log(`Listening error: ${e}`)
     yield.end!
   }
 
@@ -127,7 +127,7 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
       ->String.FromBytes
 
   catch e => {
-    Debug.Log(String.Concat(*("Stdout error: ", e)))
+    Debug.Log(`Stdout error: ${e}`)
     tracker.close
     exit!
   }
@@ -142,16 +142,13 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
       event.case {
         .started expected => {
           tracker.file(name).started(expected)
-          stdout.write(String.Concat(*("\nStarted downloading ", name, "\n"))).try
+          stdout.write(`\nStarted downloading ${name}\n`).try
         }
 
         .progressed size => {
           tracker.file(name).progressed(size)
           tracker.stats[numFiles, sumDownloaded, sumExpected]
-          stdout.write(String.Concat(*(
-            "\r>> ", numFiles->Int.ToString, " file(s) in progress: ",
-            sumDownloaded->Int.ToString, " B / ", sumExpected->Int.ToString, " B",
-          ))).try
+          stdout.write(`\r>> #{numFiles} file(s) in progress: #{sumDownloaded} B / #{sumExpected} B`).try
         }
 
         .finished! => {
@@ -159,16 +156,16 @@ def ShowDownloadProgress = [events, rootPath] chan exit {
           let duration = Time.Now(!) - startTime
           let speed = downloadedSize * 1000 / duration
           stdout.write(String.Concat(*(
-            "\nFinished downloading ", name, "\n",
-            "    Size:  ", downloadedSize->Int.ToString, " B\n",
-            "    Time:  ", duration->Int.ToString, " ms\n",
-            "    Speed: ", speed->Int.ToString, " B/s\n",
+            `\nFinished downloading ${name}\n`,
+            `    Size:  #{downloadedSize} B\n`,
+            `    Time:  #{duration} ms\n`,
+            `    Speed: #{speed} B/s\n`
           ))).try
         }
 
         .failed msg => {
           tracker.file(name).ended[_, _]
-          stdout.write(String.Concat(*("\nFailed to download ", name, ": ", msg, "\n"))).try
+          stdout.write(`\nFailed to download ${name}: ${msg}\n`).try
         }
       }
       stdout.flush.try

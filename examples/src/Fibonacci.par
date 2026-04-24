@@ -28,7 +28,7 @@ def Main: ! = do {
     .end! => {}
     .step remaining => {
       fib.next[n]
-      console.print(n->Nat.ToString)
+      console.print(`#{n}`)
       remaining.loop
     }
   }

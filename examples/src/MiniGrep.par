@@ -44,11 +44,7 @@ def Main: ! = chan exit {
         .end try! => {}
         .item((number) content) => {
           console.print("")
-          console.print(String.Builder
-            .add(path.absolute->String.FromBytes)
-            .add(":")
-            .add(number->Nat.ToString)
-            .build)
+          console.print(`${path.absolute->String.FromBytes}:#{number}`)
           console.print(content)
           lines.loop@file
         }

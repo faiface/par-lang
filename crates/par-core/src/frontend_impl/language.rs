@@ -17,7 +17,7 @@ use crate::{
     location::{Span, Spanning},
 };
 use arcstr::{ArcStr, literal};
-use par_runtime::primitive::Primitive;
+use par_runtime::primitive::{ParString, Primitive};
 
 #[derive(Clone, Debug)]
 pub struct LocalName {
@@ -118,6 +118,7 @@ impl Spanning for TypeParameter {
 pub enum BuiltinOperatorModule {
     Data,
     Number,
+    String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -327,6 +328,13 @@ pub struct ComparisonStep<S> {
     pub expr: Expression<S>,
 }
 
+#[derive(Clone, Debug)]
+pub enum TemplatePart<S> {
+    Literal(ArcStr),
+    StringExpr(Expression<S>),
+    DataExpr(Expression<S>),
+}
+
 impl<S> Condition<S> {
     pub fn span(&self) -> Span {
         match self {
@@ -342,6 +350,10 @@ impl<S> Condition<S> {
 #[derive(Clone, Debug)]
 pub enum Expression<S> {
     Primitive(Span, Primitive),
+    Template {
+        span: Span,
+        parts: Vec<TemplatePart<S>>,
+    },
     List(Span, Vec<Self>),
     Global(Span, GlobalName<S>),
     Variable(Span, LocalName),
@@ -633,6 +645,9 @@ impl Display for Resolved {
             Resolved::BuiltinOperator(BuiltinOperatorModule::Number) => {
                 write!(f, "<builtin-number>")
             }
+            Resolved::BuiltinOperator(BuiltinOperatorModule::String) => {
+                write!(f, "<builtin-string>")
+            }
         }
     }
 }
@@ -649,6 +664,9 @@ impl Display for Unresolved {
             }
             Unresolved::BuiltinOperator(BuiltinOperatorModule::Number) => {
                 write!(f, "<builtin-number>")
+            }
+            Unresolved::BuiltinOperator(BuiltinOperatorModule::String) => {
+                write!(f, "<builtin-string>")
             }
         }
     }
@@ -1071,6 +1089,48 @@ impl Context {
 
                 combined
             }
+        }
+    }
+
+    fn desugar_template_expression(parts: &[TemplatePart<Unresolved>]) -> Expression<Unresolved> {
+        let mut items = Vec::new();
+        let mut has_interpolation = false;
+
+        for part in parts {
+            match part {
+                TemplatePart::Literal(value) if value.is_empty() => {}
+                TemplatePart::Literal(value) => {
+                    items.push(Expression::Primitive(
+                        Span::None,
+                        Primitive::String(ParString::copy_from_slice(value.as_bytes())),
+                    ));
+                }
+                TemplatePart::StringExpr(expr) => {
+                    has_interpolation = true;
+                    items.push(expr.clone());
+                }
+                TemplatePart::DataExpr(expr) => {
+                    has_interpolation = true;
+                    items.push(Self::apply_expression(
+                        &Span::None,
+                        Self::operator_global(&Span::None, BuiltinOperatorModule::Data, "ToString"),
+                        expr.clone(),
+                    ));
+                }
+            }
+        }
+
+        match items.as_slice() {
+            [] => Expression::Primitive(
+                Span::None,
+                Primitive::String(ParString::copy_from_slice(b"")),
+            ),
+            [only] if !has_interpolation => only.clone(),
+            _ => Self::apply_expression(
+                &Span::None,
+                Self::operator_global(&Span::None, BuiltinOperatorModule::String, "Concat"),
+                Expression::List(Span::None, items),
+            ),
         }
     }
 
@@ -1642,6 +1702,11 @@ impl Context {
                 value.clone(),
                 (),
             )),
+
+            Expression::Template { parts, .. } => {
+                let desugared = Self::desugar_template_expression(parts);
+                self.compile_expression(&desugared)?
+            }
 
             Expression::List(span, items) => {
                 let mut process = Arc::new(process::Process::Do {
@@ -3371,6 +3436,7 @@ impl<S> Spanning for Expression<S> {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
+            | Self::Template { span, .. }
             | Self::List(span, _)
             | Self::Global(span, _)
             | Self::Variable(span, _)

@@ -101,9 +101,9 @@ def Main = chan exit {
     .ok masses => {}
   }
   let result1 = ListSum(ListMap(type Nat, type Nat, masses, box Fuel))
-  console.print(String.Builder.add("Part 1: ").add(Nat.ToString(result1)).build)
+  console.print(`Part 1: #{result1}`)
   let result2 = ListSum(ListMap(type Nat, type Nat, masses, box TotalFuel))
-  console.print(String.Builder.add("Part 2: ").add(Nat.ToString(result2)).build)
+  console.print(`Part 2: #{result2}`)
   console.close
   exit!
 }

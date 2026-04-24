@@ -2,10 +2,13 @@ use super::{
     language::{
         Apply, ApplyBranch, ApplyBranches, ArithmeticOperator, Command, CommandBranch,
         CommandBranches, ComparisonOperator, ComparisonStep, Condition, Construct, ConstructBranch,
-        ConstructBranches, Expression, GlobalName, Pattern, Process, TypeConstraint, TypeParameter,
-        Unresolved,
+        ConstructBranches, Expression, GlobalName, Pattern, Process, TemplatePart, TypeConstraint,
+        TypeParameter, Unresolved,
     },
-    lexer::{Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments},
+    lexer::{
+        Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments,
+        unescape_template_text,
+    },
 };
 use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::{
@@ -1669,6 +1672,7 @@ fn starts_data_expression_token(kind: TokenKind) -> bool {
         TokenKind::Float
             | TokenKind::Integer
             | TokenKind::String
+            | TokenKind::TemplateStart
             | TokenKind::LParen
             | TokenKind::LCurly
             | TokenKind::LBrack
@@ -1689,6 +1693,7 @@ fn ends_data_expression_token(kind: TokenKind) -> bool {
         TokenKind::Float
             | TokenKind::Integer
             | TokenKind::String
+            | TokenKind::TemplateEnd
             | TokenKind::RParen
             | TokenKind::RCurly
             | TokenKind::RBrack
@@ -1712,6 +1717,13 @@ fn looks_like_infix(input: &Input) -> bool {
 
     for (index, token) in tokens.iter().enumerate() {
         match token.kind {
+            TokenKind::TemplateStringStart | TokenKind::TemplateDataStart => {
+                depth += 1;
+                continue;
+            }
+            TokenKind::TemplateStart | TokenKind::TemplateEnd => {
+                continue;
+            }
             TokenKind::LParen | TokenKind::LCurly | TokenKind::LBrack => {
                 depth += 1;
                 continue;
@@ -1871,6 +1883,7 @@ fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
         expr_literal_float,
         expr_literal_int,
         expr_literal_string,
+        expr_literal_template,
         expr_literal_bytes,
     ))
     .parse_next(input)
@@ -1927,6 +1940,41 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression<Unresolved>> {
             Expression::Primitive(token.span(), Primitive::String(ParString::from(value)))
         })
         .parse_next(input)
+}
+
+fn expr_literal_template(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        t(TokenKind::TemplateStart),
+        repeat(0.., template_part),
+        t(TokenKind::TemplateEnd),
+    )
+        .map(|(open, parts, close)| Expression::Template {
+            span: open.span().join(close.span()),
+            parts,
+        })
+        .parse_next(input)
+}
+
+fn template_part(input: &mut Input) -> Result<TemplatePart<Unresolved>> {
+    alt((
+        t(TokenKind::TemplateText).map(|token| {
+            // validated in lexer
+            TemplatePart::Literal(ArcStr::from(unescape_template_text(token.raw).unwrap()))
+        }),
+        (
+            t(TokenKind::TemplateStringStart),
+            expression,
+            t(TokenKind::RCurly),
+        )
+            .map(|(_, expr, _)| TemplatePart::StringExpr(expr)),
+        (
+            t(TokenKind::TemplateDataStart),
+            expression,
+            t(TokenKind::RCurly),
+        )
+            .map(|(_, expr, _)| TemplatePart::DataExpr(expr)),
+    ))
+    .parse_next(input)
 }
 
 fn expr_literal_bytes(input: &mut Input) -> Result<Expression<Unresolved>> {
@@ -3995,6 +4043,72 @@ def Value = {a < b} < c
                     *first,
                     Expression::Grouped(_, inner)
                         if matches!(*inner, Expression::ComparisonChain { .. })
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_template_strings() {
+        let expr = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = `Hi ${name}, age #{1 + {2}}.`
+",
+        );
+
+        match expr {
+            Expression::Template { parts, .. } => {
+                assert_eq!(parts.len(), 5);
+                assert!(
+                    matches!(&parts[0], TemplatePart::Literal(value) if value.as_str() == "Hi ")
+                );
+                assert!(matches!(
+                    &parts[1],
+                    TemplatePart::StringExpr(Expression::Variable(_, LocalName { string, .. }))
+                    if string.as_str() == "name"
+                ));
+                assert!(
+                    matches!(&parts[2], TemplatePart::Literal(value) if value.as_str() == ", age ")
+                );
+                assert!(matches!(
+                    &parts[3],
+                    TemplatePart::DataExpr(Expression::Arithmetic {
+                        op: ArithmeticOperator::Add,
+                        ..
+                    })
+                ));
+                assert!(matches!(&parts[4], TemplatePart::Literal(value) if value.as_str() == "."));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_and_escaped_template_strings() {
+        let empty = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = ``
+",
+        );
+        assert!(matches!(empty, Expression::Template { parts, .. } if parts.is_empty()));
+
+        let escaped = parse_single_definition_expression(
+            r#"module Main
+
+def Value = `\` \${ \#{ \n`
+"#,
+        );
+        match escaped {
+            Expression::Template { parts, .. } => {
+                assert_eq!(parts.len(), 1);
+                assert!(matches!(
+                    &parts[0],
+                    TemplatePart::Literal(value) if value.as_str() == "` ${ #{ \n"
                 ));
             }
             other => panic!("unexpected AST: {other:#?}"),

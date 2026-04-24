@@ -19,6 +19,6 @@ def Main: ! =
       Bytes.EmptyReader      // empty body
     )
     body.close.try           // not interested
-    console.print(Nat.ToString(status))
+    console.print(`#{status}`)
     console.close
   } in !
