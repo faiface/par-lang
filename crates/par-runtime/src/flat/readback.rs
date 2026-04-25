@@ -173,15 +173,11 @@ impl Handle {
     }
 
     pub fn send_data(&mut self, data: &Data) {
-        let right = self.send();
-        let left = core::mem::replace(self, right);
-        left.provide_data(data);
+        self.send().provide_data(data);
     }
 
     pub fn send_number(&mut self, number: &Number) {
-        let right = self.send();
-        let left = core::mem::replace(self, right);
-        left.provide_number(number);
+        self.send().provide_number(number);
     }
 
     pub fn receive(&mut self) -> Self {

@@ -10,7 +10,6 @@ import {
   Bool
   Nat
   Option
-  Ordering
   Result
 }
 
@@ -41,9 +40,6 @@ export {
   // Creates a new list `Builder`.
   dec Builder : [type a] Builder<a>
 
-  // Tests two lists for equality with respect to the provided item comparator.
-  dec Equals : <a>[List<box a>] <b>[List<box b>] [box [a, b] Bool] Bool
-
   // Applies `f` to each element of a list.
   //
   // ```par
@@ -56,7 +52,7 @@ export {
   dec FlatMap : <a>[List<a>] [type b, box [a] List<b>] List<b>
 
   // Keeps the elements for which the predicate returns `.true!`.
-  dec Filter : <a>[List<box a>] [box [a] Bool] List<a>
+  dec Filter : <a: box>[List<a>] [box [a] Bool] List<a>
 
   // Folds a list from left to right.
   //
@@ -67,7 +63,7 @@ export {
   dec Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
 
   // Returns the number of elements in a list.
-  dec Length : <a>[List<box a>] Nat
+  dec Length : <a: box>[List<a>] Nat
 
   // Flattens a list of lists into a single list.
   dec Concat : <a>[List<List<a>>] List<a>
@@ -76,24 +72,42 @@ export {
   dec Copy : <a>[dual List<a>] [List<a>] dual List<a>
 
   // Zips two lists into a list of pairs. Stops at the shorter list.
-  dec Zip : <a>[List<box a>] <b>[List<box b>] List<(a) b>
+  dec Zip : <a: box>[List<a>] <b: box>[List<b>] List<(a) b>
 
   // Splits a list of pairs into a pair of lists.
   dec Unzip : <a, b>[List<(a) b>] (List<a>) List<b>
 
   // Returns `.true!` if the predicate holds for all elements.
   // Short-circuits on the first `.false!`.
-  dec All : <a>[List<box a>] [box [a] Bool] Bool
+  dec All : <a: box>[List<a>] [box [a] Bool] Bool
 
   // Returns `.true!` if the predicate holds for at least one element.
   // Short-circuits on the first `.true!`.
-  dec Any : <a>[List<box a>] [box [a] Bool] Bool
+  dec Any : <a: box>[List<a>] [box [a] Bool] Bool
 
   // Returns the first `n` elements of a list.
-  dec Take : <a>[List<box a>] [Nat] List<a>
+  dec Take : <a: box>[List<a>] [Nat] List<a>
 
   // Drops the first `n` elements of a list and returns the rest.
-  dec Drop : <a>[List<box a>] [Nat] List<a>
+  dec Drop : <a: box>[List<a>] [Nat] List<a>
+
+  // Sorts a list in ascending data order. Equal keys keep their original order.
+  dec Sort : <a: data>[List<a>] List<a>
+
+  // Sorts a list in descending data order. Equal keys keep their original order.
+  dec SortDesc : <a: data>[List<a>] List<a>
+
+  // Sorts a non-linear list by an extracted data key.
+  dec SortBy : <a: box>[List<a>] [type k: data, box [a] k] List<a>
+
+  // Sorts a non-linear list by an extracted data key in descending order.
+  dec SortDescBy : <a: box>[List<a>] [type k: data, box [a] k] List<a>
+
+  // Sorts a linear list by a function that returns both the key and the item.
+  dec SortLinearBy : <a>[List<a>] [type k: data, box [a] (k) a] List<a>
+
+  // Sorts a linear list by a key in descending order.
+  dec SortLinearDescBy : <a>[List<a>] [type k: data, box [a] (k) a] List<a>
 }
 
 def Builder = [type a]
@@ -102,11 +116,6 @@ def Builder = [type a]
     .add(x) => let append = [xs: List<a>] append(.item(x) xs) in loop,
     .build => append(.end!),
   }
-
-def Equals = <a>[list1] <b>[list2] [eq] list1.begin.case {
-  .end! => list2 is .end!,
-  .item(x) list1 => list2 is .item(y) list2 and eq(x, y) and list1.loop
-}
 
 def Map = <a>[list] [type b, f] list.begin.case {
   .end! => .end!
@@ -121,7 +130,7 @@ def FlatMap = <a>[list] [type b, f] list.begin.case {
   },
 }
 
-def Filter = <a>[list] [f] list.begin.case {
+def Filter = <a: box>[list] [f] list.begin.case {
   .end! => .end!,
   .item(v) list => f(v).case {
     .true! => .item(v) list.loop,
@@ -134,7 +143,7 @@ def Fold = <a>[list] <r>[result] [f] list.begin.case {
   .item(v) list => let result = f(result, v) in list.loop,
 }
 
-def Length = <a>[list]
+def Length = <a: box>[list]
   let len = 0 in
   list.begin.case {
     .end! => len,
@@ -163,7 +172,7 @@ def Copy = <a>[dst] [src] do {
   }
 } in dst
 
-def Zip = <a>[list1] <b>[list2] chan yield {
+def Zip = <a: box>[list1] <b: box>[list2] chan yield {
   list1.begin.case {
     .end! => { yield.end! },
     .item(v1) list1 => {
@@ -185,7 +194,7 @@ def Unzip = <a, b>[list] list.begin.case {
   } in (.item(x) xs) .item(y) ys
 }
 
-def All = <a>[list] [f]
+def All = <a: box>[list] [f]
   list.begin.case {
     .end! => .true!,
     .item(v) list => f(v).case {
@@ -194,9 +203,9 @@ def All = <a>[list] [f]
     },
   }
 
-def Any = <a>[list] [f] {not list->All(box [v] {not f(v)})}
+def Any = <a: box>[list] [f] {not list->All(box [v] {not f(v)})}
 
-def Take = <a>[list] [n]
+def Take = <a: box>[list] [n]
   Nat.Repeat(n).begin.case {
     .end! => .end!,
     .step next => list.case {
@@ -205,7 +214,7 @@ def Take = <a>[list] [n]
     }
   }
 
-def Drop = <a>[list] [n]
+def Drop = <a: box>[list] [n]
   Nat.Repeat(n).begin.case {
     .end! => list,
     .step next => list.case {
@@ -213,3 +222,15 @@ def Drop = <a>[list] [n]
       .item(_) list => next.loop,
     },
   }
+
+def Sort = external
+
+def SortDesc = external
+
+def SortBy = external
+
+def SortDescBy = external
+
+def SortLinearBy = external
+
+def SortLinearDescBy = external

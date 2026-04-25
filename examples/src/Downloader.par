@@ -77,7 +77,7 @@ def DownloadFile = [(sourceUrl, dest)!] chan yield {
   }
 
   let try (status, headers) body = Http.Fetch(("GET", sourceUrl, *()) Bytes.EmptyReader)
-  let headers = BoxMap.OfString(type Bytes, headers)
+  let headers = BoxMap.FromList(headers)
   catch@clearResp err => { body.close; throw err }
 
   if status != 200 => {
@@ -190,7 +190,7 @@ type ProgressTracker = iterative choice {
 }
 
 def NewProgressTracker: ProgressTracker = do {
-  let filesInProgress = Map.OfString(type (Nat, Nat, Nat)!, *())
+  let filesInProgress = Map.New(type String, type (Nat, Nat, Nat)!)
   let sumDownloaded: Int = 0
   let sumExpected: Int = 0
 } in begin case {

@@ -1,14 +1,10 @@
-// Non-linear ordered-map interface and built-in B-tree constructors for
-// `String`, `Bytes`, `Int`, and `Nat` keys.
+// Non-linear ordered-map interface with data keys and non-linear values.
 export module BoxMap
 
 import {
-  Bytes
-  Int
   List
   Nat
   Option
-  String
 }
 
 export {
@@ -16,7 +12,7 @@ export {
   //
   // - `.size` — get the number of entries.
   // - `.keys` — get the keys in map order.
-  // - `.list` — get all entries as `(key) box value` pairs.
+  // - `.list` — get all entries as `(key) value` pairs.
   // - `.get(key)` — look up a key.
   // - `.put(key, value)` — return a map with that entry inserted or updated.
   // - `.delete(key)` — return a map with that entry removed.
@@ -25,9 +21,9 @@ export {
   type BoxMap<k, v> = iterative box choice {
     .size => Nat,
     .keys => List<k>,
-    .list => List<(k) box v>,
-    .get(k) => Option<box v>,
-    .put(k, box v) => self,
+    .list => List<(k) v>,
+    .get(k) => Option<v>,
+    .put(k, v) => self,
     .delete(k) => self,
   }
 
@@ -35,31 +31,18 @@ export {
   type Readonly<k, v> = box choice {
     .size => Nat,
     .keys => List<k>,
-    .list => List<(k) box v>,
-    .get(k) => Option<box v>,
+    .list => List<(k) v>,
+    .get(k) => Option<v>,
   }
 
-  // Builds a `BoxMap<String, v>` from `(key) value` pairs.
-  // If a key appears more than once, the last pair wins.
-  dec OfString : [type v, List<(String) box v>] BoxMap<String, v>
+  // Builds an empty `BoxMap`.
+  dec New : [type k: data, type v: box] BoxMap<k, v>
 
-  // Builds a `BoxMap<Bytes, v>` from `(key) value` pairs.
+  // Builds a `BoxMap` from `(key) value` pairs.
   // If a key appears more than once, the last pair wins.
-  dec OfBytes : [type v, List<(Bytes) box v>] BoxMap<Bytes, v>
-
-  // Builds a `BoxMap<Int, v>` from `(key) value` pairs.
-  // If a key appears more than once, the last pair wins.
-  dec OfInt : [type v, List<(Int) box v>] BoxMap<Int, v>
-
-  // Builds a `BoxMap<Nat, v>` from `(key) value` pairs.
-  // If a key appears more than once, the last pair wins.
-  dec OfNat : [type v, List<(Nat) box v>] BoxMap<Nat, v>
+  dec FromList : <k: data, v: box>[List<(k) v>] BoxMap<k, v>
 }
 
-def OfString = external
+def New = external
 
-def OfBytes = external
-
-def OfInt = external
-
-def OfNat = external
+def FromList = external
