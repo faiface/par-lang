@@ -2,7 +2,7 @@
 //
 // ```par
 // let xs = *(1, 2, 3)
-// xs->List.Map(type Int, box [n] Int.Mul(n, 2))
+// xs->List.Map(type Int, box [n] n * 2)
 // ```
 export module List
 
@@ -43,7 +43,7 @@ export {
   // Applies `f` to each element of a list.
   //
   // ```par
-  // {*(1, 2, 3)}->List.Map(type Int, box [n] Int.Mul(n, 2))
+  // {*(1, 2, 3)}->List.Map(type Int, box [n] n * 2)
   // // = *(2, 4, 6)
   // ```
   dec Map : <a>[List<a>] [type b, box [a] b] List<b>
@@ -57,7 +57,7 @@ export {
   // Folds a list from left to right.
   //
   // ```par
-  // {*(1, 2, 3)}->List.Fold(0, box [sum, n] Nat.Add(sum, n))
+  // {*(1, 2, 3)}->List.Fold(0, box [sum, n] sum + n)
   // // = 6
   // ```
   dec Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
@@ -147,7 +147,7 @@ def Length = <a: box>[list]
   let len = 0 in
   list.begin.case {
     .end! => len,
-    .item(_) list => do { len->Nat.Add(1) } in list.loop,
+    .item(_) list => do { len += 1 } in list.loop,
   }
 
 def Concat = <a>[lists] chan yield {

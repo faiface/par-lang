@@ -9,6 +9,8 @@ use crate::frontend_impl::types::implicit::infer_holes;
 use crate::frontend_impl::types::lattice::intersect_types;
 use crate::location::Span;
 use indexmap::{IndexMap, IndexSet};
+use par_runtime::primitive::Primitive;
+use par_runtime::readback::Number;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -3062,7 +3064,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                     captures.clone(),
                     Arc::new(Expression::Primitive(
                         span.clone(),
-                        par_runtime::primitive::Primitive::Int(num_bigint::BigInt::ZERO),
+                        Primitive::Number(Number::Int(num_bigint::BigInt::ZERO)),
                         Type::Fail(span.clone()),
                     )),
                     target_type.clone(),
@@ -3271,7 +3273,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
                         captures.clone(),
                         Arc::new(Expression::Primitive(
                             span.clone(),
-                            par_runtime::primitive::Primitive::Int(num_bigint::BigInt::ZERO),
+                            Primitive::Number(Number::Int(num_bigint::BigInt::ZERO)),
                             Type::Fail(span.clone()),
                         )),
                         Type::Fail(span.clone()),
@@ -3366,7 +3368,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         (
             Arc::new(Expression::Primitive(
                 Span::None,
-                par_runtime::primitive::Primitive::Int(num_bigint::BigInt::ZERO),
+                Primitive::Number(Number::Int(num_bigint::BigInt::ZERO)),
                 Type::Fail(Span::None),
             )),
             Type::Fail(Span::None),

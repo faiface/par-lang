@@ -16,7 +16,8 @@ def Fibonacci =
   in begin case {
     .close => !
     .next =>
-      let (a) b = (b) a->Nat.Add(b)
+      let next = a + b in
+      let (a) b = (b) next
       in (a) loop
   }
 

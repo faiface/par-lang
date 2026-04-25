@@ -129,9 +129,9 @@ impl Handle {
 
     pub fn provide_number(self, number: &Number) {
         self.provide_primitive(match number {
-            Number::Zero => Primitive::Zero,
-            Number::Int(value) => Primitive::Int(value.clone()),
-            Number::Float(value) => Primitive::Float(*value),
+            Number::Zero => Primitive::Number(Number::Zero),
+            Number::Int(value) => Primitive::Number(Number::Int(value.clone())),
+            Number::Float(value) => Primitive::Number(Number::Float(*value)),
         })
     }
 
@@ -151,9 +151,7 @@ impl Handle {
     pub async fn number(self) -> Result<Number> {
         let primitive = self.primitive().await?;
         match primitive {
-            Primitive::Zero => Ok(Number::Zero),
-            Primitive::Int(value) => Ok(Number::Int(value)),
-            Primitive::Float(value) => Ok(Number::Float(value)),
+            Primitive::Number(n) => Ok(n),
             primitive => Err(Error::InvalidPrimitive(primitive)),
         }
     }

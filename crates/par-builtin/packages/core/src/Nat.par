@@ -2,33 +2,12 @@
 export module Nat
 
 import {
-  Bool
   Int
   List
-  Ordering
   String
 }
 
 export {
-  // Returns `m + n`.
-  dec Add : [Nat, Nat] Nat
-
-  // `Nat.Sub(n, m)` returns `n - m`, clamped at `0`.
-  //
-  // ```par
-  // Nat.Sub(5, 3)   // = 2
-  // Nat.Sub(2, 5)   // = 0
-  // Nat.Sub(3, -1)  // = 4
-  // ```
-  dec Sub : [Nat, Int] Nat
-
-  // Returns `m * n`.
-  dec Mul : [Nat, Nat] Nat
-
-  // `Nat.Div(m, n)` is integer division on naturals.
-  // Returns `0` when `n` is `0`.
-  dec Div : [Nat, Nat] Nat
-
   // `Nat.Mod(m, n)` is the remainder of dividing `m` by `n`.
   // Returns `0` when `n` is `0`.
   dec Mod : [Nat, Nat] Nat
@@ -42,12 +21,6 @@ export {
 
   // `Nat.Clamp(x)(lo, hi)` clamps `x` to the inclusive range `[lo, hi]`.
   dec Clamp : [Int] [Nat, Nat] Nat
-
-  // Tests two natural numbers for equality.
-  dec Equals : [Nat, Nat] Bool
-
-  // Compares two natural numbers, returning their `Ordering`.
-  dec Compare : [Nat, Nat] Ordering
 
   // Produces `n` repetitions of `.step`, followed by `.end!`.
   //
@@ -89,14 +62,6 @@ export {
   }
 }
 
-def Add = external
-
-def Sub = external
-
-def Mul = external
-
-def Div = external
-
 def Mod = external
 
 def Min = external
@@ -104,10 +69,6 @@ def Min = external
 def Max = external
 
 def Clamp = external
-
-def Equals = external
-
-def Compare = external
 
 def Repeat = external
 

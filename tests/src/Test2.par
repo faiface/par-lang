@@ -63,27 +63,27 @@ def TestBoolLogic: [Test] ! = [test] do {
 } in !
 
 def TestColors: [Test] ! = [test] do {
-  test.assert("Red is 1", Nat.Equals(ColorToNat(.red!), 1))
-  test.assert("Green is 2", Nat.Equals(ColorToNat(.green!), 2))
-  test.assert("Blue is 3", Nat.Equals(ColorToNat(.blue!), 3))
+  test.assert("Red is 1", ColorToNat(.red!) == 1)
+  test.assert("Green is 2", ColorToNat(.green!) == 2)
+  test.assert("Blue is 3", ColorToNat(.blue!) == 3)
 } in !
 
 def TestShapes: [Test] ! = [test] do {
-  test.assert("Circle is 10", Nat.Equals(ShapeToNat(.circle!), 10))
-  test.assert("Square is 20", Nat.Equals(ShapeToNat(.square!), 20))
-  test.assert("Triangle is 30", Nat.Equals(ShapeToNat(.triangle!), 30))
+  test.assert("Circle is 10", ShapeToNat(.circle!) == 10)
+  test.assert("Square is 20", ShapeToNat(.square!) == 20)
+  test.assert("Triangle is 30", ShapeToNat(.triangle!) == 30)
 } in !
 
 def TestCombined: [Test] ! = [test] do {
   let redValue = ColorToNat(.red!)
   let circleValue = ShapeToNat(.circle!)
-  let sum = Nat.Add(redValue, circleValue)
+  let sum = redValue + circleValue
 
-  test.assert("Red + Circle = 11", Nat.Equals(sum, 11))
+  test.assert("Red + Circle = 11", sum == 11)
 
   let greenValue = ColorToNat(.green!)
   let squareValue = ShapeToNat(.square!)
-  let sum2 = Nat.Add(greenValue, squareValue)
+  let sum2 = greenValue + squareValue
 
-  test.assert("Green + Square = 22", Nat.Equals(sum2, 22))
+  test.assert("Green + Square = 22", sum2 == 22)
 } in !

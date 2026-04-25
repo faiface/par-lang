@@ -142,7 +142,7 @@ def Enumerate1 = <e, a>[iter] do {
   .next => iter.next.case {
     .end result => .end result,
     .item(value) iter => .item((index) value) do {
-      index->Nat.Add(1)
+      index += 1
     } in iter.loop
   }
 }

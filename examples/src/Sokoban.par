@@ -52,41 +52,41 @@ def Main: ! = chan exit {
         },
         .char(char) rest => {
           rest.close
-          if char->Char.Equals("x") => {
+          if char == "x" => {
             CloseUndoStack(undoStack)
             state.close
             console.close
             exit!
           }
-          if char->Char.Equals("a") => {
+          if char == "a" => {
             state.copy[copy]
             let undoStack = .item(copy) undoStack
             state.playerPosition[position]
             let (playerX, playerY)! = position
             state.tryMove(.left!)
           }
-          if char->Char.Equals("d") => {
+          if char == "d" => {
             state.copy[copy]
             let undoStack = .item(copy) undoStack
             state.playerPosition[position]
             let (playerX, playerY)! = position
             state.tryMove(.right!)
           }
-          if char->Char.Equals("w") => {
+          if char == "w" => {
             state.copy[copy]
             let undoStack = .item(copy) undoStack
             state.playerPosition[position]
             let (playerX, playerY)! = position
             state.tryMove(.up!)
           }
-          if char->Char.Equals("s") => {
+          if char == "s" => {
             state.copy[copy]
             let undoStack: List<State> = .item(copy) undoStack
             state.playerPosition[position]
             let (playerX, playerY)! = position
             state.tryMove(.down!)
           }
-          if char->Char.Equals("u") => {
+          if char == "u" => {
             undoStack.case {
               .item(copy) undoStack => {
                 state.close
@@ -180,7 +180,7 @@ def State =
           Int.Range(-10, 11)->List.Map(type String, box [y]
             String.Concat(
               Int.Range(-10, 11)->List.Map(type Char, box [x] chan return {
-                if x->Int.Equals(playerX) and y->Int.Equals(playerY) => {
+                if x == playerX and y == playerY => {
                   return <> PictureOfPlayer(lastDirection)
                 }
                 if pegs->CoordListContains((x, y)!) => {
@@ -226,19 +226,19 @@ dec MovePegInList : [List<Coord>, Nat, Direction] List<Coord>
 def MovePegInList = [pegs, index, direction]
   let n = 0 in
   pegs.begin.case {
-    .item(peg) pegs => Nat.Equals(index, n).case {
-      .true! => .item(peg->AdjacentCoord(direction)) pegs,
-      .false! => do { n->Nat.Add(1) } in .item(peg) pegs.loop,
+    .item(peg) pegs => if {
+      index == n => .item(peg->AdjacentCoord(direction)) pegs,
+      else => do { n += 1 } in .item(peg) pegs.loop,
     },
     .end! => .end!,
   }
 
 dec AdjacentCoord : [Coord, Direction] Coord
 def AdjacentCoord = [(x, y)!, direction] direction.case {
-  .left! => (x->Int.Sub(1), y)!,
-  .right! => (x->Int.Add(1), y)!,
-  .up! => (x, y->Int.Sub(1))!,
-  .down! => (x, y->Int.Add(1))!,
+  .left! => (x - 1, y)!,
+  .right! => (x + 1, y)!,
+  .up! => (x, y - 1)!,
+  .down! => (x, y + 1)!,
 }
 
 dec PictureOfPlayer : [Direction] Char
@@ -254,22 +254,22 @@ def PictureOfPeg = "●"
 
 dec Maze : [Coord] Result<!, Tile>
 def Maze = [(x, y)!] chan return {
-  if Int.Abs(x)->Nat.Compare(4) is .greater! => {
+  if Int.Abs(x) > 4 => {
     return <> .err!
   }
-  if Int.Abs(y)->Nat.Compare(4) is .greater! => {
+  if Int.Abs(y) > 4 => {
     return <> .err!
   }
-  if Int.Abs(x)->Nat.Equals(4) => {
+  if Int.Abs(x) == 4 => {
     return <> .ok .wall!
   }
-  if Int.Abs(y)->Nat.Equals(4) => {
+  if Int.Abs(y) == 4 => {
     return <> .ok .wall!
   }
-  if x->Int.Equals(2) and not y->Int.Compare(0) is .less! => {
+  if x == 2 and y >= 0 => {
     return <> .ok .wall!
   }
-  if x->Int.Equals(3) and not y->Int.Compare(0) is .less! => {
+  if x == 3 and y >= 0 => {
     return <> .ok .hole!
   }
   return <> .ok .ground!
@@ -283,9 +283,9 @@ def CoordListIndex = [list, (x, y)!]
   list.begin.case {
     .item((otherX, otherY)!) list => do {
       let result = index
-      index->Nat.Add(1)
+      index += 1
     } in if {
-      otherX->Int.Equals(x) and otherY->Int.Equals(y) => .ok result,
+      otherX == x and otherY == y => .ok result,
       else => list.loop,
     }
     .end! => .err!,
@@ -294,7 +294,7 @@ def CoordListIndex = [list, (x, y)!]
 dec CoordListContains : [List<Coord>, Coord] Bool
 def CoordListContains = [list, (x, y)!] list.begin.case {
   .item((otherX, otherY)!) list => if {
-    otherX->Int.Equals(x) and otherY->Int.Equals(y) => .true!,
+    otherX == x and otherY == y => .true!,
     else => list.loop,
   },
   .end! => .false!,

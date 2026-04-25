@@ -1,0 +1,48 @@
+module QS
+
+import {
+    @core/Nat
+    @core/List
+}
+
+dec QuicksortGo: [List<Nat>] [List<Nat>] List<Nat>
+def QuicksortGo = [input] [suffix] chan out: dual List<Nat> {
+    input.unfounded@outer
+    input.case {
+        .item(pivot) => {
+        }
+        .end => { out <> suffix }
+    }
+
+    // now, split the rest of the list
+    let a = List.Builder(type Nat)
+    let b = List.Builder(type Nat)
+
+    input.begin@inner.case {
+        .item(i) => {
+            if i < pivot => {
+                b.add(i)
+                input.loop@inner
+            }
+            a.add(i)
+            input.loop@inner
+        }
+        .end => {
+            let suffix = chan out {
+                let input = a.build
+                input.loop@outer
+            }
+            let suffix = .item (pivot) suffix
+            let input = b.build
+            input.loop@outer
+        }
+    }
+}
+
+dec Quicksort : [List<Nat>] List<Nat>
+def Quicksort = [x] QuicksortGo(x, .end!)
+
+def Main : ! = Quicksort(Nat.Range(1, 1000)).begin.case {
+    .item(_) rest => rest.loop,
+    .end! => !,
+}

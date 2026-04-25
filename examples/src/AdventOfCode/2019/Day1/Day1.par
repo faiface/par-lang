@@ -54,14 +54,14 @@ def ListSum = [list]
   list.begin.case {
     .end! => result,
     .item(n) list =>
-      let result = Nat.Add(result, n) in
+      let result = result + n in
       list.loop,
   }
 
 // AoC Logic
 
 dec Fuel : [Nat] Nat
-def Fuel = [mass] Nat.Max(0, Int.Sub(Nat.Div(mass, 3), 2))
+def Fuel = [mass] Nat.Max(0, mass / 3 - 2)
 
 dec TotalFuel : [Nat] Nat
 def TotalFuel = [mass]
@@ -71,10 +71,10 @@ def TotalFuel = [mass]
     .end! => totalMass,
     .step rest =>
       let mass = Fuel(mass) in
-      let totalMass = Nat.Add(totalMass, mass) in
-      Nat.Equals(mass, 0).case {
-        .true! => totalMass,
-        .false! => rest.loop,
+      let totalMass = totalMass + mass in
+      if {
+        mass == 0 => totalMass,
+        else => rest.loop,
       }
   }
 

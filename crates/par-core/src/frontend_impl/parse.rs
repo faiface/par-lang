@@ -25,7 +25,10 @@ use bytes::Bytes;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
-use par_runtime::primitive::{ParString, Primitive};
+use par_runtime::{
+    primitive::{ParString, Primitive},
+    readback::Number,
+};
 use std::collections::BTreeMap;
 use winnow::token::literal;
 use winnow::{
@@ -1891,7 +1894,7 @@ fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn expr_literal_float(input: &mut Input) -> Result<Expression<Unresolved>> {
     literal_float
-        .map(|(span, value)| Expression::Primitive(span, Primitive::Float(value)))
+        .map(|(span, value)| Expression::Primitive(span, Primitive::Number(Number::Float(value))))
         .parse_next(input)
 }
 
@@ -1919,7 +1922,7 @@ fn expr_list(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn expr_literal_int(input: &mut Input) -> Result<Expression<Unresolved>> {
     literal_int
-        .map(|(span, i)| Expression::Primitive(span, Primitive::Int(i)))
+        .map(|(span, i)| Expression::Primitive(span, Primitive::Number(Number::Int(i))))
         .parse_next(input)
 }
 
@@ -3986,7 +3989,10 @@ def Value = 1 + 2 * 3
                 right,
                 ..
             } => {
-                assert!(matches!(*left, Expression::Primitive(_, Primitive::Int(_))));
+                assert!(matches!(
+                    *left,
+                    Expression::Primitive(_, Primitive::Number(Number::Int(_)))
+                ));
                 assert!(matches!(
                     *right,
                     Expression::Arithmetic {

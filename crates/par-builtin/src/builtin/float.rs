@@ -195,46 +195,6 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Float",
-        name: "Add"
-    },
-    f: |handle| Box::pin(float_add(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Sub"
-    },
-    f: |handle| Box::pin(float_sub(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Mul"
-    },
-    f: |handle| Box::pin(float_mul(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Div"
-    },
-    f: |handle| Box::pin(float_div(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
         name: "Pow"
     },
     f: |handle| Box::pin(float_pow(handle)),
@@ -484,30 +444,6 @@ async fn float_ceil(mut handle: Handle) {
 async fn float_round(mut handle: Handle) {
     let value = handle.receive().float().await;
     handle.provide_float(value.round());
-}
-
-async fn float_add(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x + y);
-}
-
-async fn float_sub(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x - y);
-}
-
-async fn float_mul(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x * y);
-}
-
-async fn float_div(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x / y);
 }
 
 async fn float_pow(mut handle: Handle) {

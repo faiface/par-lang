@@ -15,6 +15,7 @@ use num_bigint::BigInt;
 
 use par_runtime::fan_behavior::FanBehavior;
 use par_runtime::primitive::{ParString, Primitive, format_float};
+use par_runtime::readback::Number;
 
 pub(crate) type VarId = usize;
 
@@ -429,11 +430,11 @@ impl<Ext: Clone> Net<Ext> {
 
     fn primitive_interact(&mut self, p: Primitive, tree: Tree<Ext>) {
         match (p, tree) {
-            (Primitive::Zero, Tree::IntRequest(resp)) => {
+            (Primitive::Number(Number::Zero), Tree::IntRequest(resp)) => {
                 resp.send(BigInt::ZERO).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
-            (Primitive::Int(i), Tree::IntRequest(resp)) => {
+            (Primitive::Number(Number::Int(i)), Tree::IntRequest(resp)) => {
                 resp.send(i).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
@@ -673,9 +674,9 @@ impl<Ext: Clone> Net<Ext> {
                 )
             }
 
-            Tree::Primitive(Primitive::Zero) => String::from("primitive(0)"),
-            Tree::Primitive(Primitive::Int(i)) => format!("primitive({})", i),
-            Tree::Primitive(Primitive::Float(value)) => {
+            Tree::Primitive(Primitive::Number(Number::Zero)) => String::from("primitive(0)"),
+            Tree::Primitive(Primitive::Number(Number::Int(i))) => format!("primitive({})", i),
+            Tree::Primitive(Primitive::Number(Number::Float(value))) => {
                 format!("primitive({})", format_float(*value))
             }
             Tree::Primitive(Primitive::String(s)) => format!("primitive({:?})", s),

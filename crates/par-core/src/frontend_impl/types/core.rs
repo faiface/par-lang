@@ -6,6 +6,7 @@ use arcstr::ArcStr;
 use im::HashSet;
 use num_bigint::BigInt;
 use par_runtime::primitive::Primitive;
+use par_runtime::readback::Number;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
@@ -80,10 +81,10 @@ impl<S> NamedTypeDisplay<S> {
 
 pub(crate) fn get_primitive_type<S: Clone>(primitive: &Primitive) -> Type<S> {
     match primitive {
-        Primitive::Zero => Type::nat(),
-        Primitive::Int(n) if n >= &BigInt::ZERO => Type::nat(),
-        Primitive::Int(_) => Type::int(),
-        Primitive::Float(_) => Type::float(),
+        Primitive::Number(Number::Zero) => Type::nat(),
+        Primitive::Number(Number::Int(n)) if n >= &BigInt::ZERO => Type::nat(),
+        Primitive::Number(Number::Int(_)) => Type::int(),
+        Primitive::Number(Number::Float(_)) => Type::float(),
         Primitive::String(s) if is_single_char(s.as_str()) => Type::char(),
         Primitive::String(_) => Type::string(),
         Primitive::Bytes(b) if b.len() == 1 => Type::byte(),

@@ -21,16 +21,6 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Char",
-        name: "Equals"
-    },
-    f: |handle| Box::pin(char_equals(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Char",
         name: "Code"
     },
     f: |handle| Box::pin(char_code(handle)),
@@ -45,17 +35,6 @@ inventory::submit!(ExternalDef {
     },
     f: |handle| Box::pin(char_is(handle)),
 });
-
-async fn char_equals(mut handle: Handle) {
-    let x = handle.receive().char().await;
-    let y = handle.receive().char().await;
-    if x == y {
-        handle.signal(literal!("true"));
-    } else {
-        handle.signal(literal!("false"));
-    }
-    handle.break_();
-}
 
 async fn char_code(mut handle: Handle) {
     let c = handle.receive().char().await;

@@ -22,16 +22,6 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Byte",
-        name: "Equals"
-    },
-    f: |handle| Box::pin(byte_equals(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Byte",
         name: "Code"
     },
     f: |handle| Box::pin(byte_code(handle)),
@@ -46,17 +36,6 @@ inventory::submit!(ExternalDef {
     },
     f: |handle| Box::pin(byte_is(handle)),
 });
-
-async fn byte_equals(mut handle: Handle) {
-    let x = handle.receive().byte().await;
-    let y = handle.receive().byte().await;
-    if x == y {
-        handle.signal(literal!("true"));
-    } else {
-        handle.signal(literal!("false"));
-    }
-    handle.break_();
-}
 
 async fn byte_code(mut handle: Handle) {
     let c = handle.receive().byte().await;

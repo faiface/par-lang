@@ -1,11 +1,9 @@
 export module Bytes
 
 import {
-  Bool
   Byte
   List
   Nat
-  Ordering
   Result
 }
 
@@ -103,12 +101,6 @@ export {
     .or List<self>,
   }
 
-  // Tests two byte sequences for equality.
-  dec Equals : [Bytes, Bytes] Bool
-
-  // Compares two byte sequences lexicographically, returning their `Ordering`.
-  dec Compare : [Bytes, Bytes] Ordering
-
   // Returns the length of a byte sequence.
   dec Length : [Bytes] Nat
 
@@ -145,10 +137,6 @@ export {
   // ```
   dec PipeReader : [type e, [Writer<!>] Result<e, !>] Reader<e>
 }
-
-def Equals = external
-
-def Compare = external
 
 def Length = external
 

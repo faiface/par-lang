@@ -18,17 +18,12 @@ export {
     .range(Byte, Byte)!,
   }
 
-  // Tests two bytes for equality.
-  dec Equals : [Byte, Byte] Bool
-
   // Returns the numeric value of a byte (0-255) as a natural number.
   dec Code : [Byte] Nat
 
   // Tests whether a byte matches a class.
   dec Is : [Byte, Class] Bool
 }
-
-def Equals = external
 
 def Code = external
 

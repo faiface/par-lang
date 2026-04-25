@@ -60,15 +60,18 @@ impl Handle {
     }
 
     pub fn provide_int(self, value: BigInt) {
-        self.handle.provide_primitive(Primitive::Int(value))
+        self.handle
+            .provide_primitive(Primitive::Number(Number::Int(value)))
     }
 
     pub fn provide_nat(self, value: BigInt) {
-        self.handle.provide_primitive(Primitive::Int(value))
+        self.handle
+            .provide_primitive(Primitive::Number(Number::Int(value)))
     }
 
     pub fn provide_float(self, value: f64) {
-        self.handle.provide_primitive(Primitive::Float(value))
+        self.handle
+            .provide_primitive(Primitive::Number(Number::Float(value)))
     }
 
     pub fn provide_string(self, value: ParString) {

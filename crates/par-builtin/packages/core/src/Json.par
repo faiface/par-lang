@@ -167,11 +167,11 @@ def Decode = external
 def Equals = [json1, json2] json1.begin.case {
   .null! => json2 is .null!,
   .bool b1 => json2 is .bool b2 and {b1 and b2 or not b1 and not b2},
-  .string s1 => json2 is .string s2 and s1->CoreString.Equals(s2),
-  .number n1 => json2 is .number n2 and n1->Float.Equals(n2, 0.0),
+  .string s1 => json2 is .string s2 and s1 == s2,
+  .number n1 => json2 is .number n2 and n1 == n2,
   .list l1 => json2 is .list l2 and l1->ListEquals(l2, box [json1, json2] json1.loop),
   .object o1 => json2 is .object o2 and o1.list->ListEquals(o2.list, box [(k1) json1, (k2) json2] {
-    k1->CoreString.Equals(k2) and json1.loop
+    k1 == k2 and json1.loop
   })
 }
 

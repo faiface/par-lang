@@ -63,18 +63,6 @@ export {
   // Rounds to the nearest integer, ties away from zero.
   dec Round : [Float] Float
 
-  // Returns the sum of two floats.
-  dec Add : [Float, Float] Float
-
-  // Returns the difference of two floats.
-  dec Sub : [Float, Float] Float
-
-  // Returns the product of two floats.
-  dec Mul : [Float, Float] Float
-
-  // Returns the quotient of two floats.
-  dec Div : [Float, Float] Float
-
   // `Float.Pow(base, exponent)` returns `base` raised to the power `exponent`.
   dec Pow : [Float, Float] Float
 
@@ -163,14 +151,6 @@ def Floor = external
 def Ceil = external
 
 def Round = external
-
-def Add = external
-
-def Sub = external
-
-def Mul = external
-
-def Div = external
 
 def Pow = external
 

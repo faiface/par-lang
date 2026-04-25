@@ -48,7 +48,7 @@ def Map = [type a, type b, f, list] list.begin.case {
   .item(x) xs => .item(f(x)) xs.loop,
 }
 
-def IntListSet = ListSet(type Int, box Int.Equals)
+def IntListSet = ListSet(type Int, box [x, y] x == y)
 
 def TestDedup =
   Deduplicate(type Int, IntListSet)

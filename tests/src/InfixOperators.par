@@ -1,6 +1,7 @@
 module InfixOperators
 
 import {
+  @core/Data
   @core/Float
   @core/Int
   @core/Nat
@@ -18,14 +19,14 @@ def TestArithmeticOperators: [Test] ! = [test] do {
   let negatedProduct = neg 2 * 3
 
   test
-    .assert("Infix + works on numbers", Nat.Equals(natSum, 5))
-    .assert("Infix - works on signed numbers", Int.Equals(intDiff, 2))
-    .assert("Infix * works on numbers", Float.Equals(floatProduct, 3.0, 0.0))
-    .assert("Infix / works on numbers", Nat.Equals(natQuotient, 4))
-    .assert("Prefix neg works on signed numbers", Int.Equals(negated, -5))
-    .assert("Multiplication binds tighter than addition", Nat.Equals(precedence, 7))
-    .assert("Grouping still overrides precedence", Nat.Equals(grouped, 9))
-    .assert("neg binds tighter than multiplication", Int.Equals(negatedProduct, -6))
+    .assert("Infix + works on numbers", natSum == 5)
+    .assert("Infix - works on signed numbers", intDiff == 2)
+    .assert("Infix * works on numbers", floatProduct == 3.0)
+    .assert("Infix / works on numbers", natQuotient == 4)
+    .assert("Prefix neg works on signed numbers", negated == -5)
+    .assert("Multiplication binds tighter than addition", precedence == 7)
+    .assert("Grouping still overrides precedence", grouped == 9)
+    .assert("neg binds tighter than multiplication", negatedProduct == -6)
 } in !
 
 def TestComparisonOperators: [Test] ! = [test] do {
@@ -57,7 +58,7 @@ def CompoundAssignIntInChan : [Int] Int = [value] chan out {
 }
 
 def CompoundAssignCaseBranch : [Nat] Nat = [value] chan out {
-  Nat.Compare(value, 5).case {
+  Data.Compare((value) 5).case {
     .less! => {
       value += 1
       out <> value
@@ -90,11 +91,11 @@ def TestProcessCompoundAssignments: [Test] ! = [test] do {
   let caseHigh = CompoundAssignCaseBranch(8)
 
   test
-    .assert("Process += works in do blocks", Nat.Equals(natValue, 2))
-    .assert("Process *= and /= work in do blocks", Float.Equals(floatValue, 3.0, 0.0))
-    .assert("Process += works in chan blocks", Nat.Equals(chanNat, 5))
-    .assert("Process -= works in chan blocks", Int.Equals(chanInt, -2))
-    .assert("Process compound assignment works in case less branches", Nat.Equals(caseLow, 5))
-    .assert("Process compound assignment works in case equal branches", Nat.Equals(caseEqual, 10))
-    .assert("Process compound assignment works in case greater branches", Nat.Equals(caseHigh, 4))
+    .assert("Process += works in do blocks", natValue == 2)
+    .assert("Process *= and /= work in do blocks", floatValue == 3.0)
+    .assert("Process += works in chan blocks", chanNat == 5)
+    .assert("Process -= works in chan blocks", chanInt == -2)
+    .assert("Process compound assignment works in case less branches", caseLow == 5)
+    .assert("Process compound assignment works in case equal branches", caseEqual == 10)
+    .assert("Process compound assignment works in case greater branches", caseHigh == 4)
 } in !

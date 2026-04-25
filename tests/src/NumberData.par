@@ -26,11 +26,11 @@ def TestNumberZero: [Test] ! = [test] do {
   let floatZero = Number.Zero(type Float)
 
   test
-    .assert("Number.Zero(type Nat) behaves like nat 0", Nat.Equals(natZero, 0))
-    .assert("Number.Zero(type Int) behaves like int 0", Int.Equals(intZero, 0))
+    .assert("Number.Zero(type Nat) behaves like nat 0", natZero == 0)
+    .assert("Number.Zero(type Int) behaves like int 0", intZero == 0)
     .assert(
       "Number.Zero(type Float) behaves like float 0.0",
-      Float.Equals(floatZero, 0.0, 0.0),
+      floatZero == 0.0,
     )
 } in !
 
@@ -42,11 +42,11 @@ def TestGenericNumberOperations: [Test] ! = [test] do {
   let intNegated = Number.Neg(5)
 
   test
-    .assert("Number.Add keeps nat arithmetic", Nat.Equals(natSum, 5))
-    .assert("Number.Sub infers signed ints", Int.Equals(signedDiff, 2))
-    .assert("Number.Mul keeps float arithmetic", Float.Equals(floatProduct, 3.0, 0.0))
-    .assert("Number.Add handles the Zero variant", Int.Equals(intSumWithZero, 3))
-    .assert("Number.Neg negates signed inputs", Int.Equals(intNegated, -5))
+    .assert("Number.Add keeps nat arithmetic", natSum == 5)
+    .assert("Number.Sub infers signed ints", signedDiff == 2)
+    .assert("Number.Mul keeps float arithmetic", floatProduct == 3.0)
+    .assert("Number.Add handles the Zero variant", intSumWithZero == 3)
+    .assert("Number.Neg negates signed inputs", intNegated == -5)
 } in !
 
 def TestDataGenericFunctions: [Test] ! = [test]
@@ -58,7 +58,7 @@ def TestDataGenericFunctions: [Test] ! = [test]
     test
       .assert(
         "Data.ToString renders nested data",
-        String.Equals(rendered, "(1) .true!"),
+        rendered == "(1) .true!",
       )
       .assert("Data.Compare compares paired same-type data", IsLess(ordering))
   } in !
@@ -87,6 +87,6 @@ def TestFormatDropsBranchLocalData: [Test] ! = [test] do {
   let fmt: Format = *(.str "x=", .dat(3)!, .str ", ok=", .dat(.true!)!)
   test.assert(
     "Case fallthrough drops branch-local data values",
-    String.Equals(RenderFormat(fmt), "x=3, ok=.true!"),
+    RenderFormat(fmt) == "x=3, ok=.true!",
   )
 } in !

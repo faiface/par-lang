@@ -102,26 +102,6 @@ inventory::submit!(ExternalDef {
     f: |handle| Box::pin(bytes_length(handle)),
 });
 
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Bytes",
-        name: "Equals"
-    },
-    f: |handle| Box::pin(bytes_equals(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Bytes",
-        name: "Compare"
-    },
-    f: |handle| Box::pin(bytes_compare(handle)),
-});
-
 async fn bytes_builder(mut handle: Handle) {
     let mut buf = Vec::<u8>::new();
     loop {
@@ -168,28 +148,6 @@ async fn bytes_empty_reader(mut handle: Handle) {
             _ => unreachable!(),
         }
     }
-}
-
-async fn bytes_equals(mut handle: Handle) {
-    let left = handle.receive().bytes().await;
-    let right = handle.receive().bytes().await;
-    if left == right {
-        handle.signal(literal!("true"));
-    } else {
-        handle.signal(literal!("false"));
-    }
-    handle.break_();
-}
-
-async fn bytes_compare(mut handle: Handle) {
-    let left = handle.receive().bytes().await;
-    let right = handle.receive().bytes().await;
-    match left.cmp(&right) {
-        Ordering::Equal => handle.signal(literal!("equal")),
-        Ordering::Greater => handle.signal(literal!("greater")),
-        Ordering::Less => handle.signal(literal!("less")),
-    }
-    handle.break_();
 }
 
 async fn provide_bytes_reader_from_bytes(mut handle: Handle, bytes: Bytes) {

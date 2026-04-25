@@ -6,9 +6,9 @@ import @core/Nat
 // Simple test file
 
 def Add: [Nat, Nat] Nat = [a, b]
-  Nat.Add(a, b)
+  a + b
 
 def TestSimple: [Test] ! = [test] do {
-  test.assert("2 + 2 = 4", Nat.Equals(Add(2, 2), 4))
-  test.assert("10 + 5 = 15", Nat.Equals(Add(10, 5), 15))
+  test.assert("2 + 2 = 4", Add(2, 2) == 4)
+  test.assert("10 + 5 = 15", Add(10, 5) == 15)
 } in !
