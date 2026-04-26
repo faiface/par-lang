@@ -111,6 +111,6 @@ def Main: ! = do {
 	}
 	sieve.end
 	console.print("Finished!")
-	console.print(sum->Nat.ToString)
+	console.print(`#{sum}`)
 	console.close
 } in !

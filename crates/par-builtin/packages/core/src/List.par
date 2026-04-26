@@ -54,13 +54,26 @@ export {
   // Keeps the elements for which the predicate returns `.true!`.
   dec Filter : <a: box>[List<a>] [box [a] Bool] List<a>
 
-  // Folds a list from left to right.
+  // Applies `f` repeatedly to the current result and each list element, returning
+  // the final result.
+  //
+  // Expression syntax:
   //
   // ```par
-  // {*(1, 2, 3)}->List.Fold(0, box [sum, n] sum + n)
+  // {0}->List.ForEach(*(1, 2, 3), box [sum, n] sum + n)
   // // = 6
   // ```
-  dec Fold : <a>[List<a>] <r>[r] [box [r, a] r] r
+  //
+  // Process syntax:
+  //
+  // ```par
+  // let console = Console.Open
+  // console->List.ForEach(Nat.Range(1, 10), box [c, i]
+  //   c.print(`#{i}`)
+  // )
+  // console.close
+  // ```
+  dec ForEach : <r>[r] <a>[List<a>] [box [r, a] r] r
 
   // Returns the number of elements in a list.
   dec Length : <a: box>[List<a>] Nat
@@ -138,9 +151,9 @@ def Filter = <a: box>[list] [f] list.begin.case {
   },
 }
 
-def Fold = <a>[list] <r>[result] [f] list.begin.case {
+def ForEach = <r>[result] <a>[list] [f] list.begin.case {
   .end! => result,
-  .item(v) list => let result = f(result, v) in list.loop,
+  .item(v) list => do { result->f(v) } in list.loop,
 }
 
 def Length = <a: box>[list]

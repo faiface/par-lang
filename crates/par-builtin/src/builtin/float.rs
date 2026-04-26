@@ -6,7 +6,7 @@ use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
-use par_runtime::primitive::{format_float, parse_float_text};
+use par_runtime::primitive::parse_float_text;
 use par_runtime::readback::Handle;
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
@@ -118,16 +118,6 @@ inventory::submit!(ExternalDef {
         name: "ToInt"
     },
     f: |handle| Box::pin(float_to_int(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "ToString"
-    },
-    f: |handle| Box::pin(float_to_string(handle)),
 });
 
 inventory::submit!(ExternalDef {
@@ -400,11 +390,6 @@ async fn float_from_int(mut handle: Handle) {
 async fn float_to_int(mut handle: Handle) {
     let value = handle.receive().float().await;
     handle.provide_int(float_to_bigint(value));
-}
-
-async fn float_to_string(mut handle: Handle) {
-    let value = handle.receive().float().await;
-    handle.provide_string(format_float(value).into());
 }
 
 async fn float_from_string(mut handle: Handle) {

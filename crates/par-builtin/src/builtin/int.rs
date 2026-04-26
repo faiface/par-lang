@@ -3,7 +3,6 @@ use arcstr::literal;
 use num_bigint::BigInt;
 use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
-use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
@@ -82,16 +81,6 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Int",
-        name: "ToString"
-    },
-    f: |handle| Box::pin(int_to_string(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
         name: "FromString"
     },
     f: |handle| Box::pin(int_from_string(handle)),
@@ -154,11 +143,6 @@ async fn int_range(mut handle: Handle) {
     }
     handle.signal(literal!("end"));
     handle.break_();
-}
-
-async fn int_to_string(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    handle.provide_string(ParString::from(x.to_str_radix(10)))
 }
 
 async fn int_from_string(mut handle: Handle) {

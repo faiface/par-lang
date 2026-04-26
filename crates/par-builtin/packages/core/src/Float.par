@@ -39,9 +39,6 @@ export {
   // Returns `0` for `NaN`, `Inf`, and `NegInf`.
   dec ToInt : [Float] Int
 
-  // Converts a float to a string accepted by `Float.FromString`.
-  dec ToString : [Float] String
-
   // Parses a float literal or one of `NaN`, `Inf`, `-Inf`, `Infinity`, `-Infinity`.
   dec FromString : [String] either {
     .ok Float,
@@ -137,8 +134,6 @@ def IsInfinite = external
 def FromInt = external
 
 def ToInt = external
-
-def ToString = external
 
 def FromString = external
 

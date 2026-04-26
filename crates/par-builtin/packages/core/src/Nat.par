@@ -51,9 +51,6 @@ export {
   // ```
   dec Range : [Nat, Nat] List<Nat>
 
-  // Converts a natural number to its decimal string representation.
-  dec ToString : [Nat] String
-
   // Parses a decimal string into a natural number.
   // Returns `.err!` when the string is not a valid non-negative integer.
   dec FromString : [String] either {
@@ -75,7 +72,5 @@ def Repeat = external
 def RepeatLazy = external
 
 def Range = external
-
-def ToString = external
 
 def FromString = external

@@ -49,6 +49,10 @@ def TestListConstraintsAndEquality : [Test] ! = [test] do {
   let firstTwo = values->List.Take(2)
   let withoutTwo = values->List.Drop(2)
   let zipped = firstTwo->List.Zip(*("one", "two", "three"))
+  let sum = {0}->List.ForEach(values, box [sum, n] sum + n)
+  let builder = List.Builder(type Nat)
+  builder->List.ForEach(values, box [b, n] b.add(n * 2))
+  let doubled = builder.build
 
   test
     .assert("List equality uses generic data equality", values == {*(1, 2, 3, 4)})
@@ -59,6 +63,8 @@ def TestListConstraintsAndEquality : [Test] ! = [test] do {
     .assert("List.Any accepts a box-constrained element type", values->List.Any(box [n] n == 3))
     .assert("List.Take accepts a box-constrained element type", firstTwo == {*(1, 2)})
     .assert("List.Drop accepts a box-constrained element type", withoutTwo == {*(3, 4)})
+    .assert("List.ForEach works in expression syntax", sum == 10)
+    .assert("List.ForEach works in process syntax", doubled == {*(2, 4, 6, 8)})
 } in !
 
 def TestListSorting : [Test] ! = [test] do {

@@ -4,7 +4,6 @@ use num_bigint::BigInt;
 
 use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
-use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
@@ -93,16 +92,6 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Nat",
-        name: "ToString"
-    },
-    f: |handle| Box::pin(nat_to_string(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Nat",
         name: "FromString"
     },
     f: |handle| Box::pin(nat_from_string(handle)),
@@ -184,11 +173,6 @@ async fn nat_range(mut handle: Handle) {
     }
     handle.signal(literal!("end"));
     handle.break_();
-}
-
-async fn nat_to_string(mut handle: Handle) {
-    let x = handle.receive().nat().await;
-    handle.provide_string(ParString::from(x.to_str_radix(10)));
 }
 
 async fn nat_from_string(mut handle: Handle) {

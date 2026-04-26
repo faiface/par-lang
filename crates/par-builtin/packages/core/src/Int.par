@@ -36,9 +36,6 @@ export {
   // ```
   dec Range : [Int, Int] List<Int>
 
-  // Converts an integer to its decimal string representation.
-  dec ToString : [Int] String
-
   // Parses a decimal string into an integer.
   // Returns `.err!` when the string is not a valid integer.
   dec FromString : [String] either {
@@ -58,7 +55,5 @@ def Abs = external
 def Clamp = external
 
 def Range = external
-
-def ToString = external
 
 def FromString = external
