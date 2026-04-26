@@ -142,12 +142,12 @@ impl Playground {
 }
 
 impl eframe::App for Playground {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let Ok(e) = &mut crate::CRASH_STR.try_lock() {
             **e = Some(self.code.clone());
         }
 
-        let system_dark = ctx
+        let system_dark = ui
             .input(|ri| ri.raw.system_theme.map(|t| t == egui::Theme::Dark))
             .unwrap_or(false);
         let is_dark = self.theme_mode.is_dark(system_dark);
@@ -158,7 +158,7 @@ impl eframe::App for Playground {
             egui::Visuals::light()
         };
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
-        ctx.set_visuals(visuals);
+        ui.set_visuals(visuals);
 
         #[cfg(target_family = "wasm")]
         self.handle_web_clipboard_shortcuts(ctx);
@@ -189,11 +189,11 @@ impl eframe::App for Playground {
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::SidePanel::left("interaction")
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::Panel::left("interaction")
                 .resizable(true)
                 .show_separator_line(true)
-                .default_width(16.0 * 32.0)
+                .default_size(16.0 * 32.0)
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -306,7 +306,7 @@ impl eframe::App for Playground {
                             {
                                 let signature = checked
                                     .render_hover_signature_in_file(&hover_file_name, &name_info);
-                                editor.response.on_hover_ui_at_pointer(|ui| {
+                                editor.response.response.on_hover_ui_at_pointer(|ui| {
                                     ui.label(RichText::new(signature).code());
                                     if let Some(doc) = name_info.doc() {
                                         ui.separator();
@@ -652,6 +652,7 @@ fn par_syntax() -> Syntax {
     Syntax {
         language: "Par",
         case_sensitive: true,
+        quotes: BTreeSet::from(['"', '`']),
         comment: "//",
         comment_multiline: [r#"/*"#, r#"*/"#],
         hyperlinks: BTreeSet::from([]),
@@ -700,13 +701,13 @@ fn par_syntax() -> Syntax {
 }
 
 fn fix_dark_theme(mut theme: ColorTheme) -> ColorTheme {
-    theme.bg = "#1F1F1F";
+    theme.bg = "1F1F1F";
     theme.functions = theme.literals;
     theme
 }
 
 fn fix_light_theme(mut theme: ColorTheme) -> ColorTheme {
-    theme.bg = "#F9F9F9";
+    theme.bg = "F9F9F9";
     theme.functions = theme.literals;
     theme
 }

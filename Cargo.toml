@@ -21,8 +21,8 @@ par-builtin = { path = "crates/par-builtin" }
 par-runtime = { path = "crates/par-runtime" }
 par-doc = { path = "crates/par-doc" }
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-eframe = { version = "0.33.0", features = ["default", "__screenshot"], optional = true }
-egui_code_editor = { version = "=0.2.20", optional = true }
+eframe = { version = "0.34.1", features = ["default", "__screenshot"], optional = true }
+egui_code_editor = { version = "=0.2.24", optional = true }
 indexmap = "2.7.0"
 rfd = { version = "0.15.2", optional = true }
 winnow = { version = "0.7.4", features = [
