@@ -9,7 +9,7 @@ use std::{
 use super::{build::BuildResult, readback::Element, run_menu};
 use core::time::Duration;
 use eframe::egui::{self, RichText, Theme};
-use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
+use egui_code_editor::{CodeEditor, ColorTheme, Completer, Syntax};
 use futures::task::Spawn;
 
 #[cfg(target_family = "wasm")]
@@ -38,6 +38,7 @@ pub struct Playground {
     max_interactions: u32,
     #[cfg(target_family = "wasm")]
     pending_web_clipboard_paste: Arc<Mutex<Option<String>>>,
+    completer: Completer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +132,7 @@ impl Playground {
             max_interactions,
             #[cfg(target_family = "wasm")]
             pending_web_clipboard_paste: Arc::new(Mutex::new(None)),
+            completer: Completer::new_with_syntax(&par_syntax()).with_auto_indent(),
         });
 
         if let Some(path) = file_path {
@@ -284,7 +286,6 @@ impl eframe::App for Playground {
                         });
 
                         ui.separator();
-
                         let editor = CodeEditor::default()
                             .id_source("code")
                             .with_syntax(par_syntax())
@@ -292,7 +293,7 @@ impl eframe::App for Playground {
                             .with_fontsize(self.editor_font_size)
                             .with_theme(self.get_theme(ui))
                             .with_numlines(true)
-                            .show(ui, &mut self.code);
+                            .show_with_completer(ui, &mut self.code, &mut self.completer);
 
                         if let Some(cursor) = editor.cursor_range {
                             self.cursor_pos = row_and_column(&self.code, cursor.primary.index);
