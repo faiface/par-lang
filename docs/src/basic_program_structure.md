@@ -8,22 +8,23 @@ Let's open it:
 $ par playground
 ```
 
-Press **Compile**, then open **Run → Packages → core → Int → Add**:
+Press **Compile**, then open the **Run** menu and pick a built-in definition from `core`.
 
-![**Run** on an empty program](./images/basic_structure_1.png)
+<!-- TODO(screenshot): add an updated playground screenshot showing the Run menu on an empty program. -->
 
-That picks the built-in `Int.Add` definition from the `core` package:
+As a first example, choose one of the built-in numeric helpers from the `core` package. `Int.Mod`
+computes the non-negative remainder of an integer modulo a natural number:
 
-![**Run** `Int.Add`](./images/basic_structure_2.png)
+<!-- TODO(screenshot): add an updated playground screenshot showing Run -> Packages -> core -> Int -> Mod. -->
 
-An **automatic UI** shows up, telling us to input two numbers. After confirming both inputs,
-we get a result:
+An **automatic UI** shows up, telling us to input the arguments expected by the selected definition.
+After confirming them, we get a result:
 
-![`Int.Add` result](./images/basic_structure_3.png)
+<!-- TODO(screenshot): add an updated playground screenshot showing the result UI for Int.Mod. -->
 
 This automatic UI is a feature of the **playground,** not of the Par language itself. Nobody made a
-specific interface for `Int.Add`. Instead, the playground looked at its type — here, a function from
-two integers to an integer result — and generated a small interface for interacting with it.
+specific interface for `Int.Mod`. Instead, the playground looked at its type — here, a function from
+two numbers to a number result — and generated a small interface for interacting with it.
 
 That makes the playground a nice way to explore built-in definitions, and later your own definitions
 too.

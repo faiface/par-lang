@@ -27,18 +27,17 @@ there can be more of them one after another.
 module Main
 
 import {
-  @core/Int
   @core/Nat
   @core/String
 }
 
 dec DisplayPlusEquation : [Nat, Nat] String
 def DisplayPlusEquation = [a, b] do {
-  let c = Nat.Add(a, b)
-  let a = Int.ToString(a)
-  let b = Int.ToString(b)
-  let c = Int.ToString(c)
-} in String.Builder.add(a).add("+").add(b).add("=").add(c).build
+  let c = a + b
+  let a = `#{a}`
+  let b = `#{b}`
+  let c = `#{c}`
+} in `${a}+${b}=${c}`
 
 def Test = DisplayPlusEquation(3, 4)  // = "3+4=7"
 ```

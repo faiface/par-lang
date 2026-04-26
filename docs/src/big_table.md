@@ -34,8 +34,8 @@ next section on process syntax yet, feel free to skip that table for now and com
 }</code></pre></td>
 <td><pre><code class="language-par">let value: Either = .left "Hello!"</code></pre></td>
 <td><pre><code class="language-par">let result = value.case {
-  .left str => String.Length(str),
-  .right num => Int.Mul(num, 5),
+  .left str => str,
+  .right num => `#{num}`,
 }</code></pre></td>
 </tr>
 
@@ -51,7 +51,7 @@ next section on process syntax yet, feel free to skip that table for now and com
 
 <tr>
 <td><pre><code class="language-par">type Function = [Int] String</code></pre></td>
-<td><pre><code class="language-par">let value = [num: Int] Int.ToString(num)</code></pre></td>
+<td><pre><code class="language-par">let value = [num: Int] `#{num}`</code></pre></td>
 <td><pre><code class="language-par">let str = value(42)</code></pre></td>
 </tr>
 
@@ -110,10 +110,10 @@ next section on process syntax yet, feel free to skip that table for now and com
 }</code></pre></td>
 <td><pre><code class="language-par">value.case {
   .left => {
-    let result = String.Length(value)
+    let result = value
   }
   .right => {
-    let result = Int.Mul(value, 5)
+    let result = `#{value}`
   }
 }
 // `result` is in scope here
@@ -138,7 +138,7 @@ let num = value</code></pre></td>
 <td><pre><code class="language-par">type Function = [Int] String</code></pre></td>
 <td><pre><code class="language-par">let value = chan c {
   c[num: Int]
-  c &lt;&gt; Int.ToString(num)
+  c &lt;&gt; `#{num}`
 }</code></pre></td>
 <td><pre><code class="language-par">value(42)
 let result = value</code></pre></td>

@@ -173,7 +173,7 @@ def Fibonacci: Sequence<Nat> =
   in begin case {
     .close => !,
     .next =>
-      let (a, b)! = (b, Nat.Add(a, b))!
+      let (a, b)! = (b, a + b)!
       in (a) loop
   }
 ```
@@ -195,7 +195,8 @@ def Increment = [seq] begin case {
   .close => let ! = seq.close in !,
   .next =>
     let (x) seq = seq.next
-    in (Int.Add(x, 1)) loop
+    in let x = x + 1
+    in (x) loop
 }
 
 def FibonacciPlusOne = Increment(Fibonacci)

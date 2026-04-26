@@ -14,9 +14,9 @@ module Main
 
 import @core/Nat
 
-def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
-def Double = [n: Nat] Nat.Add(n, n)
-def Square = [n: Nat] Nat.Mul(n, n)
+def Add    = [m: Nat, n: Nat] m + n
+def Double = [n: Nat] n + n
+def Square = [n: Nat] n * n
 ```
 
 Without pipes you call them inside one another:

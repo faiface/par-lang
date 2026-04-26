@@ -116,7 +116,7 @@ import {
 
 dec HashesOrNothing : [Nat] String
 def HashesOrNothing = [n] chan result {
-  Nat.Equals(n, 0).case {
+  {n == 0}.case {
     .true! => {
       result <> "<nothing>"
     }
@@ -138,7 +138,7 @@ def HashesOrNothing = [n] chan result {
 
 Let’s break this down:
 
-- `Nat.Equals(n, 0)` returns a `Bool`, which is an [`either`](../types/either.md) with branches
+- `n == 0` returns a `Bool`, which is an [`either`](../types/either.md) with branches
   `.true!` and `.false!`.
 - In the `.true!` branch, we immediately perform a link — returning `"<nothing>"`. Note, that
   this _ends_ the process.

@@ -82,7 +82,7 @@ dec PollSum : [List<Int>] Int
 def PollSum = [nums] poll(nums) {
   list => list.case {
     .end! => submit(),
-    .item(x) xs => Int.Add(x, submit(xs)),
+    .item(x) xs => x + submit(xs),
   }
   else => 0,
 }
@@ -101,7 +101,7 @@ Breaking it down:
 - `.end! => submit()`
   
   If the list is empty, we do an empty `submit()`. That returns the result of the rest of the next `poll`, which in this case will go to the `else` branch.
-- `.item(x) xs => Int.Add(x, submit(xs)),`
+- `.item(x) xs => x + submit(xs),`
   
   If the list is not empty, we `submit(xs)` the remainder of the list back into the pool, and return the sum of the first item with the result of the next `poll`.
 
@@ -111,7 +111,7 @@ That's very similar to what we'd do with `.begin`/`.loop`:
 dec Sum : [List<Int>] Int
 def Sum = [nums] nums.begin.case {
   .end! => 0,
-  .item(x) xs => Int.Add(x, xs.loop),
+  .item(x) xs => x + xs.loop,
 }
 ```
 
@@ -126,7 +126,7 @@ dec PollSumTwo : [List<Int>, List<Int>] Int
 def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
   list => list.case {
     .end! => submit(),
-    .item(x) xs => Int.Add(x, submit(xs)),
+    .item(x) xs => x + submit(xs),
   }
   else => 0,
 }

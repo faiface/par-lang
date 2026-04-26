@@ -69,20 +69,22 @@ So Par distinguishes between:
 - **Linear types,** which must be used exactly once.
 - **Non-linear types,** which can be used any number of times — including zero.
 
-Let’s look at what falls into each category.
+The precise rule is: a type is non-linear when it satisfies the [`box` constraint](./types/constraints.md).
+That chapter comes after [Box](./types/box.md), but here is the useful orientation.
 
 ### Which types are non-linear?
 
-These are:
+These include:
 
-- All [**primitives**](./structure/primitive_types.md): `Int`, `Nat`, `String`, `Char`
+- All [**primitives**](./structure/primitive_types.md): `Int`, `Nat`, `Float`, `String`, `Char`,
+  `Byte`, and `Bytes`
 - [**Unit**](./types/unit.md)
 - [**Either**](./types/either.md)
 - [**Pair**](./types/pair.md)
 - [**Recursive**](./types/recursive.md)
 - [**Box**](./types/box.md)
-- [**Exists**](./types/exists.md), only if the body is non-linear — which is rare, since the
-  type variable it introduces is itself linear
+- [**Forall**](./types/forall.md) and [**Exists**](./types/exists.md), when their type parameters
+  and bodies are constrained enough to be non-linear
 - Any type **composed entirely** of non-linear parts
 
 ### Which types are linear?
@@ -92,8 +94,8 @@ All the rest:
 - [**Function**](./types/function.md)
 - [**Choice**](./types/choice.md)
 - [**Iterative**](./types/iterative.md)
-- [**Exists**](./types/exists.md), **in most cases,** because they introduce a linear type variable
-- [**Forall**](./types/forall.md)
+- [**Forall**](./types/forall.md) and [**Exists**](./types/exists.md), when they introduce
+  unconstrained type variables
 - [**Continuation**](./types/continuation.md)
 - Any type that **contains** a linear component, even deeply
 

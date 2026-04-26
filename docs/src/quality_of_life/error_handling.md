@@ -400,7 +400,7 @@ This is invalid because `result.try` appears in a nested expression, which runs 
 ```par
 // result : Result<String, Int>
 catch e => .err e in
-.ok Int.Add(result.try, 1)
+.ok {result.try + 1}
 ```
 
 This fix attempts to work around the nested expression issue but still fails — the outer `.ok` constructs part of the result before `try` executes:
@@ -408,7 +408,7 @@ This fix attempts to work around the nested expression issue but still fails —
 ```par
 catch e => .err e in
 .ok let try value = result in
-Int.Add(value, 1)
+value + 1
 ```
 
 Here's the correct version:
@@ -416,7 +416,7 @@ Here's the correct version:
 ```par
 catch e => .err e in
 let try value = result in
-.ok Int.Add(value, 1)
+.ok {value + 1}
 ```
 
 This ensures all error handling completes before constructing the result.
@@ -557,13 +557,13 @@ dec ReadAll : [Os.Path] Result<Os.Error, Bytes>
 def ReadAll = [path] chan return {
   catch e => { return <> .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type Os.Error, reader)
+  let parser = Bytes.ParserFromReader(reader)
   let try contents = parser.remainder
   return <> .ok contents
 }
 ```
 
-This function uses `Bytes.ParseReader` to convert the chunked `Bytes.Reader` from `path.openFile` into a parser that provides a convenient `.remainder` method for reading all contents at once. The `catch` block propagates any errors by linking them into an `.err` result, while success links the contents into an `.ok` result.
+This function uses `Bytes.ParserFromReader` to convert the chunked `Bytes.Reader` from `path.openFile` into a parser that provides a convenient `.remainder` method for reading all contents at once. The `catch` block propagates any errors by linking them into an `.err` result, while success links the contents into an `.ok` result.
 
 ## Providing defaults with `default`
 
@@ -594,12 +594,12 @@ Sometimes you don’t want to propagate an error — you want to replace it with
   ```par
   dec Counts : [List<String>] List<(String) Nat>
   def Counts = [words] do {
-    let counts = Map.String(type Nat, *())
+    let counts = Map.New(type String, type Nat)
     words.begin.case {
       .end! => {}
       .item(word) => {
         counts.entry(word)[default(0) count]
-        counts.put(Nat.Add(count, 1))
+        counts.put(count + 1)
         words.loop
       }
     }

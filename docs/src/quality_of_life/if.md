@@ -87,7 +87,8 @@ An `is` condition checks an `either` and binds its payload. Its shape is:
 The payload pattern is always present. For a unit payload you still write `!`,
 so `value is .less!` is valid, but `value is .less` is not.
 
-Here is the return type of `Int.Compare`:
+The comparison operators are powered by a generic comparison function whose result type is
+`Ordering`:
 
 ```par
 type Ordering = either {
@@ -103,13 +104,14 @@ Now an `if` can match directly on those variants:
 module Main
 
 import {
+  @core/Data
   @core/Int
   @core/String
 }
 
 dec CompareSign : [Int, Int] String
 def CompareSign = [x, y]
-  let cmp = Int.Compare(x, y) in
+  let cmp = Data.Compare((x) y) in
   if {
     cmp is .less! => "less",
     cmp is .greater! => "greater",
@@ -138,7 +140,7 @@ condition and inside the branch.
 ```par
 dec CountStatus : [Option<Nat>] String
 def CountStatus = [count] if {
-  count is .ok n and Nat.Equals(n, 0) => "zero",
+  count is .ok n and n == 0 => "zero",
   count is .ok _ => "non-zero",
   else => "missing",
 }
@@ -148,7 +150,7 @@ Step by step:
 
 - Try the first branch.
   - First evaluate `count is .ok n`. If it fails, the whole `and` fails.
-  - If it succeeds, `n` is bound and Par evaluates `Nat.Equals(n, 0)`.
+  - If it succeeds, `n` is bound and Par evaluates `n == 0`.
   - Only if both parts succeed does the branch return `"zero"`.
 - If the first branch fails, try the second branch `count is .ok _`, which
   matches any present value and returns `"non-zero"`.
@@ -159,7 +161,7 @@ Step by step:
 ```par
 dec AddOk : [Result<String, Int>, Result<String, Int>] Int
 def AddOk = [left, right] if {
-  left is .ok a and right is .ok b => Int.Add(a, b),
+  left is .ok a and right is .ok b => a + b,
   else => 0,
 }
 ```
@@ -171,7 +173,7 @@ Read it like this:
 
 - Try to bind `a` from `left`.
 - Only if that succeeds, try to bind `b` from `right`.
-- Only if both succeed does the branch run `Int.Add(a, b)`.
+- Only if both succeed does the branch run `a + b`.
 
 ## `or`: try one condition, then another
 
@@ -208,7 +210,7 @@ grouping explicit, you can use `{ ... }` *inside a condition*:
 ```par
 dec EmptyOrSpace : [Result<String, String>] Bool
 def EmptyOrSpace = [result] if {
-  result is .ok s and { String.Equals(s, "") or String.Equals(s, " ") }
+  result is .ok s and { s == "" or s == " " }
     => .true!,
   else => .false!,
 }
@@ -244,7 +246,7 @@ combine `not` and `or` in a way that “unlocks” bindings on the right:
 ```par
 dec NonEmptyOrError : [Result<String, String>] String
 def NonEmptyOrError = [result] if {
-  not result is .ok str or String.Equals(str, "") => "bad input",
+  not result is .ok str or str == "" => "bad input",
   else => str,
 }
 ```
@@ -252,7 +254,7 @@ def NonEmptyOrError = [result] if {
 Follow the control flow:
 
 - First evaluate `not result is .ok str`.
-- The right side `String.Equals(str, "")` runs only if the left side fails.
+- The right side `str == ""` runs only if the left side fails.
 - The left side fails exactly when `result is .ok str` succeeds.
 - That is why `str` is available on the right side and in the `else` branch.
 
@@ -262,7 +264,7 @@ This also works with grouped conditions:
 dec AddBothOrZero : [Result<String, Int>, Result<String, Int>] Int
 def AddBothOrZero = [left, right] if {
   not { left is .ok x and right is .ok y } => 0,
-  else => Int.Add(x, y),
+  else => x + y,
 }
 ```
 
@@ -296,7 +298,7 @@ Bindings created inside such a boolean expression stay **inside** that
 expression:
 
 ```par
-let ok = result is .ok msg and String.Equals(msg, "")
+let ok = result is .ok msg and msg == ""
 // `msg` is not available here
 ```
 
@@ -356,7 +358,7 @@ otherwise continue”.
 ```par
 dec DefaultIfEmpty : [String] String
 def DefaultIfEmpty = [text] chan out {
-  if String.Equals(text, "") => {
+  if text == "" => {
     out <> "<empty>"
   }
   out <> text
@@ -371,7 +373,7 @@ A common style is to use a single-condition `if` as a guard:
 ```par
 dec LogNonEmptyOk : [Result<String, String>] !
 def LogNonEmptyOk = [result] chan exit {
-  if not result is .ok str or String.Equals(str, "") => { exit! }
+  if not result is .ok str or str == "" => { exit! }
   Debug.Log(str)
   exit!
 }
@@ -388,7 +390,7 @@ exhaustive**. This is checked by types.
 For example, this works because `cmp` has type `Ordering`:
 
 ```par
-let cmp = Int.Compare(x, y) in
+let cmp = Data.Compare((x) y) in
 if {
   cmp is .less! => "less",
   cmp is .equal! => "equal",

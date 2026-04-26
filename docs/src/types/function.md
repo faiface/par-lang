@@ -30,7 +30,7 @@ module Main
 import @core/Int
 
 dec Add : [Int, Int] Int
-def Add = [x, y] Int.Add(x, y)
+def Add = [x, y] x + y
 
 // a global function may be called many times
 def Six = Add(1, Add(2, 3))  // Okay.
@@ -53,7 +53,7 @@ the result.
 
 ```par
 dec Double : [Int] Int
-def Double = [number] Int.Mul(2, number)
+def Double = [number] 2 * number
 ```
 
 Multi-argument functions — or more precisely: functions returning other functions — can be expressed
@@ -101,7 +101,7 @@ For **generic functions**, read up on [_forall_ types](./forall.md).
 > **a function can't directly call itself.**
 > 
 > ```par
-> def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
+> def Infinity = 1 + Infinity  // Error! Cyclic dependency.
 > ```
 > 
 > Instead, [recursive](./recursive.md) and [iterative](./iterative.md) types are used for recursion

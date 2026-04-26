@@ -1,122 +1,182 @@
 # Primitive Types
 
-Before taking a stroll in the diverse garden of Par's types, let's stop by the most basic ones:
-the _primitives._
+Before taking a stroll through Par's types, let's stop by the values that are not built out of
+the ordinary type connectives: the _primitives_.
 
-At the moment, Par has seven primitive types:
-- **`Int`** — Integers, positive and negative whole numbers, arbitrary size.
-- **`Nat`** — Natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
-- **`Float`** — IEEE-754 double-precision floating-point numbers.
-- **`String`** — UTF-8 encoded sequence of Unicode characters. They are a subtype of `Bytes`.
-- **`Char`** — Singular Unicode character. They are a subtype of `String`.
-- **`Byte`** — Singular data unit that consists of eight bits. They are a subtype of `Bytes`.
-- **`Bytes`** — Contiguous-in-memory sequence of bytes.
+Par currently has seven primitive types:
 
-> There's a **significant distinction** between _primitives_ and all other types in Par.
->
-> The thing is, Par has a fully structural type system. All custom type definitions are just
-> aliases — there is no way to create opaque types. _(But, encapsulation is perfectly possible.)_
->
-> Primitives are different in that they are opaque. They are magical types, distinct from others,
-> that are operated on using magical built-in functions. This is necessary to achieve their
-> efficient representation.
+- **`Nat`** -- natural numbers, starting from zero, arbitrary size. They are a subtype of `Int`.
+- **`Int`** -- positive and negative whole numbers, arbitrary size.
+- **`Float`** -- IEEE-754 double-precision floating-point numbers.
+- **`String`** -- UTF-8 encoded text. It is a subtype of `Bytes`.
+- **`Char`** -- a single Unicode character. It is a subtype of `String`.
+- **`Byte`** -- a single 8-bit value. It is a subtype of `Bytes`.
+- **`Bytes`** -- a contiguous sequence of bytes.
 
-Primitives are manipulated using magical built-in functions.
+Primitives are the one place where Par is not fully structural. User-defined types are aliases:
+their shape is their meaning. Primitive types are opaque, because they need efficient runtime
+representations and special operations.
 
-Primitive **literals** are special: you can write values such as `42`, `3.14`, `"Hello"`, `<<65>>`, or
-`<<65 66>>` without importing anything.
+## Literals
 
-But the module names `Int`, `Nat`, `Float`, `String`, `Char`, `Byte`, and `Bytes` are **not** automatically
-in scope. So if you want to:
-- mention one of these types explicitly
-- or call functions from their modules, such as `Int.Add` or `String.Reader`
+Primitive literals are always available. You do not need to import anything to write them.
 
-then you need to import the corresponding module from `@core`.
+```par
+def Natural = 42       // Nat
+def Integer = -7       // Int
+def Floating = 3.14    // Float
+def Text = "Hello"     // String
+def Character = "H"    // Char
+def OneByte = <<65>>   // Byte
+def ManyBytes = <<65 66 67>>  // Bytes
+```
 
-**To find the list of all built-in functions:**
+Integer and natural number literals may use underscores for readability:
 
-1. Open the playground.
-   ```
-   $ par playground
-   ```
-2. Press **Compile,** and **Run.** Scroll the list that pops up.
-   ![List of built-in functions](../images/strings_and_numbers_1.png)
+```par
+def Million = 1_000_000
+```
 
-Alternatively, `par doc` lets you browse the built-in packages and their exported definitions.
+Float literals have a fractional part, and may use scientific notation:
 
-**To figure out the type of a built-in function:**
+```par
+def Piish = 3.14
+def Half = 0.5
+def Avogadroish = 6.02e23
+```
 
-1. Assigning it to your own `def`, such as:
-   ```par
-   module Main
+Strings use double quotes and normal escape sequences:
 
-   import @core/Int
+```par
+def Greeting = "Hello\nWorld"
+```
 
-   def Examine = Int.ToString
-   ```
-   Par knows the type of `Int.ToString`, so it will infer it for `Examine` as well.
-2. Press **Compile.**
-3. Move the cursor to the definition. The playground will display the type on the right,
-   in green.
-   ![Displayed type of a built-in function](../images/strings_and_numbers_2.png)
+A `Char` literal is just a string literal containing exactly one character:
 
-The type `[Int] String` is a [function](../types/function.md) from `Int` to `String`. We will cover
-functions and other types in detail [later](../types_and_expressions.md). Despite that, we'll still play with
-some built-in functions in this section. All you need to know is that
-**the square brackets enclose function arguments,** and the result type follows. For example:
-- `[Int, Int] Int` is a function from two `Int`s to an `Int`.
-- `[Int, Nat, Nat] Nat` is a function from one `Int` and two `Nat`s to a `Nat`.
+```par
+def Letter = "a"
+def Newline = "\n"
+```
 
-> **The current set of built-in functions is very minimal.** They're just enough to be able to
-> write more useful functions yourself, but they're nowhere close to a standard library. For example,
-> there are no functions for analyzing strings, aside from `String.Reader`, which is flexible enough
-> to implement all you'd need. You just need to do it yourself.
->
-> Keep in mind that Par is early in development. It's bringing an innovative paradigm, which we're
-> still figuring out how to use best. Creating an expansive standard library would be premature
-> before we understand what's actually going on here.
+Byte and bytes literals use double angle brackets. A single byte literal is inferred as `Byte`;
+multiple bytes, or the empty literal, are inferred as `Bytes`.
 
-Now, let's take a look at the primitives!
+```par
+def A = <<65>>
+def ABC = <<65 66 67>>
+def Empty = <<>>
+```
 
-## `Int`
+Byte values are stored modulo 256, so out-of-range byte literal values wrap around.
 
-Integers are arbitrarily sized whole numbers, positive or negative.
+## Operators
 
-Their literals consist of digits, optionally prefixed with `-` or `+`, and may include underscores
-for readability.
+Numbers are usually manipulated with operators, not with imported helper functions.
+
+```par
+def Arithmetic = 1 + 2 * 3       // = 7
+def Grouped = {1 + 2} * 3        // = 9
+def Ratio = 22.0 / 7.0
+def Difference = 10 - 3
+def Negative = neg 5
+```
+
+The operators `+`, `*`, and `/` work on `Nat`, `Int`, and `Float`.
+The operators `-` and `neg` work on signed numbers: `Int` and `Float`.
+
+Comparisons work on primitive values too:
+
+```par
+def Smaller = 3 < 10          // = .true!
+def SameText = "hi" == "hi"   // = .true!
+def Different = "a" != "b"    // = .true!
+```
+
+They produce a `Bool`, which is described below. Comparisons also chain:
+
+```par
+def InRange = 0 <= 5 < 10
+```
+
+Chained comparisons behave as you would expect: the expression above means `0 <= 5 and 5 < 10`,
+with the middle expression evaluated only once.
+
+## Booleans
+
+`Bool` is not a primitive type. It is an ordinary [`either`](../types/either.md) type from
+`@core/Bool`:
+
+```par
+type Bool = either {
+  .false!,
+  .true!,
+}
+```
+
+Boolean values are written as `.true!` and `.false!`.
+
+```par
+def Yes = .true!
+def No = .false!
+```
+
+Boolean expressions use `and`, `or`, and `not`:
+
+```par
+def Both = .true! and .false!
+def Either = .true! or .false!
+def Neither = not .true!
+```
+
+These same words have extra power in conditions: they short-circuit, and can carry bindings from
+matches. That is covered in [Conditions & `if`](../quality_of_life/if.md).
+
+## Template Strings
+
+Backtick strings are template strings. They are still `String` values, but they can contain
+interpolation.
+
+Use `${...}` to splice in an expression that already has type `String`:
+
+```par
+def Name = "Ada"
+def Greeting = `Hello, ${Name}!`
+```
+
+Use `#{...}` to splice in any value that can be displayed as data:
+
+```par
+def Count = 3
+def Message = `You have #{Count} messages.`
+```
+
+The `#{...}` form uses `@core/Data.ToString` under the hood. It works for primitives and for
+ordinary data structures such as pairs, eithers, and lists of data.
+
+Template strings may span multiple lines, and support the usual string escapes. To write syntax
+that would otherwise start or end template behavior, escape it:
+
+```par
+def LiteralPieces = `Use \` for backticks, \${ for string interpolation, and \#{ for data.`
+```
+
+## Naming Primitive Types
+
+Literals do not need imports, but explicit type names do.
 
 ```par
 module Main
 
-import @core/Int
+import {
+  @core/Int
+  @core/String
+}
 
-def Num1: Int = 7
-def Num2: Int = -123_456_789
+def Age: Int = 42
+def Name: String = "Ada"
 ```
 
-The type annotations are not needed, and then no import is required:
-
-```par
-def Num3 = 42
-def Num4 = -2202
-```
-
-Without annotations, `Num3` actually gets inferred as `Nat`. But, since `Nat` is a
-subtype of `Int`, it can be treated as an `Int` too.
-
-Built-in functions are used for arithmetic operations. For example:
-
-```par
-def Num5 = Int.Add(3, 4)  // = 7
-def Num6 = Int.Mul(3, 4)  // = 12
-```
-
-Go ahead and explore more of them in the playground!
-
-## `Nat`
-
-Natural numbers are just integers excluding the negative ones. `Nat` is a subtype of `Int`, so
-every variable of type `Nat` can be used as an `Int`, too.
+The same imports give access to helper functions from those modules.
 
 ```par
 module Main
@@ -126,209 +186,121 @@ import {
   @core/Nat
 }
 
-def Num7 = 14  // inferred as `Nat`
-def Num8 = 17  // inferred as `Nat`
-
-// perfectly valid
-def Num9 = Int.Add(Num7, Num8)
+def Magnitude = Int.Abs(-1000)
+def Remainder = Int.Mod(-13, 5)
+def Numbers = Nat.Range(0, 5)  // *(0, 1, 2, 3, 4)
 ```
 
-While `Num7` and `Num8` are inferred as `Nat`s, `Num9` will be an `Int` because that's what
-`Int.Add` returns. To get a `Nat` result, use `Nat.Add`, which only accepts `Nat`s:
+Every package automatically depends on `@core`, but its modules are not imported automatically.
 
-```par
-def Num10 = Nat.Add(Num7, Num8)  // inferred as `Nat`
-```
+## Useful Primitive Modules
 
-**Several built-in functions aid in converting `Int`s to `Nat`s.** For example:
-- **`Nat.Max`** has type `[Nat, Int] Nat` — the second argument is allowed to be an `Int`.
-  Yet it's guaranteed to return a `Nat`.
-- **`Int.Abs`** has type `[Int] Nat` — an absolute value is always a `Nat`.
+The primitive modules contain operations that are not just generic arithmetic or comparison.
+The examples below are only a taste; use `par doc` to browse the full built-in API.
 
-```par
-def Num11: Nat = Nat.Max(0, -1000)  // = 0
-def Num12: Nat = Int.Abs(-1000)     // = 1000
-```
+### `@core/Nat`
 
-Unlike `Int`s, natural numbers can be looped on using `Nat.Repeat`, which is one of their main
-uses. We'll learn more about that in the section on [recursive](../types/recursive.md) types.
-
-## `Float`
-
-Floats are IEEE-754 double-precision numbers. Unlike `Nat`, they are **not** a subtype of `Int`.
-They have their own representation and their own built-in operations.
-
-Float literals require both a whole and a fractional part, and may use scientific notation:
-
-```par
-def F1 = 3.14
-def F2 = -0.5
-def F3 = 6.02e23
-```
-
-To work with them explicitly, import `@core/Float`:
+`Nat` has helpers for finite repetition and natural ranges:
 
 ```par
 module Main
 
-import {
-  @core/Float
-  @core/Int
-}
+import @core/Nat
 
-def Radius = 2.5
-def Circumference = Float.Mul(2.0, Float.Mul(Float.Pi, Radius))
-def Truncated = Float.ToInt(Circumference)
-def BackToFloat = Float.FromInt(Truncated)
+def ThreeSteps = Nat.Repeat(3)
+def ZeroToFour = Nat.Range(0, 5)
 ```
 
-`Float.Equals` compares with a tolerance:
+`Nat.Repeat(n)` produces a recursive value with exactly `n` steps. It shows up often when you need
+to loop a known number of times.
 
-```par
-def CloseEnough = Float.Equals(1.0, 1.05, 0.1)  // = .true!
-```
+### `@core/Int`
 
-And special values are available through constants:
-
-```par
-def Special = Float.NaN
-def Infinite = Float.Inf
-```
-
-## `String`
-
-Strings are represented as UTF-8 encoded sequences of Unicode characters. Their literals are
-enclosed in double quotes (`"`), and may contain escape sequences, such as `\n`, familiar from
-other languages.
-
-```par
-def Str1 = "Hello"  // inferred as `String`
-def Str2 = "World"
-```
-
-To concatenate strings, use `String.Builder`. To fully understand how it works, we'll need to
-cover [iterative](../types/iterative.md) and [choice](../types/choice.md) types, but perhaps
-you can get the idea:
-
-```par
-module Main
-
-import @core/String
-
-def Str3 = String.Builder
-  .add(Str1)
-  .add(", ")
-  .add(Str2)
-  .build  // = "Hello, World"
-```
-
-Analyzing strings — such as finding, splitting, or parsing — is done using `String.Reader`.
-To be able to use it, more knowledge of the language is needed first. But, feel
-free to play with it in the playground, or check out the `StringManipulation.par` example in
-the `examples/src/` folder.
-
-Numbers can be converted to strings using `Int.ToString` or `Float.ToString`:
+`Int` has helpers where the result type is not just "another number".
 
 ```par
 module Main
 
 import @core/Int
 
-def Str4 = Int.ToString(14)  // = "14"
-def Str5 = Int.ToString(-7)  // = "-7"
+def Absolute: Nat = Int.Abs(-12)
+def Modulo: Nat = Int.Mod(-13, 5)
+def FromTo = Int.Range(-2, 3)
 ```
 
-Note, that `Nat` is a subtype of `Int`, so any natural number can also be converted to a string
-this way, too. In fact, that's exactly what happens with `Str4`.
+### `@core/Float`
 
-## `Char`
-
-A `Char` is a single Unicode character. `Char` literals are single characters enclosed in double quotes:
-
-```par
-def Char1 = "a"  // inferred as `Char`
-def Char2 = "\n"
-```
-
-Since `Char` is a subtype of `String`, every variable of type `Char` can be used as a `String`, too.
-
-There's a built-in function to check if a `Char` is a part of a character class:
+`Float` has constants, conversions, predicates, and math functions:
 
 ```par
 module Main
 
-import @core/Char
+import @core/Float
 
-def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
+def Tau = 2.0 * Float.Pi
+def Root = Float.Sqrt(9.0)
+def Rounded = Float.Round(3.6)
+def CloseEnough = Float.Equals(1.0, 1.05, 0.1)
 ```
 
-There's no built-in function turning a `String` to a list of `Char`s. Feel free to
-copy-paste this one, if you ever need it:
+`Float.Equals` remains useful because it compares with a tolerance. The `==` operator compares data
+directly.
+
+### `@core/String`
+
+Strings can be built incrementally:
 
 ```par
 module Main
 
-import {
-  @core/Char
-  @core/List
-  @core/String
-}
+import @core/String
 
-dec Chars : [String] List<Char>
-def Chars = [s] String.Reader(s).begin.char.case {
-  .end _ => .end!,
-  .char(c) rest => .item(c) rest.loop,
-}
+def Hello = String.Builder
+  .add("Hello")
+  .add(", ")
+  .add("world!")
+  .build
 ```
 
-## `Byte`
-
-A byte consists of eight bits, whose numerical value can range from 0 and 255, inclusive. `Byte`
-literals are written in decimal, enclosed in double angle brackets:
-
-```par
-def Byte1 = <<65>>   // inferred as `Byte`
-def Byte2 = <<321>>  // out-of-bounds values are automatically wrapped
-```
-
-Since `Byte` is a subtype of `Bytes`, every variable of type `Byte` can be used as a `Bytes`, too.
-
-Just like `Char`s, there's a built-in function to check if a `Byte` is a part of a byte class. For `Byte`s, that's mainly byte ranges:
+They can also be parsed through `String.Parser`. The parser is a larger tool, useful when you want
+to read characters or match patterns:
 
 ```par
 module Main
 
-import @core/Byte
+import @core/String
 
-def IsMsbSet = Byte.Is(<<192>>, .range(<<128>>, <<255>>)!)  // .true!
+def ParserFromText = String.Parser("abc")
 ```
 
-## `Bytes`
+### `@core/Char` and `@core/Byte`
 
-`Bytes` are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of `Byte`s, except
-that multiple decimal values are allowed, and are delimited by spaces:
-
-```par
-def Bytes1 = <<65 91>>  // inferred as `Bytes`
-def Bytes2 = <<>>       // zero-byte sequence
-```
-
-A `Bytes` can also be broken down to a list of `Byte`s:
+`Char.Is` and `Byte.Is` check membership in character or byte classes:
 
 ```par
 module Main
 
 import {
   @core/Byte
-  @core/Bytes
-  @core/List
+  @core/Char
 }
 
-dec Bytes : [Bytes] List<Byte>
-def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
-  .end _ => .end!,
-  .byte(b) rest => .item(b) rest.loop,
-}
+def Space = Char.Is(" ", .whitespace!)
+def HighByte = Byte.Is(<<192>>, .range(<<128>>, <<255>>)!)
 ```
 
-It's also important to remember, that `String` is a subtype of `Bytes` and so any `String` value can be used wherever `Bytes` is expected.
+### `@core/Bytes`
+
+`Bytes` has readers, parsers, and builders for byte-oriented protocols:
+
+```par
+module Main
+
+import @core/Bytes
+
+def EmptyReader = Bytes.Reader(<<>>)
+def Size = Bytes.Length(<<65 66 67>>)
+```
+
+That is enough about primitives for now. The rest of the docs will introduce the structural types
+that most Par programs are built from.

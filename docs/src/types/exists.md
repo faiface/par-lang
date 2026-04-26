@@ -12,6 +12,8 @@ An exists type **consists of two parts:**
 - The payload type — a type that may use the hidden type variable.
 
 It’s similar to a [pair](./pair.md), but the first component is a type instead of a value.
+The hidden type can also carry a constraint, such as `(type a: data)`, as covered in
+[Type Constraints](./constraints.md).
 
 Here are two simple examples of existential types:
 
@@ -100,18 +102,22 @@ implementation details inside interfaces that can be passed around freely.
 Here’s a boxed interface for working with sets:
 
 ```par
-type SetModule<a> = (type set) box choice {
-  .empty => box set,
-  .insert(a, box set) => box set,
-  .contains(a, box set) => Bool,
+type SetModule<a> = (type set: box) box choice {
+  .empty => set,
+  .insert(a, set) => set,
+  .contains(a, set) => Bool,
 }
 ```
 
 This type hides the implementation type of the set.
 The interface is boxed, so it can be copied and discarded.
+The hidden `set` type is constrained with [`box`](./constraints.md), so set values can be reused by
+the operations that inspect them.
 The hidden type `set` is never revealed — only its operations are exposed.
 
-Let’s now implement an inefficient, but simple `SetModule` using lists and equality functions:
+Let’s now implement an inefficient, but simple `SetModule` using lists. This version works for
+[`data`](./constraints.md) elements, because it uses `==` to check whether an item is already in
+the set:
 
 ```par
 module Main
@@ -122,17 +128,15 @@ import {
   @core/List
 }
 
-type Eq<a> = box [a, a] Bool
-
-dec ListSet : [type a, Eq<box a>] SetModule<box a>
-def ListSet = [type a, eq] (type List<box a>) box case {
+dec ListSet : [type a: data] SetModule<a>
+def ListSet = [type a: data] (type List<a>) box case {
   .empty => .end!,
 
   .insert(x, set) => .item(x) set,
 
   .contains(y, set) => set.begin.case {
     .end! => .false!,
-    .item(x) xs => eq(x, y).case {
+    .item(x) xs => {x == y}.case {
       .true! => .true!,
       .false! => xs.loop,
     },
@@ -140,12 +144,13 @@ def ListSet = [type a, eq] (type List<box a>) box case {
 }
 ```
 
-This implementation of sets can only be constructed for non-linear types. That's what `box a` ensures here.
+This implementation of sets can only be constructed for comparable data types. That's what
+`a: data` ensures here.
 
-We construct the existential by choosing `List<box a>` as the hidden type:
+We construct the existential by choosing `List<a>` as the hidden type:
 
 ```par
-(type List<box a>) ...
+(type List<a>) ...
 ```
 
 The consumer of the `SetModule` doesn’t know that these sets are implemented as lists.
@@ -153,8 +158,8 @@ The consumer of the `SetModule` doesn’t know that these sets are implemented a
 Let’s now use that in a function:
 
 ```par
-dec Deduplicate : [type a, SetModule<a>, List<box a>] List<a>
-def Deduplicate = [type a, (type set) mSet, list]
+dec Deduplicate : [type a: data, SetModule<a>, List<a>] List<a>
+def Deduplicate = [type a: data, (type set: box) mSet, list]
   let visited = mSet.empty
   in list.begin.case {
     .end! => .end!,
@@ -173,21 +178,18 @@ It doesn’t know how the set works — just that it supports `.empty`, `.insert
 Let's test it!
 
 ```par
-dec Map : [type a, type b, box [a] b, List<a>] List<b>
-def Map = [type a, type b, f, list] list.begin.case {
-  .end! => .end!,
-  .item(x) xs => .item(f(x)) xs.loop,
-}
-
-def IntListSet = ListSet(type Int, box Int.Equals)
+def IntListSet = ListSet(type Int)
 
 def TestDedup =
-  Deduplicate(type Int, IntListSet)
-    (Map(type Int, type Int, box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
+  Deduplicate(
+    type Int,
+    IntListSet,
+    List.Map(Int.Range(1, 1000), type Int, box [n] Int.Mod(n, 7)),
+  )
 ```
 
 This deduplicates a list of numbers modulo 7 — using:
-- `Map` to apply the modulo.
+- `List.Map` to apply the modulo.
 - `ListSet` to get an abstract set implementation.
 - `Deduplicate` to do the filtering.
 

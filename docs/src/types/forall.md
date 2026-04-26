@@ -69,6 +69,9 @@ dec Swap : [type a, type b, (a, b)!] (b, a)!
 
 This keeps the whole input list visible at once.
 
+Explicit type binders can also carry constraints, such as `[type a: data]`. Those are covered in
+[Type Constraints](./constraints.md).
+
 Just like functions, foralls are [**linear**](../types_and_expressions.md#linearity). Variables containing them can't be dropped, nor
 copied, only destructed by calling.
 

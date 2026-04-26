@@ -91,10 +91,9 @@ Each branch inside the curly braces follows the same syntax as the branches in t
 type, except with types replaced by their values.
 
 ```par
-def IntToString: CancellableFunction<Int, String> = case {
+def FormatInt: CancellableFunction<Int, String> = case {
   .cancel => !,
-  //.apply => [s] Int.ToString(s),
-  .apply(s) => Int.ToString(s),
+  .apply(n) => `#{n}`,
 }
 ```
 
@@ -111,7 +110,7 @@ We do it by applying `.branch` after a value of a choice type.
 def Number = Example.number  // = 42
 ```
 
-Above, we defined the type `CancellableFunction<a, b>`, and a value of that type: `IntToString`.
+Above, we defined the type `CancellableFunction<a, b>`, and a value of that type: `FormatInt`.
 [Bare functions](./function.md) are linear, so we must call them, but the _cancellable function_
 gives us a choice of either calling it, or not.
 
@@ -134,7 +133,7 @@ def MapOption = [type a, type b, option, func] option.case {
 //                   \________/
 }
 
-def Result = MapOption(type Int, type String, .some 42, IntToString)  // = .some "42"
+def Result = MapOption(type Int, type String, .some 42, FormatInt)  // = .some "42"
 ```
 
 This example also shows that in Par, you don't have to be shy about writing your types on

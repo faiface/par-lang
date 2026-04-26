@@ -210,13 +210,12 @@ Once a module is imported, its exported items are accessed through the module na
 ```par
 import {
   @core/List
-  @core/Nat
   @core/String
   data/Post
 }
 
 dec RenderPosts : String
-def RenderPosts = Post.FetchAllFromDB(!)->List.Length->Nat.ToString
+def RenderPosts = `#{Post.FetchAllFromDB(!)->List.Length} posts`
 ```
 
 In general, imported names are accessed as:
@@ -409,6 +408,8 @@ So:
 - `par run handlers/api/Posts` means `handlers/api/Posts.Main`
 - `par run handlers/api/Posts.Program` means the `Program` definition in the `handlers/api/Posts` module
 
-The same path-based rules are used by other commands such as `par test`.
+Other commands such as `par test` and `par check` do not take definition targets like these; they
+work on whole packages. What they share with `par run` is the `--package` flag, which lets you point
+the command at a package path.
 
 That's the package/module system. With that in place, we can now return to the language itself.
