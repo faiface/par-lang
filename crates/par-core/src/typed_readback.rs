@@ -43,6 +43,46 @@ pub struct TypedHandle {
     handle: Handle,
 }
 
+pub fn type_supports_readback(type_defs: &TypeDefs<Universal>, typ: &Type<Universal>) -> bool {
+    match typ {
+        Type::Primitive(..)
+        | Type::DualPrimitive(..)
+        | Type::Break(..)
+        | Type::Continue(..)
+        | Type::Self_(..)
+        | Type::DualSelf(..) => true,
+
+        Type::Name(span, name, args) => type_defs
+            .get(span, name, args)
+            .is_ok_and(|typ| type_supports_readback(type_defs, &typ)),
+        Type::DualName(span, name, args) => type_defs
+            .get_dual(span, name, args)
+            .is_ok_and(|typ| type_supports_readback(type_defs, &typ)),
+
+        Type::Pair(_, left, right, vars) | Type::Function(_, left, right, vars) => {
+            vars.is_empty()
+                && type_supports_readback(type_defs, left)
+                && type_supports_readback(type_defs, right)
+        }
+        Type::Either(_, branches) | Type::Choice(_, branches) => branches
+            .values()
+            .all(|branch| type_supports_readback(type_defs, branch)),
+        Type::Recursive { body, .. } | Type::Iterative { body, .. } => {
+            type_supports_readback(type_defs, body)
+        }
+
+        Type::Box(..)
+        | Type::DualBox(..)
+        | Type::Exists(..)
+        | Type::Forall(..)
+        | Type::Var(..)
+        | Type::DualVar(..)
+        | Type::Hole(..)
+        | Type::DualHole(..)
+        | Type::Fail(..) => false,
+    }
+}
+
 impl TypedHandle {
     pub fn new(type_defs: TypeDefs<Universal>, typ: Type<Universal>, handle: Handle) -> Self {
         Self {

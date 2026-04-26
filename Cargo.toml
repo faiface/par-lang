@@ -56,10 +56,12 @@ num-traits = "0.2.19"
 percent-encoding = "2.3.1"
 bincode = { version = "1.3.3" }
 webbrowser = "1.0.6"
-mimalloc = "0.1.49"
 
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mimalloc = "0.1.49"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }

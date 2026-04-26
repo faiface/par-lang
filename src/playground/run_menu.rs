@@ -7,10 +7,10 @@ use eframe::egui::{self, RichText};
 use futures::task::{Spawn, SpawnExt};
 use par_core::{
     frontend::{
-        Type,
+        Type, Visibility,
         language::{GlobalName, PackageId, Universal},
     },
-    runtime::{Compiled, TypedHandle},
+    runtime::{Compiled, TypedHandle, type_supports_readback},
     source::FileName,
     workspace::{CheckedWorkspace, FileImportScope, ModulePath},
 };
@@ -44,6 +44,47 @@ impl<'a> ModuleMenuTree<'a> {
             self.modules.insert(module.module.as_str(), module);
         }
     }
+}
+
+fn definition_in_module(
+    name: &GlobalName<Universal>,
+    package: &PackageId,
+    module: &ModulePath,
+) -> bool {
+    name.module.package == *package
+        && name.module.directories == module.directories
+        && name.module.module == module.module
+}
+
+fn definition_visible_in_menu(
+    program: &CheckedWorkspace,
+    name: &GlobalName<Universal>,
+    only_exported_definitions: bool,
+) -> bool {
+    !only_exported_definitions
+        || program.workspace().declaration_visibility(name) == Visibility::Public
+}
+
+fn module_has_visible_definitions(
+    program: &CheckedWorkspace,
+    package: &PackageId,
+    module: &ModulePath,
+    only_exported_definitions: bool,
+) -> bool {
+    program.checked_module().definitions.keys().any(|name| {
+        definition_in_module(name, package, module)
+            && definition_visible_in_menu(program, name, only_exported_definitions)
+    })
+}
+
+fn definition_supports_readback(
+    program: &CheckedWorkspace,
+    name_to_ty: &HashMap<GlobalName<Universal>, Type<Universal>>,
+    name: &GlobalName<Universal>,
+) -> bool {
+    name_to_ty
+        .get(name)
+        .is_some_and(|typ| type_supports_readback(&program.checked_module().type_defs, typ))
 }
 
 fn run_definition(
@@ -107,7 +148,12 @@ fn show_definition_item(
     name: &GlobalName<Universal>,
     label: &str,
 ) {
-    if ui.button(label).clicked() {
+    let supports_readback = definition_supports_readback(&program, name_to_ty, name);
+
+    if ui
+        .add_enabled(supports_readback, egui::Button::new(label))
+        .clicked()
+    {
         run_definition(
             spawner,
             cancel_token,
@@ -134,12 +180,12 @@ fn show_module_definitions(
     display_scope: Option<FileImportScope<Universal>>,
     package: &PackageId,
     module: &ModulePath,
+    only_exported_definitions: bool,
 ) {
     let mut has_definitions = false;
     for name in program.checked_module().definitions.keys().filter(|name| {
-        name.module.package == *package
-            && name.module.directories == module.directories
-            && name.module.module == module.module
+        definition_in_module(name, package, module)
+            && definition_visible_in_menu(&program, name, only_exported_definitions)
     }) {
         has_definitions = true;
         show_definition_item(
@@ -172,6 +218,7 @@ fn show_module_tree(
     display_scope: Option<FileImportScope<Universal>>,
     package: &PackageId,
     tree: &ModuleMenuTree<'_>,
+    only_exported_definitions: bool,
 ) {
     for (directory, subtree) in &tree.directories {
         ui.menu_button(*directory, |ui| {
@@ -186,6 +233,7 @@ fn show_module_tree(
                 display_scope.clone(),
                 package,
                 subtree,
+                only_exported_definitions,
             );
         });
     }
@@ -203,6 +251,7 @@ fn show_module_tree(
                 display_scope.clone(),
                 package,
                 module,
+                only_exported_definitions,
             );
         });
     }
@@ -219,17 +268,29 @@ fn show_package_modules(
     display_scope: Option<FileImportScope<Universal>>,
     package: &PackageId,
     exclude_module: Option<&ModulePath>,
+    only_exported_definitions: bool,
 ) {
     let modules = program
         .workspace()
         .modules_in_package(package)
         .iter()
         .filter(|module| exclude_module != Some(*module))
+        .filter(|module| {
+            !only_exported_definitions
+                || module_has_visible_definitions(
+                    &program,
+                    package,
+                    module,
+                    only_exported_definitions,
+                )
+        })
         .cloned()
         .collect::<Vec<_>>();
 
     if modules.is_empty() {
-        let empty_label = if exclude_module.is_some() {
+        let empty_label = if only_exported_definitions {
+            "No definitions"
+        } else if exclude_module.is_some() {
             "No other modules"
         } else {
             "No modules"
@@ -250,6 +311,7 @@ fn show_package_modules(
         display_scope,
         package,
         &tree,
+        only_exported_definitions,
     );
 }
 
@@ -313,6 +375,7 @@ pub(super) fn show_run_menu(
                         current_scope.clone(),
                         package,
                         None,
+                        true,
                     );
                 },
             );
@@ -332,6 +395,7 @@ pub(super) fn show_run_menu(
                 current_scope.clone(),
                 package,
                 current_module_path.as_ref(),
+                false,
             );
         });
     }

@@ -11,7 +11,9 @@ use crate::frontend_impl::program::{
 };
 use crate::frontend_impl::types::display::{GlobalNameWriter, TypeRenderOptions};
 use crate::frontend_impl::types::error::labels_from_span;
-use crate::frontend_impl::types::{Type, TypeError, VisibilityIndex, validate_visibility};
+use crate::frontend_impl::types::{
+    Type, TypeError, Visibility, VisibilityIndex, validate_visibility,
+};
 use crate::location::{FileName, Span, Spanning};
 use crate::runtime_impl::{Compiled, RuntimeCompilerError};
 use arcstr::ArcStr;
@@ -1053,6 +1055,10 @@ impl Workspace {
 
     pub fn declaration_doc(&self, name: &GlobalName<Universal>) -> Option<&DocComment> {
         self.docs.declaration_doc(name)
+    }
+
+    pub fn declaration_visibility(&self, name: &GlobalName<Universal>) -> Visibility {
+        self.visibility.declaration_visibility(name)
     }
 
     pub fn type_check(&self) -> (CheckedWorkspace, Vec<TypeError<Universal>>) {

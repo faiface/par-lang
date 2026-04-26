@@ -502,7 +502,9 @@ impl Playground {
                     let theme = self.get_theme(ui);
 
                     if self.show_compiled {
-                        if let Some(pretty) = self.build.pretty() {
+                        if let Some(mut pretty) =
+                            self.build.pretty_for_file(&self.active_file_name())
+                        {
                             CodeEditor::default()
                                 .id_source("compiled")
                                 .with_syntax(par_syntax())
@@ -510,7 +512,7 @@ impl Playground {
                                 .with_fontsize(self.editor_font_size)
                                 .with_theme(theme)
                                 .with_numlines(true)
-                                .show(ui, &mut String::from(pretty));
+                                .show(ui, &mut pretty);
                         }
                     }
 
