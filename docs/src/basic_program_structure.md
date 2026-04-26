@@ -10,17 +10,17 @@ $ par playground
 
 Press **Compile**, then open the **Run** menu and pick a built-in definition from `core`.
 
-<!-- TODO(screenshot): add an updated playground screenshot showing the Run menu on an empty program. -->
+![Picking a definition](./images/basic_structure_1.png)
 
 As a first example, choose one of the built-in numeric helpers from the `core` package. `Int.Mod`
 computes the non-negative remainder of an integer modulo a natural number:
 
-<!-- TODO(screenshot): add an updated playground screenshot showing Run -> Packages -> core -> Int -> Mod. -->
+![Entering inputs to `Int.Mod`](./images/basic_structure_2.png)
 
 An **automatic UI** shows up, telling us to input the arguments expected by the selected definition.
 After confirming them, we get a result:
 
-<!-- TODO(screenshot): add an updated playground screenshot showing the result UI for Int.Mod. -->
+![Observing results](./images/basic_structure_3.png)
 
 This automatic UI is a feature of the **playground,** not of the Par language itself. Nobody made a
 specific interface for `Int.Mod`. Instead, the playground looked at its type — here, a function from
