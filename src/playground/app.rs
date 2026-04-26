@@ -190,10 +190,11 @@ impl eframe::App for Playground {
         }
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
+            let initial_editor_width = ui.available_width() / 2.0;
             egui::Panel::left("interaction")
                 .resizable(true)
                 .show_separator_line(true)
-                .default_size(16.0 * 32.0)
+                .default_size(initial_editor_width)
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.horizontal(|ui| {
