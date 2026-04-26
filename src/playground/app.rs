@@ -161,9 +161,9 @@ impl eframe::App for Playground {
         ui.set_visuals(visuals);
 
         #[cfg(target_family = "wasm")]
-        self.handle_web_clipboard_shortcuts(ctx);
+        self.handle_web_clipboard_shortcuts(ui.ctx());
         #[cfg(target_family = "wasm")]
-        self.inject_pending_web_clipboard_paste(ctx);
+        self.inject_pending_web_clipboard_paste(ui.ctx());
 
         if let Some(mtime) = self.file_mtime() {
             match self.file_old_mtime {

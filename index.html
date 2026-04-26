@@ -132,11 +132,39 @@
     <div class="lds-dual-ring"></div>
 </div>
 
-<!--Register Service Worker. this will cache the wasm / js scripts for offline use (for PWA functionality). -->
-<!-- Force refresh (Ctrl + F5) to load the latest files instead of cached files  -->
+<!-- Register Service Worker. This caches the wasm / js scripts for offline use. -->
 <script>
-    // We disable caching during development so that we always view the latest version.
-    if ('serviceWorker' in navigator && window.location.hash !== "#dev") {
+    const serviceWorkerCleanupReloadKey = "par-playground-service-worker-cleaned";
+
+    async function clearServiceWorkerState() {
+        const registrations = "serviceWorker" in navigator
+            ? await navigator.serviceWorker.getRegistrations()
+            : [];
+        const wasControlled = Boolean(navigator.serviceWorker?.controller);
+
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+
+        if ("caches" in window) {
+            const cacheKeys = await caches.keys();
+            await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+        }
+
+        if ((wasControlled || registrations.length > 0) &&
+            sessionStorage.getItem(serviceWorkerCleanupReloadKey) !== "true") {
+            sessionStorage.setItem(serviceWorkerCleanupReloadKey, "true");
+            window.location.reload();
+        } else {
+            sessionStorage.removeItem(serviceWorkerCleanupReloadKey);
+        }
+    }
+
+    // We disable and clear caching during development so that we always view the latest build.
+    if (window.location.hash === "#dev") {
+        clearServiceWorkerState().catch((error) => {
+            console.warn("Failed to clear playground service worker state:", error);
+        });
+    } else if ('serviceWorker' in navigator) {
+        sessionStorage.removeItem(serviceWorkerCleanupReloadKey);
         window.addEventListener('load', function () {
             navigator.serviceWorker.register('sw.js');
         });
