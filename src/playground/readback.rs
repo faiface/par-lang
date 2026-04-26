@@ -216,6 +216,7 @@ impl Element {
                                         ui.add(
                                             egui::TextEdit::multiline(&mut input)
                                                 .desired_rows(1)
+                                                .desired_width(200.0)
                                                 .hint_text("Type a string..."),
                                         );
                                         ui.add(egui::Button::small(egui::Button::new("OK")))

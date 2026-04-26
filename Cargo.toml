@@ -70,4 +70,11 @@ tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io
 tokio = { version = "1.49.0", features = ["rt", "macros", "io-util"] }
 log = "0.4.28"
 wasm-bindgen-futures = "0.4.64"
-web-sys = "0.3.91"
+web-sys = { version = "0.3.91", features = [
+    "Clipboard",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "Navigator",
+    "Window",
+] }

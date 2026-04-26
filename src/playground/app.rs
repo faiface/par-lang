@@ -36,6 +36,8 @@ pub struct Playground {
     cancel_token: Option<CancellationToken>,
     file_old_mtime: Option<SystemTime>,
     max_interactions: u32,
+    #[cfg(target_family = "wasm")]
+    pending_web_clipboard_paste: Arc<Mutex<Option<String>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +129,8 @@ impl Playground {
             cancel_token: None,
             file_old_mtime: None,
             max_interactions,
+            #[cfg(target_family = "wasm")]
+            pending_web_clipboard_paste: Arc::new(Mutex::new(None)),
         });
 
         if let Some(path) = file_path {
@@ -155,6 +159,11 @@ impl eframe::App for Playground {
         };
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
         ctx.set_visuals(visuals);
+
+        #[cfg(target_family = "wasm")]
+        self.handle_web_clipboard_shortcuts(ctx);
+        #[cfg(target_family = "wasm")]
+        self.inject_pending_web_clipboard_paste(ctx);
 
         if let Some(mtime) = self.file_mtime() {
             match self.file_old_mtime {
@@ -340,6 +349,95 @@ fn editor_hover_pos(output: &egui::text_edit::TextEditOutput) -> Option<(u32, u3
 }
 
 impl Playground {
+    #[cfg(target_family = "wasm")]
+    fn handle_web_clipboard_shortcuts(&self, ctx: &egui::Context) {
+        let mut needs_copy = false;
+        let mut needs_cut = false;
+        let mut needs_paste = false;
+
+        ctx.input(|input| {
+            let has_copy = input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Copy));
+            let has_cut = input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Cut));
+            let has_paste = input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Paste(_)));
+
+            for event in &input.events {
+                let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                else {
+                    continue;
+                };
+
+                if !modifiers.command {
+                    continue;
+                }
+
+                match key {
+                    egui::Key::C => needs_copy = !has_copy,
+                    egui::Key::X => needs_cut = !has_cut,
+                    egui::Key::V => needs_paste = !has_paste,
+                    _ => {}
+                }
+            }
+        });
+
+        if needs_copy || needs_cut {
+            ctx.input_mut(|input| {
+                if needs_copy {
+                    input.events.push(egui::Event::Copy);
+                }
+                if needs_cut {
+                    input.events.push(egui::Event::Cut);
+                }
+            });
+        }
+
+        if needs_paste {
+            self.request_web_clipboard_paste(ctx);
+        }
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn request_web_clipboard_paste(&self, ctx: &egui::Context) {
+        let pending_paste = Arc::clone(&self.pending_web_clipboard_paste);
+        let ctx = ctx.clone();
+
+        wasm_bindgen_futures::spawn_local(async move {
+            let Some(text) = read_web_clipboard_text().await else {
+                return;
+            };
+            if text.is_empty() {
+                return;
+            }
+
+            *pending_paste.lock().unwrap() = Some(text);
+            ctx.request_repaint();
+        });
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn inject_pending_web_clipboard_paste(&self, ctx: &egui::Context) {
+        let Some(text) = self.pending_web_clipboard_paste.lock().unwrap().take() else {
+            return;
+        };
+
+        ctx.input_mut(|input| {
+            input.events.push(egui::Event::Paste(text));
+        });
+    }
+
     #[cfg(not(target_family = "wasm"))]
     fn open_file(&mut self) {
         if let Some(path) = rfd::FileDialog::new().pick_file() {
@@ -449,12 +547,6 @@ impl Playground {
                 }
 
                 if self.build.pretty().is_some() {
-                    ui.checkbox(
-                        &mut self.show_compiled,
-                        egui::RichText::new("Show compiled"),
-                    );
-                    ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
-
                     if let (Some(checked), Some(rt_compiled)) =
                         (self.build.checked(), self.build.rt_compiled())
                     {
@@ -486,6 +578,12 @@ impl Playground {
                             })
                         });
                     }
+
+                    ui.checkbox(
+                        &mut self.show_compiled,
+                        egui::RichText::new("Show compiled"),
+                    );
+                    ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
                 }
             });
 
@@ -537,6 +635,17 @@ impl Playground {
             });
         });
     }
+}
+
+#[cfg(target_family = "wasm")]
+async fn read_web_clipboard_text() -> Option<String> {
+    let window = web_sys::window()?;
+    let clipboard = window.navigator().clipboard();
+    let text = wasm_bindgen_futures::JsFuture::from(clipboard.read_text())
+        .await
+        .ok()?
+        .as_string()?;
+    Some(text.replace("\r\n", "\n"))
 }
 
 fn par_syntax() -> Syntax {
