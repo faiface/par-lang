@@ -9,6 +9,7 @@ export module List
 import {
   Bool
   Nat
+  Number
   Option
   Result
 }
@@ -121,6 +122,9 @@ export {
 
   // Sorts a linear list by a key in descending order.
   dec SortLinearDescBy : <a>[List<a>] [type k: data, box [a] (k) a] List<a>
+
+  // Calculates the sum of all elements in a list.
+  dec Sum : <a: number>[List<a>] a
 }
 
 def Builder = [type a]
@@ -247,3 +251,10 @@ def SortDescBy = external
 def SortLinearBy = external
 
 def SortLinearDescBy = external
+
+def Sum = <a: number>[list] do {
+  let sum = Number.Zero(type a)
+} in list.begin.case {
+  .end! => sum,
+  .item(x) xs => do { sum += x } in xs.loop,
+}
