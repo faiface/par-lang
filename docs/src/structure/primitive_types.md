@@ -101,6 +101,15 @@ def InRange = 0 <= 5 < 10
 Chained comparisons behave as you would expect: the expression above means `0 <= 5 and 5 < 10`,
 with the middle expression evaluated only once.
 
+Reassigning versions of the arithmetic operators are additionally available in the [process syntax](../process_syntax.md), specifically `+=`, `-=`, `*=`, and `/=`:
+
+```par
+def Five = do {
+  let n = 2
+  n += 3  // equivalent to `let n = n + 3`
+} in n
+```
+
 ## Booleans
 
 `Bool` is not a primitive type. It is an ordinary [`either`](../types/either.md) type from
