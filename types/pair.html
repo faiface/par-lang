@@ -224,20 +224,20 @@ def Example4: SymmetricPair = ("Hello!", 42)!
 <p>Here are some examples:</p>
 <pre><code class="language-par">def Five: Int =
   let (x) y = (3) 2
-  in Int.Add(x, y)
+  in x + y
 
 def FiveSymmetrically: Int =
   let (x, y)! = (3, 2)!
-  in Int.Add(x, y)
+  in x + y
 
 dec AddSymmetricPair : [(Int, Int)!] Int
-def AddSymmetricPair = [(x, y)!] Int.Add(x, y)
+def AddSymmetricPair = [(x, y)!] x + y
 //                      \_____/&lt;---- pattern here
 
 dec SumList : [List&lt;Int&gt;] Int
 def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 //     \____/&lt;---- pattern here
 }
 </code></pre>

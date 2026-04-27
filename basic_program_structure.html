@@ -165,16 +165,17 @@
 <p>Let’s open it:</p>
 <pre><code>$ par playground
 </code></pre>
-<p>Press <strong>Compile</strong>, then open <strong>Run → Packages → core → Int → Add</strong>:</p>
-<p><img src="./images/basic_structure_1.png" alt="Run on an empty program" /></p>
-<p>That picks the built-in <code>Int.Add</code> definition from the <code>core</code> package:</p>
-<p><img src="./images/basic_structure_2.png" alt="Run Int.Add" /></p>
-<p>An <strong>automatic UI</strong> shows up, telling us to input two numbers. After confirming both inputs,
-we get a result:</p>
-<p><img src="./images/basic_structure_3.png" alt="Int.Add result" /></p>
+<p>Press <strong>Compile</strong>, then open the <strong>Run</strong> menu and pick a built-in definition from <code>core</code>.</p>
+<p><img src="./images/basic_structure_1.png" alt="Picking a definition" /></p>
+<p>As a first example, choose one of the built-in numeric helpers from the <code>core</code> package. <code>Int.Mod</code>
+computes the non-negative remainder of an integer modulo a natural number:</p>
+<p><img src="./images/basic_structure_2.png" alt="Entering inputs to Int.Mod" /></p>
+<p>An <strong>automatic UI</strong> shows up, telling us to input the arguments expected by the selected definition.
+After confirming them, we get a result:</p>
+<p><img src="./images/basic_structure_3.png" alt="Observing results" /></p>
 <p>This automatic UI is a feature of the <strong>playground,</strong> not of the Par language itself. Nobody made a
-specific interface for <code>Int.Add</code>. Instead, the playground looked at its type — here, a function from
-two integers to an integer result — and generated a small interface for interacting with it.</p>
+specific interface for <code>Int.Mod</code>. Instead, the playground looked at its type — here, a function from
+two numbers to a number result — and generated a small interface for interacting with it.</p>
 <p>That makes the playground a nice way to explore built-in definitions, and later your own definitions
 too.</p>
 <p>On the next page, we’ll create a fresh package and look at what actually lives inside a Par module.</p>

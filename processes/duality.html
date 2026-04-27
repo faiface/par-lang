@@ -329,11 +329,11 @@ a process. In fact, <strong>link and break are the only ways to end a process.</
 <h2 id="a-real-example-flattening-a-list-of-lists"><a class="header" href="#a-real-example-flattening-a-list-of-lists">A real example: flattening a list of lists</a></h2>
 <p>Let’s now use this style to implement something meaningful. We’ll write a function that flattens
 a nested list:</p>
-<pre><code class="language-par">dec Flatten : [type a] [List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
+<pre><code class="language-par">dec Flatten : [type a, List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
 </code></pre>
 <p>It’s a generic function, using the <a href="../types/forall.html">forall</a> for polymorphism.</p>
 <p>Here’s the full implementation, imperative-style:</p>
-<pre><code class="language-par">def Flatten = [type a] [lists] chan yield {
+<pre><code class="language-par">def Flatten = [type a, lists] chan yield {
   lists.begin@outer.case {
     .end! =&gt; {
       yield.end!

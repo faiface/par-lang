@@ -448,17 +448,17 @@ console.prompt("What's your address?")[try address]
 <p>This is invalid because <code>result.try</code> appears in a nested expression, which runs as a separate concurrent process:</p>
 <pre><code class="language-par">// result : Result&lt;String, Int&gt;
 catch e =&gt; .err e in
-.ok Int.Add(result.try, 1)
+.ok {result.try + 1}
 </code></pre>
 <p>This fix attempts to work around the nested expression issue but still fails — the outer <code>.ok</code> constructs part of the result before <code>try</code> executes:</p>
 <pre><code class="language-par">catch e =&gt; .err e in
 .ok let try value = result in
-Int.Add(value, 1)
+value + 1
 </code></pre>
 <p>Here’s the correct version:</p>
 <pre><code class="language-par">catch e =&gt; .err e in
 let try value = result in
-.ok Int.Add(value, 1)
+.ok {value + 1}
 </code></pre>
 <p>This ensures all error handling completes before constructing the result.</p>
 <h3 id="useful-expression-patterns"><a class="header" href="#useful-expression-patterns">Useful Expression Patterns</a></h3>
@@ -562,12 +562,12 @@ dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type Os.Error)(reader)
+  let parser = Bytes.ParserFromReader(reader)
   let try contents = parser.remainder
   return &lt;&gt; .ok contents
 }
 </code></pre>
-<p>This function uses <code>Bytes.ParseReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
+<p>This function uses <code>Bytes.ParserFromReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
 <h2 id="providing-defaults-with-default"><a class="header" href="#providing-defaults-with-default">Providing defaults with <code>default</code></a></h2>
 <p>Sometimes you don’t want to propagate an error — you want to replace it with a fallback and keep going. The <code>default</code> sugar does exactly that, and unlike <code>try</code>, it is completely standalone: it does not require a surrounding <code>catch</code>, and it is valid even in nested expression positions.</p>
 <ul>
@@ -589,12 +589,12 @@ let y = r2.default(0)   // y = 0
 <p>Here’s a practical example that shows why the pattern form is particularly useful with receive commands. It counts word occurrences using a map; when a key is missing, it starts from <code>0</code>:</p>
 <pre><code class="language-par">dec Counts : [List&lt;String&gt;] List&lt;(String) Nat&gt;
 def Counts = [words] do {
-  let counts = Map.String(type Nat)(*())
+  let counts = Map.New(type String, type Nat)
   words.begin.case {
     .end! =&gt; {}
     .item(word) =&gt; {
       counts.entry(word)[default(0) count]
-      counts.put(Nat.Add(count, 1))
+      counts.put(count + 1)
       words.loop
     }
   }

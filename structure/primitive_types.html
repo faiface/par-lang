@@ -161,104 +161,128 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="primitive-types"><a class="header" href="#primitive-types">Primitive Types</a></h1>
-<p>Before taking a stroll in the diverse garden of Par’s types, let’s stop by the most basic ones:
-the <em>primitives.</em></p>
-<p>At the moment, Par has seven primitive types:</p>
+<p>Before taking a stroll through Par’s types, let’s stop by the values that are not built out of
+the ordinary type connectives: the <em>primitives</em>.</p>
+<p>Par currently has seven primitive types:</p>
 <ul>
-<li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
-<li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
-<li><strong><code>Float</code></strong> — IEEE-754 double-precision floating-point numbers.</li>
-<li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters. They are a subtype of <code>Bytes</code>.</li>
-<li><strong><code>Char</code></strong> — Singular Unicode character. They are a subtype of <code>String</code>.</li>
-<li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
-<li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
+<li><strong><code>Nat</code></strong> – natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
+<li><strong><code>Int</code></strong> – positive and negative whole numbers, arbitrary size.</li>
+<li><strong><code>Float</code></strong> – IEEE-754 double-precision floating-point numbers.</li>
+<li><strong><code>String</code></strong> – UTF-8 encoded text. It is a subtype of <code>Bytes</code>.</li>
+<li><strong><code>Char</code></strong> – a single Unicode character. It is a subtype of <code>String</code>.</li>
+<li><strong><code>Byte</code></strong> – a single 8-bit value. It is a subtype of <code>Bytes</code>.</li>
+<li><strong><code>Bytes</code></strong> – a contiguous sequence of bytes.</li>
 </ul>
-<blockquote>
-<p>There’s a <strong>significant distinction</strong> between <em>primitives</em> and all other types in Par.</p>
-<p>The thing is, Par has a fully structural type system. All custom type definitions are just
-aliases — there is no way to create opaque types. <em>(But, encapsulation is perfectly possible.)</em></p>
-<p>Primitives are different in that they are opaque. They are magical types, distinct from others,
-that are operated on using magical built-in functions. This is necessary to achieve their
-efficient representation.</p>
-</blockquote>
-<p>Primitives are manipulated using magical built-in functions.</p>
-<p>Primitive <strong>literals</strong> are special: you can write values such as <code>42</code>, <code>3.14</code>, <code>"Hello"</code>, <code>&lt;&lt;65&gt;&gt;</code>, or
-<code>&lt;&lt;65 66&gt;&gt;</code> without importing anything.</p>
-<p>But the module names <code>Int</code>, <code>Nat</code>, <code>Float</code>, <code>String</code>, <code>Char</code>, <code>Byte</code>, and <code>Bytes</code> are <strong>not</strong> automatically
-in scope. So if you want to:</p>
-<ul>
-<li>mention one of these types explicitly</li>
-<li>or call functions from their modules, such as <code>Int.Add</code> or <code>String.Reader</code></li>
-</ul>
-<p>then you need to import the corresponding module from <code>@core</code>.</p>
-<p><strong>To find the list of all built-in functions:</strong></p>
-<ol>
-<li>Open the playground.
-<pre><code>$ par playground
+<p>Primitives are the one place where Par is not fully structural. User-defined types are aliases:
+their shape is their meaning. Primitive types are opaque, because they need efficient runtime
+representations and special operations.</p>
+<h2 id="literals"><a class="header" href="#literals">Literals</a></h2>
+<p>Primitive literals are always available. You do not need to import anything to write them.</p>
+<pre><code class="language-par">def Natural = 42       // Nat
+def Integer = -7       // Int
+def Floating = 3.14    // Float
+def Text = "Hello"     // String
+def Character = "H"    // Char
+def OneByte = &lt;&lt;65&gt;&gt;   // Byte
+def ManyBytes = &lt;&lt;65 66 67&gt;&gt;  // Bytes
 </code></pre>
-</li>
-<li>Press <strong>Compile,</strong> and <strong>Run.</strong> Scroll the list that pops up.
-<img src="../images/strings_and_numbers_1.png" alt="List of built-in functions" /></li>
-</ol>
-<p>Alternatively, <code>par doc</code> lets you browse the built-in packages and their exported definitions.</p>
-<p><strong>To figure out the type of a built-in function:</strong></p>
-<ol>
-<li>Assigning it to your own <code>def</code>, such as:
+<p>Integer and natural number literals may use underscores for readability:</p>
+<pre><code class="language-par">def Million = 1_000_000
+</code></pre>
+<p>Float literals have a fractional part, and may use scientific notation:</p>
+<pre><code class="language-par">def Piish = 3.14
+def Half = 0.5
+def Avogadroish = 6.02e23
+</code></pre>
+<p>Strings use double quotes and normal escape sequences:</p>
+<pre><code class="language-par">def Greeting = "Hello\nWorld"
+</code></pre>
+<p>A <code>Char</code> literal is just a string literal containing exactly one character:</p>
+<pre><code class="language-par">def Letter = "a"
+def Newline = "\n"
+</code></pre>
+<p>Byte and bytes literals use double angle brackets. A single byte literal is inferred as <code>Byte</code>;
+multiple bytes, or the empty literal, are inferred as <code>Bytes</code>.</p>
+<pre><code class="language-par">def A = &lt;&lt;65&gt;&gt;
+def ABC = &lt;&lt;65 66 67&gt;&gt;
+def Empty = &lt;&lt;&gt;&gt;
+</code></pre>
+<p>Byte values are stored modulo 256, so out-of-range byte literal values wrap around.</p>
+<h2 id="operators"><a class="header" href="#operators">Operators</a></h2>
+<p>Numbers are usually manipulated with operators, not with imported helper functions.</p>
+<pre><code class="language-par">def Arithmetic = 1 + 2 * 3       // = 7
+def Grouped = {1 + 2} * 3        // = 9
+def Ratio = 22.0 / 7.0
+def Difference = 10 - 3
+def Negative = neg 5
+</code></pre>
+<p>The operators <code>+</code>, <code>*</code>, and <code>/</code> work on <code>Nat</code>, <code>Int</code>, and <code>Float</code>.
+The operators <code>-</code> and <code>neg</code> work on signed numbers: <code>Int</code> and <code>Float</code>.</p>
+<p>Comparisons work on primitive values too:</p>
+<pre><code class="language-par">def Smaller = 3 &lt; 10          // = .true!
+def SameText = "hi" == "hi"   // = .true!
+def Different = "a" != "b"    // = .true!
+</code></pre>
+<p>They produce a <code>Bool</code>, which is described below. Comparisons also chain:</p>
+<pre><code class="language-par">def InRange = 0 &lt;= 5 &lt; 10
+</code></pre>
+<p>Chained comparisons behave as you would expect: the expression above means <code>0 &lt;= 5 and 5 &lt; 10</code>,
+with the middle expression evaluated only once.</p>
+<p>Reassigning versions of the arithmetic operators are additionally available in the <a href="../process_syntax.html">process syntax</a>, specifically <code>+=</code>, <code>-=</code>, <code>*=</code>, and <code>/=</code>:</p>
+<pre><code class="language-par">def Five = do {
+  let n = 2
+  n += 3  // equivalent to `let n = n + 3`
+} in n
+</code></pre>
+<h2 id="booleans"><a class="header" href="#booleans">Booleans</a></h2>
+<p><code>Bool</code> is not a primitive type. It is an ordinary <a href="../types/either.html"><code>either</code></a> type from
+<code>@core/Bool</code>:</p>
+<pre><code class="language-par">type Bool = either {
+  .false!,
+  .true!,
+}
+</code></pre>
+<p>Boolean values are written as <code>.true!</code> and <code>.false!</code>.</p>
+<pre><code class="language-par">def Yes = .true!
+def No = .false!
+</code></pre>
+<p>Boolean expressions use <code>and</code>, <code>or</code>, and <code>not</code>:</p>
+<pre><code class="language-par">def Both = .true! and .false!
+def Either = .true! or .false!
+def Neither = not .true!
+</code></pre>
+<p>These same words have extra power in conditions: they short-circuit, and can carry bindings from
+matches. That is covered in <a href="../quality_of_life/if.html">Conditions &amp; <code>if</code></a>.</p>
+<h2 id="template-strings"><a class="header" href="#template-strings">Template Strings</a></h2>
+<p>Backtick strings are template strings. They are still <code>String</code> values, but they can contain
+interpolation.</p>
+<p>Use <code>${...}</code> to splice in an expression that already has type <code>String</code>:</p>
+<pre><code class="language-par">def Name = "Ada"
+def Greeting = `Hello, ${Name}!`
+</code></pre>
+<p>Use <code>#{...}</code> to splice in any value that can be displayed as data:</p>
+<pre><code class="language-par">def Count = 3
+def Message = `You have #{Count} messages.`
+</code></pre>
+<p>The <code>#{...}</code> form uses <code>@core/Data.ToString</code> under the hood. It works for primitives and for
+ordinary data structures such as pairs, eithers, and lists of data.</p>
+<p>Template strings may span multiple lines, and support the usual string escapes. To write syntax
+that would otherwise start or end template behavior, escape it:</p>
+<pre><code class="language-par">def LiteralPieces = `Use \` for backticks, \${ for string interpolation, and \#{ for data.`
+</code></pre>
+<h2 id="naming-primitive-types"><a class="header" href="#naming-primitive-types">Naming Primitive Types</a></h2>
+<p>Literals do not need imports, but explicit type names do.</p>
 <pre><code class="language-par">module Main
 
-import @core/Int
+import {
+  @core/Int
+  @core/String
+}
 
-def Examine = Int.ToString
+def Age: Int = 42
+def Name: String = "Ada"
 </code></pre>
-Par knows the type of <code>Int.ToString</code>, so it will infer it for <code>Examine</code> as well.</li>
-<li>Press <strong>Compile.</strong></li>
-<li>Move the cursor to the definition. The playground will display the type on the right,
-in green.
-<img src="../images/strings_and_numbers_2.png" alt="Displayed type of a built-in function" /></li>
-</ol>
-<p>The type <code>[Int] String</code> is a <a href="../types/function.html">function</a> from <code>Int</code> to <code>String</code>. We will cover
-functions and other types in detail <a href="../types_and_expressions.html">later</a>. Despite that, we’ll still play with
-some built-in functions in this section. All you need to know is that
-<strong>the square brackets enclose function arguments,</strong> and the result type follows. For example:</p>
-<ul>
-<li><code>[Int, Int] Int</code> is a function from two <code>Int</code>s to an <code>Int</code>.</li>
-<li><code>[Int, Nat, Nat] Nat</code> is a function from one <code>Int</code> and two <code>Nat</code>s to a <code>Nat</code>.</li>
-</ul>
-<blockquote>
-<p><strong>The current set of built-in functions is very minimal.</strong> They’re just enough to be able to
-write more useful functions yourself, but they’re nowhere close to a standard library. For example,
-there are no functions for analyzing strings, aside from <code>String.Reader</code>, which is flexible enough
-to implement all you’d need. You just need to do it yourself.</p>
-<p>Keep in mind that Par is early in development. It’s bringing an innovative paradigm, which we’re
-still figuring out how to use best. Creating an expansive standard library would be premature
-before we understand what’s actually going on here.</p>
-</blockquote>
-<p>Now, let’s take a look at the primitives!</p>
-<h2 id="int"><a class="header" href="#int"><code>Int</code></a></h2>
-<p>Integers are arbitrarily sized whole numbers, positive or negative.</p>
-<p>Their literals consist of digits, optionally prefixed with <code>-</code> or <code>+</code>, and may include underscores
-for readability.</p>
-<pre><code class="language-par">module Main
-
-import @core/Int
-
-def Num1: Int = 7
-def Num2: Int = -123_456_789
-</code></pre>
-<p>The type annotations are not needed, and then no import is required:</p>
-<pre><code class="language-par">def Num3 = 42
-def Num4 = -2202
-</code></pre>
-<p>Without annotations, <code>Num3</code> actually gets inferred as <code>Nat</code>. But, since <code>Nat</code> is a
-subtype of <code>Int</code>, it can be treated as an <code>Int</code> too.</p>
-<p>Built-in functions are used for arithmetic operations. For example:</p>
-<pre><code class="language-par">def Num5 = Int.Add(3, 4)  // = 7
-def Num6 = Int.Mul(3, 4)  // = 12
-</code></pre>
-<p>Go ahead and explore more of them in the playground!</p>
-<h2 id="nat"><a class="header" href="#nat"><code>Nat</code></a></h2>
-<p>Natural numbers are just integers excluding the negative ones. <code>Nat</code> is a subtype of <code>Int</code>, so
-every variable of type <code>Nat</code> can be used as an <code>Int</code>, too.</p>
+<p>The same imports give access to helper functions from those modules.</p>
 <pre><code class="language-par">module Main
 
 import {
@@ -266,154 +290,91 @@ import {
   @core/Nat
 }
 
-def Num7 = 14  // inferred as `Nat`
-def Num8 = 17  // inferred as `Nat`
-
-// perfectly valid
-def Num9 = Int.Add(Num7, Num8)
+def Magnitude = Int.Abs(-1000)
+def Remainder = Int.Mod(-13, 5)
+def Numbers = Nat.Range(0, 5)  // *(0, 1, 2, 3, 4)
 </code></pre>
-<p>While <code>Num7</code> and <code>Num8</code> are inferred as <code>Nat</code>s, <code>Num9</code> will be an <code>Int</code> because that’s what
-<code>Int.Add</code> returns. To get a <code>Nat</code> result, use <code>Nat.Add</code>, which only accepts <code>Nat</code>s:</p>
-<pre><code class="language-par">def Num10 = Nat.Add(Num7, Num8)  // inferred as `Nat`
-</code></pre>
-<p><strong>Several built-in functions aid in converting <code>Int</code>s to <code>Nat</code>s.</strong> For example:</p>
-<ul>
-<li><strong><code>Nat.Max</code></strong> has type <code>[Nat, Int] Nat</code> — the second argument is allowed to be an <code>Int</code>.
-Yet it’s guaranteed to return a <code>Nat</code>.</li>
-<li><strong><code>Int.Abs</code></strong> has type <code>[Int] Nat</code> — an absolute value is always a <code>Nat</code>.</li>
-</ul>
-<pre><code class="language-par">def Num11: Nat = Nat.Max(0, -1000)  // = 0
-def Num12: Nat = Int.Abs(-1000)     // = 1000
-</code></pre>
-<p>Unlike <code>Int</code>s, natural numbers can be looped on using <code>Nat.Repeat</code>, which is one of their main
-uses. We’ll learn more about that in the section on <a href="../types/recursive.html">recursive</a> types.</p>
-<h2 id="float"><a class="header" href="#float"><code>Float</code></a></h2>
-<p>Floats are IEEE-754 double-precision numbers. Unlike <code>Nat</code>, they are <strong>not</strong> a subtype of <code>Int</code>.
-They have their own representation and their own built-in operations.</p>
-<p>Float literals require both a whole and a fractional part, and may use scientific notation:</p>
-<pre><code class="language-par">def F1 = 3.14
-def F2 = -0.5
-def F3 = 6.02e23
-</code></pre>
-<p>To work with them explicitly, import <code>@core/Float</code>:</p>
+<p>Every package automatically depends on <code>@core</code>, but its modules are not imported automatically.</p>
+<h2 id="useful-primitive-modules"><a class="header" href="#useful-primitive-modules">Useful Primitive Modules</a></h2>
+<p>The primitive modules contain operations that are not just generic arithmetic or comparison.
+The examples below are only a taste; use <code>par doc</code> to browse the full built-in API.</p>
+<h3 id="corenat"><a class="header" href="#corenat"><code>@core/Nat</code></a></h3>
+<p><code>Nat</code> has helpers for finite repetition and natural ranges:</p>
 <pre><code class="language-par">module Main
 
-import {
-  @core/Float
-  @core/Int
-}
+import @core/Nat
 
-def Radius = 2.5
-def Circumference = Float.Mul(2.0, Float.Mul(Float.Pi, Radius))
-def Truncated = Float.ToInt(Circumference)
-def BackToFloat = Float.FromInt(Truncated)
+def ThreeSteps = Nat.Repeat(3)
+def ZeroToFour = Nat.Range(0, 5)
 </code></pre>
-<p><code>Float.Equals</code> compares with a tolerance:</p>
-<pre><code class="language-par">def CloseEnough = Float.Equals(1.0, 1.05, 0.1)  // = .true!
-</code></pre>
-<p>And special values are available through constants:</p>
-<pre><code class="language-par">def Special = Float.NaN
-def Infinite = Float.Inf
-</code></pre>
-<h2 id="string"><a class="header" href="#string"><code>String</code></a></h2>
-<p>Strings are represented as UTF-8 encoded sequences of Unicode characters. Their literals are
-enclosed in double quotes (<code>"</code>), and may contain escape sequences, such as <code>\n</code>, familiar from
-other languages.</p>
-<pre><code class="language-par">def Str1 = "Hello"  // inferred as `String`
-def Str2 = "World"
-</code></pre>
-<p>To concatenate strings, use <code>String.Builder</code>. To fully understand how it works, we’ll need to
-cover <a href="../types/iterative.html">iterative</a> and <a href="../types/choice.html">choice</a> types, but perhaps
-you can get the idea:</p>
-<pre><code class="language-par">module Main
-
-import @core/String
-
-def Str3 = String.Builder
-  .add(Str1)
-  .add(", ")
-  .add(Str2)
-  .build  // = "Hello, World"
-</code></pre>
-<p>Analyzing strings — such as finding, splitting, or parsing — is done using <code>String.Reader</code>.
-To be able to use it, more knowledge of the language is needed first. But, feel
-free to play with it in the playground, or check out the <code>StringManipulation.par</code> example in
-the <code>examples/src/</code> folder.</p>
-<p>Numbers can be converted to strings using <code>Int.ToString</code> or <code>Float.ToString</code>:</p>
+<p><code>Nat.Repeat(n)</code> produces a recursive value with exactly <code>n</code> steps. It shows up often when you need
+to loop a known number of times.</p>
+<h3 id="coreint"><a class="header" href="#coreint"><code>@core/Int</code></a></h3>
+<p><code>Int</code> has helpers where the result type is not just “another number”.</p>
 <pre><code class="language-par">module Main
 
 import @core/Int
 
-def Str4 = Int.ToString(14)  // = "14"
-def Str5 = Int.ToString(-7)  // = "-7"
+def Absolute: Nat = Int.Abs(-12)
+def Modulo: Nat = Int.Mod(-13, 5)
+def FromTo = Int.Range(-2, 3)
 </code></pre>
-<p>Note, that <code>Nat</code> is a subtype of <code>Int</code>, so any natural number can also be converted to a string
-this way, too. In fact, that’s exactly what happens with <code>Str4</code>.</p>
-<h2 id="char"><a class="header" href="#char"><code>Char</code></a></h2>
-<p>A <code>Char</code> is a single Unicode character. <code>Char</code> literals are single characters enclosed in double quotes:</p>
-<pre><code class="language-par">def Char1 = "a"  // inferred as `Char`
-def Char2 = "\n"
-</code></pre>
-<p>Since <code>Char</code> is a subtype of <code>String</code>, every variable of type <code>Char</code> can be used as a <code>String</code>, too.</p>
-<p>There’s a built-in function to check if a <code>Char</code> is a part of a character class:</p>
+<h3 id="corefloat"><a class="header" href="#corefloat"><code>@core/Float</code></a></h3>
+<p><code>Float</code> has constants, conversions, predicates, and math functions:</p>
 <pre><code class="language-par">module Main
 
-import @core/Char
+import @core/Float
 
-def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
+def Tau = 2.0 * Float.Pi
+def Root = Float.Sqrt(9.0)
+def Rounded = Float.Round(3.6)
+def CloseEnough = Float.Equals(1.0, 1.05, 0.1)
 </code></pre>
-<p>There’s no built-in function turning a <code>String</code> to a list of <code>Char</code>s. Feel free to
-copy-paste this one, if you ever need it:</p>
+<p><code>Float.Equals</code> remains useful because it compares with a tolerance. The <code>==</code> operator compares data
+directly.</p>
+<h3 id="corestring"><a class="header" href="#corestring"><code>@core/String</code></a></h3>
+<p>Strings can be built incrementally:</p>
 <pre><code class="language-par">module Main
 
-import {
-  @core/Char
-  @core/List
-  @core/String
-}
+import @core/String
 
-dec Chars : [String] List&lt;Char&gt;
-def Chars = [s] String.Reader(s).begin.char.case {
-  .end _ =&gt; .end!,
-  .char(c) rest =&gt; .item(c) rest.loop,
-}
+def Hello = String.Builder
+  .add("Hello")
+  .add(", ")
+  .add("world!")
+  .build
 </code></pre>
-<h2 id="byte"><a class="header" href="#byte"><code>Byte</code></a></h2>
-<p>A byte consists of eight bits, whose numerical value can range from 0 and 255, inclusive. <code>Byte</code>
-literals are written in decimal, enclosed in double angle brackets:</p>
-<pre><code class="language-par">def Byte1 = &lt;&lt;65&gt;&gt;   // inferred as `Byte`
-def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapped
-</code></pre>
-<p>Since <code>Byte</code> is a subtype of <code>Bytes</code>, every variable of type <code>Byte</code> can be used as a <code>Bytes</code>, too.</p>
-<p>Just like <code>Char</code>s, there’s a built-in function to check if a <code>Byte</code> is a part of a byte class. For <code>Byte</code>s, that’s mainly byte ranges:</p>
+<p>They can also be parsed through <code>String.Parser</code>. The parser is a larger tool, useful when you want
+to read characters or match patterns:</p>
 <pre><code class="language-par">module Main
 
-import @core/Byte
+import @core/String
 
-def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
+def ParserFromText = String.Parser("abc")
 </code></pre>
-<h2 id="bytes"><a class="header" href="#bytes"><code>Bytes</code></a></h2>
-<p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
-that multiple decimal values are allowed, and are delimited by spaces:</p>
-<pre><code class="language-par">def Bytes1 = &lt;&lt;65 91&gt;&gt;  // inferred as `Bytes`
-def Bytes2 = &lt;&lt;&gt;&gt;       // zero-byte sequence
-</code></pre>
-<p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
+<h3 id="corechar-and-corebyte"><a class="header" href="#corechar-and-corebyte"><code>@core/Char</code> and <code>@core/Byte</code></a></h3>
+<p><code>Char.Is</code> and <code>Byte.Is</code> check membership in character or byte classes:</p>
 <pre><code class="language-par">module Main
 
 import {
   @core/Byte
-  @core/Bytes
-  @core/List
+  @core/Char
 }
 
-dec Bytes : [Bytes] List&lt;Byte&gt;
-def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
-  .end _ =&gt; .end!,
-  .byte(b) rest =&gt; .item(b) rest.loop,
-}
+def Space = Char.Is(" ", .whitespace!)
+def HighByte = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)
 </code></pre>
-<p>It’s also important to remember, that <code>String</code> is a subtype of <code>Bytes</code> and so any <code>String</code> value can be used wherever <code>Bytes</code> is expected.</p>
+<h3 id="corebytes"><a class="header" href="#corebytes"><code>@core/Bytes</code></a></h3>
+<p><code>Bytes</code> has readers, parsers, and builders for byte-oriented protocols:</p>
+<pre><code class="language-par">module Main
+
+import @core/Bytes
+
+def EmptyReader = Bytes.Reader(&lt;&lt;&gt;&gt;)
+def Size = Bytes.Length(&lt;&lt;65 66 67&gt;&gt;)
+</code></pre>
+<p>That is enough about primitives for now. The rest of the docs will introduce the structural types
+that most Par programs are built from.</p>
 
                     </main>
 

@@ -317,7 +317,7 @@ def Fibonacci: Sequence&lt;Nat&gt; =
   in begin case {
     .close =&gt; !,
     .next =&gt;
-      let (a, b)! = (b, Nat.Add(a, b))!
+      let (a, b)! = (b, a + b)!
       in (a) loop
   }
 </code></pre>
@@ -334,7 +334,8 @@ def Increment = [seq] begin case {
   .close =&gt; let ! = seq.close in !,
   .next =&gt;
     let (x) seq = seq.next
-    in (Int.Add(x, 1)) loop
+    in let x = x + 1
+    in (x) loop
 }
 
 def FibonacciPlusOne = Increment(Fibonacci)
@@ -350,15 +351,15 @@ disable Par’s totality checking by replacing <code>begin</code> with <code>unf
 <p>Iterative types don’t have any special syntax for destruction. Instead, we just operate on their bodies
 directly, as if they were expanded.</p>
 <p>For example, here’s a function to take the first element from a sequence and close it:</p>
-<pre><code class="language-par">def Head = [type a] [seq: Sequence&lt;a&gt;]
+<pre><code class="language-par">def Head = [type a, seq: Sequence&lt;a&gt;]
   let (x) seq = seq.next
   in let ! = seq.close
   in x
 </code></pre>
 <p>Using <a href="./recursive.html">recursion</a>, we can destruct an iterative type many times. Here’s a function to
 take the first N elements of a sequence and return them in a list:</p>
-<pre><code class="language-par">dec Take : [type a] [Nat, Sequence&lt;a&gt;] List&lt;a&gt;
-def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
+<pre><code class="language-par">dec Take : [type a, Nat, Sequence&lt;a&gt;] List&lt;a&gt;
+def Take = [type a, n, seq] Nat.Repeat(n).begin.case {
   .end! =&gt; let ! = seq.close in .end!,
   .step remaining =&gt;
     let (x) seq = seq.next

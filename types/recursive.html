@@ -377,12 +377,12 @@ def SumList = [list]
   .item(x) xs =&gt;
 </code></pre>
 If the list is empty, the result is <code>0</code>. Otherwise, we need to add the number <code>x</code>
-<pre><code class="language-par">                 Int.Add(x,
+<pre><code class="language-par">                 x +
 </code></pre>
 to the sum of the rest of the list: <code>xs</code>.</li>
 <li>Since <code>xs</code> is a <em>descendant</em> of the original <code>list</code> that we applied the <code>.begin</code> to, and is again a
 <code>List&lt;Int&gt;</code>, we can recursively obtain its sum using <code>.loop</code>:
-<pre><code class="language-par">                            xs.loop),
+<pre><code class="language-par">                            xs.loop
 </code></pre>
 And close the braces.
 <pre><code class="language-par">}
@@ -392,7 +392,7 @@ And close the braces.
 <p>All put together, it looks like this:</p>
 <pre><code class="language-par">def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>You can think of <code>.loop</code> as going back to the corresponding <code>.begin</code>, but with the new value.</p>
@@ -403,30 +403,30 @@ themselves. In all cases, <strong>the meaning of <code>.begin</code>/<code>.loop
 <li>The original code:
 <pre><code class="language-par">def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 </li>
 <li>The first expansion:
 <pre><code class="language-par">def SumList = [list] list.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.begin.case {
+  .item(x) xs =&gt; x + xs.begin.case {
     .end!       =&gt; 0,
-    .item(x) xs =&gt; Int.Add(x, xs.loop),
-  }),
+    .item(x) xs =&gt; x + xs.loop,
+  },
 }
 </code></pre>
 </li>
 <li>The second expansion:
 <pre><code class="language-par">def SumList = [list] list.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.case {
+  .item(x) xs =&gt; x + xs.case {
     .end!       =&gt; 0,
-    .item(x) xs =&gt; Int.Add(x, xs.begin.case {
+    .item(x) xs =&gt; x + xs.begin.case {
       .end!       =&gt; 0,
-      .item(x) xs =&gt; Int.Add(x, xs.loop),
-    }),
-  }),
+      .item(x) xs =&gt; x + xs.loop,
+    },
+  },
 }
 </code></pre>
 </li>
@@ -437,7 +437,7 @@ type defined previously:</p>
 <pre><code class="language-par">dec SumTree : [Tree] Int
 def SumTree = [tree] tree.begin.case {
   .leaf number        =&gt; number,
-  .node(left, right)! =&gt; Int.Add(left.loop, right.loop),
+  .node(left, right)! =&gt; left.loop + right.loop,
 }
 
 def BiggerSum = SumTree(BiggerTree)  // = 20
@@ -463,7 +463,7 @@ increment. In Haskell, that’s achieved by explicitly passing it to the recursi
 <pre><code class="language-par">dec IncBy : [List&lt;Int&gt;, Int] List&lt;Int&gt;
 def IncBy = [list, n] list.begin.case {
   .end!       =&gt; .end!,
-  .item(x) xs =&gt; .item(Int.Add(x, n)) xs.loop,
+  .item(x) xs =&gt; .item(x + n) xs.loop,
 }
 </code></pre>
 <p>Notice, that <code>xs.loop</code> makes no mention of <code>n</code>, the increment. Yet, <code>n</code> is available throughout the
@@ -486,15 +486,15 @@ reverseHelper acc (x:xs) = reverseHelper (x:acc) xs
 <p>This function uses a state: <code>acc</code>, the accumulator. It prepends a new item to it in every iteration,
 eventually reversing the whole list. In Haskell, this requires a helper recursive function.</p>
 <p>In Par, it doesn’t!</p>
-<pre><code class="language-par">dec Reverse : [type a] [List&lt;Int&gt;] List&lt;Int&gt;
-def Reverse = [type a] [list]
+<pre><code class="language-par">dec Reverse : [type a, List&lt;Int&gt;] List&lt;Int&gt;
+def Reverse = [type a, list]
   let acc: List&lt;a&gt; = .end!
   in list.begin.case {
     .end!       =&gt; acc,
     .item(x) xs =&gt; let acc = .item(x) acc in xs.loop,
   }
 
-def TestReverse = Reverse(type Int)(*(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
+def TestReverse = Reverse(type Int, *(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
 </code></pre>
 <p>And there we go! All we had to do was to re-assign <code>acc</code> with the new value, and continue with <code>xs.loop</code>.</p>
 <h3 id="the-escape-hatch-from-totality-unfounded"><a class="header" href="#the-escape-hatch-from-totality-unfounded">The escape-hatch from totality: <code>.unfounded</code></a></h3>

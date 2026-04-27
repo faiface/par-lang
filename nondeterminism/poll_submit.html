@@ -221,7 +221,7 @@ dec PollSum : [List&lt;Int&gt;] Int
 def PollSum = [nums] poll(nums) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+    .item(x) xs =&gt; x + submit(xs),
   }
   else =&gt; 0,
 }
@@ -245,7 +245,7 @@ def PollSum = [nums] poll(nums) {
 <p>If the list is empty, we do an empty <code>submit()</code>. That returns the result of the rest of the next <code>poll</code>, which in this case will go to the <code>else</code> branch.</p>
 </li>
 <li>
-<p><code>.item(x) xs =&gt; Int.Add(x, submit(xs)),</code></p>
+<p><code>.item(x) xs =&gt; x + submit(xs),</code></p>
 <p>If the list is not empty, we <code>submit(xs)</code> the remainder of the list back into the pool, and return the sum of the first item with the result of the next <code>poll</code>.</p>
 </li>
 </ul>
@@ -253,7 +253,7 @@ def PollSum = [nums] poll(nums) {
 <pre><code class="language-par">dec Sum : [List&lt;Int&gt;] Int
 def Sum = [nums] nums.begin.case {
   .end! =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>Instead of <code>xs.loop</code>, we have <code>submit(xs)</code>, but there’s another important difference:</p>
@@ -263,7 +263,7 @@ def Sum = [nums] nums.begin.case {
 def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+    .item(x) xs =&gt; x + submit(xs),
   }
   else =&gt; 0,
 }

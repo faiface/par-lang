@@ -179,7 +179,7 @@ def Fibonacci =
   in begin case {
     .close =&gt; !
     .next =&gt;
-      let (a) b = (b) Nat.Add(a, b)
+      let (a) b = (b) {a + b}
       in (a) loop
   }
 </code></pre>
@@ -225,7 +225,6 @@ Much like <code>String.Builder</code>, but the output appears directly in your c
 
 import {
   @basic/Console
-  @core/Int
   @core/Nat
 }
 
@@ -237,7 +236,7 @@ def Program: ! = do {
     .end! =&gt; {}
     .step remaining =&gt; {
       fib.next[n]
-      console.print(Int.ToString(n))
+      console.print(`#{n}`)
       remaining.loop
     }
   }
@@ -250,7 +249,7 @@ def Program: ! = do {
 <ul>
 <li><code>Nat.Repeat(30)</code> becomes the subject of the <code>.begin</code> and <code>.case</code> commands.</li>
 <li>In each <code>.step</code>, we receive a number from the <code>fib</code> sequence using the <code>fib.next[n]</code> command.</li>
-<li>We convert it to a string using <code>Int.ToString(n)</code> and print it to the console.</li>
+<li>We convert it to a string with a template string and print it to the console.</li>
 <li>Then we <code>loop</code>.</li>
 </ul>
 <p>The <code>fib.next[n]</code> line is where <em>receive</em> command truly shines. It receives the payload

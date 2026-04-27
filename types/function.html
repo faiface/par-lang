@@ -181,7 +181,7 @@ a function stored in a local variable can (and must) only be called once:</p>
 import @core/Int
 
 dec Add : [Int, Int] Int
-def Add = [x, y] Int.Add(x, y)
+def Add = [x, y] x + y
 
 // a global function may be called many times
 def Six = Add(1, Add(2, 3))  // Okay.
@@ -200,7 +200,7 @@ purpose of <em>Par</em> is to explore where this new paradigm arising from linea
 <p>Function values bind their argument inside square brackets, followed by an expression computing
 the result.</p>
 <pre><code class="language-par">dec Double : [Int] Int
-def Double = [number] Int.Mul(2, number)
+def Double = [number] 2 * number
 </code></pre>
 <p>Multi-argument functions — or more precisely: functions returning other functions — can be expressed
 using the same kind of a syntax sugar as available for their types:</p>
@@ -233,7 +233,7 @@ explicitly:</p>
 <p><strong><em>Par</em> has an unusual take on recursion,</strong> thanks to its ambitious stride towards <a href="../introduction.html#an-ambitious-stride-towards-totality">totality</a>.
 Naive recursion by self-reference is not allowed. In other words,
 <strong>a function can’t directly call itself.</strong></p>
-<pre><code class="language-par">def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
+<pre><code class="language-par">def Infinity = 1 + Infinity  // Error! Cyclic dependency.
 </code></pre>
 <p>Instead, <a href="./recursive.html">recursive</a> and <a href="./iterative.html">iterative</a> types are used for recursion
 and <a href="https://en.wikipedia.org/wiki/Corecursion">corecursion</a>, respectively. Read up on them to learn

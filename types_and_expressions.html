@@ -212,18 +212,20 @@ and passed around freely.</p>
 <li><strong>Linear types,</strong> which must be used exactly once.</li>
 <li><strong>Non-linear types,</strong> which can be used any number of times — including zero.</li>
 </ul>
-<p>Let’s look at what falls into each category.</p>
+<p>The precise rule is: a type is non-linear when it satisfies the <a href="./types/constraints.html"><code>box</code> constraint</a>.
+That chapter comes after <a href="./types/box.html">Box</a>, but here is the useful orientation.</p>
 <h3 id="which-types-are-non-linear"><a class="header" href="#which-types-are-non-linear">Which types are non-linear?</a></h3>
-<p>These are:</p>
+<p>These include:</p>
 <ul>
-<li>All <a href="./structure/primitive_types.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code></li>
+<li>All <a href="./structure/primitive_types.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>Float</code>, <code>String</code>, <code>Char</code>,
+<code>Byte</code>, and <code>Bytes</code></li>
 <li><a href="./types/unit.html"><strong>Unit</strong></a></li>
 <li><a href="./types/either.html"><strong>Either</strong></a></li>
 <li><a href="./types/pair.html"><strong>Pair</strong></a></li>
 <li><a href="./types/recursive.html"><strong>Recursive</strong></a></li>
 <li><a href="./types/box.html"><strong>Box</strong></a></li>
-<li><a href="./types/exists.html"><strong>Exists</strong></a>, only if the body is non-linear — which is rare, since the
-type variable it introduces is itself linear</li>
+<li><a href="./types/forall.html"><strong>Forall</strong></a> and <a href="./types/exists.html"><strong>Exists</strong></a>, when their type parameters
+and bodies are constrained enough to be non-linear</li>
 <li>Any type <strong>composed entirely</strong> of non-linear parts</li>
 </ul>
 <h3 id="which-types-are-linear"><a class="header" href="#which-types-are-linear">Which types are linear?</a></h3>
@@ -232,8 +234,8 @@ type variable it introduces is itself linear</li>
 <li><a href="./types/function.html"><strong>Function</strong></a></li>
 <li><a href="./types/choice.html"><strong>Choice</strong></a></li>
 <li><a href="./types/iterative.html"><strong>Iterative</strong></a></li>
-<li><a href="./types/exists.html"><strong>Exists</strong></a>, <strong>in most cases,</strong> because they introduce a linear type variable</li>
-<li><a href="./types/forall.html"><strong>Forall</strong></a></li>
+<li><a href="./types/forall.html"><strong>Forall</strong></a> and <a href="./types/exists.html"><strong>Exists</strong></a>, when they introduce
+unconstrained type variables</li>
 <li><a href="./types/continuation.html"><strong>Continuation</strong></a></li>
 <li>Any type that <strong>contains</strong> a linear component, even deeply</li>
 </ul>

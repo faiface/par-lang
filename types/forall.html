@@ -205,15 +205,17 @@ their genericity.</li>
 </ul>
 <pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
 
-dec Swap : [type a] [type b] [(a, b)!] (b, a)!
+dec Swap : [type a, type b, (a, b)!] (b, a)!
 </code></pre>
 <p>After erasing the previous concrete definitions for <code>None</code>, these will be their generic types. As we can
 see, these look just like functions, but taking types!</p>
-<p>If the result of a forall type is another forall types — like with <code>Swap</code> — we can use syntax sugar to
-put them both in one pair of square brackets:</p>
-<pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
+<p>If a forall continues into more explicit type binders or value arguments — like with <code>Swap</code> — we keep
+them together in one pair of square brackets, repeating <code>type</code> for each explicit type binder:</p>
+<pre><code class="language-par">dec Swap : [type a, type b, (a, b)!] (b, a)!
 </code></pre>
-<p>This looks better. The two ways are, however, completely equivalent.</p>
+<p>This keeps the whole input list visible at once.</p>
+<p>Explicit type binders can also carry constraints, such as <code>[type a: data]</code>. Those are covered in
+<a href="./constraints.html">Type Constraints</a>.</p>
 <p>Just like functions, foralls are <a href="../types_and_expressions.html#linearity"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
 copied, only destructed by calling.</p>
 <h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
@@ -223,16 +225,16 @@ variable and prefixed with the keyword <code>type</code>.</p>
 <pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
 def None = [type a] .none!
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 </code></pre>
 <blockquote>
 <p>A common complaint at this point is:
-<strong>Why do I have to write <code>[type a, b]</code> in both the declaration, and the definition?</strong> After all,
+<strong>Why do I have to write <code>type a</code> and <code>type b</code> in both the declaration, and the definition?</strong> After all,
 it doesn’t seem like they’re used in the definition. However, they are! What’s the type of <code>first</code>?
-It’s <code>a</code>. And <code>second</code>? It’s <code>b</code>. If you called them <code>[type kek, dek]</code>, they would be <code>kek</code> and <code>dek</code>.
+It’s <code>a</code>. And <code>second</code>? It’s <code>b</code>. If you called them <code>type kek</code> and <code>type dek</code>, they would be <code>kek</code> and <code>dek</code>.
 Par’s type checker never makes type names up.</p>
 <p>Additionally, if you do end up needing to use those type variables — for example, to call another
 generic function — they will be right at hand.</p>
@@ -243,7 +245,7 @@ prefixed with the keyword <code>type</code>.</p>
 <pre><code class="language-par">def NoneInt = None(type Int)  // type inferred as `Option&lt;Int&gt;`
 
 def Pair    = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 //          = (42, "Hello!")!
 </code></pre>
 

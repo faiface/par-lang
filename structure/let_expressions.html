@@ -171,14 +171,14 @@ the variable.</p>
 
 import @core/Nat
 
-def Six = let three = 3 in Nat.Add(three, three)
+def Six = let three = 3 in three + three
 </code></pre>
 <p>The left side of the <code>=</code> sign can actually be more than a variable!</p>
 <p>For one, it can have an annotation:</p>
-<pre><code class="language-par">def Six = let three: Nat = 3 in Nat.Add(three, three)
+<pre><code class="language-par">def Six = let three: Nat = 3 in three + three
 </code></pre>
 <p>And it can also be a pattern:</p>
-<pre><code class="language-par">def Twelve = let (a, b)! = (3, 4)! in Nat.Mul(a, b)
+<pre><code class="language-par">def Twelve = let (a, b)! = (3, 4)! in a * b
 </code></pre>
 <p>The above is a combination of a <a href="../types/pair.html">pair</a> and a <a href="../types/unit.html">unit</a> pattern.
 We’ll learn more about those soon.</p>

@@ -228,7 +228,8 @@ type Option&lt;a&gt; = Result&lt;!, a&gt;
 </code></pre>
 <p>The payload pattern is always present. For a unit payload you still write <code>!</code>,
 so <code>value is .less!</code> is valid, but <code>value is .less</code> is not.</p>
-<p>Here is the return type of <code>Int.Compare</code>:</p>
+<p>The comparison operators are powered by a generic comparison function whose result type is
+<code>Ordering</code>:</p>
 <pre><code class="language-par">type Ordering = either {
   .less!,
   .equal!,
@@ -239,13 +240,14 @@ so <code>value is .less!</code> is valid, but <code>value is .less</code> is not
 <pre><code class="language-par">module Main
 
 import {
+  @core/Data
   @core/Int
   @core/String
 }
 
 dec CompareSign : [Int, Int] String
 def CompareSign = [x, y]
-  let cmp = Int.Compare(x, y) in
+  let cmp = Data.Compare((x) y) in
   if {
     cmp is .less! =&gt; "less",
     cmp is .greater! =&gt; "greater",
@@ -268,7 +270,7 @@ condition and inside the branch.</p>
 <h3 id="and-with-an-extra-predicate"><a class="header" href="#and-with-an-extra-predicate"><code>and</code> with an extra predicate</a></h3>
 <pre><code class="language-par">dec CountStatus : [Option&lt;Nat&gt;] String
 def CountStatus = [count] if {
-  count is .ok n and Nat.Equals(n, 0) =&gt; "zero",
+  count is .ok n and n == 0 =&gt; "zero",
   count is .ok _ =&gt; "non-zero",
   else =&gt; "missing",
 }
@@ -278,7 +280,7 @@ def CountStatus = [count] if {
 <li>Try the first branch.
 <ul>
 <li>First evaluate <code>count is .ok n</code>. If it fails, the whole <code>and</code> fails.</li>
-<li>If it succeeds, <code>n</code> is bound and Par evaluates <code>Nat.Equals(n, 0)</code>.</li>
+<li>If it succeeds, <code>n</code> is bound and Par evaluates <code>n == 0</code>.</li>
 <li>Only if both parts succeed does the branch return <code>"zero"</code>.</li>
 </ul>
 </li>
@@ -289,7 +291,7 @@ matches any present value and returns <code>"non-zero"</code>.</li>
 <h3 id="and-with-two-bindings"><a class="header" href="#and-with-two-bindings"><code>and</code> with two bindings</a></h3>
 <pre><code class="language-par">dec AddOk : [Result&lt;String, Int&gt;, Result&lt;String, Int&gt;] Int
 def AddOk = [left, right] if {
-  left is .ok a and right is .ok b =&gt; Int.Add(a, b),
+  left is .ok a and right is .ok b =&gt; a + b,
   else =&gt; 0,
 }
 </code></pre>
@@ -299,7 +301,7 @@ and <code>b</code> are in scope in the branch.</p>
 <ul>
 <li>Try to bind <code>a</code> from <code>left</code>.</li>
 <li>Only if that succeeds, try to bind <code>b</code> from <code>right</code>.</li>
-<li>Only if both succeed does the branch run <code>Int.Add(a, b)</code>.</li>
+<li>Only if both succeed does the branch run <code>a + b</code>.</li>
 </ul>
 <h2 id="or-try-one-condition-then-another"><a class="header" href="#or-try-one-condition-then-another"><code>or</code>: try one condition, then another</a></h2>
 <p>Like <code>and</code>, <code>or</code> short-circuits. The right side only runs if the left side
@@ -328,7 +330,7 @@ guaranteed to exist after the <code>or</code>.</p>
 grouping explicit, you can use <code>{ ... }</code> <em>inside a condition</em>:</p>
 <pre><code class="language-par">dec EmptyOrSpace : [Result&lt;String, String&gt;] Bool
 def EmptyOrSpace = [result] if {
-  result is .ok s and { String.Equals(s, "") or String.Equals(s, " ") }
+  result is .ok s and { s == "" or s == " " }
     =&gt; .true!,
   else =&gt; .false!,
 }
@@ -356,14 +358,14 @@ def UseOrError = [result] if {
 combine <code>not</code> and <code>or</code> in a way that “unlocks” bindings on the right:</p>
 <pre><code class="language-par">dec NonEmptyOrError : [Result&lt;String, String&gt;] String
 def NonEmptyOrError = [result] if {
-  not result is .ok str or String.Equals(str, "") =&gt; "bad input",
+  not result is .ok str or str == "" =&gt; "bad input",
   else =&gt; str,
 }
 </code></pre>
 <p>Follow the control flow:</p>
 <ul>
 <li>First evaluate <code>not result is .ok str</code>.</li>
-<li>The right side <code>String.Equals(str, "")</code> runs only if the left side fails.</li>
+<li>The right side <code>str == ""</code> runs only if the left side fails.</li>
 <li>The left side fails exactly when <code>result is .ok str</code> succeeds.</li>
 <li>That is why <code>str</code> is available on the right side and in the <code>else</code> branch.</li>
 </ul>
@@ -371,7 +373,7 @@ def NonEmptyOrError = [result] if {
 <pre><code class="language-par">dec AddBothOrZero : [Result&lt;String, Int&gt;, Result&lt;String, Int&gt;] Int
 def AddBothOrZero = [left, right] if {
   not { left is .ok x and right is .ok y } =&gt; 0,
-  else =&gt; Int.Add(x, y),
+  else =&gt; x + y,
 }
 </code></pre>
 <p>Read it the same way: <code>x</code> and <code>y</code> are bound by the condition inside <code>{ ... }</code>,
@@ -392,7 +394,7 @@ log(str);
 </code></pre>
 <p>Bindings created inside such a boolean expression stay <strong>inside</strong> that
 expression:</p>
-<pre><code class="language-par">let ok = result is .ok msg and String.Equals(msg, "")
+<pre><code class="language-par">let ok = result is .ok msg and msg == ""
 // `msg` is not available here
 </code></pre>
 <p>Use <code>if</code> when you want bindings to escape into a branch.</p>
@@ -433,7 +435,7 @@ fallthrough, which is great for early exits.</p>
 otherwise continue”.</p>
 <pre><code class="language-par">dec DefaultIfEmpty : [String] String
 def DefaultIfEmpty = [text] chan out {
-  if String.Equals(text, "") =&gt; {
+  if text == "" =&gt; {
     out &lt;&gt; "&lt;empty&gt;"
   }
   out &lt;&gt; text
@@ -444,7 +446,7 @@ process immediately.</p>
 <p>A common style is to use a single-condition <code>if</code> as a guard:</p>
 <pre><code class="language-par">dec LogNonEmptyOk : [Result&lt;String, String&gt;] !
 def LogNonEmptyOk = [result] chan exit {
-  if not result is .ok str or String.Equals(str, "") =&gt; { exit! }
+  if not result is .ok str or str == "" =&gt; { exit! }
   Debug.Log(str)
   exit!
 }
@@ -455,7 +457,7 @@ use”.</p>
 <p>The multi-branch <code>if { ... }</code> form may omit <code>else</code> <strong>only if the conditions are
 exhaustive</strong>. This is checked by types.</p>
 <p>For example, this works because <code>cmp</code> has type <code>Ordering</code>:</p>
-<pre><code class="language-par">let cmp = Int.Compare(x, y) in
+<pre><code class="language-par">let cmp = Data.Compare((x) y) in
 if {
   cmp is .less! =&gt; "less",
   cmp is .equal! =&gt; "equal",

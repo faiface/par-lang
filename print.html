@@ -300,16 +300,17 @@ help.</p>
 <p>Let’s open it:</p>
 <pre><code>$ par playground
 </code></pre>
-<p>Press <strong>Compile</strong>, then open <strong>Run → Packages → core → Int → Add</strong>:</p>
-<p><img src="./images/basic_structure_1.png" alt="Run on an empty program" /></p>
-<p>That picks the built-in <code>Int.Add</code> definition from the <code>core</code> package:</p>
-<p><img src="./images/basic_structure_2.png" alt="Run Int.Add" /></p>
-<p>An <strong>automatic UI</strong> shows up, telling us to input two numbers. After confirming both inputs,
-we get a result:</p>
-<p><img src="./images/basic_structure_3.png" alt="Int.Add result" /></p>
+<p>Press <strong>Compile</strong>, then open the <strong>Run</strong> menu and pick a built-in definition from <code>core</code>.</p>
+<p><img src="./images/basic_structure_1.png" alt="Picking a definition" /></p>
+<p>As a first example, choose one of the built-in numeric helpers from the <code>core</code> package. <code>Int.Mod</code>
+computes the non-negative remainder of an integer modulo a natural number:</p>
+<p><img src="./images/basic_structure_2.png" alt="Entering inputs to Int.Mod" /></p>
+<p>An <strong>automatic UI</strong> shows up, telling us to input the arguments expected by the selected definition.
+After confirming them, we get a result:</p>
+<p><img src="./images/basic_structure_3.png" alt="Observing results" /></p>
 <p>This automatic UI is a feature of the <strong>playground,</strong> not of the Par language itself. Nobody made a
-specific interface for <code>Int.Add</code>. Instead, the playground looked at its type — here, a function from
-two integers to an integer result — and generated a small interface for interacting with it.</p>
+specific interface for <code>Int.Mod</code>. Instead, the playground looked at its type — here, a function from
+two numbers to a number result — and generated a small interface for interacting with it.</p>
 <p>That makes the playground a nice way to explore built-in definitions, and later your own definitions
 too.</p>
 <p>On the next page, we’ll create a fresh package and look at what actually lives inside a Par module.</p>
@@ -389,7 +390,7 @@ In those cases, we can add it using a colon after the name:</p>
 <p>For example, here’s a simple function adding up all the numbers in a list:</p>
 <pre><code class="language-par">def SumList: [List&lt;Int&gt;] Int = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>The code uses many concepts that will be covered later, so only focus on the parts you know: <code>def</code>,
@@ -400,7 +401,7 @@ starts with the keyword <code>dec</code>, followed by the name we want to annota
 
 def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>That’s much better!</p>
@@ -607,13 +608,12 @@ import @dep2/bleh/Data as Data2
 <p>Once a module is imported, its exported items are accessed through the module name:</p>
 <pre><code class="language-par">import {
   @core/List
-  @core/Nat
   @core/String
   data/Post
 }
 
 dec RenderPosts : String
-def RenderPosts = Post.FetchAllFromDB(!)-&gt;List.Length-&gt;Nat.ToString
+def RenderPosts = `#{Post.FetchAllFromDB(!)-&gt;List.Length} posts`
 </code></pre>
 <p>In general, imported names are accessed as:</p>
 <pre><code class="language-par">Module.Name
@@ -756,107 +756,133 @@ definition.</li>
 <li><code>par run handlers/api/Posts</code> means <code>handlers/api/Posts.Main</code></li>
 <li><code>par run handlers/api/Posts.Program</code> means the <code>Program</code> definition in the <code>handlers/api/Posts</code> module</li>
 </ul>
-<p>The same path-based rules are used by other commands such as <code>par test</code>.</p>
+<p>Other commands such as <code>par test</code> and <code>par check</code> do not take definition targets like these; they
+work on whole packages. What they share with <code>par run</code> is the <code>--package</code> flag, which lets you point
+the command at a package path.</p>
 <p>That’s the package/module system. With that in place, we can now return to the language itself.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="primitive-types"><a class="header" href="#primitive-types">Primitive Types</a></h1>
-<p>Before taking a stroll in the diverse garden of Par’s types, let’s stop by the most basic ones:
-the <em>primitives.</em></p>
-<p>At the moment, Par has seven primitive types:</p>
+<p>Before taking a stroll through Par’s types, let’s stop by the values that are not built out of
+the ordinary type connectives: the <em>primitives</em>.</p>
+<p>Par currently has seven primitive types:</p>
 <ul>
-<li><strong><code>Int</code></strong> — Integers, positive and negative whole numbers, arbitrary size.</li>
-<li><strong><code>Nat</code></strong> — Natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
-<li><strong><code>Float</code></strong> — IEEE-754 double-precision floating-point numbers.</li>
-<li><strong><code>String</code></strong> — UTF-8 encoded sequence of Unicode characters. They are a subtype of <code>Bytes</code>.</li>
-<li><strong><code>Char</code></strong> — Singular Unicode character. They are a subtype of <code>String</code>.</li>
-<li><strong><code>Byte</code></strong> — Singular data unit that consists of eight bits. They are a subtype of <code>Bytes</code>.</li>
-<li><strong><code>Bytes</code></strong> — Contiguous-in-memory sequence of bytes.</li>
+<li><strong><code>Nat</code></strong> – natural numbers, starting from zero, arbitrary size. They are a subtype of <code>Int</code>.</li>
+<li><strong><code>Int</code></strong> – positive and negative whole numbers, arbitrary size.</li>
+<li><strong><code>Float</code></strong> – IEEE-754 double-precision floating-point numbers.</li>
+<li><strong><code>String</code></strong> – UTF-8 encoded text. It is a subtype of <code>Bytes</code>.</li>
+<li><strong><code>Char</code></strong> – a single Unicode character. It is a subtype of <code>String</code>.</li>
+<li><strong><code>Byte</code></strong> – a single 8-bit value. It is a subtype of <code>Bytes</code>.</li>
+<li><strong><code>Bytes</code></strong> – a contiguous sequence of bytes.</li>
 </ul>
-<blockquote>
-<p>There’s a <strong>significant distinction</strong> between <em>primitives</em> and all other types in Par.</p>
-<p>The thing is, Par has a fully structural type system. All custom type definitions are just
-aliases — there is no way to create opaque types. <em>(But, encapsulation is perfectly possible.)</em></p>
-<p>Primitives are different in that they are opaque. They are magical types, distinct from others,
-that are operated on using magical built-in functions. This is necessary to achieve their
-efficient representation.</p>
-</blockquote>
-<p>Primitives are manipulated using magical built-in functions.</p>
-<p>Primitive <strong>literals</strong> are special: you can write values such as <code>42</code>, <code>3.14</code>, <code>"Hello"</code>, <code>&lt;&lt;65&gt;&gt;</code>, or
-<code>&lt;&lt;65 66&gt;&gt;</code> without importing anything.</p>
-<p>But the module names <code>Int</code>, <code>Nat</code>, <code>Float</code>, <code>String</code>, <code>Char</code>, <code>Byte</code>, and <code>Bytes</code> are <strong>not</strong> automatically
-in scope. So if you want to:</p>
-<ul>
-<li>mention one of these types explicitly</li>
-<li>or call functions from their modules, such as <code>Int.Add</code> or <code>String.Reader</code></li>
-</ul>
-<p>then you need to import the corresponding module from <code>@core</code>.</p>
-<p><strong>To find the list of all built-in functions:</strong></p>
-<ol>
-<li>Open the playground.
-<pre><code>$ par playground
+<p>Primitives are the one place where Par is not fully structural. User-defined types are aliases:
+their shape is their meaning. Primitive types are opaque, because they need efficient runtime
+representations and special operations.</p>
+<h2 id="literals"><a class="header" href="#literals">Literals</a></h2>
+<p>Primitive literals are always available. You do not need to import anything to write them.</p>
+<pre><code class="language-par">def Natural = 42       // Nat
+def Integer = -7       // Int
+def Floating = 3.14    // Float
+def Text = "Hello"     // String
+def Character = "H"    // Char
+def OneByte = &lt;&lt;65&gt;&gt;   // Byte
+def ManyBytes = &lt;&lt;65 66 67&gt;&gt;  // Bytes
 </code></pre>
-</li>
-<li>Press <strong>Compile,</strong> and <strong>Run.</strong> Scroll the list that pops up.
-<img src="structure/../images/strings_and_numbers_1.png" alt="List of built-in functions" /></li>
-</ol>
-<p>Alternatively, <code>par doc</code> lets you browse the built-in packages and their exported definitions.</p>
-<p><strong>To figure out the type of a built-in function:</strong></p>
-<ol>
-<li>Assigning it to your own <code>def</code>, such as:
+<p>Integer and natural number literals may use underscores for readability:</p>
+<pre><code class="language-par">def Million = 1_000_000
+</code></pre>
+<p>Float literals have a fractional part, and may use scientific notation:</p>
+<pre><code class="language-par">def Piish = 3.14
+def Half = 0.5
+def Avogadroish = 6.02e23
+</code></pre>
+<p>Strings use double quotes and normal escape sequences:</p>
+<pre><code class="language-par">def Greeting = "Hello\nWorld"
+</code></pre>
+<p>A <code>Char</code> literal is just a string literal containing exactly one character:</p>
+<pre><code class="language-par">def Letter = "a"
+def Newline = "\n"
+</code></pre>
+<p>Byte and bytes literals use double angle brackets. A single byte literal is inferred as <code>Byte</code>;
+multiple bytes, or the empty literal, are inferred as <code>Bytes</code>.</p>
+<pre><code class="language-par">def A = &lt;&lt;65&gt;&gt;
+def ABC = &lt;&lt;65 66 67&gt;&gt;
+def Empty = &lt;&lt;&gt;&gt;
+</code></pre>
+<p>Byte values are stored modulo 256, so out-of-range byte literal values wrap around.</p>
+<h2 id="operators"><a class="header" href="#operators">Operators</a></h2>
+<p>Numbers are usually manipulated with operators, not with imported helper functions.</p>
+<pre><code class="language-par">def Arithmetic = 1 + 2 * 3       // = 7
+def Grouped = {1 + 2} * 3        // = 9
+def Ratio = 22.0 / 7.0
+def Difference = 10 - 3
+def Negative = neg 5
+</code></pre>
+<p>The operators <code>+</code>, <code>*</code>, and <code>/</code> work on <code>Nat</code>, <code>Int</code>, and <code>Float</code>.
+The operators <code>-</code> and <code>neg</code> work on signed numbers: <code>Int</code> and <code>Float</code>.</p>
+<p>Comparisons work on primitive values too:</p>
+<pre><code class="language-par">def Smaller = 3 &lt; 10          // = .true!
+def SameText = "hi" == "hi"   // = .true!
+def Different = "a" != "b"    // = .true!
+</code></pre>
+<p>They produce a <code>Bool</code>, which is described below. Comparisons also chain:</p>
+<pre><code class="language-par">def InRange = 0 &lt;= 5 &lt; 10
+</code></pre>
+<p>Chained comparisons behave as you would expect: the expression above means <code>0 &lt;= 5 and 5 &lt; 10</code>,
+with the middle expression evaluated only once.</p>
+<p>Reassigning versions of the arithmetic operators are additionally available in the <a href="structure/../process_syntax.html">process syntax</a>, specifically <code>+=</code>, <code>-=</code>, <code>*=</code>, and <code>/=</code>:</p>
+<pre><code class="language-par">def Five = do {
+  let n = 2
+  n += 3  // equivalent to `let n = n + 3`
+} in n
+</code></pre>
+<h2 id="booleans"><a class="header" href="#booleans">Booleans</a></h2>
+<p><code>Bool</code> is not a primitive type. It is an ordinary <a href="structure/../types/either.html"><code>either</code></a> type from
+<code>@core/Bool</code>:</p>
+<pre><code class="language-par">type Bool = either {
+  .false!,
+  .true!,
+}
+</code></pre>
+<p>Boolean values are written as <code>.true!</code> and <code>.false!</code>.</p>
+<pre><code class="language-par">def Yes = .true!
+def No = .false!
+</code></pre>
+<p>Boolean expressions use <code>and</code>, <code>or</code>, and <code>not</code>:</p>
+<pre><code class="language-par">def Both = .true! and .false!
+def Either = .true! or .false!
+def Neither = not .true!
+</code></pre>
+<p>These same words have extra power in conditions: they short-circuit, and can carry bindings from
+matches. That is covered in <a href="structure/../quality_of_life/if.html">Conditions &amp; <code>if</code></a>.</p>
+<h2 id="template-strings"><a class="header" href="#template-strings">Template Strings</a></h2>
+<p>Backtick strings are template strings. They are still <code>String</code> values, but they can contain
+interpolation.</p>
+<p>Use <code>${...}</code> to splice in an expression that already has type <code>String</code>:</p>
+<pre><code class="language-par">def Name = "Ada"
+def Greeting = `Hello, ${Name}!`
+</code></pre>
+<p>Use <code>#{...}</code> to splice in any value that can be displayed as data:</p>
+<pre><code class="language-par">def Count = 3
+def Message = `You have #{Count} messages.`
+</code></pre>
+<p>The <code>#{...}</code> form uses <code>@core/Data.ToString</code> under the hood. It works for primitives and for
+ordinary data structures such as pairs, eithers, and lists of data.</p>
+<p>Template strings may span multiple lines, and support the usual string escapes. To write syntax
+that would otherwise start or end template behavior, escape it:</p>
+<pre><code class="language-par">def LiteralPieces = `Use \` for backticks, \${ for string interpolation, and \#{ for data.`
+</code></pre>
+<h2 id="naming-primitive-types"><a class="header" href="#naming-primitive-types">Naming Primitive Types</a></h2>
+<p>Literals do not need imports, but explicit type names do.</p>
 <pre><code class="language-par">module Main
 
-import @core/Int
+import {
+  @core/Int
+  @core/String
+}
 
-def Examine = Int.ToString
+def Age: Int = 42
+def Name: String = "Ada"
 </code></pre>
-Par knows the type of <code>Int.ToString</code>, so it will infer it for <code>Examine</code> as well.</li>
-<li>Press <strong>Compile.</strong></li>
-<li>Move the cursor to the definition. The playground will display the type on the right,
-in green.
-<img src="structure/../images/strings_and_numbers_2.png" alt="Displayed type of a built-in function" /></li>
-</ol>
-<p>The type <code>[Int] String</code> is a <a href="structure/../types/function.html">function</a> from <code>Int</code> to <code>String</code>. We will cover
-functions and other types in detail <a href="structure/../types_and_expressions.html">later</a>. Despite that, we’ll still play with
-some built-in functions in this section. All you need to know is that
-<strong>the square brackets enclose function arguments,</strong> and the result type follows. For example:</p>
-<ul>
-<li><code>[Int, Int] Int</code> is a function from two <code>Int</code>s to an <code>Int</code>.</li>
-<li><code>[Int, Nat, Nat] Nat</code> is a function from one <code>Int</code> and two <code>Nat</code>s to a <code>Nat</code>.</li>
-</ul>
-<blockquote>
-<p><strong>The current set of built-in functions is very minimal.</strong> They’re just enough to be able to
-write more useful functions yourself, but they’re nowhere close to a standard library. For example,
-there are no functions for analyzing strings, aside from <code>String.Reader</code>, which is flexible enough
-to implement all you’d need. You just need to do it yourself.</p>
-<p>Keep in mind that Par is early in development. It’s bringing an innovative paradigm, which we’re
-still figuring out how to use best. Creating an expansive standard library would be premature
-before we understand what’s actually going on here.</p>
-</blockquote>
-<p>Now, let’s take a look at the primitives!</p>
-<h2 id="int"><a class="header" href="#int"><code>Int</code></a></h2>
-<p>Integers are arbitrarily sized whole numbers, positive or negative.</p>
-<p>Their literals consist of digits, optionally prefixed with <code>-</code> or <code>+</code>, and may include underscores
-for readability.</p>
-<pre><code class="language-par">module Main
-
-import @core/Int
-
-def Num1: Int = 7
-def Num2: Int = -123_456_789
-</code></pre>
-<p>The type annotations are not needed, and then no import is required:</p>
-<pre><code class="language-par">def Num3 = 42
-def Num4 = -2202
-</code></pre>
-<p>Without annotations, <code>Num3</code> actually gets inferred as <code>Nat</code>. But, since <code>Nat</code> is a
-subtype of <code>Int</code>, it can be treated as an <code>Int</code> too.</p>
-<p>Built-in functions are used for arithmetic operations. For example:</p>
-<pre><code class="language-par">def Num5 = Int.Add(3, 4)  // = 7
-def Num6 = Int.Mul(3, 4)  // = 12
-</code></pre>
-<p>Go ahead and explore more of them in the playground!</p>
-<h2 id="nat"><a class="header" href="#nat"><code>Nat</code></a></h2>
-<p>Natural numbers are just integers excluding the negative ones. <code>Nat</code> is a subtype of <code>Int</code>, so
-every variable of type <code>Nat</code> can be used as an <code>Int</code>, too.</p>
+<p>The same imports give access to helper functions from those modules.</p>
 <pre><code class="language-par">module Main
 
 import {
@@ -864,154 +890,91 @@ import {
   @core/Nat
 }
 
-def Num7 = 14  // inferred as `Nat`
-def Num8 = 17  // inferred as `Nat`
-
-// perfectly valid
-def Num9 = Int.Add(Num7, Num8)
+def Magnitude = Int.Abs(-1000)
+def Remainder = Int.Mod(-13, 5)
+def Numbers = Nat.Range(0, 5)  // *(0, 1, 2, 3, 4)
 </code></pre>
-<p>While <code>Num7</code> and <code>Num8</code> are inferred as <code>Nat</code>s, <code>Num9</code> will be an <code>Int</code> because that’s what
-<code>Int.Add</code> returns. To get a <code>Nat</code> result, use <code>Nat.Add</code>, which only accepts <code>Nat</code>s:</p>
-<pre><code class="language-par">def Num10 = Nat.Add(Num7, Num8)  // inferred as `Nat`
-</code></pre>
-<p><strong>Several built-in functions aid in converting <code>Int</code>s to <code>Nat</code>s.</strong> For example:</p>
-<ul>
-<li><strong><code>Nat.Max</code></strong> has type <code>[Nat, Int] Nat</code> — the second argument is allowed to be an <code>Int</code>.
-Yet it’s guaranteed to return a <code>Nat</code>.</li>
-<li><strong><code>Int.Abs</code></strong> has type <code>[Int] Nat</code> — an absolute value is always a <code>Nat</code>.</li>
-</ul>
-<pre><code class="language-par">def Num11: Nat = Nat.Max(0, -1000)  // = 0
-def Num12: Nat = Int.Abs(-1000)     // = 1000
-</code></pre>
-<p>Unlike <code>Int</code>s, natural numbers can be looped on using <code>Nat.Repeat</code>, which is one of their main
-uses. We’ll learn more about that in the section on <a href="structure/../types/recursive.html">recursive</a> types.</p>
-<h2 id="float"><a class="header" href="#float"><code>Float</code></a></h2>
-<p>Floats are IEEE-754 double-precision numbers. Unlike <code>Nat</code>, they are <strong>not</strong> a subtype of <code>Int</code>.
-They have their own representation and their own built-in operations.</p>
-<p>Float literals require both a whole and a fractional part, and may use scientific notation:</p>
-<pre><code class="language-par">def F1 = 3.14
-def F2 = -0.5
-def F3 = 6.02e23
-</code></pre>
-<p>To work with them explicitly, import <code>@core/Float</code>:</p>
+<p>Every package automatically depends on <code>@core</code>, but its modules are not imported automatically.</p>
+<h2 id="useful-primitive-modules"><a class="header" href="#useful-primitive-modules">Useful Primitive Modules</a></h2>
+<p>The primitive modules contain operations that are not just generic arithmetic or comparison.
+The examples below are only a taste; use <code>par doc</code> to browse the full built-in API.</p>
+<h3 id="corenat"><a class="header" href="#corenat"><code>@core/Nat</code></a></h3>
+<p><code>Nat</code> has helpers for finite repetition and natural ranges:</p>
 <pre><code class="language-par">module Main
 
-import {
-  @core/Float
-  @core/Int
-}
+import @core/Nat
 
-def Radius = 2.5
-def Circumference = Float.Mul(2.0, Float.Mul(Float.Pi, Radius))
-def Truncated = Float.ToInt(Circumference)
-def BackToFloat = Float.FromInt(Truncated)
+def ThreeSteps = Nat.Repeat(3)
+def ZeroToFour = Nat.Range(0, 5)
 </code></pre>
-<p><code>Float.Equals</code> compares with a tolerance:</p>
-<pre><code class="language-par">def CloseEnough = Float.Equals(1.0, 1.05, 0.1)  // = .true!
-</code></pre>
-<p>And special values are available through constants:</p>
-<pre><code class="language-par">def Special = Float.NaN
-def Infinite = Float.Inf
-</code></pre>
-<h2 id="string"><a class="header" href="#string"><code>String</code></a></h2>
-<p>Strings are represented as UTF-8 encoded sequences of Unicode characters. Their literals are
-enclosed in double quotes (<code>"</code>), and may contain escape sequences, such as <code>\n</code>, familiar from
-other languages.</p>
-<pre><code class="language-par">def Str1 = "Hello"  // inferred as `String`
-def Str2 = "World"
-</code></pre>
-<p>To concatenate strings, use <code>String.Builder</code>. To fully understand how it works, we’ll need to
-cover <a href="structure/../types/iterative.html">iterative</a> and <a href="structure/../types/choice.html">choice</a> types, but perhaps
-you can get the idea:</p>
-<pre><code class="language-par">module Main
-
-import @core/String
-
-def Str3 = String.Builder
-  .add(Str1)
-  .add(", ")
-  .add(Str2)
-  .build  // = "Hello, World"
-</code></pre>
-<p>Analyzing strings — such as finding, splitting, or parsing — is done using <code>String.Reader</code>.
-To be able to use it, more knowledge of the language is needed first. But, feel
-free to play with it in the playground, or check out the <code>StringManipulation.par</code> example in
-the <code>examples/src/</code> folder.</p>
-<p>Numbers can be converted to strings using <code>Int.ToString</code> or <code>Float.ToString</code>:</p>
+<p><code>Nat.Repeat(n)</code> produces a recursive value with exactly <code>n</code> steps. It shows up often when you need
+to loop a known number of times.</p>
+<h3 id="coreint"><a class="header" href="#coreint"><code>@core/Int</code></a></h3>
+<p><code>Int</code> has helpers where the result type is not just “another number”.</p>
 <pre><code class="language-par">module Main
 
 import @core/Int
 
-def Str4 = Int.ToString(14)  // = "14"
-def Str5 = Int.ToString(-7)  // = "-7"
+def Absolute: Nat = Int.Abs(-12)
+def Modulo: Nat = Int.Mod(-13, 5)
+def FromTo = Int.Range(-2, 3)
 </code></pre>
-<p>Note, that <code>Nat</code> is a subtype of <code>Int</code>, so any natural number can also be converted to a string
-this way, too. In fact, that’s exactly what happens with <code>Str4</code>.</p>
-<h2 id="char"><a class="header" href="#char"><code>Char</code></a></h2>
-<p>A <code>Char</code> is a single Unicode character. <code>Char</code> literals are single characters enclosed in double quotes:</p>
-<pre><code class="language-par">def Char1 = "a"  // inferred as `Char`
-def Char2 = "\n"
-</code></pre>
-<p>Since <code>Char</code> is a subtype of <code>String</code>, every variable of type <code>Char</code> can be used as a <code>String</code>, too.</p>
-<p>There’s a built-in function to check if a <code>Char</code> is a part of a character class:</p>
+<h3 id="corefloat"><a class="header" href="#corefloat"><code>@core/Float</code></a></h3>
+<p><code>Float</code> has constants, conversions, predicates, and math functions:</p>
 <pre><code class="language-par">module Main
 
-import @core/Char
+import @core/Float
 
-def IsWhitespace = Char.Is(" ", .whitespace!)  // = .true!
+def Tau = 2.0 * Float.Pi
+def Root = Float.Sqrt(9.0)
+def Rounded = Float.Round(3.6)
+def CloseEnough = Float.Equals(1.0, 1.05, 0.1)
 </code></pre>
-<p>There’s no built-in function turning a <code>String</code> to a list of <code>Char</code>s. Feel free to
-copy-paste this one, if you ever need it:</p>
+<p><code>Float.Equals</code> remains useful because it compares with a tolerance. The <code>==</code> operator compares data
+directly.</p>
+<h3 id="corestring"><a class="header" href="#corestring"><code>@core/String</code></a></h3>
+<p>Strings can be built incrementally:</p>
 <pre><code class="language-par">module Main
 
-import {
-  @core/Char
-  @core/List
-  @core/String
-}
+import @core/String
 
-dec Chars : [String] List&lt;Char&gt;
-def Chars = [s] String.Reader(s).begin.char.case {
-  .end _ =&gt; .end!,
-  .char(c) rest =&gt; .item(c) rest.loop,
-}
+def Hello = String.Builder
+  .add("Hello")
+  .add(", ")
+  .add("world!")
+  .build
 </code></pre>
-<h2 id="byte"><a class="header" href="#byte"><code>Byte</code></a></h2>
-<p>A byte consists of eight bits, whose numerical value can range from 0 and 255, inclusive. <code>Byte</code>
-literals are written in decimal, enclosed in double angle brackets:</p>
-<pre><code class="language-par">def Byte1 = &lt;&lt;65&gt;&gt;   // inferred as `Byte`
-def Byte2 = &lt;&lt;321&gt;&gt;  // out-of-bounds values are automatically wrapped
-</code></pre>
-<p>Since <code>Byte</code> is a subtype of <code>Bytes</code>, every variable of type <code>Byte</code> can be used as a <code>Bytes</code>, too.</p>
-<p>Just like <code>Char</code>s, there’s a built-in function to check if a <code>Byte</code> is a part of a byte class. For <code>Byte</code>s, that’s mainly byte ranges:</p>
+<p>They can also be parsed through <code>String.Parser</code>. The parser is a larger tool, useful when you want
+to read characters or match patterns:</p>
 <pre><code class="language-par">module Main
 
-import @core/Byte
+import @core/String
 
-def IsMsbSet = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)  // .true!
+def ParserFromText = String.Parser("abc")
 </code></pre>
-<h2 id="bytes"><a class="header" href="#bytes"><code>Bytes</code></a></h2>
-<p><code>Bytes</code> are sequences of zero or more bytes, laid out contiguously in memory in order to take the least possible amount of space. Their literals are similar to those of <code>Byte</code>s, except
-that multiple decimal values are allowed, and are delimited by spaces:</p>
-<pre><code class="language-par">def Bytes1 = &lt;&lt;65 91&gt;&gt;  // inferred as `Bytes`
-def Bytes2 = &lt;&lt;&gt;&gt;       // zero-byte sequence
-</code></pre>
-<p>A <code>Bytes</code> can also be broken down to a list of <code>Byte</code>s:</p>
+<h3 id="corechar-and-corebyte"><a class="header" href="#corechar-and-corebyte"><code>@core/Char</code> and <code>@core/Byte</code></a></h3>
+<p><code>Char.Is</code> and <code>Byte.Is</code> check membership in character or byte classes:</p>
 <pre><code class="language-par">module Main
 
 import {
   @core/Byte
-  @core/Bytes
-  @core/List
+  @core/Char
 }
 
-dec Bytes : [Bytes] List&lt;Byte&gt;
-def Bytes = [bs] Bytes.Reader(bs).begin.byte.case {
-  .end _ =&gt; .end!,
-  .byte(b) rest =&gt; .item(b) rest.loop,
-}
+def Space = Char.Is(" ", .whitespace!)
+def HighByte = Byte.Is(&lt;&lt;192&gt;&gt;, .range(&lt;&lt;128&gt;&gt;, &lt;&lt;255&gt;&gt;)!)
 </code></pre>
-<p>It’s also important to remember, that <code>String</code> is a subtype of <code>Bytes</code> and so any <code>String</code> value can be used wherever <code>Bytes</code> is expected.</p>
+<h3 id="corebytes"><a class="header" href="#corebytes"><code>@core/Bytes</code></a></h3>
+<p><code>Bytes</code> has readers, parsers, and builders for byte-oriented protocols:</p>
+<pre><code class="language-par">module Main
+
+import @core/Bytes
+
+def EmptyReader = Bytes.Reader(&lt;&lt;&gt;&gt;)
+def Size = Bytes.Length(&lt;&lt;65 66 67&gt;&gt;)
+</code></pre>
+<p>That is enough about primitives for now. The rest of the docs will introduce the structural types
+that most Par programs are built from.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-let-expression"><a class="header" href="#the-let-expression">The <code>let</code> Expression</a></h1>
 <p>Just one last stop before setting on a tour through Par’s types and their expressions: the <code>let</code>
 expression. It’s for assigning a variable and using it in another expression.</p>
@@ -1023,14 +986,14 @@ the variable.</p>
 
 import @core/Nat
 
-def Six = let three = 3 in Nat.Add(three, three)
+def Six = let three = 3 in three + three
 </code></pre>
 <p>The left side of the <code>=</code> sign can actually be more than a variable!</p>
 <p>For one, it can have an annotation:</p>
-<pre><code class="language-par">def Six = let three: Nat = 3 in Nat.Add(three, three)
+<pre><code class="language-par">def Six = let three: Nat = 3 in three + three
 </code></pre>
 <p>And it can also be a pattern:</p>
-<pre><code class="language-par">def Twelve = let (a, b)! = (3, 4)! in Nat.Mul(a, b)
+<pre><code class="language-par">def Twelve = let (a, b)! = (3, 4)! in a * b
 </code></pre>
 <p>The above is a combination of a <a href="structure/../types/pair.html">pair</a> and a <a href="structure/../types/unit.html">unit</a> pattern.
 We’ll learn more about those soon.</p>
@@ -1095,18 +1058,20 @@ and passed around freely.</p>
 <li><strong>Linear types,</strong> which must be used exactly once.</li>
 <li><strong>Non-linear types,</strong> which can be used any number of times — including zero.</li>
 </ul>
-<p>Let’s look at what falls into each category.</p>
+<p>The precise rule is: a type is non-linear when it satisfies the <a href="./types/constraints.html"><code>box</code> constraint</a>.
+That chapter comes after <a href="./types/box.html">Box</a>, but here is the useful orientation.</p>
 <h3 id="which-types-are-non-linear"><a class="header" href="#which-types-are-non-linear">Which types are non-linear?</a></h3>
-<p>These are:</p>
+<p>These include:</p>
 <ul>
-<li>All <a href="./structure/primitive_types.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>String</code>, <code>Char</code></li>
+<li>All <a href="./structure/primitive_types.html"><strong>primitives</strong></a>: <code>Int</code>, <code>Nat</code>, <code>Float</code>, <code>String</code>, <code>Char</code>,
+<code>Byte</code>, and <code>Bytes</code></li>
 <li><a href="./types/unit.html"><strong>Unit</strong></a></li>
 <li><a href="./types/either.html"><strong>Either</strong></a></li>
 <li><a href="./types/pair.html"><strong>Pair</strong></a></li>
 <li><a href="./types/recursive.html"><strong>Recursive</strong></a></li>
 <li><a href="./types/box.html"><strong>Box</strong></a></li>
-<li><a href="./types/exists.html"><strong>Exists</strong></a>, only if the body is non-linear — which is rare, since the
-type variable it introduces is itself linear</li>
+<li><a href="./types/forall.html"><strong>Forall</strong></a> and <a href="./types/exists.html"><strong>Exists</strong></a>, when their type parameters
+and bodies are constrained enough to be non-linear</li>
 <li>Any type <strong>composed entirely</strong> of non-linear parts</li>
 </ul>
 <h3 id="which-types-are-linear"><a class="header" href="#which-types-are-linear">Which types are linear?</a></h3>
@@ -1115,8 +1080,8 @@ type variable it introduces is itself linear</li>
 <li><a href="./types/function.html"><strong>Function</strong></a></li>
 <li><a href="./types/choice.html"><strong>Choice</strong></a></li>
 <li><a href="./types/iterative.html"><strong>Iterative</strong></a></li>
-<li><a href="./types/exists.html"><strong>Exists</strong></a>, <strong>in most cases,</strong> because they introduce a linear type variable</li>
-<li><a href="./types/forall.html"><strong>Forall</strong></a></li>
+<li><a href="./types/forall.html"><strong>Forall</strong></a> and <a href="./types/exists.html"><strong>Exists</strong></a>, when they introduce
+unconstrained type variables</li>
 <li><a href="./types/continuation.html"><strong>Continuation</strong></a></li>
 <li>Any type that <strong>contains</strong> a linear component, even deeply</li>
 </ul>
@@ -1172,7 +1137,7 @@ import @core/Int
 dec SumPair : [(Int, Int)!] Int
 def SumPair = [pair]
   let (x, y)! = pair  // `!` is a pattern here
-  in Int.Add(x, y)
+  in x + y
 
 def Five =
   let pair = (2, 3)!
@@ -1291,13 +1256,13 @@ same type.</p>
 <pre><code class="language-par">// evaluates to "Hello!"
 def ResultForStr = Str.case {
   .string s =&gt; s,
-  .number n =&gt; Int.ToString(n),
+  .number n =&gt; `#{n}`,
 }
 
 // evaluates to "42"
 def ResultForNum = Num.case {
   .string s =&gt; s,
-  .number n =&gt; Int.ToString(n),
+  .number n =&gt; `#{n}`,
 }
 </code></pre>
 <p>For a comprehensive example, here’s a big <a href="types/./function.html">function</a> converting the above <code>Varied</code> type
@@ -1308,24 +1273,13 @@ def VariedToString = [varied] varied.case {
 
   .string s =&gt; String.Builder.add(".string ").add(String.Quote(s)).build,
 
-  .number n =&gt; String.Builder.add(".number ").add(Int.ToString(n)).build,
+  .number n =&gt; `.number #{n}`,
 
   .pair(n) s =&gt;
-    String.Builder
-      .add(".pair(")
-      .add(Int.ToString(n))
-      .add(") ")
-      .add(String.Quote(s))
-      .build,
+    `.pair(#{n}) ${String.Quote(s)}`,
 
   .symmetricPair(n, s)! =&gt;
-    String.Builder
-      .add(".symmetricPair(")
-      .add(Int.ToString(n))
-      .add(", ")
-      .add(String.Quote(s))
-      .add(")!")
-      .build,
+    `.symmetricPair(#{n}, ${String.Quote(s)})!`,
 
   .nested inside =&gt; String.Builder.add(".nested").add(inside.case {
     .left! =&gt; ".left!",
@@ -1407,20 +1361,20 @@ def Example4: SymmetricPair = ("Hello!", 42)!
 <p>Here are some examples:</p>
 <pre><code class="language-par">def Five: Int =
   let (x) y = (3) 2
-  in Int.Add(x, y)
+  in x + y
 
 def FiveSymmetrically: Int =
   let (x, y)! = (3, 2)!
-  in Int.Add(x, y)
+  in x + y
 
 dec AddSymmetricPair : [(Int, Int)!] Int
-def AddSymmetricPair = [(x, y)!] Int.Add(x, y)
+def AddSymmetricPair = [(x, y)!] x + y
 //                      \_____/&lt;---- pattern here
 
 dec SumList : [List&lt;Int&gt;] Int
 def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 //     \____/&lt;---- pattern here
 }
 </code></pre>
@@ -1445,7 +1399,7 @@ a function stored in a local variable can (and must) only be called once:</p>
 import @core/Int
 
 dec Add : [Int, Int] Int
-def Add = [x, y] Int.Add(x, y)
+def Add = [x, y] x + y
 
 // a global function may be called many times
 def Six = Add(1, Add(2, 3))  // Okay.
@@ -1464,7 +1418,7 @@ purpose of <em>Par</em> is to explore where this new paradigm arising from linea
 <p>Function values bind their argument inside square brackets, followed by an expression computing
 the result.</p>
 <pre><code class="language-par">dec Double : [Int] Int
-def Double = [number] Int.Mul(2, number)
+def Double = [number] 2 * number
 </code></pre>
 <p>Multi-argument functions — or more precisely: functions returning other functions — can be expressed
 using the same kind of a syntax sugar as available for their types:</p>
@@ -1497,7 +1451,7 @@ explicitly:</p>
 <p><strong><em>Par</em> has an unusual take on recursion,</strong> thanks to its ambitious stride towards <a href="types/../introduction.html#an-ambitious-stride-towards-totality">totality</a>.
 Naive recursion by self-reference is not allowed. In other words,
 <strong>a function can’t directly call itself.</strong></p>
-<pre><code class="language-par">def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
+<pre><code class="language-par">def Infinity = 1 + Infinity  // Error! Cyclic dependency.
 </code></pre>
 <p>Instead, <a href="types/./recursive.html">recursive</a> and <a href="types/./iterative.html">iterative</a> types are used for recursion
 and <a href="https://en.wikipedia.org/wiki/Corecursion">corecursion</a>, respectively. Read up on them to learn
@@ -1570,15 +1524,17 @@ their genericity.</li>
 </ul>
 <pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
 
-dec Swap : [type a] [type b] [(a, b)!] (b, a)!
+dec Swap : [type a, type b, (a, b)!] (b, a)!
 </code></pre>
 <p>After erasing the previous concrete definitions for <code>None</code>, these will be their generic types. As we can
 see, these look just like functions, but taking types!</p>
-<p>If the result of a forall type is another forall types — like with <code>Swap</code> — we can use syntax sugar to
-put them both in one pair of square brackets:</p>
-<pre><code class="language-par">dec Swap : [type a, b] [(a, b)!] (b, a)!
+<p>If a forall continues into more explicit type binders or value arguments — like with <code>Swap</code> — we keep
+them together in one pair of square brackets, repeating <code>type</code> for each explicit type binder:</p>
+<pre><code class="language-par">dec Swap : [type a, type b, (a, b)!] (b, a)!
 </code></pre>
-<p>This looks better. The two ways are, however, completely equivalent.</p>
+<p>This keeps the whole input list visible at once.</p>
+<p>Explicit type binders can also carry constraints, such as <code>[type a: data]</code>. Those are covered in
+<a href="types/./constraints.html">Type Constraints</a>.</p>
 <p>Just like functions, foralls are <a href="types/../types_and_expressions.html#linearity"><strong>linear</strong></a>. Variables containing them can’t be dropped, nor
 copied, only destructed by calling.</p>
 <h2 id="construction-4"><a class="header" href="#construction-4">Construction</a></h2>
@@ -1588,16 +1544,16 @@ variable and prefixed with the keyword <code>type</code>.</p>
 <pre><code class="language-par">dec None : [type a] Option&lt;a&gt;
 def None = [type a] .none!
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 </code></pre>
 <blockquote>
 <p>A common complaint at this point is:
-<strong>Why do I have to write <code>[type a, b]</code> in both the declaration, and the definition?</strong> After all,
+<strong>Why do I have to write <code>type a</code> and <code>type b</code> in both the declaration, and the definition?</strong> After all,
 it doesn’t seem like they’re used in the definition. However, they are! What’s the type of <code>first</code>?
-It’s <code>a</code>. And <code>second</code>? It’s <code>b</code>. If you called them <code>[type kek, dek]</code>, they would be <code>kek</code> and <code>dek</code>.
+It’s <code>a</code>. And <code>second</code>? It’s <code>b</code>. If you called them <code>type kek</code> and <code>type dek</code>, they would be <code>kek</code> and <code>dek</code>.
 Par’s type checker never makes type names up.</p>
 <p>Additionally, if you do end up needing to use those type variables — for example, to call another
 generic function — they will be right at hand.</p>
@@ -1608,7 +1564,7 @@ prefixed with the keyword <code>type</code>.</p>
 <pre><code class="language-par">def NoneInt = None(type Int)  // type inferred as `Option&lt;Int&gt;`
 
 def Pair    = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 //          = (42, "Hello!")!
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="implicit-generics"><a class="header" href="#implicit-generics">Implicit generics</a></h1>
@@ -1620,14 +1576,14 @@ import {
   @core/String
 }
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 </code></pre>
 <p>With <code>forall</code>, callers pass types explicitly when they use <code>Swap</code>:</p>
 <pre><code class="language-par">def Pair = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 </code></pre>
 <p>That is precise and fully explicit. But in many everyday cases, the types are
 obvious from the value you are passing. For those cases, Par also has <strong>implicit
@@ -1664,6 +1620,8 @@ whether it is implicit or explicit:</p>
 <li>If it is explicit (<code>[type a]</code>), it is always specified by the caller.</li>
 </ul>
 <p>This is intentional: it keeps call sites predictable.</p>
+<p>Implicit type parameters can also carry constraints, such as <code>&lt;a: box&gt;</code> or
+<code>&lt;a: data&gt;</code>. The constraints themselves are covered in <a href="types/./constraints.html">Type Constraints</a>.</p>
 <h2 id="construction-5"><a class="header" href="#construction-5">Construction</a></h2>
 <p>Start with the <code>Swap</code> example, but make it implicit:</p>
 <pre><code class="language-par">dec Swap : &lt;a, b&gt;[(a, b)!] (b, a)!
@@ -1705,15 +1663,15 @@ fully typed expressions), but it becomes harder when the argument’s type canno
 be inferred without annotations.</p>
 <p>A classic example is an anonymous function. The <code>box</code> here is not the point —
 it just happens that <code>Map</code> takes a boxed function.</p>
-<pre><code class="language-par">Map(numbers, box Int.ToString)        // fine: Int.ToString has a known type
-Map(numbers, box [x] Int.ToString(x)) // may fail without more info
+<pre><code class="language-par">Map(numbers, box [x: Int] `#{x}`) // fine: `x` has a known type
+Map(numbers, box [x] `#{x}`)      // may fail without more info
 </code></pre>
 <p>(<code>Map</code> is discussed in <a href="types/./box.html">Box</a>.)</p>
 <p>In the second call, the type of <code>[x] ...</code> cannot be inferred unless the type of
 <code>x</code> is specified. If the function’s type parameters are being inferred from the
 mapper argument itself, you end up in a chicken-and-egg situation.</p>
 <p>The usual fix is to add an annotation:</p>
-<pre><code class="language-par">Map(numbers, box [x: Int] Int.ToString(x))
+<pre><code class="language-par">Map(numbers, box [x: Int] `#{x}`)
 </code></pre>
 <p>This is why implicit generics can be <em>made difficult</em> by higher-order arguments
 like lambdas: if the type of the lambda argument is not already specified, the
@@ -1722,15 +1680,15 @@ lambda’s type won’t be inferred.</p>
 <pre><code class="language-par">dec Map : &lt;a&gt;[List&lt;a&gt;] &lt;b&gt;[box [a] b] List&lt;b&gt;
 </code></pre>
 <p>then a call like this may fail:</p>
-<pre><code class="language-par">Map(numbers, box [x] Int.ToString(x))
+<pre><code class="language-par">Map(numbers, box [x] `#{x}`)
 </code></pre>
 <p>because the type of <code>x</code> is not specified, so the type of the function cannot be
 inferred, so <code>b</code> cannot be inferred either. You end up needing to annotate <code>x</code>:</p>
-<pre><code class="language-par">Map(numbers, box [x: Int] Int.ToString(x))
+<pre><code class="language-par">Map(numbers, box [x: Int] `#{x}`)
 </code></pre>
 <p>Many “map-like” APIs therefore prefer to infer the input type and keep the
 output type explicit, e.g.:</p>
-<pre><code class="language-par">dec Map : &lt;a&gt;[List&lt;a&gt;] [type b] [box [a] b] List&lt;b&gt;
+<pre><code class="language-par">dec Map : &lt;a&gt;[List&lt;a&gt;] [type b, box [a] b] List&lt;b&gt;
 </code></pre>
 <p>With this type, the mapper is checked against the expected type <code>box [a] b</code>, so
 <code>x</code> can be inferred as <code>a</code> and usually needs no annotation. Picking the result
@@ -1747,7 +1705,7 @@ small “vtable” for dropping it (a boxed <a href="types/./choice.html">choice
 }
 </code></pre>
 <p>This is the implicit counterpart of the existential type:</p>
-<pre><code class="language-par">type DropMe = (type a) (a) box choice {
+<pre><code class="language-par">type DropMe = (type a, a) box choice {
   .drop(a) =&gt; !,
 }
 </code></pre>
@@ -1983,12 +1941,12 @@ def SumList = [list]
   .item(x) xs =&gt;
 </code></pre>
 If the list is empty, the result is <code>0</code>. Otherwise, we need to add the number <code>x</code>
-<pre><code class="language-par">                 Int.Add(x,
+<pre><code class="language-par">                 x +
 </code></pre>
 to the sum of the rest of the list: <code>xs</code>.</li>
 <li>Since <code>xs</code> is a <em>descendant</em> of the original <code>list</code> that we applied the <code>.begin</code> to, and is again a
 <code>List&lt;Int&gt;</code>, we can recursively obtain its sum using <code>.loop</code>:
-<pre><code class="language-par">                            xs.loop),
+<pre><code class="language-par">                            xs.loop
 </code></pre>
 And close the braces.
 <pre><code class="language-par">}
@@ -1998,7 +1956,7 @@ And close the braces.
 <p>All put together, it looks like this:</p>
 <pre><code class="language-par">def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>You can think of <code>.loop</code> as going back to the corresponding <code>.begin</code>, but with the new value.</p>
@@ -2009,30 +1967,30 @@ themselves. In all cases, <strong>the meaning of <code>.begin</code>/<code>.loop
 <li>The original code:
 <pre><code class="language-par">def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 </li>
 <li>The first expansion:
 <pre><code class="language-par">def SumList = [list] list.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.begin.case {
+  .item(x) xs =&gt; x + xs.begin.case {
     .end!       =&gt; 0,
-    .item(x) xs =&gt; Int.Add(x, xs.loop),
-  }),
+    .item(x) xs =&gt; x + xs.loop,
+  },
 }
 </code></pre>
 </li>
 <li>The second expansion:
 <pre><code class="language-par">def SumList = [list] list.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.case {
+  .item(x) xs =&gt; x + xs.case {
     .end!       =&gt; 0,
-    .item(x) xs =&gt; Int.Add(x, xs.begin.case {
+    .item(x) xs =&gt; x + xs.begin.case {
       .end!       =&gt; 0,
-      .item(x) xs =&gt; Int.Add(x, xs.loop),
-    }),
-  }),
+      .item(x) xs =&gt; x + xs.loop,
+    },
+  },
 }
 </code></pre>
 </li>
@@ -2043,7 +2001,7 @@ type defined previously:</p>
 <pre><code class="language-par">dec SumTree : [Tree] Int
 def SumTree = [tree] tree.begin.case {
   .leaf number        =&gt; number,
-  .node(left, right)! =&gt; Int.Add(left.loop, right.loop),
+  .node(left, right)! =&gt; left.loop + right.loop,
 }
 
 def BiggerSum = SumTree(BiggerTree)  // = 20
@@ -2069,7 +2027,7 @@ increment. In Haskell, that’s achieved by explicitly passing it to the recursi
 <pre><code class="language-par">dec IncBy : [List&lt;Int&gt;, Int] List&lt;Int&gt;
 def IncBy = [list, n] list.begin.case {
   .end!       =&gt; .end!,
-  .item(x) xs =&gt; .item(Int.Add(x, n)) xs.loop,
+  .item(x) xs =&gt; .item(x + n) xs.loop,
 }
 </code></pre>
 <p>Notice, that <code>xs.loop</code> makes no mention of <code>n</code>, the increment. Yet, <code>n</code> is available throughout the
@@ -2092,15 +2050,15 @@ reverseHelper acc (x:xs) = reverseHelper (x:acc) xs
 <p>This function uses a state: <code>acc</code>, the accumulator. It prepends a new item to it in every iteration,
 eventually reversing the whole list. In Haskell, this requires a helper recursive function.</p>
 <p>In Par, it doesn’t!</p>
-<pre><code class="language-par">dec Reverse : [type a] [List&lt;Int&gt;] List&lt;Int&gt;
-def Reverse = [type a] [list]
+<pre><code class="language-par">dec Reverse : [type a, List&lt;Int&gt;] List&lt;Int&gt;
+def Reverse = [type a, list]
   let acc: List&lt;a&gt; = .end!
   in list.begin.case {
     .end!       =&gt; acc,
     .item(x) xs =&gt; let acc = .item(x) acc in xs.loop,
   }
 
-def TestReverse = Reverse(type Int)(*(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
+def TestReverse = Reverse(type Int, *(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
 </code></pre>
 <p>And there we go! All we had to do was to re-assign <code>acc</code> with the new value, and continue with <code>xs.loop</code>.</p>
 <h3 id="the-escape-hatch-from-totality-unfounded"><a class="header" href="#the-escape-hatch-from-totality-unfounded">The escape-hatch from totality: <code>.unfounded</code></a></h3>
@@ -2179,10 +2137,9 @@ def Main = Console.Open
 </code></pre>
 <p>Each branch inside the curly braces follows the same syntax as the branches in the corresponding
 type, except with types replaced by their values.</p>
-<pre><code class="language-par">def IntToString: CancellableFunction&lt;Int, String&gt; = case {
+<pre><code class="language-par">def FormatInt: CancellableFunction&lt;Int, String&gt; = case {
   .cancel =&gt; !,
-  //.apply =&gt; [s] Int.ToString(s),
-  .apply(s) =&gt; Int.ToString(s),
+  .apply(n) =&gt; `#{n}`,
 }
 </code></pre>
 <p>Unlike patterns in <code>.case</code> branches of <a href="types/./either.html"><em>either</em> types</a>, branches in <code>case</code>
@@ -2193,7 +2150,7 @@ still bind function arguments on the left side of the arrow.</p>
 We do it by applying <code>.branch</code> after a value of a choice type.</p>
 <pre><code class="language-par">def Number = Example.number  // = 42
 </code></pre>
-<p>Above, we defined the type <code>CancellableFunction&lt;a, b&gt;</code>, and a value of that type: <code>IntToString</code>.
+<p>Above, we defined the type <code>CancellableFunction&lt;a, b&gt;</code>, and a value of that type: <code>FormatInt</code>.
 <a href="types/./function.html">Bare functions</a> are linear, so we must call them, but the <em>cancellable function</em>
 gives us a choice of either calling it, or not.</p>
 <p>We can use this to define a <em>map</em> function for optional values:</p>
@@ -2203,19 +2160,17 @@ gives us a choice of either calling it, or not.</p>
 }
 
 dec MapOption :
-  [type a, b]
-  [Option&lt;a&gt;]
-  [CancellableFunction&lt;a, b&gt;]
+  [type a, type b, Option&lt;a&gt;, CancellableFunction&lt;a, b&gt;]
   Option&lt;b&gt;
 
-def MapOption = [type a, b] [option, func] option.case {
+def MapOption = [type a, type b, option, func] option.case {
   .none! =&gt; let ! = func.cancel in .none!,
 //                  \_________/
   .some x =&gt; let y = func.apply(x) in .some y,
 //                   \________/
 }
 
-def Result = MapOption(type Int, String)(.some 42, IntToString)  // = .some "42"
+def Result = MapOption(type Int, type String, .some 42, FormatInt)  // = .some "42"
 </code></pre>
 <p>This example also shows that in Par, you don’t have to be shy about writing your types on
 multiple lines. The syntax is designed for that.</p>
@@ -2376,7 +2331,7 @@ def Fibonacci: Sequence&lt;Nat&gt; =
   in begin case {
     .close =&gt; !,
     .next =&gt;
-      let (a, b)! = (b, Nat.Add(a, b))!
+      let (a, b)! = (b, a + b)!
       in (a) loop
   }
 </code></pre>
@@ -2393,7 +2348,8 @@ def Increment = [seq] begin case {
   .close =&gt; let ! = seq.close in !,
   .next =&gt;
     let (x) seq = seq.next
-    in (Int.Add(x, 1)) loop
+    in let x = x + 1
+    in (x) loop
 }
 
 def FibonacciPlusOne = Increment(Fibonacci)
@@ -2409,15 +2365,15 @@ disable Par’s totality checking by replacing <code>begin</code> with <code>unf
 <p>Iterative types don’t have any special syntax for destruction. Instead, we just operate on their bodies
 directly, as if they were expanded.</p>
 <p>For example, here’s a function to take the first element from a sequence and close it:</p>
-<pre><code class="language-par">def Head = [type a] [seq: Sequence&lt;a&gt;]
+<pre><code class="language-par">def Head = [type a, seq: Sequence&lt;a&gt;]
   let (x) seq = seq.next
   in let ! = seq.close
   in x
 </code></pre>
 <p>Using <a href="types/./recursive.html">recursion</a>, we can destruct an iterative type many times. Here’s a function to
 take the first N elements of a sequence and return them in a list:</p>
-<pre><code class="language-par">dec Take : [type a] [Nat, Sequence&lt;a&gt;] List&lt;a&gt;
-def Take = [type a] [n, seq] Nat.Repeat(n).begin.case {
+<pre><code class="language-par">dec Take : [type a, Nat, Sequence&lt;a&gt;] List&lt;a&gt;
+def Take = [type a, n, seq] Nat.Repeat(n).begin.case {
   .end! =&gt; let ! = seq.close in .end!,
   .step remaining =&gt;
     let (x) seq = seq.next
@@ -2460,16 +2416,16 @@ are linear — no matter how deeply nested.</p>
 <li><code>.close</code> to clean up.</li>
 </ul>
 <p>Here’s a <code>Map</code> function that uses it:</p>
-<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
-def Map = [type a, b] [list, mapper] list.begin.case {
+<pre><code class="language-par">dec Map : [type a, type b, List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
+def Map = [type a, type b, list, mapper] list.begin.case {
   .end! =&gt; let ! = mapper.close in .end!,
   .item(x) xs =&gt; let (x1) mapper = mapper.apply(x) in .item(x1) xs.loop,
 }
 </code></pre>
 <p>And using it:</p>
-<pre><code class="language-par">def NumberStrings = Map(type Int, String)(Int.Range(1, 100), begin case {
+<pre><code class="language-par">def NumberStrings = Map(type Int, type String, Int.Range(1, 100), begin case {
   .close =&gt; !,
-  .apply(n) =&gt; (Int.ToString(n)) loop,
+  .apply(n) =&gt; (`#{n}`) loop,
 })
 </code></pre>
 <p>This works — but it’s verbose.</p>
@@ -2501,17 +2457,14 @@ Copying, closing, and chaining all become manual work.</p>
 
 import @core/List
 
-dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
-def Map = [type a, b] [list, f] list.begin.case {
+dec Map : &lt;a&gt;[List&lt;a&gt;] [type b, box [a] b] List&lt;b&gt;
+def Map = &lt;a&gt;[list] [type b, f] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; .item(f(x)) xs.loop,
 }
 </code></pre>
 <p>Let’s try it out:</p>
-<pre><code class="language-par">def NumberStrings = Map(type Int, String)(
-  Int.Range(1, 100),
-  box Int.ToString,
-)
+<pre><code class="language-par">def NumberStrings = Map(Int.Range(1, 100), type String, box [n] `#{n}`)
 </code></pre>
 <p>No wrappers, no manual protocols. The boxed function can be used freely, because the <code>box</code> type makes
 it non-linear. This is exactly what <code>box</code> was made for.</p>
@@ -2528,6 +2481,9 @@ def Ints: List&lt;Int&gt; = Boxes
 <p><strong>For non-linear types, <code>T</code> and <code>box T</code> are effectively interchangeable.</strong></p>
 <h2 id="another-example-filtering-a-list"><a class="header" href="#another-example-filtering-a-list">Another example: Filtering a list</a></h2>
 <p>Let’s write a function that filters a list using a boxed predicate.</p>
+<p>This example uses a <code>box</code> type constraint, written <code>a: box</code>. The next chapter covers constraints
+properly; for now, read it as saying: “the element type must be non-linear, because rejected
+elements are discarded.”</p>
 <pre><code class="language-par">module Main
 
 import {
@@ -2536,9 +2492,9 @@ import {
   @core/List
 }
 
-dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
+dec Filter : &lt;a: box&gt;[List&lt;a&gt;] [box [a] Bool] List&lt;a&gt;
 
-def Filter = [type a] [list, predicate] list.begin.case {
+def Filter = &lt;a: box&gt;[list] [predicate] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; predicate(x).case {
     .true! =&gt; .item(x) xs.loop,
@@ -2548,25 +2504,178 @@ def Filter = [type a] [list, predicate] list.begin.case {
 </code></pre>
 <p>Note the types:</p>
 <ul>
-<li>We accept a list of <code>box a</code>, because elements might be discarded.</li>
-<li>But we return a <code>List&lt;a&gt;</code> — not a <code>List&lt;box a&gt;</code>.</li>
+<li>We accept a <code>List&lt;a&gt;</code>.</li>
+<li>The constraint <code>a: box</code> says elements may be discarded.</li>
+<li>The result is still a <code>List&lt;a&gt;</code>.</li>
 </ul>
 <p>Let’s try it out:</p>
-<pre><code class="language-par">def Evens = Filter(type Int)(
-  Int.Range(1, 100),
-  box [n] Int.Equals(0, Int.Mod(n, 2)),
-)
+<pre><code class="language-par">def Evens = Filter(Int.Range(1, 100), box [n] {Int.Mod(n, 2) == 0})
 </code></pre>
 <p>Here:</p>
 <ul>
-<li><code>Int.Range(1, 100)</code> gives a <code>List&lt;Int&gt;</code>, which is valid because <code>Int</code> can be used as a <code>box Int</code>.</li>
-<li>The result is inferred as <code>List&lt;Int&gt;</code>, not <code>List&lt;box Int&gt;</code>.</li>
+<li><code>Int.Range(1, 100)</code> gives a <code>List&lt;Int&gt;</code>.</li>
+<li><code>Int</code> satisfies the <code>box</code> constraint, because integers are non-linear.</li>
+<li>The result is inferred as <code>List&lt;Int&gt;</code>.</li>
 </ul>
-<p>This avoids bloating the result type with redundant boxes — keeping things clear.</p>
-<p>And if we were filtering a list of boxed values already?</p>
-<pre><code class="language-par">Filter(type box T)(listOfBoxT, predicate)
+<p>This keeps the list type clear. The constraint says what the implementation needs, without
+wrapping every element in a redundant <code>box</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="type-constraints"><a class="header" href="#type-constraints">Type Constraints</a></h1>
+<p>Generic code often needs to know a little bit about an unknown type.</p>
+<p>For example, this function can return its argument without knowing anything about <code>a</code>:</p>
+<pre><code class="language-par">dec Identity : &lt;a&gt;[a] a
+def Identity = &lt;a&gt;[x] x
 </code></pre>
-<p>That works too. Thanks to subtyping, everything lines up as you’d expect.</p>
+<p>But this one needs to use its value twice:</p>
+<pre><code class="language-par">dec Duplicate : &lt;a: box&gt;[a] (a, a)!
+def Duplicate = &lt;a: box&gt;[x] (x, x)!
+</code></pre>
+<p>The <code>: box</code> part is a <strong>type constraint</strong>. It says that the unknown type <code>a</code> must be non-linear,
+so values of that type may be reused or dropped.</p>
+<p>Par currently has four constraints:</p>
+<ul>
+<li><code>box</code></li>
+<li><code>data</code></li>
+<li><code>number</code></li>
+<li><code>signed</code></li>
+</ul>
+<p>They form a chain from broadest to narrowest:</p>
+<pre><code class="language-text">signed -&gt; number -&gt; data -&gt; box
+</code></pre>
+<p>So every <code>signed</code> type is also a <code>number</code>, every <code>number</code> is also <code>data</code>, and every <code>data</code> type is
+also <code>box</code>.</p>
+<h2 id="syntax-1"><a class="header" href="#syntax-1">Syntax</a></h2>
+<p>Constraints are written after type parameters with a colon.</p>
+<p>Explicit generic functions use <code>type</code> binders:</p>
+<pre><code class="language-par">dec ZeroOr : [type a: number, Bool, a] a
+</code></pre>
+<p>Implicit generic functions use angle-bracket binders:</p>
+<pre><code class="language-par">dec Sum : &lt;a: number&gt;[(a) a] a
+</code></pre>
+<p>Existential types can constrain the hidden type:</p>
+<pre><code class="language-par">type SomeData = (type a: data) a
+</code></pre>
+<p>Implicit generic pairs can do the same:</p>
+<pre><code class="language-par">type DataWithText = &lt;a: data&gt;(a) String
+</code></pre>
+<p>When you construct a value with a constrained explicit binder, the checked type must satisfy the
+same constraint:</p>
+<pre><code class="language-par">dec ShowTwice : [type a: data, a] String
+def ShowTwice = [type a: data, x] `#{x} #{x}`
+</code></pre>
+<p>Named type definitions are the one place where parameters are not constrained:</p>
+<pre><code class="language-par">type Boxed&lt;a&gt; = box a      // OK
+type Bad&lt;a: box&gt; = box a   // Error
+</code></pre>
+<p>If a type definition needs constrained behavior, put the constraint on the functions that operate
+on that type.</p>
+<h2 id="the-box-constraint"><a class="header" href="#the-box-constraint">The <code>box</code> Constraint</a></h2>
+<p>The <code>box</code> constraint means values are non-linear. A value whose type is known only as <code>a: box</code> may
+be copied, reused, or dropped.</p>
+<pre><code class="language-par">dec KeepFirst : &lt;a: box&gt;[(a, a)!] a
+def KeepFirst = &lt;a: box&gt;[(first, second)!] first
+</code></pre>
+<p>In the example, <code>second</code> is not used. That is allowed because <code>a: box</code>.</p>
+<p>Types that satisfy <code>box</code> include:</p>
+<ul>
+<li>primitives</li>
+<li><code>!</code></li>
+<li>pairs, eithers, and recursive types whose parts also satisfy <code>box</code></li>
+<li>explicit <code>box T</code></li>
+<li>type aliases that expand to a <code>box</code> type</li>
+<li>type variables with a <code>box</code>, <code>data</code>, <code>number</code>, or <code>signed</code> constraint</li>
+</ul>
+<p>Functions, choices, continuations, and unrestricted type variables do not satisfy <code>box</code> unless they
+are wrapped in an explicit <code>box</code>.</p>
+<h2 id="the-data-constraint"><a class="header" href="#the-data-constraint">The <code>data</code> Constraint</a></h2>
+<p>The <code>data</code> constraint means values are ordinary data. Data values are non-linear, and additionally
+support:</p>
+<ul>
+<li>comparison operators: <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>, <code>==</code>, <code>!=</code></li>
+<li>data interpolation in template strings: <code>#{...}</code></li>
+</ul>
+<pre><code class="language-par">dec Min : &lt;a: data&gt;[(a) a] a
+def Min = &lt;a: data&gt;[(left) right] if {
+  left &lt;= right =&gt; left,
+  else =&gt; right,
+}
+
+dec Label : &lt;a: data&gt;[a] String
+def Label = &lt;a: data&gt;[value] `value = #{value}`
+</code></pre>
+<p>The comparison operators use <code>@core/Data.Compare</code> under the hood. The <code>#{...}</code> template form uses
+<code>@core/Data.ToString</code>.</p>
+<p>Types that satisfy <code>data</code> include:</p>
+<ul>
+<li>all primitive types</li>
+<li><code>!</code></li>
+<li>pairs whose elements are data</li>
+<li>eithers whose payloads are data</li>
+<li>recursive types whose bodies are data</li>
+<li>type aliases that expand to data</li>
+<li>type variables with a <code>data</code>, <code>number</code>, or <code>signed</code> constraint</li>
+</ul>
+<p>Adding <code>box</code> to a non-data type does not make it data:</p>
+<pre><code class="language-par">box [Int] Int  // box, but not data
+</code></pre>
+<p>If <code>T</code> is already data, then <code>box T</code> can still be used as data, because boxed data can be used as
+the data value inside.</p>
+<h2 id="the-number-constraint"><a class="header" href="#the-number-constraint">The <code>number</code> Constraint</a></h2>
+<p>The <code>number</code> constraint is for generic numeric code. A <code>number</code> type supports:</p>
+<ul>
+<li><code>+</code></li>
+<li><code>*</code></li>
+<li><code>/</code></li>
+<li><code>Number.Zero(type a)</code></li>
+</ul>
+<pre><code class="language-par">module Main
+
+import @core/Number
+
+dec SumPair : &lt;a: number&gt;[(a) a] a
+def SumPair = &lt;a: number&gt;[(left) right] left + right
+
+dec Zero : [type a: number] a
+def Zero = [type a: number] Number.Zero(type a)
+</code></pre>
+<p>The number types are:</p>
+<ul>
+<li><code>Nat</code></li>
+<li><code>Int</code></li>
+<li><code>Float</code></li>
+</ul>
+<p>Type aliases that expand to one of these types, and type variables constrained with <code>number</code> or
+<code>signed</code>, also satisfy <code>number</code>.</p>
+<p><code>number</code> does not provide subtraction or negation, because <code>Nat</code> is a number but not signed.</p>
+<h2 id="the-signed-constraint"><a class="header" href="#the-signed-constraint">The <code>signed</code> Constraint</a></h2>
+<p>The <code>signed</code> constraint is the numeric constraint for types that support negative values. It has
+everything from <code>number</code>, plus:</p>
+<ul>
+<li><code>-</code></li>
+<li><code>neg</code></li>
+</ul>
+<pre><code class="language-par">dec Difference : &lt;a: signed&gt;[(a) a] a
+def Difference = &lt;a: signed&gt;[(left) right] left - right
+
+dec Negate : &lt;a: signed&gt;[a] a
+def Negate = &lt;a: signed&gt;[value] neg value
+</code></pre>
+<p>The signed types are:</p>
+<ul>
+<li><code>Int</code></li>
+<li><code>Float</code></li>
+</ul>
+<p>Type aliases that expand to <code>Int</code> or <code>Float</code>, and type variables constrained with <code>signed</code>, also
+satisfy <code>signed</code>.</p>
+<p><code>Nat</code> is intentionally not signed.</p>
+<h2 id="choosing-a-constraint"><a class="header" href="#choosing-a-constraint">Choosing a Constraint</a></h2>
+<p>Use the weakest constraint that gives the function what it needs:</p>
+<ul>
+<li>Use <code>box</code> when you only need to copy, reuse, or drop values.</li>
+<li>Use <code>data</code> when you need comparison or <code>#{...}</code> display.</li>
+<li>Use <code>number</code> when you need generic zero, addition, multiplication, or division.</li>
+<li>Use <code>signed</code> when you also need subtraction or negation.</li>
+</ul>
+<p>This keeps generic APIs as flexible as possible while still making their capabilities clear.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="exists"><a class="header" href="#exists">Exists</a></h1>
 <p>An <em>exists type</em> lets a value <strong>hide a type inside itself</strong> — while exposing only what can be done
 with that type.</p>
@@ -2578,11 +2687,13 @@ says: <em>“I have chosen some specific type <code>a</code>, but I’m not goin
 <li>A lowercase type variable enclosed in round parentheses, prefixed with the keyword <code>type</code>.</li>
 <li>The payload type — a type that may use the hidden type variable.</li>
 </ul>
-<p>It’s similar to a <a href="types/./pair.html">pair</a>, but the first component is a type instead of a value.</p>
+<p>It’s similar to a <a href="types/./pair.html">pair</a>, but the first component is a type instead of a value.
+The hidden type can also carry a constraint, such as <code>(type a: data)</code>, as covered in
+<a href="types/./constraints.html">Type Constraints</a>.</p>
 <p>Here are two simple examples of existential types:</p>
 <pre><code class="language-par">type Any = (type a) a
 
-type DropMe = (type a) (a) choice {
+type DropMe = (type a, a) choice {
   .drop(a) =&gt; !,
 }
 </code></pre>
@@ -2602,14 +2713,14 @@ dropping a value of that type.</p>
 we can’t do anything with it. In fact, we can’t even get rid of it, if we were to instantiate it into a
 variable.</p>
 <p>Let’s now look at a slightly more interesting example:</p>
-<pre><code class="language-par">type DropMe = (type a) (a) choice {
+<pre><code class="language-par">type DropMe = (type a, a) choice {
   .drop(a) =&gt; !,
 }
 </code></pre>
 <p>The payload here is a pair: a value of the hidden type, plus a <a href="types/./choice.html">choice</a> with just one operation:
 dropping a value of that type.</p>
 <p>Here’s how we can construct a value of <code>DropMe</code>:</p>
-<pre><code class="language-par">def Drop42: DropMe = (type Int) (42) case {
+<pre><code class="language-par">def Drop42: DropMe = (type Int, 42) case {
   .drop(n) =&gt; !,  // `n`, being an `Int`, is dropped by being unused
 }
 </code></pre>
@@ -2618,10 +2729,10 @@ dropping a value of that type.</p>
 just with the type keyword.</p>
 <p>Here’s an example that unpacks and uses a <code>DropMe</code>:</p>
 <pre><code class="language-par">def UseDrop: ! =
-  let (type a) (x) dropper = Drop42
+  let (type a, x) dropper = Drop42
   in dropper.drop(x)
 </code></pre>
-<p>The pattern <code>(type a) (x) dropper</code> means:</p>
+<p>The pattern <code>(type a, x) dropper</code> means:</p>
 <ul>
 <li><code>a</code> becomes the name of the hidden type, a local type variable.</li>
 <li><code>x</code> is the stored value of type <code>a</code>.</li>
@@ -2630,22 +2741,26 @@ just with the type keyword.</p>
 <p>We can also unpack existentials <strong>in function parameters,</strong> using patterns. Here’s a function that takes
 a <code>DropMe</code> and drops its inner value:</p>
 <pre><code class="language-par">dec DropIt : [DropMe] !
-def DropIt = [(type a) (x) dropper] dropper.drop(x)
+def DropIt = [(type a, x) dropper] dropper.drop(x)
 </code></pre>
 <h2 id="a-real-example"><a class="header" href="#a-real-example">A Real Example</a></h2>
 <p><em>Exists</em> types become truly useful when combined with <a href="types/./box.html">box</a> types — allowing you to hide
 implementation details inside interfaces that can be passed around freely.</p>
 <p>Here’s a boxed interface for working with sets:</p>
-<pre><code class="language-par">type SetModule&lt;a&gt; = (type set) box choice {
-  .empty =&gt; box set,
-  .insert(a, box set) =&gt; box set,
-  .contains(a, box set) =&gt; Bool,
+<pre><code class="language-par">type SetModule&lt;a&gt; = (type set: box) box choice {
+  .empty =&gt; set,
+  .insert(a, set) =&gt; set,
+  .contains(a, set) =&gt; Bool,
 }
 </code></pre>
 <p>This type hides the implementation type of the set.
 The interface is boxed, so it can be copied and discarded.
+The hidden <code>set</code> type is constrained with <a href="types/./constraints.html"><code>box</code></a>, so set values can be reused by
+the operations that inspect them.
 The hidden type <code>set</code> is never revealed — only its operations are exposed.</p>
-<p>Let’s now implement an inefficient, but simple <code>SetModule</code> using lists and equality functions:</p>
+<p>Let’s now implement an inefficient, but simple <code>SetModule</code> using lists. This version works for
+<a href="types/./constraints.html"><code>data</code></a> elements, because it uses <code>==</code> to check whether an item is already in
+the set:</p>
 <pre><code class="language-par">module Main
 
 import {
@@ -2654,31 +2769,30 @@ import {
   @core/List
 }
 
-type Eq&lt;a&gt; = box [a, a] Bool
-
-dec ListSet : [type a] [Eq&lt;box a&gt;] SetModule&lt;box a&gt;
-def ListSet = [type a] [eq] (type List&lt;box a&gt;) box case {
+dec ListSet : [type a: data] SetModule&lt;a&gt;
+def ListSet = [type a: data] (type List&lt;a&gt;) box case {
   .empty =&gt; .end!,
 
   .insert(x, set) =&gt; .item(x) set,
 
   .contains(y, set) =&gt; set.begin.case {
     .end! =&gt; .false!,
-    .item(x) xs =&gt; eq(x, y).case {
+    .item(x) xs =&gt; {x == y}.case {
       .true! =&gt; .true!,
       .false! =&gt; xs.loop,
     },
   },
 }
 </code></pre>
-<p>This implementation of sets can only be constructed for non-linear types. That’s what <code>box a</code> ensures here.</p>
-<p>We construct the existential by choosing <code>List&lt;box a&gt;</code> as the hidden type:</p>
-<pre><code class="language-par">(type List&lt;box a&gt;) ...
+<p>This implementation of sets can only be constructed for comparable data types. That’s what
+<code>a: data</code> ensures here.</p>
+<p>We construct the existential by choosing <code>List&lt;a&gt;</code> as the hidden type:</p>
+<pre><code class="language-par">(type List&lt;a&gt;) ...
 </code></pre>
 <p>The consumer of the <code>SetModule</code> doesn’t know that these sets are implemented as lists.</p>
 <p>Let’s now use that in a function:</p>
-<pre><code class="language-par">dec Deduplicate : [type a] [SetModule&lt;a&gt;, List&lt;box a&gt;] List&lt;a&gt;
-def Deduplicate = [type a] [(type set) mSet, list]
+<pre><code class="language-par">dec Deduplicate : [type a: data, SetModule&lt;a&gt;, List&lt;a&gt;] List&lt;a&gt;
+def Deduplicate = [type a: data, (type set: box) mSet, list]
   let visited = mSet.empty
   in list.begin.case {
     .end! =&gt; .end!,
@@ -2693,21 +2807,18 @@ def Deduplicate = [type a] [(type set) mSet, list]
 <p>This function deduplicates a list by tracking seen values using a hidden set implementation.
 It doesn’t know how the set works — just that it supports <code>.empty</code>, <code>.insert</code>, and <code>.contains</code>.</p>
 <p>Let’s test it!</p>
-<pre><code class="language-par">dec Map : [type a, b] [box [a] b, List&lt;a&gt;] List&lt;b&gt;
-def Map = [type a, b] [f, list] list.begin.case {
-  .end! =&gt; .end!,
-  .item(x) xs =&gt; .item(f(x)) xs.loop,
-}
-
-def IntListSet = ListSet(type Int)(box Int.Equals)
+<pre><code class="language-par">def IntListSet = ListSet(type Int)
 
 def TestDedup =
-  Deduplicate(type Int)(IntListSet)
-    (Map(type Int, Int)(box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
+  Deduplicate(
+    type Int,
+    IntListSet,
+    List.Map(Int.Range(1, 1000), type Int, box [n] Int.Mod(n, 7)),
+  )
 </code></pre>
 <p>This deduplicates a list of numbers modulo 7 — using:</p>
 <ul>
-<li><code>Map</code> to apply the modulo.</li>
+<li><code>List.Map</code> to apply the modulo.</li>
 <li><code>ListSet</code> to get an abstract set implementation.</li>
 <li><code>Deduplicate</code> to do the filtering.</li>
 </ul>
@@ -2748,8 +2859,8 @@ next section on process syntax yet, feel free to skip that table for now and com
 <td><pre><code class="language-par">let value: Either = .left "Hello!"
 </code></pre></td>
 <td><pre><code class="language-par">let result = value.case {
-  .left str => String.Length(str),
-  .right num => Int.Mul(num, 5),
+  .left str => str,
+  .right num => `#{num}`,
 }
 </code></pre></td>
 </tr>
@@ -2766,7 +2877,7 @@ next section on process syntax yet, feel free to skip that table for now and com
 <tr>
 <td><pre><code class="language-par">type Function = [Int] String
 </code></pre></td>
-<td><pre><code class="language-par">let value = [num: Int] Int.ToString(num)
+<td><pre><code class="language-par">let value = [num: Int] `#{num}`
 </code></pre></td>
 <td><pre><code class="language-par">let str = value(42)
 </code></pre></td>
@@ -2825,10 +2936,10 @@ next section on process syntax yet, feel free to skip that table for now and com
 </code></pre></td>
 <td><pre><code class="language-par">value.case {
   .left => {
-    let result = String.Length(value)
+    let result = value
   }
   .right => {
-    let result = Int.Mul(value, 5)
+    let result = `#{value}`
   }
 }
 // `result` is in scope here
@@ -2853,7 +2964,7 @@ let num = value
 </code></pre></td>
 <td><pre><code class="language-par">let value = chan c {
   c[num: Int]
-  c &lt;&gt; Int.ToString(num)
+  c &lt;&gt; `#{num}`
 }
 </code></pre></td>
 <td><pre><code class="language-par">value(42)
@@ -2969,8 +3080,8 @@ features to <strong>seamlessly switch between expressions and processes,</strong
   .next =&gt; (a) self,
 }
 
-dec Zip : [type a, b] [Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
-def Zip = [type a, b] [seq1, seq2] begin case {
+dec Zip : [type a, type b, Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
+def Zip = [type a, type b, seq1, seq2] begin case {
   .close =&gt;
     let ! = seq1.close in
     let ! = seq2.close in !,
@@ -2985,8 +3096,8 @@ def Zip = [type a, b] [seq1, seq2] begin case {
 closes the two underlying sequences as well — it must, they are linear. When asked for the next item, it polls both sequences
 for their respective items and yields a pair of that.</p>
 <p>It works, and is understandable. But, it can be even better, when we apply some process syntax!</p>
-<pre><code class="language-par">dec Zip : [type a, b] [Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
-def Zip = [type a, b] [seq1, seq2] begin case {
+<pre><code class="language-par">dec Zip : [type a, type b, Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
+def Zip = [type a, type b, seq1, seq2] begin case {
   .close =&gt; do {
     seq1.close
     seq2.close
@@ -3024,18 +3135,17 @@ there can be more of them one after another.</p>
 <pre><code class="language-par">module Main
 
 import {
-  @core/Int
   @core/Nat
   @core/String
 }
 
 dec DisplayPlusEquation : [Nat, Nat] String
 def DisplayPlusEquation = [a, b] do {
-  let c = Nat.Add(a, b)
-  let a = Int.ToString(a)
-  let b = Int.ToString(b)
-  let c = Int.ToString(c)
-} in String.Builder.add(a).add("+").add(b).add("=").add(c).build
+  let c = a + b
+  let a = `#{a}`
+  let b = `#{b}`
+  let c = `#{c}`
+} in `${a}+${b}=${c}`
 
 def Test = DisplayPlusEquation(3, 4)  // = "3+4=7"
 </code></pre>
@@ -3319,7 +3429,7 @@ def Fibonacci =
   in begin case {
     .close =&gt; !
     .next =&gt;
-      let (a) b = (b) Nat.Add(a, b)
+      let (a) b = (b) {a + b}
       in (a) loop
   }
 </code></pre>
@@ -3365,7 +3475,6 @@ Much like <code>String.Builder</code>, but the output appears directly in your c
 
 import {
   @basic/Console
-  @core/Int
   @core/Nat
 }
 
@@ -3377,7 +3486,7 @@ def Program: ! = do {
     .end! =&gt; {}
     .step remaining =&gt; {
       fib.next[n]
-      console.print(Int.ToString(n))
+      console.print(`#{n}`)
       remaining.loop
     }
   }
@@ -3390,7 +3499,7 @@ def Program: ! = do {
 <ul>
 <li><code>Nat.Repeat(30)</code> becomes the subject of the <code>.begin</code> and <code>.case</code> commands.</li>
 <li>In each <code>.step</code>, we receive a number from the <code>fib</code> sequence using the <code>fib.next[n]</code> command.</li>
-<li>We convert it to a string using <code>Int.ToString(n)</code> and print it to the console.</li>
+<li>We convert it to a string with a template string and print it to the console.</li>
 <li>Then we <code>loop</code>.</li>
 </ul>
 <p>The <code>fib.next[n]</code> line is where <em>receive</em> command truly shines. It receives the payload
@@ -3482,7 +3591,7 @@ import {
 
 dec HashesOrNothing : [Nat] String
 def HashesOrNothing = [n] chan result {
-  Nat.Equals(n, 0).case {
+  {n == 0}.case {
     .true! =&gt; {
       result &lt;&gt; "&lt;nothing&gt;"
     }
@@ -3503,7 +3612,7 @@ def HashesOrNothing = [n] chan result {
 </code></pre>
 <p>Let’s break this down:</p>
 <ul>
-<li><code>Nat.Equals(n, 0)</code> returns a <code>Bool</code>, which is an <a href="processes/../types/either.html"><code>either</code></a> with branches
+<li><code>n == 0</code> returns a <code>Bool</code>, which is an <a href="processes/../types/either.html"><code>either</code></a> with branches
 <code>.true!</code> and <code>.false!</code>.</li>
 <li>In the <code>.true!</code> branch, we immediately perform a link — returning <code>"&lt;nothing&gt;"</code>. Note, that
 this <em>ends</em> the process.</li>
@@ -3682,11 +3791,11 @@ a process. In fact, <strong>link and break are the only ways to end a process.</
 <h2 id="a-real-example-flattening-a-list-of-lists"><a class="header" href="#a-real-example-flattening-a-list-of-lists">A real example: flattening a list of lists</a></h2>
 <p>Let’s now use this style to implement something meaningful. We’ll write a function that flattens
 a nested list:</p>
-<pre><code class="language-par">dec Flatten : [type a] [List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
+<pre><code class="language-par">dec Flatten : [type a, List&lt;List&lt;a&gt;&gt;] List&lt;a&gt;
 </code></pre>
 <p>It’s a generic function, using the <a href="processes/../types/forall.html">forall</a> for polymorphism.</p>
 <p>Here’s the full implementation, imperative-style:</p>
-<pre><code class="language-par">def Flatten = [type a] [lists] chan yield {
+<pre><code class="language-par">def Flatten = [type a, lists] chan yield {
   lists.begin@outer.case {
     .end! =&gt; {
       yield.end!
@@ -4020,17 +4129,17 @@ console.prompt("What's your address?")[try address]
 <p>This is invalid because <code>result.try</code> appears in a nested expression, which runs as a separate concurrent process:</p>
 <pre><code class="language-par">// result : Result&lt;String, Int&gt;
 catch e =&gt; .err e in
-.ok Int.Add(result.try, 1)
+.ok {result.try + 1}
 </code></pre>
 <p>This fix attempts to work around the nested expression issue but still fails — the outer <code>.ok</code> constructs part of the result before <code>try</code> executes:</p>
 <pre><code class="language-par">catch e =&gt; .err e in
 .ok let try value = result in
-Int.Add(value, 1)
+value + 1
 </code></pre>
 <p>Here’s the correct version:</p>
 <pre><code class="language-par">catch e =&gt; .err e in
 let try value = result in
-.ok Int.Add(value, 1)
+.ok {value + 1}
 </code></pre>
 <p>This ensures all error handling completes before constructing the result.</p>
 <h3 id="useful-expression-patterns"><a class="header" href="#useful-expression-patterns">Useful Expression Patterns</a></h3>
@@ -4134,12 +4243,12 @@ dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
   let try reader = path.openFile
-  let parser = Bytes.ParseReader(type Os.Error)(reader)
+  let parser = Bytes.ParserFromReader(reader)
   let try contents = parser.remainder
   return &lt;&gt; .ok contents
 }
 </code></pre>
-<p>This function uses <code>Bytes.ParseReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
+<p>This function uses <code>Bytes.ParserFromReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
 <h2 id="providing-defaults-with-default"><a class="header" href="#providing-defaults-with-default">Providing defaults with <code>default</code></a></h2>
 <p>Sometimes you don’t want to propagate an error — you want to replace it with a fallback and keep going. The <code>default</code> sugar does exactly that, and unlike <code>try</code>, it is completely standalone: it does not require a surrounding <code>catch</code>, and it is valid even in nested expression positions.</p>
 <ul>
@@ -4161,12 +4270,12 @@ let y = r2.default(0)   // y = 0
 <p>Here’s a practical example that shows why the pattern form is particularly useful with receive commands. It counts word occurrences using a map; when a key is missing, it starts from <code>0</code>:</p>
 <pre><code class="language-par">dec Counts : [List&lt;String&gt;] List&lt;(String) Nat&gt;
 def Counts = [words] do {
-  let counts = Map.String(type Nat)(*())
+  let counts = Map.New(type String, type Nat)
   words.begin.case {
     .end! =&gt; {}
     .item(word) =&gt; {
       counts.entry(word)[default(0) count]
-      counts.put(Nat.Add(count, 1))
+      counts.put(count + 1)
       words.loop
     }
   }
@@ -4243,7 +4352,8 @@ type Option&lt;a&gt; = Result&lt;!, a&gt;
 </code></pre>
 <p>The payload pattern is always present. For a unit payload you still write <code>!</code>,
 so <code>value is .less!</code> is valid, but <code>value is .less</code> is not.</p>
-<p>Here is the return type of <code>Int.Compare</code>:</p>
+<p>The comparison operators are powered by a generic comparison function whose result type is
+<code>Ordering</code>:</p>
 <pre><code class="language-par">type Ordering = either {
   .less!,
   .equal!,
@@ -4254,13 +4364,14 @@ so <code>value is .less!</code> is valid, but <code>value is .less</code> is not
 <pre><code class="language-par">module Main
 
 import {
+  @core/Data
   @core/Int
   @core/String
 }
 
 dec CompareSign : [Int, Int] String
 def CompareSign = [x, y]
-  let cmp = Int.Compare(x, y) in
+  let cmp = Data.Compare((x) y) in
   if {
     cmp is .less! =&gt; "less",
     cmp is .greater! =&gt; "greater",
@@ -4283,7 +4394,7 @@ condition and inside the branch.</p>
 <h3 id="and-with-an-extra-predicate"><a class="header" href="#and-with-an-extra-predicate"><code>and</code> with an extra predicate</a></h3>
 <pre><code class="language-par">dec CountStatus : [Option&lt;Nat&gt;] String
 def CountStatus = [count] if {
-  count is .ok n and Nat.Equals(n, 0) =&gt; "zero",
+  count is .ok n and n == 0 =&gt; "zero",
   count is .ok _ =&gt; "non-zero",
   else =&gt; "missing",
 }
@@ -4293,7 +4404,7 @@ def CountStatus = [count] if {
 <li>Try the first branch.
 <ul>
 <li>First evaluate <code>count is .ok n</code>. If it fails, the whole <code>and</code> fails.</li>
-<li>If it succeeds, <code>n</code> is bound and Par evaluates <code>Nat.Equals(n, 0)</code>.</li>
+<li>If it succeeds, <code>n</code> is bound and Par evaluates <code>n == 0</code>.</li>
 <li>Only if both parts succeed does the branch return <code>"zero"</code>.</li>
 </ul>
 </li>
@@ -4304,7 +4415,7 @@ matches any present value and returns <code>"non-zero"</code>.</li>
 <h3 id="and-with-two-bindings"><a class="header" href="#and-with-two-bindings"><code>and</code> with two bindings</a></h3>
 <pre><code class="language-par">dec AddOk : [Result&lt;String, Int&gt;, Result&lt;String, Int&gt;] Int
 def AddOk = [left, right] if {
-  left is .ok a and right is .ok b =&gt; Int.Add(a, b),
+  left is .ok a and right is .ok b =&gt; a + b,
   else =&gt; 0,
 }
 </code></pre>
@@ -4314,7 +4425,7 @@ and <code>b</code> are in scope in the branch.</p>
 <ul>
 <li>Try to bind <code>a</code> from <code>left</code>.</li>
 <li>Only if that succeeds, try to bind <code>b</code> from <code>right</code>.</li>
-<li>Only if both succeed does the branch run <code>Int.Add(a, b)</code>.</li>
+<li>Only if both succeed does the branch run <code>a + b</code>.</li>
 </ul>
 <h2 id="or-try-one-condition-then-another"><a class="header" href="#or-try-one-condition-then-another"><code>or</code>: try one condition, then another</a></h2>
 <p>Like <code>and</code>, <code>or</code> short-circuits. The right side only runs if the left side
@@ -4343,7 +4454,7 @@ guaranteed to exist after the <code>or</code>.</p>
 grouping explicit, you can use <code>{ ... }</code> <em>inside a condition</em>:</p>
 <pre><code class="language-par">dec EmptyOrSpace : [Result&lt;String, String&gt;] Bool
 def EmptyOrSpace = [result] if {
-  result is .ok s and { String.Equals(s, "") or String.Equals(s, " ") }
+  result is .ok s and { s == "" or s == " " }
     =&gt; .true!,
   else =&gt; .false!,
 }
@@ -4371,14 +4482,14 @@ def UseOrError = [result] if {
 combine <code>not</code> and <code>or</code> in a way that “unlocks” bindings on the right:</p>
 <pre><code class="language-par">dec NonEmptyOrError : [Result&lt;String, String&gt;] String
 def NonEmptyOrError = [result] if {
-  not result is .ok str or String.Equals(str, "") =&gt; "bad input",
+  not result is .ok str or str == "" =&gt; "bad input",
   else =&gt; str,
 }
 </code></pre>
 <p>Follow the control flow:</p>
 <ul>
 <li>First evaluate <code>not result is .ok str</code>.</li>
-<li>The right side <code>String.Equals(str, "")</code> runs only if the left side fails.</li>
+<li>The right side <code>str == ""</code> runs only if the left side fails.</li>
 <li>The left side fails exactly when <code>result is .ok str</code> succeeds.</li>
 <li>That is why <code>str</code> is available on the right side and in the <code>else</code> branch.</li>
 </ul>
@@ -4386,7 +4497,7 @@ def NonEmptyOrError = [result] if {
 <pre><code class="language-par">dec AddBothOrZero : [Result&lt;String, Int&gt;, Result&lt;String, Int&gt;] Int
 def AddBothOrZero = [left, right] if {
   not { left is .ok x and right is .ok y } =&gt; 0,
-  else =&gt; Int.Add(x, y),
+  else =&gt; x + y,
 }
 </code></pre>
 <p>Read it the same way: <code>x</code> and <code>y</code> are bound by the condition inside <code>{ ... }</code>,
@@ -4407,7 +4518,7 @@ log(str);
 </code></pre>
 <p>Bindings created inside such a boolean expression stay <strong>inside</strong> that
 expression:</p>
-<pre><code class="language-par">let ok = result is .ok msg and String.Equals(msg, "")
+<pre><code class="language-par">let ok = result is .ok msg and msg == ""
 // `msg` is not available here
 </code></pre>
 <p>Use <code>if</code> when you want bindings to escape into a branch.</p>
@@ -4448,7 +4559,7 @@ fallthrough, which is great for early exits.</p>
 otherwise continue”.</p>
 <pre><code class="language-par">dec DefaultIfEmpty : [String] String
 def DefaultIfEmpty = [text] chan out {
-  if String.Equals(text, "") =&gt; {
+  if text == "" =&gt; {
     out &lt;&gt; "&lt;empty&gt;"
   }
   out &lt;&gt; text
@@ -4459,7 +4570,7 @@ process immediately.</p>
 <p>A common style is to use a single-condition <code>if</code> as a guard:</p>
 <pre><code class="language-par">dec LogNonEmptyOk : [Result&lt;String, String&gt;] !
 def LogNonEmptyOk = [result] chan exit {
-  if not result is .ok str or String.Equals(str, "") =&gt; { exit! }
+  if not result is .ok str or str == "" =&gt; { exit! }
   Debug.Log(str)
   exit!
 }
@@ -4470,7 +4581,7 @@ use”.</p>
 <p>The multi-branch <code>if { ... }</code> form may omit <code>else</code> <strong>only if the conditions are
 exhaustive</strong>. This is checked by types.</p>
 <p>For example, this works because <code>cmp</code> has type <code>Ordering</code>:</p>
-<pre><code class="language-par">let cmp = Int.Compare(x, y) in
+<pre><code class="language-par">let cmp = Data.Compare((x) y) in
 if {
   cmp is .less! =&gt; "less",
   cmp is .equal! =&gt; "equal",
@@ -4507,9 +4618,9 @@ names.</p>
 
 import @core/Nat
 
-def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
-def Double = [n: Nat] Nat.Add(n, n)
-def Square = [n: Nat] Nat.Mul(n, n)
+def Add    = [m: Nat, n: Nat] m + n
+def Double = [n: Nat] n + n
+def Square = [n: Nat] n * n
 </code></pre>
 <p>Without pipes you call them inside one another:</p>
 <pre><code class="language-par">let result = Square(Add(3, Double(4)))  // = 196
@@ -4694,7 +4805,7 @@ dec PollSum : [List&lt;Int&gt;] Int
 def PollSum = [nums] poll(nums) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+    .item(x) xs =&gt; x + submit(xs),
   }
   else =&gt; 0,
 }
@@ -4718,7 +4829,7 @@ def PollSum = [nums] poll(nums) {
 <p>If the list is empty, we do an empty <code>submit()</code>. That returns the result of the rest of the next <code>poll</code>, which in this case will go to the <code>else</code> branch.</p>
 </li>
 <li>
-<p><code>.item(x) xs =&gt; Int.Add(x, submit(xs)),</code></p>
+<p><code>.item(x) xs =&gt; x + submit(xs),</code></p>
 <p>If the list is not empty, we <code>submit(xs)</code> the remainder of the list back into the pool, and return the sum of the first item with the result of the next <code>poll</code>.</p>
 </li>
 </ul>
@@ -4726,7 +4837,7 @@ def PollSum = [nums] poll(nums) {
 <pre><code class="language-par">dec Sum : [List&lt;Int&gt;] Int
 def Sum = [nums] nums.begin.case {
   .end! =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>Instead of <code>xs.loop</code>, we have <code>submit(xs)</code>, but there’s another important difference:</p>
@@ -4736,7 +4847,7 @@ def Sum = [nums] nums.begin.case {
 def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; Int.Add(x, submit(xs)),
+    .item(x) xs =&gt; x + submit(xs),
   }
   else =&gt; 0,
 }
@@ -5059,10 +5170,8 @@ def ServeIds = [clients] do {
 
     // A client is requesting an ID.
     .getId client =&gt; do {
-      // Increment the `id` variable using the pipe
-      // syntax sugar in the process syntax. It's
-      // the same as: `let id = Nat.Add(id, 1)`.
-      id-&gt;Nat.Add(1)
+      // Increment the `id` variable in-place.
+      id += 1
       // The `client`'s type is `[Nat] IdClient` here.
       // We send it a fresh ID using the send command.
       client(id)
@@ -5088,7 +5197,7 @@ def SimpleClient: [String] IdClient = [name]
   // an `IdClient` by operating on an `IdServer`.
   chan server: IdServer {
     server.getId[id]
-    Debug.Log(String.Concat(*(name, " got number ", id-&gt;Nat.ToString)))
+    Debug.Log(`${name} got number #{id}`)
     server.end!
   }
 
@@ -5166,7 +5275,7 @@ def IncrementingClient = [count] chan server {
   Nat.Repeat(count).begin.case {
     .step rest =&gt; {
       server.take[n]
-      n-&gt;Nat.Add(1)
+      n += 1
       server.put(n)
       rest.loop
     }
@@ -5183,7 +5292,7 @@ def Main: ! = do {
     server.spawn(IncrementingClient(1000))
     server.end!
   })
-  Debug.Log(final-&gt;Nat.ToString)
+  Debug.Log(`#{final}`)
 } in !
 </code></pre>
 <p>We spawn 3 clients, each of which will take, increment, and put the value back a 1000 times. In the end, the value 3000 will be printed.</p>

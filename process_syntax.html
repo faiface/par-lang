@@ -236,8 +236,8 @@ features to <strong>seamlessly switch between expressions and processes,</strong
   .next =&gt; (a) self,
 }
 
-dec Zip : [type a, b] [Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
-def Zip = [type a, b] [seq1, seq2] begin case {
+dec Zip : [type a, type b, Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
+def Zip = [type a, type b, seq1, seq2] begin case {
   .close =&gt;
     let ! = seq1.close in
     let ! = seq2.close in !,
@@ -252,8 +252,8 @@ def Zip = [type a, b] [seq1, seq2] begin case {
 closes the two underlying sequences as well — it must, they are linear. When asked for the next item, it polls both sequences
 for their respective items and yields a pair of that.</p>
 <p>It works, and is understandable. But, it can be even better, when we apply some process syntax!</p>
-<pre><code class="language-par">dec Zip : [type a, b] [Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
-def Zip = [type a, b] [seq1, seq2] begin case {
+<pre><code class="language-par">dec Zip : [type a, type b, Sequence&lt;a&gt;, Sequence&lt;b&gt;] Sequence&lt;(a, b)!&gt;
+def Zip = [type a, type b, seq1, seq2] begin case {
   .close =&gt; do {
     seq1.close
     seq2.close

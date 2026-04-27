@@ -306,13 +306,12 @@ import @dep2/bleh/Data as Data2
 <p>Once a module is imported, its exported items are accessed through the module name:</p>
 <pre><code class="language-par">import {
   @core/List
-  @core/Nat
   @core/String
   data/Post
 }
 
 dec RenderPosts : String
-def RenderPosts = Post.FetchAllFromDB(!)-&gt;List.Length-&gt;Nat.ToString
+def RenderPosts = `#{Post.FetchAllFromDB(!)-&gt;List.Length} posts`
 </code></pre>
 <p>In general, imported names are accessed as:</p>
 <pre><code class="language-par">Module.Name
@@ -455,7 +454,9 @@ definition.</li>
 <li><code>par run handlers/api/Posts</code> means <code>handlers/api/Posts.Main</code></li>
 <li><code>par run handlers/api/Posts.Program</code> means the <code>Program</code> definition in the <code>handlers/api/Posts</code> module</li>
 </ul>
-<p>The same path-based rules are used by other commands such as <code>par test</code>.</p>
+<p>Other commands such as <code>par test</code> and <code>par check</code> do not take definition targets like these; they
+work on whole packages. What they share with <code>par run</code> is the <code>--package</code> flag, which lets you point
+the command at a package path.</p>
 <p>That’s the package/module system. With that in place, we can now return to the language itself.</p>
 
                     </main>

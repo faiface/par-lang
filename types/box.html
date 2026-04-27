@@ -196,16 +196,16 @@ are linear — no matter how deeply nested.</p>
 <li><code>.close</code> to clean up.</li>
 </ul>
 <p>Here’s a <code>Map</code> function that uses it:</p>
-<pre><code class="language-par">dec Map : [type a, b] [List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
-def Map = [type a, b] [list, mapper] list.begin.case {
+<pre><code class="language-par">dec Map : [type a, type b, List&lt;a&gt;, Mapper&lt;a, b&gt;] List&lt;b&gt;
+def Map = [type a, type b, list, mapper] list.begin.case {
   .end! =&gt; let ! = mapper.close in .end!,
   .item(x) xs =&gt; let (x1) mapper = mapper.apply(x) in .item(x1) xs.loop,
 }
 </code></pre>
 <p>And using it:</p>
-<pre><code class="language-par">def NumberStrings = Map(type Int, String)(Int.Range(1, 100), begin case {
+<pre><code class="language-par">def NumberStrings = Map(type Int, type String, Int.Range(1, 100), begin case {
   .close =&gt; !,
-  .apply(n) =&gt; (Int.ToString(n)) loop,
+  .apply(n) =&gt; (`#{n}`) loop,
 })
 </code></pre>
 <p>This works — but it’s verbose.</p>
@@ -237,17 +237,14 @@ Copying, closing, and chaining all become manual work.</p>
 
 import @core/List
 
-dec Map : [type a, b] [List&lt;a&gt;, box [a] b] List&lt;b&gt;
-def Map = [type a, b] [list, f] list.begin.case {
+dec Map : &lt;a&gt;[List&lt;a&gt;] [type b, box [a] b] List&lt;b&gt;
+def Map = &lt;a&gt;[list] [type b, f] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; .item(f(x)) xs.loop,
 }
 </code></pre>
 <p>Let’s try it out:</p>
-<pre><code class="language-par">def NumberStrings = Map(type Int, String)(
-  Int.Range(1, 100),
-  box Int.ToString,
-)
+<pre><code class="language-par">def NumberStrings = Map(Int.Range(1, 100), type String, box [n] `#{n}`)
 </code></pre>
 <p>No wrappers, no manual protocols. The boxed function can be used freely, because the <code>box</code> type makes
 it non-linear. This is exactly what <code>box</code> was made for.</p>
@@ -264,6 +261,9 @@ def Ints: List&lt;Int&gt; = Boxes
 <p><strong>For non-linear types, <code>T</code> and <code>box T</code> are effectively interchangeable.</strong></p>
 <h2 id="another-example-filtering-a-list"><a class="header" href="#another-example-filtering-a-list">Another example: Filtering a list</a></h2>
 <p>Let’s write a function that filters a list using a boxed predicate.</p>
+<p>This example uses a <code>box</code> type constraint, written <code>a: box</code>. The next chapter covers constraints
+properly; for now, read it as saying: “the element type must be non-linear, because rejected
+elements are discarded.”</p>
 <pre><code class="language-par">module Main
 
 import {
@@ -272,9 +272,9 @@ import {
   @core/List
 }
 
-dec Filter : [type a] [List&lt;box a&gt;, box [a] Bool] List&lt;a&gt;
+dec Filter : &lt;a: box&gt;[List&lt;a&gt;] [box [a] Bool] List&lt;a&gt;
 
-def Filter = [type a] [list, predicate] list.begin.case {
+def Filter = &lt;a: box&gt;[list] [predicate] list.begin.case {
   .end! =&gt; .end!,
   .item(x) xs =&gt; predicate(x).case {
     .true! =&gt; .item(x) xs.loop,
@@ -284,25 +284,21 @@ def Filter = [type a] [list, predicate] list.begin.case {
 </code></pre>
 <p>Note the types:</p>
 <ul>
-<li>We accept a list of <code>box a</code>, because elements might be discarded.</li>
-<li>But we return a <code>List&lt;a&gt;</code> — not a <code>List&lt;box a&gt;</code>.</li>
+<li>We accept a <code>List&lt;a&gt;</code>.</li>
+<li>The constraint <code>a: box</code> says elements may be discarded.</li>
+<li>The result is still a <code>List&lt;a&gt;</code>.</li>
 </ul>
 <p>Let’s try it out:</p>
-<pre><code class="language-par">def Evens = Filter(type Int)(
-  Int.Range(1, 100),
-  box [n] Int.Equals(0, Int.Mod(n, 2)),
-)
+<pre><code class="language-par">def Evens = Filter(Int.Range(1, 100), box [n] {Int.Mod(n, 2) == 0})
 </code></pre>
 <p>Here:</p>
 <ul>
-<li><code>Int.Range(1, 100)</code> gives a <code>List&lt;Int&gt;</code>, which is valid because <code>Int</code> can be used as a <code>box Int</code>.</li>
-<li>The result is inferred as <code>List&lt;Int&gt;</code>, not <code>List&lt;box Int&gt;</code>.</li>
+<li><code>Int.Range(1, 100)</code> gives a <code>List&lt;Int&gt;</code>.</li>
+<li><code>Int</code> satisfies the <code>box</code> constraint, because integers are non-linear.</li>
+<li>The result is inferred as <code>List&lt;Int&gt;</code>.</li>
 </ul>
-<p>This avoids bloating the result type with redundant boxes — keeping things clear.</p>
-<p>And if we were filtering a list of boxed values already?</p>
-<pre><code class="language-par">Filter(type box T)(listOfBoxT, predicate)
-</code></pre>
-<p>That works too. Thanks to subtyping, everything lines up as you’d expect.</p>
+<p>This keeps the list type clear. The constraint says what the implementation needs, without
+wrapping every element in a redundant <code>box</code>.</p>
 
                     </main>
 
@@ -312,7 +308,7 @@ def Filter = [type a] [list, predicate] list.begin.case {
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../types/exists.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../types/constraints.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -326,7 +322,7 @@ def Filter = [type a] [list, predicate] list.begin.case {
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../types/exists.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../types/constraints.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

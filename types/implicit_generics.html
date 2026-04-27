@@ -169,14 +169,14 @@ import {
   @core/String
 }
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 </code></pre>
 <p>With <code>forall</code>, callers pass types explicitly when they use <code>Swap</code>:</p>
 <pre><code class="language-par">def Pair = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 </code></pre>
 <p>That is precise and fully explicit. But in many everyday cases, the types are
 obvious from the value you are passing. For those cases, Par also has <strong>implicit
@@ -213,6 +213,8 @@ whether it is implicit or explicit:</p>
 <li>If it is explicit (<code>[type a]</code>), it is always specified by the caller.</li>
 </ul>
 <p>This is intentional: it keeps call sites predictable.</p>
+<p>Implicit type parameters can also carry constraints, such as <code>&lt;a: box&gt;</code> or
+<code>&lt;a: data&gt;</code>. The constraints themselves are covered in <a href="./constraints.html">Type Constraints</a>.</p>
 <h2 id="construction"><a class="header" href="#construction">Construction</a></h2>
 <p>Start with the <code>Swap</code> example, but make it implicit:</p>
 <pre><code class="language-par">dec Swap : &lt;a, b&gt;[(a, b)!] (b, a)!
@@ -254,15 +256,15 @@ fully typed expressions), but it becomes harder when the argument’s type canno
 be inferred without annotations.</p>
 <p>A classic example is an anonymous function. The <code>box</code> here is not the point —
 it just happens that <code>Map</code> takes a boxed function.</p>
-<pre><code class="language-par">Map(numbers, box Int.ToString)        // fine: Int.ToString has a known type
-Map(numbers, box [x] Int.ToString(x)) // may fail without more info
+<pre><code class="language-par">Map(numbers, box [x: Int] `#{x}`) // fine: `x` has a known type
+Map(numbers, box [x] `#{x}`)      // may fail without more info
 </code></pre>
 <p>(<code>Map</code> is discussed in <a href="./box.html">Box</a>.)</p>
 <p>In the second call, the type of <code>[x] ...</code> cannot be inferred unless the type of
 <code>x</code> is specified. If the function’s type parameters are being inferred from the
 mapper argument itself, you end up in a chicken-and-egg situation.</p>
 <p>The usual fix is to add an annotation:</p>
-<pre><code class="language-par">Map(numbers, box [x: Int] Int.ToString(x))
+<pre><code class="language-par">Map(numbers, box [x: Int] `#{x}`)
 </code></pre>
 <p>This is why implicit generics can be <em>made difficult</em> by higher-order arguments
 like lambdas: if the type of the lambda argument is not already specified, the
@@ -271,15 +273,15 @@ lambda’s type won’t be inferred.</p>
 <pre><code class="language-par">dec Map : &lt;a&gt;[List&lt;a&gt;] &lt;b&gt;[box [a] b] List&lt;b&gt;
 </code></pre>
 <p>then a call like this may fail:</p>
-<pre><code class="language-par">Map(numbers, box [x] Int.ToString(x))
+<pre><code class="language-par">Map(numbers, box [x] `#{x}`)
 </code></pre>
 <p>because the type of <code>x</code> is not specified, so the type of the function cannot be
 inferred, so <code>b</code> cannot be inferred either. You end up needing to annotate <code>x</code>:</p>
-<pre><code class="language-par">Map(numbers, box [x: Int] Int.ToString(x))
+<pre><code class="language-par">Map(numbers, box [x: Int] `#{x}`)
 </code></pre>
 <p>Many “map-like” APIs therefore prefer to infer the input type and keep the
 output type explicit, e.g.:</p>
-<pre><code class="language-par">dec Map : &lt;a&gt;[List&lt;a&gt;] [type b] [box [a] b] List&lt;b&gt;
+<pre><code class="language-par">dec Map : &lt;a&gt;[List&lt;a&gt;] [type b, box [a] b] List&lt;b&gt;
 </code></pre>
 <p>With this type, the mapper is checked against the expected type <code>box [a] b</code>, so
 <code>x</code> can be inferred as <code>a</code> and usually needs no annotation. Picking the result
@@ -296,7 +298,7 @@ small “vtable” for dropping it (a boxed <a href="./choice.html">choice</a>):
 }
 </code></pre>
 <p>This is the implicit counterpart of the existential type:</p>
-<pre><code class="language-par">type DropMe = (type a) (a) box choice {
+<pre><code class="language-par">type DropMe = (type a, a) box choice {
   .drop(a) =&gt; !,
 }
 </code></pre>

@@ -236,7 +236,7 @@ In those cases, we can add it using a colon after the name:</p>
 <p>For example, here’s a simple function adding up all the numbers in a list:</p>
 <pre><code class="language-par">def SumList: [List&lt;Int&gt;] Int = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>The code uses many concepts that will be covered later, so only focus on the parts you know: <code>def</code>,
@@ -247,7 +247,7 @@ starts with the keyword <code>dec</code>, followed by the name we want to annota
 
 def SumList = [list] list.begin.case {
   .end!       =&gt; 0,
-  .item(x) xs =&gt; Int.Add(x, xs.loop),
+  .item(x) xs =&gt; x + xs.loop,
 }
 </code></pre>
 <p>That’s much better!</p>

@@ -171,9 +171,9 @@ names.</p>
 
 import @core/Nat
 
-def Add    = [m: Nat, n: Nat] Nat.Add(m, n)
-def Double = [n: Nat] Nat.Add(n, n)
-def Square = [n: Nat] Nat.Mul(n, n)
+def Add    = [m: Nat, n: Nat] m + n
+def Double = [n: Nat] n + n
+def Square = [n: Nat] n * n
 </code></pre>
 <p>Without pipes you call them inside one another:</p>
 <pre><code class="language-par">let result = Square(Add(3, Double(4)))  // = 196

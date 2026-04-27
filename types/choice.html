@@ -228,10 +228,9 @@ def Main = Console.Open
 </code></pre>
 <p>Each branch inside the curly braces follows the same syntax as the branches in the corresponding
 type, except with types replaced by their values.</p>
-<pre><code class="language-par">def IntToString: CancellableFunction&lt;Int, String&gt; = case {
+<pre><code class="language-par">def FormatInt: CancellableFunction&lt;Int, String&gt; = case {
   .cancel =&gt; !,
-  //.apply =&gt; [s] Int.ToString(s),
-  .apply(s) =&gt; Int.ToString(s),
+  .apply(n) =&gt; `#{n}`,
 }
 </code></pre>
 <p>Unlike patterns in <code>.case</code> branches of <a href="./either.html"><em>either</em> types</a>, branches in <code>case</code>
@@ -242,7 +241,7 @@ still bind function arguments on the left side of the arrow.</p>
 We do it by applying <code>.branch</code> after a value of a choice type.</p>
 <pre><code class="language-par">def Number = Example.number  // = 42
 </code></pre>
-<p>Above, we defined the type <code>CancellableFunction&lt;a, b&gt;</code>, and a value of that type: <code>IntToString</code>.
+<p>Above, we defined the type <code>CancellableFunction&lt;a, b&gt;</code>, and a value of that type: <code>FormatInt</code>.
 <a href="./function.html">Bare functions</a> are linear, so we must call them, but the <em>cancellable function</em>
 gives us a choice of either calling it, or not.</p>
 <p>We can use this to define a <em>map</em> function for optional values:</p>
@@ -252,19 +251,17 @@ gives us a choice of either calling it, or not.</p>
 }
 
 dec MapOption :
-  [type a, b]
-  [Option&lt;a&gt;]
-  [CancellableFunction&lt;a, b&gt;]
+  [type a, type b, Option&lt;a&gt;, CancellableFunction&lt;a, b&gt;]
   Option&lt;b&gt;
 
-def MapOption = [type a, b] [option, func] option.case {
+def MapOption = [type a, type b, option, func] option.case {
   .none! =&gt; let ! = func.cancel in .none!,
 //                  \_________/
   .some x =&gt; let y = func.apply(x) in .some y,
 //                   \________/
 }
 
-def Result = MapOption(type Int, String)(.some 42, IntToString)  // = .some "42"
+def Result = MapOption(type Int, type String, .some 42, FormatInt)  // = .some "42"
 </code></pre>
 <p>This example also shows that in Par, you don’t have to be shy about writing your types on
 multiple lines. The syntax is designed for that.</p>
