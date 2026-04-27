@@ -212,9 +212,9 @@ fn get_args_polarity<S: Clone + Eq + std::hash::Hash>(
                     positive_vars.insert(name.clone());
                 }
             }
-            Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
+            Type::Exists(_, param, body) | Type::Forall(_, param, body) => {
                 let mut names = names.clone();
-                names.shift_remove(name);
+                names.shift_remove(&param.name);
                 inner(
                     body,
                     is_positive,
@@ -245,20 +245,23 @@ fn get_args_polarity<S: Clone + Eq + std::hash::Hash>(
         true,
         &mut positive_vars,
         &mut negative_vars,
-        &vars.iter().cloned().collect(),
+        &vars.iter().map(|var| var.name.clone()).collect(),
         defs,
     )?;
 
     Ok(vars
         .iter()
-        .map(
-            |var| match (positive_vars.contains(var), negative_vars.contains(var)) {
+        .map(|var| {
+            match (
+                positive_vars.contains(&var.name),
+                negative_vars.contains(&var.name),
+            ) {
                 (true, false) => Polarity::Positive,
                 (false, true) => Polarity::Negative,
                 (true, true) => Polarity::Both,
                 (false, false) => Polarity::Neither,
-            },
-        )
+            }
+        })
         .collect())
 }
 

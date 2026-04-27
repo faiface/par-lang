@@ -44,11 +44,7 @@ def Main: ! = chan exit {
         .end try! => {}
         .item((number) content) => {
           console.print("")
-          console.print(String.Builder
-            .add(path.absolute->String.FromBytes)
-            .add(":")
-            .add(number->Nat.ToString)
-            .build)
+          console.print(`${path.absolute->String.FromBytes}:#{number}`)
           console.print(content)
           lines.loop@file
         }
@@ -146,7 +142,7 @@ def Enumerate1 = <e, a>[iter] do {
   .next => iter.next.case {
     .end result => .end result,
     .item(value) iter => .item((index) value) do {
-      index->Nat.Add(1)
+      index += 1
     } in iter.loop
   }
 }

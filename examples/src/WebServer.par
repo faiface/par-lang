@@ -27,7 +27,7 @@ def Main: ! = chan exit {
   console.prompt("Directory to serve: ")[try@prompt root]
 
   let url = "127.0.0.1:8080"
-  console.print(String.Concat(*("Listening on ", url, "...")))
+  console.print(`Listening on ${url}...`)
 
   Http.Listen(url).begin.case {
     .shutdown try! => {
@@ -39,7 +39,7 @@ def Main: ! = chan exit {
     .incoming(request, respond) next => {
       let (method, url, headers) body = request
       body.close
-      ServePath(Os.Path(root), String.Concat(*(root, url.path)), respond)
+      ServePath(Os.Path(root), `${root}${url.path}`, respond)
       next.loop
     }
   }
@@ -67,7 +67,7 @@ def ServeFile = [path, respond] chan finish {
 
 dec ServeDir : [Os.Path, List<Os.Path>, [Http.Response] Result<Http.Error, !>] !
 def ServeDir = [root, paths, respond] chan finish {
-  let content = Bytes.PipeReader(type Http.Error)([w] catch ! => .ok! in do {
+  let content = Bytes.PipeReader(type Http.Error, [w] catch ! => .ok! in do {
     w.write("<ul>").try
 
     paths.begin.case {

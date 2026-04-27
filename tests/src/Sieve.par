@@ -11,10 +11,9 @@ type CoList<a> = iterative choice {
 	.item => (a) self,
 }
 
-dec FinFilter : [type a] [CoList<box a>, box [box a] Bool, Nat] CoList<box a>
+dec FinFilter : [type a, CoList<box a>, box [box a] Bool, Nat] CoList<box a>
 def FinFilter =
-	[type a]
-	[xs, f, n]
+	[type a, xs, f, n]
 	begin case {
 		.end => xs.end,
 		.item =>
@@ -30,10 +29,9 @@ def FinFilter =
 			},
 	}
 
-dec Take : [type a] [CoList<a>, Nat] List<a>
+dec Take : [type a, CoList<a>, Nat] List<a>
 def Take =
-	[type a]
-	[xs, n]
+	[type a, xs, n]
 	Nat.RepeatLazy(n).begin.case {
 		.end! => .end xs.end,
 		.step i =>
@@ -45,15 +43,11 @@ def Take =
 dec NatNotDivides : [Nat, Nat] Bool
 def NatNotDivides =
 	[x, y]
-	Nat.Equals(Nat.Mod(x, y), 0).case {
-		.true! => .false!,
-		.false! => .true!,
-	}
+	Nat.Mod(x, y) != 0
 
-dec ListEquals : [type a] [List<box a>, List<box a>, box [box a, box a] Bool] Bool
+dec ListEquals : [type a, List<box a>, List<box a>, box [box a, box a] Bool] Bool
 def ListEquals =
-	[type a]
-	[xs, ys, f]
+	[type a, xs, ys, f]
 	xs.begin.case {
 		.end! => ys.case {
 			.end! => .true!,
@@ -75,9 +69,9 @@ def Sieve =
 		begin case {
 			.end => !,
 			.item =>
-				(n)
-				let n = Nat.Add(n, 1) in
-				loop,
+				let current = n in
+				let n = n + 1 in
+				(current) loop,
 		}
 	in
 	let stride = 1 in
@@ -86,12 +80,8 @@ def Sieve =
 		.item =>
 			do {
 				list.item[x]
-				let stride = Nat.Mul(stride, x)
-				let list = FinFilter(type Nat)(
-					list,
-					box [y] NatNotDivides(y, x),
-					stride
-				)
+				let stride = stride * x
+				let list = FinFilter(type Nat, list, box [y] NatNotDivides(y, x), stride)
 			} in
 			(x) loop,
 	}
@@ -102,11 +92,7 @@ def TestSieve : [Test] ! =
 		let primes : List<Nat> = *(2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97)
 		test.assert(
 			"Sieve finds primes",
-			ListEquals(type Nat)(
-				Take(type Nat)(Sieve, 25),
-				primes,
-				box Nat.Equals
-			)
+			ListEquals(type Nat, Take(type Nat, Sieve, 25), primes, box [x, y] x == y)
 		)
 	} in !
 
@@ -119,12 +105,12 @@ def Main: ! = do {
 		.end! => {}
 		.step i => {
 			sieve.item[prime]
-			sum->Nat.Add(prime)
+			sum += prime
 			i.next.loop
 		}
 	}
 	sieve.end
 	console.print("Finished!")
-	console.print(sum->Nat.ToString)
+	console.print(`#{sum}`)
 	console.close
 } in !

@@ -1,10 +1,14 @@
 use super::{
     language::{
-        Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Condition,
-        Construct, ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
-        Unresolved,
+        Apply, ApplyBranch, ApplyBranches, ArithmeticOperator, Command, CommandBranch,
+        CommandBranches, ComparisonOperator, ComparisonStep, Condition, Construct, ConstructBranch,
+        ConstructBranches, Expression, GlobalName, Pattern, Process, TemplatePart, TypeConstraint,
+        TypeParameter, Unresolved,
     },
-    lexer::{Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments},
+    lexer::{
+        Comment, CommentKind, Input, Token, TokenKind, lex, lex_with_comments,
+        unescape_template_text,
+    },
 };
 use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::{
@@ -21,7 +25,10 @@ use bytes::Bytes;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
-use par_runtime::primitive::{ParString, Primitive};
+use par_runtime::{
+    primitive::{ParString, Primitive},
+    readback::Number,
+};
 use std::collections::BTreeMap;
 use winnow::token::literal;
 use winnow::{
@@ -103,13 +110,6 @@ where
         .map(|t: &[Token]| &t[0])
 }
 
-/// Like `t` for but for `n` tokens.
-macro_rules! tn {
-    ($s:literal: $($t:expr_2021),+) => {
-        ($($t),+).context(StrContext::Expected(StrContextValue::Description($s)))
-    };
-}
-
 fn list0<'i, P, O>(item: P) -> impl Parser<Input<'i>, Vec<O>, Error> + use<'i, P, O>
 where
     P: Parser<Input<'i>, O, Error>,
@@ -149,8 +149,9 @@ fn lowercase_identifier(input: &mut Input) -> Result<(Span, String)> {
     alt((
         literal(TokenKind::LowercaseIdentifier),
         literal(TokenKind::And),
-        literal(TokenKind::Or),
+        literal(TokenKind::Neg),
         literal(TokenKind::Not),
+        literal(TokenKind::Or),
     ))
     .context(StrContext::Expected(StrContextValue::CharLiteral('_')))
     .context(StrContext::Expected(StrContextValue::Description(
@@ -190,14 +191,14 @@ fn global_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
                 }
                 None => (first_span, None, first),
             };
-            GlobalName::new(span, Unresolved { qualifier: module }, primary)
+            GlobalName::new(span, Unresolved::Path { qualifier: module }, primary)
         })
         .parse_next(input)
 }
 
 fn global_binding_name(input: &mut Input) -> Result<GlobalName<Unresolved>> {
     uppercase_identifier
-        .map(|(span, primary)| GlobalName::new(span, Unresolved { qualifier: None }, primary))
+        .map(|(span, primary)| GlobalName::new(span, Unresolved::Path { qualifier: None }, primary))
         .parse_next(input)
 }
 
@@ -958,10 +959,8 @@ fn typ(input: &mut Input) -> Result<Type<Unresolved>> {
         typ_recursive,
         typ_iterative,
         typ_self,
-        typ_send_type,
-        typ_send, // try after send_type so matching `(` is unambiguous
-        typ_recv_type,
-        typ_receive, // try after recv_type so matching `[` is unambiguous
+        typ_send,
+        typ_receive,
         typ_generic,
     ))
     .context(StrContext::Label("type"))
@@ -1010,13 +1009,16 @@ fn typ_chan(input: &mut Input) -> Result<Type<Unresolved>> {
 fn typ_send(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(typ), t(TokenKind::RParen), typ),
+        (list1(type_prefix_item), t(TokenKind::RParen), typ),
     )
-    .map(|(open, (args, close, then))| {
+    .map(|(open, (items, close, then))| {
         let span = open.span.join(close.span());
-        args.into_iter().rfold(then, |then, arg| {
-            Type::Pair(span.clone(), Box::new(arg), Box::new(then), vec![])
-        })
+        fold_type_prefix(
+            items,
+            then,
+            |name, then| Type::Exists(span.clone(), name, Box::new(then)),
+            |arg, then| Type::Pair(span.clone(), Box::new(arg), Box::new(then), vec![]),
+        )
     })
     .parse_next(input)
 }
@@ -1024,13 +1026,16 @@ fn typ_send(input: &mut Input) -> Result<Type<Unresolved>> {
 fn typ_receive(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::LBrack),
-        (list1(typ), t(TokenKind::RBrack), typ),
+        (list1(type_prefix_item), t(TokenKind::RBrack), typ),
     )
-    .map(|(open, (args, close, then))| {
+    .map(|(open, (items, close, then))| {
         let span = open.span.join(close.span());
-        args.into_iter().rfold(then, |then, arg| {
-            Type::Function(span.clone(), Box::new(arg), Box::new(then), vec![])
-        })
+        fold_type_prefix(
+            items,
+            then,
+            |name, then| Type::Forall(span.clone(), name, Box::new(then)),
+            |arg, then| Type::Function(span.clone(), Box::new(arg), Box::new(then), vec![]),
+        )
     })
     .parse_next(input)
 }
@@ -1038,6 +1043,130 @@ fn typ_receive(input: &mut Input) -> Result<Type<Unresolved>> {
 enum SendOrReceive {
     Send,
     Receive,
+}
+
+enum TypePrefixItem {
+    Explicit(TypeParameter),
+    Value(Type<Unresolved>),
+}
+
+enum PatternPrefixItem {
+    Explicit(TypeParameter),
+    Value(Pattern<Unresolved>),
+}
+
+enum SendPrefixItem {
+    Explicit(Type<Unresolved>),
+    Value(Expression<Unresolved>),
+}
+
+fn fold_type_prefix<T>(
+    items: Vec<TypePrefixItem>,
+    rest: T,
+    mut explicit: impl FnMut(TypeParameter, T) -> T,
+    mut value: impl FnMut(Type<Unresolved>, T) -> T,
+) -> T {
+    items.into_iter().rfold(rest, |rest, item| match item {
+        TypePrefixItem::Explicit(name) => explicit(name, rest),
+        TypePrefixItem::Value(typ) => value(typ, rest),
+    })
+}
+
+fn fold_pattern_prefix<T>(
+    items: Vec<PatternPrefixItem>,
+    rest: T,
+    mut explicit: impl FnMut(TypeParameter, T) -> T,
+    mut value: impl FnMut(Pattern<Unresolved>, T) -> T,
+) -> T {
+    items.into_iter().rfold(rest, |rest, item| match item {
+        PatternPrefixItem::Explicit(name) => explicit(name, rest),
+        PatternPrefixItem::Value(pattern) => value(pattern, rest),
+    })
+}
+
+fn fold_send_prefix<T>(
+    items: Vec<SendPrefixItem>,
+    rest: T,
+    mut explicit: impl FnMut(Type<Unresolved>, T) -> T,
+    mut value: impl FnMut(Expression<Unresolved>, T) -> T,
+) -> T {
+    items.into_iter().rfold(rest, |rest, item| match item {
+        SendPrefixItem::Explicit(typ) => explicit(typ, rest),
+        SendPrefixItem::Value(expression) => value(expression, rest),
+    })
+}
+
+fn type_constraint(input: &mut Input) -> Result<TypeConstraint> {
+    let checkpoint = input.checkpoint();
+    if t::<Error>(TokenKind::Box).parse_next(input).is_ok() {
+        return Ok(TypeConstraint::Box);
+    }
+    input.reset(&checkpoint);
+
+    let name = local_name
+        .context(StrContext::Label("type constraint"))
+        .parse_next(input)?;
+    match name.string.as_str() {
+        "data" => Ok(TypeConstraint::Data),
+        "number" => Ok(TypeConstraint::Number),
+        "signed" => Ok(TypeConstraint::Signed),
+        _ => Err(ErrMode::Backtrack(ParseContextError::from_input(input))),
+    }
+}
+
+fn type_parameter(input: &mut Input) -> Result<TypeParameter> {
+    (
+        local_name,
+        opt(commit_after(t(TokenKind::Colon), type_constraint)),
+    )
+        .map(|(name, constraint)| TypeParameter {
+            name,
+            constraint: constraint.map(|(_, c)| c).unwrap_or(TypeConstraint::Any),
+        })
+        .parse_next(input)
+}
+
+fn unconstrained_type_parameter(input: &mut Input) -> Result<TypeParameter> {
+    local_name.map(TypeParameter::any).parse_next(input)
+}
+
+fn explicit_type_parameter(input: &mut Input) -> Result<TypeParameter> {
+    commit_after(t(TokenKind::Type), type_parameter)
+        .map(|(_, parameter)| parameter)
+        .parse_next(input)
+}
+
+fn type_prefix_item(input: &mut Input) -> Result<TypePrefixItem> {
+    alt((
+        explicit_type_parameter.map(TypePrefixItem::Explicit),
+        typ.map(TypePrefixItem::Value),
+    ))
+    .parse_next(input)
+}
+
+fn pattern_prefix_item(input: &mut Input) -> Result<PatternPrefixItem> {
+    alt((
+        explicit_type_parameter.map(PatternPrefixItem::Explicit),
+        pattern.map(PatternPrefixItem::Value),
+    ))
+    .parse_next(input)
+}
+
+fn send_prefix_item(close: TokenKind, input: &mut Input) -> Result<SendPrefixItem> {
+    let checkpoint = input.checkpoint();
+    if t::<Error>(TokenKind::Type).parse_next(input).is_ok() {
+        if let Ok(typ) = typ.parse_next(input) {
+            if peek(alt((t::<Error>(TokenKind::Comma), t::<Error>(close))))
+                .parse_next(input)
+                .is_ok()
+            {
+                return Ok(SendPrefixItem::Explicit(typ));
+            }
+        }
+        input.reset(&checkpoint);
+    }
+
+    expression.map(SendPrefixItem::Value).parse_next(input)
 }
 
 fn typ_simple_send(
@@ -1066,7 +1195,7 @@ fn typ_generic(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             alt((typ_simple_send, typ_simple_receive)),
         ),
@@ -1159,46 +1288,10 @@ fn typ_self(input: &mut Input) -> Result<Type<Unresolved>> {
     .parse_next(input)
 }
 
-fn typ_send_type<'s>(input: &mut Input) -> Result<Type<Unresolved>> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (
-            list1(local_name).context(StrContext::Label("list of type names to send")),
-            t(TokenKind::RParen),
-            typ,
-        ),
-    )
-    .map(|((open, _), (names, close, then))| {
-        let span = open.span.join(close.span());
-        names.into_iter().rfold(then, |then, name| {
-            Type::Exists(span.clone(), name, Box::new(then))
-        })
-    })
-    .parse_next(input)
-}
-
-fn typ_recv_type(input: &mut Input) -> Result<Type<Unresolved>> {
-    commit_after(
-        tn!("[type": TokenKind::LBrack, TokenKind::Type),
-        (
-            list1(local_name).context(StrContext::Label("list of type names to receive")),
-            t(TokenKind::RBrack),
-            typ,
-        ),
-    )
-    .map(|((open, _), (names, close, then))| {
-        let span = open.span.join(close.span());
-        names.into_iter().rfold(then, |then, name| {
-            Type::Forall(span.clone(), name, Box::new(then))
-        })
-    })
-    .parse_next(input)
-}
-
-fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
+fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<TypeParameter>)>> {
     opt(commit_after(
         t(TokenKind::Lt),
-        (list1(local_name), t(TokenKind::Gt)),
+        (list1(unconstrained_type_parameter), t(TokenKind::Gt)),
     ))
     .map(|opt| opt.map(|(open, (names, close))| (open.span.join(close.span()), names)))
     .parse_next(input)
@@ -1214,8 +1307,7 @@ fn type_args<'s>(input: &mut Input) -> Result<Option<(Span, Vec<Type<Unresolved>
 }
 
 fn typ_branch(input: &mut Input) -> Result<Type<Unresolved>> {
-    // try recv_type first so `(` is unambiguous on `typ_branch_received`
-    alt((typ_branch_then, typ_branch_recv_type, typ_branch_receive)).parse_next(input)
+    alt((typ_branch_then, typ_branch_receive)).parse_next(input)
 }
 
 fn typ_branch_then(input: &mut Input) -> Result<Type<Unresolved>> {
@@ -1227,29 +1319,18 @@ fn typ_branch_then(input: &mut Input) -> Result<Type<Unresolved>> {
 fn typ_branch_receive(input: &mut Input) -> Result<Type<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(typ), t(TokenKind::RParen), typ_branch),
+        (list1(type_prefix_item), t(TokenKind::RParen), typ_branch),
     )
-    .map(|(open, (args, close, then))| {
+    .map(|(open, (items, close, then))| {
         let span = open.span.join(close.span());
-        args.into_iter().rfold(then, |then, arg| {
-            Type::Function(span.clone(), Box::new(arg), Box::new(then), vec![])
-        })
+        fold_type_prefix(
+            items,
+            then,
+            |name, then| Type::Forall(span.clone(), name, Box::new(then)),
+            |arg, then| Type::Function(span.clone(), Box::new(arg), Box::new(then), vec![]),
+        )
     })
     .parse_next(input)
-}
-
-fn typ_branch_recv_type(input: &mut Input) -> Result<Type<Unresolved>> {
-    (
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        cut_err((list1(local_name), t(TokenKind::RParen), typ_branch)),
-    )
-        .map(|((open, _), (names, close, then))| {
-            let span = open.span.join(close.span());
-            names.into_iter().rfold(then, |then, name| {
-                Type::Forall(span.clone(), name, Box::new(then))
-            })
-        })
-        .parse_next(input)
 }
 
 fn annotation(input: &mut Input) -> Result<Option<Type<Unresolved>>> {
@@ -1262,7 +1343,6 @@ fn annotation(input: &mut Input) -> Result<Option<Type<Unresolved>>> {
 fn pattern(input: &mut Input) -> Result<Pattern<Unresolved>> {
     alt((
         pattern_name,
-        pattern_receive_type,
         pattern_receive,
         pattern_generic_receive,
         pattern_continue,
@@ -1290,13 +1370,16 @@ fn pattern_name(input: &mut Input) -> Result<Pattern<Unresolved>> {
 fn pattern_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(pattern), t(TokenKind::RParen), pattern),
+        (list1(pattern_prefix_item), t(TokenKind::RParen), pattern),
     )
-    .map(|(open, (patterns, _close, rest))| {
+    .map(|(open, (items, _close, rest))| {
         let span = open.span.join(rest.span());
-        patterns.into_iter().rfold(rest, |rest, arg| {
-            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vec![])
-        })
+        fold_pattern_prefix(
+            items,
+            rest,
+            |name, rest| Pattern::ReceiveType(span.clone(), name, Box::new(rest)),
+            |arg, rest| Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vec![]),
+        )
     })
     .parse_next(input)
 }
@@ -1305,7 +1388,7 @@ fn pattern_generic_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LParen),
             pattern,
@@ -1345,175 +1428,376 @@ fn pattern_default(input: &mut Input) -> Result<Pattern<Unresolved>> {
     .parse_next(input)
 }
 
-fn pattern_receive_type(input: &mut Input) -> Result<Pattern<Unresolved>> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RParen), pattern),
-    )
-    .map(|((open, _), (names, _close, rest))| {
-        let span = open.span.join(rest.span());
-        names.into_iter().rfold(rest, |rest, name| {
-            Pattern::ReceiveType(span.clone(), name, Box::new(rest))
-        })
-    })
-    .parse_next(input)
-}
-
 fn condition(input: &mut Input) -> Result<Condition<Unresolved>> {
-    condition_or(input)
-}
-
-fn condition_or(input: &mut Input) -> Result<Condition<Unresolved>> {
-    (
-        condition_and,
-        repeat(0.., (t(TokenKind::Or), condition_and)),
-    )
-        .map(
-            |(first, rest): (Condition<Unresolved>, Vec<(_, Condition<Unresolved>)>)| {
-                rest.into_iter().fold(first, |left, (_or_tok, right)| {
-                    let span = left.span().join(right.span());
-                    Condition::Or(span, Box::new(left), Box::new(right))
-                })
-            },
-        )
-        .parse_next(input)
-}
-
-fn condition_and(input: &mut Input) -> Result<Condition<Unresolved>> {
-    (
-        condition_not,
-        repeat(0.., (t(TokenKind::And), condition_not)),
-    )
-        .map(
-            |(first, rest): (Condition<Unresolved>, Vec<(_, Condition<Unresolved>)>)| {
-                rest.into_iter().fold(first, |left, (_and_tok, right)| {
-                    let span = left.span().join(right.span());
-                    Condition::And(span, Box::new(left), Box::new(right))
-                })
-            },
-        )
-        .parse_next(input)
-}
-
-fn condition_not(input: &mut Input) -> Result<Condition<Unresolved>> {
-    alt((
-        (t(TokenKind::Not), cut_err(condition_not))
-            .map(|(not_tok, cond)| Condition::Not(not_tok.span.join(cond.span()), Box::new(cond))),
-        condition_primary,
-    ))
-    .parse_next(input)
-}
-
-fn condition_primary(input: &mut Input) -> Result<Condition<Unresolved>> {
-    alt((condition_grouped, condition_is, condition_bool)).parse_next(input)
-}
-
-fn condition_grouped(input: &mut Input) -> Result<Condition<Unresolved>> {
-    commit_after(t(TokenKind::LCurly), (expression, t(TokenKind::RCurly)))
-        .map(|(_open, (expr, _close))| match expr {
-            Expression::Condition(_, cond) => *cond,
-            other => Condition::Bool(other.span(), Box::new(other)),
-        })
-        .parse_next(input)
-}
-
-fn condition_bool(input: &mut Input) -> Result<Condition<Unresolved>> {
-    data_expression
-        .map(|expr| Condition::Bool(expr.span(), Box::new(expr)))
-        .parse_next(input)
-}
-
-fn condition_is(input: &mut Input) -> Result<Condition<Unresolved>> {
-    (
-        data_expression,
-        t(TokenKind::Is),
-        t(TokenKind::Dot),
-        local_name,
-        condition_payload_pattern,
-    )
-        .map(|(value, _is_tok, _, variant, pattern)| {
-            let end_span = pattern.span();
-            Condition::Is {
-                span: value.span().join(end_span),
-                value,
-                variant,
-                pattern,
-            }
-        })
-        .parse_next(input)
+    infix_or(input).map(expression_to_condition)
 }
 
 fn condition_payload_pattern(input: &mut Input) -> Result<Pattern<Unresolved>> {
-    alt((
-        pattern_payload_receive,
-        pattern_payload_recv_type,
-        pattern_continue,
-        pattern_name,
-    ))
-    .parse_next(input)
+    alt((pattern_payload_receive, pattern_continue, pattern_name)).parse_next(input)
 }
 
 fn pattern_payload_receive(input: &mut Input) -> Result<Pattern<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(pattern), t(TokenKind::RParen), pattern),
+        (list1(pattern_prefix_item), t(TokenKind::RParen), pattern),
     )
-    .map(|(open, (patterns, _close, rest))| {
+    .map(|(open, (items, _close, rest))| {
         let span = open.span.join(rest.span());
-        patterns.into_iter().rfold(rest, |rest, arg| {
-            Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vec![])
-        })
+        fold_pattern_prefix(
+            items,
+            rest,
+            |name, rest| Pattern::ReceiveType(span.clone(), name, Box::new(rest)),
+            |arg, rest| Pattern::Receive(span.clone(), Box::new(arg), Box::new(rest), vec![]),
+        )
     })
     .parse_next(input)
 }
 
-fn pattern_payload_recv_type(input: &mut Input) -> Result<Pattern<Unresolved>> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RParen), pattern),
-    )
-    .map(|((open, _), (names, _close, rest))| {
-        let span = open.span.join(rest.span());
-        names.into_iter().rfold(rest, |rest, name| {
-            Pattern::ReceiveType(span.clone(), name, Box::new(rest))
-        })
-    })
+fn expression_to_condition(expr: Expression<Unresolved>) -> Condition<Unresolved> {
+    match expr {
+        Expression::Condition(_, cond) => *cond,
+        other => Condition::Bool(other.span(), Box::new(other)),
+    }
+}
+
+fn wrap_condition_expression(condition: Condition<Unresolved>) -> Expression<Unresolved> {
+    let span = condition.span();
+    Expression::Condition(span, Box::new(condition))
+}
+
+fn fold_condition_expression(
+    left: Expression<Unresolved>,
+    right: Expression<Unresolved>,
+    build: impl FnOnce(Span, Condition<Unresolved>, Condition<Unresolved>) -> Condition<Unresolved>,
+) -> Expression<Unresolved> {
+    let left_span = left.span();
+    let right_span = right.span();
+    wrap_condition_expression(build(
+        left_span.join(right_span.clone()),
+        expression_to_condition(left),
+        expression_to_condition(right),
+    ))
+}
+
+fn comparison_operator(input: &mut Input) -> Result<(Span, ComparisonOperator)> {
+    alt((
+        t(TokenKind::LtEq).map(|token| (token.span(), ComparisonOperator::LessOrEqual)),
+        t(TokenKind::GtEq).map(|token| (token.span(), ComparisonOperator::GreaterOrEqual)),
+        t(TokenKind::EqEq).map(|token| (token.span(), ComparisonOperator::Equal)),
+        t(TokenKind::BangEq).map(|token| (token.span(), ComparisonOperator::NotEqual)),
+        t(TokenKind::Lt).map(|token| (token.span(), ComparisonOperator::Less)),
+        t(TokenKind::Gt).map(|token| (token.span(), ComparisonOperator::Greater)),
+    ))
     .parse_next(input)
 }
 
-fn looks_like_condition(input: &Input) -> bool {
+fn additive_operator(input: &mut Input) -> Result<(Span, ArithmeticOperator)> {
+    alt((
+        t(TokenKind::Plus).map(|token| (token.span(), ArithmeticOperator::Add)),
+        t(TokenKind::Minus).map(|token| (token.span(), ArithmeticOperator::Sub)),
+    ))
+    .parse_next(input)
+}
+
+fn multiplicative_operator(input: &mut Input) -> Result<(Span, ArithmeticOperator)> {
+    alt((
+        t(TokenKind::Star).map(|token| (token.span(), ArithmeticOperator::Mul)),
+        t(TokenKind::Slash).map(|token| (token.span(), ArithmeticOperator::Div)),
+    ))
+    .parse_next(input)
+}
+
+fn infix_or(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (infix_and, repeat(0.., (t(TokenKind::Or), infix_and)))
+        .map(
+            |(first, rest): (Expression<Unresolved>, Vec<(_, Expression<Unresolved>)>)| {
+                rest.into_iter().fold(first, |left, (_or_tok, right)| {
+                    fold_condition_expression(left, right, |span, left, right| {
+                        Condition::Or(span, Box::new(left), Box::new(right))
+                    })
+                })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_and(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (infix_not, repeat(0.., (t(TokenKind::And), infix_not)))
+        .map(
+            |(first, rest): (Expression<Unresolved>, Vec<(_, Expression<Unresolved>)>)| {
+                rest.into_iter().fold(first, |left, (_and_tok, right)| {
+                    fold_condition_expression(left, right, |span, left, right| {
+                        Condition::And(span, Box::new(left), Box::new(right))
+                    })
+                })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_not(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((
+        (t(TokenKind::Not), infix_not).map(|(not_tok, expr)| {
+            wrap_condition_expression(Condition::Not(
+                not_tok.span.join(expr.span()),
+                Box::new(expression_to_condition(expr)),
+            ))
+        }),
+        infix_is,
+    ))
+    .parse_next(input)
+}
+
+fn infix_is(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        condition_bool,
+        opt((
+            t(TokenKind::Is),
+            t(TokenKind::Dot),
+            local_name,
+            condition_payload_pattern,
+        )),
+    )
+        .map(|(value, suffix)| match suffix {
+            Some((_is_tok, _, variant, pattern)) => {
+                let end_span = pattern.span();
+                wrap_condition_expression(Condition::Is {
+                    span: value.span().join(end_span),
+                    value,
+                    variant,
+                    pattern,
+                })
+            }
+            None => value,
+        })
+        .parse_next(input)
+}
+
+fn condition_bool(input: &mut Input) -> Result<Expression<Unresolved>> {
+    infix_comparison(input)
+}
+
+fn infix_comparison(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        infix_additive,
+        repeat(0.., (comparison_operator, infix_additive)),
+    )
+        .map(
+            |(first, rest): (
+                Expression<Unresolved>,
+                Vec<((Span, ComparisonOperator), Expression<Unresolved>)>,
+            )| {
+                if rest.is_empty() {
+                    first
+                } else {
+                    let span = first.span().join(rest.last().unwrap().1.span());
+                    Expression::ComparisonChain {
+                        span,
+                        first: Box::new(first),
+                        rest: rest
+                            .into_iter()
+                            .map(|((op_span, op), expr)| ComparisonStep { op_span, op, expr })
+                            .collect(),
+                    }
+                }
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_additive(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        infix_multiplicative,
+        repeat(0.., (additive_operator, infix_multiplicative)),
+    )
+        .map(
+            |(first, rest): (
+                Expression<Unresolved>,
+                Vec<((Span, ArithmeticOperator), Expression<Unresolved>)>,
+            )| {
+                rest.into_iter()
+                    .fold(first, |left, ((op_span, op), right)| {
+                        let span = left.span().join(right.span());
+                        Expression::Arithmetic {
+                            span,
+                            op_span,
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        }
+                    })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_multiplicative(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        infix_unary,
+        repeat(0.., (multiplicative_operator, infix_unary)),
+    )
+        .map(
+            |(first, rest): (
+                Expression<Unresolved>,
+                Vec<((Span, ArithmeticOperator), Expression<Unresolved>)>,
+            )| {
+                rest.into_iter()
+                    .fold(first, |left, ((op_span, op), right)| {
+                        let span = left.span().join(right.span());
+                        Expression::Arithmetic {
+                            span,
+                            op_span,
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        }
+                    })
+            },
+        )
+        .parse_next(input)
+}
+
+fn infix_unary(input: &mut Input) -> Result<Expression<Unresolved>> {
+    alt((
+        (t(TokenKind::Neg), infix_unary).map(|(neg_tok, expr)| Expression::Neg {
+            span: neg_tok.span.join(expr.span()),
+            op_span: neg_tok.span(),
+            expr: Box::new(expr),
+        }),
+        data_expression,
+    ))
+    .parse_next(input)
+}
+
+fn starts_data_expression_token(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Float
+            | TokenKind::Integer
+            | TokenKind::String
+            | TokenKind::TemplateStart
+            | TokenKind::LParen
+            | TokenKind::LCurly
+            | TokenKind::LBrack
+            | TokenKind::Dot
+            | TokenKind::Bang
+            | TokenKind::LowercaseIdentifier
+            | TokenKind::UppercaseIdentifier
+            | TokenKind::And
+            | TokenKind::Or
+            | TokenKind::Not
+            | TokenKind::Neg
+    )
+}
+
+fn ends_data_expression_token(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Float
+            | TokenKind::Integer
+            | TokenKind::String
+            | TokenKind::TemplateEnd
+            | TokenKind::RParen
+            | TokenKind::RCurly
+            | TokenKind::RBrack
+            | TokenKind::Bang
+            | TokenKind::LowercaseIdentifier
+            | TokenKind::UppercaseIdentifier
+            | TokenKind::And
+            | TokenKind::Or
+            | TokenKind::Not
+            | TokenKind::Neg
+    )
+}
+
+fn starts_condition_token(kind: TokenKind) -> bool {
+    matches!(kind, TokenKind::Not) || starts_data_expression_token(kind)
+}
+
+fn looks_like_infix(input: &Input) -> bool {
+    let tokens = input.iter().collect::<Vec<_>>();
     let mut depth = 0usize;
-    for token in input.iter() {
+
+    for (index, token) in tokens.iter().enumerate() {
         match token.kind {
+            TokenKind::TemplateStringStart | TokenKind::TemplateDataStart => {
+                depth += 1;
+                continue;
+            }
+            TokenKind::TemplateStart | TokenKind::TemplateEnd => {
+                continue;
+            }
             TokenKind::LParen | TokenKind::LCurly | TokenKind::LBrack => {
                 depth += 1;
+                continue;
             }
             TokenKind::RParen | TokenKind::RCurly | TokenKind::RBrack => {
                 if depth == 0 {
                     return false;
                 }
                 depth -= 1;
+                continue;
             }
-            TokenKind::Comma | TokenKind::FatArrow => {
-                if depth == 0 {
-                    return false;
-                }
+            TokenKind::Comma | TokenKind::FatArrow if depth == 0 => {
+                return false;
             }
-            TokenKind::Is | TokenKind::And | TokenKind::Or | TokenKind::Not => {
-                if depth == 0 {
-                    return true;
-                }
+            TokenKind::Dec
+            | TokenKind::Def
+            | TokenKind::Type
+            | TokenKind::Module
+            | TokenKind::Import
+            | TokenKind::Export
+                if depth == 0 && index > 0 =>
+            {
+                return false;
             }
             _ => {}
         }
+
+        if depth != 0 {
+            continue;
+        }
+
+        let prev = index.checked_sub(1).map(|i| tokens[i].kind);
+        let next = tokens.get(index + 1).map(|token| token.kind);
+        let is_infix = match token.kind {
+            TokenKind::Or | TokenKind::And => {
+                prev.is_some_and(ends_data_expression_token)
+                    && next.is_some_and(starts_condition_token)
+            }
+            TokenKind::Not => next.is_some_and(starts_condition_token),
+            TokenKind::Is => {
+                prev.is_some_and(ends_data_expression_token) && matches!(next, Some(TokenKind::Dot))
+            }
+            TokenKind::Lt
+            | TokenKind::Gt
+            | TokenKind::LtEq
+            | TokenKind::GtEq
+            | TokenKind::EqEq
+            | TokenKind::BangEq
+            | TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::Star
+            | TokenKind::Slash => {
+                prev.is_some_and(ends_data_expression_token)
+                    && next.is_some_and(starts_data_expression_token)
+            }
+            TokenKind::Neg => next.is_some_and(starts_data_expression_token),
+            _ => false,
+        };
+
+        if is_infix {
+            return true;
+        }
     }
+
     false
 }
 
 fn expression(input: &mut Input) -> Result<Expression<Unresolved>> {
-    if looks_like_condition(input) {
+    if looks_like_infix(input) {
         let checkpoint = input.checkpoint();
-        match expr_condition.parse_next(input) {
+        match expr_infix.parse_next(input) {
             Ok(expr) => return Ok(expr),
             Err(ErrMode::Backtrack(_)) => {
                 input.reset(&checkpoint);
@@ -1527,9 +1811,9 @@ fn expression(input: &mut Input) -> Result<Expression<Unresolved>> {
 }
 
 fn expression_without_construction(input: &mut Input) -> Result<Expression<Unresolved>> {
-    if looks_like_condition(input) {
+    if looks_like_infix(input) {
         let checkpoint = input.checkpoint();
-        match expr_condition.parse_next(input) {
+        match expr_infix.parse_next(input) {
             Ok(expr) => return Ok(expr),
             Err(ErrMode::Backtrack(_)) => {
                 input.reset(&checkpoint);
@@ -1593,14 +1877,8 @@ fn expr_grouped(input: &mut Input) -> Result<Expression<Unresolved>> {
         .parse_next(input)
 }
 
-fn expr_condition(input: &mut Input) -> Result<Expression<Unresolved>> {
-    let cond = condition.parse_next(input)?;
-    if matches!(cond, Condition::Bool(_, _)) {
-        Err(ErrMode::Backtrack(ParseContextError::from_input(input)))
-    } else {
-        let span = cond.span();
-        Ok(Expression::Condition(span, Box::new(cond)))
-    }
+fn expr_infix(input: &mut Input) -> Result<Expression<Unresolved>> {
+    infix_or(input)
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
@@ -1608,6 +1886,7 @@ fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
         expr_literal_float,
         expr_literal_int,
         expr_literal_string,
+        expr_literal_template,
         expr_literal_bytes,
     ))
     .parse_next(input)
@@ -1615,7 +1894,7 @@ fn expr_literal(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn expr_literal_float(input: &mut Input) -> Result<Expression<Unresolved>> {
     literal_float
-        .map(|(span, value)| Expression::Primitive(span, Primitive::Float(value)))
+        .map(|(span, value)| Expression::Primitive(span, Primitive::Number(Number::Float(value))))
         .parse_next(input)
 }
 
@@ -1643,7 +1922,7 @@ fn expr_list(input: &mut Input) -> Result<Expression<Unresolved>> {
 
 fn expr_literal_int(input: &mut Input) -> Result<Expression<Unresolved>> {
     literal_int
-        .map(|(span, i)| Expression::Primitive(span, Primitive::Int(i)))
+        .map(|(span, i)| Expression::Primitive(span, Primitive::Number(Number::Int(i))))
         .parse_next(input)
 }
 
@@ -1664,6 +1943,41 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression<Unresolved>> {
             Expression::Primitive(token.span(), Primitive::String(ParString::from(value)))
         })
         .parse_next(input)
+}
+
+fn expr_literal_template(input: &mut Input) -> Result<Expression<Unresolved>> {
+    (
+        t(TokenKind::TemplateStart),
+        repeat(0.., template_part),
+        t(TokenKind::TemplateEnd),
+    )
+        .map(|(open, parts, close)| Expression::Template {
+            span: open.span().join(close.span()),
+            parts,
+        })
+        .parse_next(input)
+}
+
+fn template_part(input: &mut Input) -> Result<TemplatePart<Unresolved>> {
+    alt((
+        t(TokenKind::TemplateText).map(|token| {
+            // validated in lexer
+            TemplatePart::Literal(ArcStr::from(unescape_template_text(token.raw).unwrap()))
+        }),
+        (
+            t(TokenKind::TemplateStringStart),
+            expression,
+            t(TokenKind::RCurly),
+        )
+            .map(|(_, expr, _)| TemplatePart::StringExpr(expr)),
+        (
+            t(TokenKind::TemplateDataStart),
+            expression,
+            t(TokenKind::RCurly),
+        )
+            .map(|(_, expr, _)| TemplatePart::DataExpr(expr)),
+    ))
+    .parse_next(input)
 }
 
 fn expr_literal_bytes(input: &mut Input) -> Result<Expression<Unresolved>> {
@@ -1995,9 +2309,7 @@ fn construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         cons_signal,
         cons_case,
         cons_break,
-        cons_send_type,
         cons_send,
-        cons_recv_type,
         cons_receive,
         cons_generic_receive,
     ))
@@ -2009,7 +2321,6 @@ fn data_construction(input: &mut Input) -> Result<(Span, Construct<Unresolved>)>
     alt((
         data_cons_signal,
         data_cons_break,
-        data_cons_send_type,
         data_cons_send,
         data_cons_then,
     ))
@@ -2038,14 +2349,21 @@ fn data_cons_then(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
 fn cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(expression), t(TokenKind::RParen), construction),
+        (
+            list1(|input: &mut Input| send_prefix_item(TokenKind::RParen, input)),
+            t(TokenKind::RParen),
+            construction,
+        ),
     )
-    .map(|(open, (args, close, (then_full_span, then)))| {
+    .map(|(open, (items, close, (then_full_span, then)))| {
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(then_full_span);
-        let construct = args.into_iter().rfold(then, |then, arg| {
-            Construct::Send(short_span.clone(), Box::new(arg), Box::new(then))
-        });
+        let construct = fold_send_prefix(
+            items,
+            then,
+            |typ, then| Construct::SendType(short_span.clone(), typ, Box::new(then)),
+            |arg, then| Construct::Send(short_span.clone(), Box::new(arg), Box::new(then)),
+        );
         (full_span, construct)
     })
     .parse_next(input)
@@ -2054,30 +2372,21 @@ fn cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
 fn data_cons_send(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(expression), t(TokenKind::RParen), data_construction),
+        (
+            list1(|input: &mut Input| send_prefix_item(TokenKind::RParen, input)),
+            t(TokenKind::RParen),
+            data_construction,
+        ),
     )
-    .map(|(open, (args, close, (then_full_span, then)))| {
+    .map(|(open, (items, close, (then_full_span, then)))| {
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(then_full_span);
-        let construct = args.into_iter().rfold(then, |then, arg| {
-            Construct::Send(short_span.clone(), Box::new(arg), Box::new(then))
-        });
-        (full_span, construct)
-    })
-    .parse_next(input)
-}
-
-fn data_cons_send_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(typ), t(TokenKind::RParen), data_construction),
-    )
-    .map(|((open, _), (types, close, (then_full_span, then)))| {
-        let short_span = open.span.join(close.span());
-        let full_span = open.span.join(then_full_span);
-        let construct = types.into_iter().rfold(then, |then, typ| {
-            Construct::SendType(short_span.clone(), typ, Box::new(then))
-        });
+        let construct = fold_send_prefix(
+            items,
+            then,
+            |typ, then| Construct::SendType(short_span.clone(), typ, Box::new(then)),
+            |arg, then| Construct::Send(short_span.clone(), Box::new(arg), Box::new(then)),
+        );
         (full_span, construct)
     })
     .parse_next(input)
@@ -2086,14 +2395,21 @@ fn data_cons_send_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>
 fn cons_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
     commit_after(
         t(TokenKind::LBrack),
-        (list1(pattern), t(TokenKind::RBrack), construction),
+        (
+            list1(pattern_prefix_item),
+            t(TokenKind::RBrack),
+            construction,
+        ),
     )
-    .map(|(open, (patterns, close, (then_full_span, then)))| {
+    .map(|(open, (items, close, (then_full_span, then)))| {
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(then_full_span);
-        let construct = patterns.into_iter().rfold(then, |then, pattern| {
-            Construct::Receive(short_span.clone(), pattern, Box::new(then), vec![])
-        });
+        let construct = fold_pattern_prefix(
+            items,
+            then,
+            |name, then| Construct::ReceiveType(short_span.clone(), name, Box::new(then)),
+            |pattern, then| Construct::Receive(short_span.clone(), pattern, Box::new(then), vec![]),
+        );
         (full_span, construct)
     })
     .parse_next(input)
@@ -2125,7 +2441,7 @@ fn cons_generic_receive(input: &mut Input) -> Result<(Span, Construct<Unresolved
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LBrack),
             pattern,
@@ -2239,42 +2555,9 @@ fn cons_loop(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
         .parse_next(input)
 }
 
-fn cons_send_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(typ), t(TokenKind::RParen), construction),
-    )
-    .map(|((open, _), (types, close, (then_full_span, then)))| {
-        let short_span = open.span.join(close.span());
-        let full_span = open.span.join(then_full_span);
-        let construct = types.into_iter().rfold(then, |then, typ| {
-            Construct::SendType(short_span.clone(), typ, Box::new(then))
-        });
-        (full_span, construct)
-    })
-    .parse_next(input)
-}
-
-fn cons_recv_type(input: &mut Input) -> Result<(Span, Construct<Unresolved>)> {
-    commit_after(
-        tn!("[type": TokenKind::LBrack, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RBrack), construction),
-    )
-    .map(|((open, _), (names, close, (then_full_span, then)))| {
-        let short_span = open.span.join(close.span());
-        let full_span = open.span.join(then_full_span);
-        let construct = names.into_iter().rfold(then, |then, name| {
-            Construct::ReceiveType(short_span.clone(), name, Box::new(then))
-        });
-        (full_span, construct)
-    })
-    .parse_next(input)
-}
-
 fn cons_branch(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     alt((
         cons_branch_then,
-        cons_branch_recv_type,
         cons_branch_receive,
         cons_branch_generic_receive,
     ))
@@ -2292,13 +2575,20 @@ fn cons_branch_then(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
 fn cons_branch_receive(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(pattern), t(TokenKind::RParen), cons_branch),
+        (
+            list1(pattern_prefix_item),
+            t(TokenKind::RParen),
+            cons_branch,
+        ),
     )
-    .map(|(open, (patterns, _close, rest))| {
+    .map(|(open, (items, _close, rest))| {
         let span = open.span.join(rest.span());
-        patterns.into_iter().rfold(rest, |rest, pattern| {
-            ConstructBranch::Receive(span.clone(), pattern, Box::new(rest), vec![])
-        })
+        fold_pattern_prefix(
+            items,
+            rest,
+            |name, rest| ConstructBranch::ReceiveType(span.clone(), name, Box::new(rest)),
+            |pattern, rest| ConstructBranch::Receive(span.clone(), pattern, Box::new(rest), vec![]),
+        )
     })
     .parse_next(input)
 }
@@ -2307,7 +2597,7 @@ fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch<Unre
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LParen),
             pattern,
@@ -2321,20 +2611,6 @@ fn cons_branch_generic_receive(input: &mut Input) -> Result<ConstructBranch<Unre
             ConstructBranch::Receive(span.clone(), arg, Box::new(rest), vars)
         },
     )
-    .parse_next(input)
-}
-
-fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch<Unresolved>> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RParen), cons_branch),
-    )
-    .map(|((open, _), (names, _close, rest))| {
-        let span = open.span.join(rest.span());
-        names.into_iter().rfold(rest, |rest, name| {
-            ConstructBranch::ReceiveType(span.clone(), name, Box::new(rest))
-        })
-    })
     .parse_next(input)
 }
 
@@ -2364,7 +2640,6 @@ fn apply(input: &mut Input) -> Result<Option<(Span, Apply<Unresolved>)>> {
         apply_loop,
         apply_signal,
         apply_case,
-        apply_send_type,
         apply_send,
         apply_default,
         apply_try,
@@ -2376,9 +2651,13 @@ fn apply(input: &mut Input) -> Result<Option<(Span, Apply<Unresolved>)>> {
 fn apply_send(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(expression), t(TokenKind::RParen), apply),
+        (
+            list1(|input: &mut Input| send_prefix_item(TokenKind::RParen, input)),
+            t(TokenKind::RParen),
+            apply,
+        ),
     )
-    .map(|(open, (args, close, then))| {
+    .map(|(open, (items, close, then))| {
         let (then_full_span, then) = match then {
             Some((span, apply)) => (span, apply),
             None => {
@@ -2388,9 +2667,12 @@ fn apply_send(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
         };
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(then_full_span);
-        let apply = args.into_iter().rfold(then, |then, arg| {
-            Apply::Send(short_span.clone(), Box::new(arg), Box::new(then))
-        });
+        let apply = fold_send_prefix(
+            items,
+            then,
+            |typ, then| Apply::SendType(short_span.clone(), typ, Box::new(then)),
+            |arg, then| Apply::Send(short_span.clone(), Box::new(arg), Box::new(then)),
+        );
         (full_span, apply)
     })
     .parse_next(input)
@@ -2505,29 +2787,6 @@ fn apply_loop(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
         .parse_next(input)
 }
 
-fn apply_send_type(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(typ), t(TokenKind::RParen), apply),
-    )
-    .map(|((open, _), (types, close, then))| {
-        let (then_full_span, then) = match then {
-            Some((span, apply)) => (span, apply),
-            None => {
-                let s = close.span.only_end();
-                (s.clone(), Apply::Noop(s))
-            }
-        };
-        let short_span = open.span.join(close.span());
-        let full_span = open.span.join(then_full_span);
-        let apply = types.into_iter().rfold(then, |then, typ| {
-            Apply::SendType(short_span.clone(), typ, Box::new(then))
-        });
-        (full_span, apply)
-    })
-    .parse_next(input)
-}
-
 fn apply_try(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
     commit_after((t(TokenKind::Dot), t(TokenKind::Try)), (label, apply))
         .map(|((dot, pre), (label, then))| {
@@ -2609,7 +2868,6 @@ fn apply_pipe(input: &mut Input) -> Result<(Span, Apply<Unresolved>)> {
 fn apply_branch(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     alt((
         apply_branch_then,
-        apply_branch_recv_type,
         apply_branch_receive,
         apply_branch_generic_receive,
         apply_branch_continue,
@@ -2630,13 +2888,20 @@ fn apply_branch_then(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
 fn apply_branch_receive(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(pattern), t(TokenKind::RParen), apply_branch),
+        (
+            list1(pattern_prefix_item),
+            t(TokenKind::RParen),
+            apply_branch,
+        ),
     )
-    .map(|(open, (patterns, _close, rest))| {
+    .map(|(open, (items, _close, rest))| {
         let span = open.span.join(rest.span());
-        patterns.into_iter().rfold(rest, |rest, pattern| {
-            ApplyBranch::Receive(span.clone(), pattern, Box::new(rest), vec![])
-        })
+        fold_pattern_prefix(
+            items,
+            rest,
+            |name, rest| ApplyBranch::ReceiveType(span.clone(), name, Box::new(rest)),
+            |pattern, rest| ApplyBranch::Receive(span.clone(), pattern, Box::new(rest), vec![]),
+        )
     })
     .parse_next(input)
 }
@@ -2645,11 +2910,11 @@ fn apply_branch_generic_receive(input: &mut Input) -> Result<ApplyBranch<Unresol
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
-            t(TokenKind::LBrack),
+            t(TokenKind::LParen),
             pattern,
-            t(TokenKind::RBrack),
+            t(TokenKind::RParen),
             apply_branch,
         ),
     )
@@ -2668,20 +2933,6 @@ fn apply_branch_continue(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
             ApplyBranch::Continue(token.span.join(expression.span()), expression)
         })
         .parse_next(input)
-}
-
-fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RParen), apply_branch),
-    )
-    .map(|((open, _), (names, _close, rest))| {
-        let span = open.span.join(rest.span());
-        names.into_iter().rfold(rest, |rest, name| {
-            ApplyBranch::ReceiveType(span.clone(), name, Box::new(rest))
-        })
-    })
-    .parse_next(input)
 }
 
 fn apply_branch_try(input: &mut Input) -> Result<ApplyBranch<Unresolved>> {
@@ -2710,6 +2961,7 @@ fn process(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
         proc_repoll,
         proc_submit,
         proc_let,
+        proc_compound_assign,
         proc_catch,
         proc_throw,
         global_command,
@@ -2740,6 +2992,51 @@ fn proc_let(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
                 pattern,
                 then,
                 value: Box::new(expression),
+            },
+        )
+    })
+    .parse_next(input)
+}
+
+fn compound_assign_operator(input: &mut Input) -> Result<(Span, ArithmeticOperator)> {
+    alt((
+        t(TokenKind::PlusEq).map(|token| (token.span(), ArithmeticOperator::Add)),
+        t(TokenKind::MinusEq).map(|token| (token.span(), ArithmeticOperator::Sub)),
+        t(TokenKind::StarEq).map(|token| (token.span(), ArithmeticOperator::Mul)),
+        t(TokenKind::SlashEq).map(|token| (token.span(), ArithmeticOperator::Div)),
+    ))
+    .parse_next(input)
+}
+
+fn proc_compound_assign(input: &mut Input) -> Result<(Span, Process<Unresolved>)> {
+    commit_after(
+        (local_name, compound_assign_operator),
+        (expression, opt(process)),
+    )
+    .map(|((name, (op_span, op)), (right, then_opt))| {
+        let left = Expression::Variable(name.span(), name.clone());
+        let value = Expression::Arithmetic {
+            span: left.span().join(right.span()),
+            op_span,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let span = name.span.join(value.span());
+        let (full_span, then) = match then_opt {
+            Some((then_full_span, then)) => (name.span.join(then_full_span), Box::new(then)),
+            None => (
+                span.clone(),
+                Box::new(Process::Fallthrough(value.span().only_end())),
+            ),
+        };
+        (
+            full_span,
+            Process::Let {
+                span,
+                pattern: Pattern::Name(name.span(), name, None),
+                value: Box::new(value),
+                then,
             },
         )
     })
@@ -3120,9 +3417,7 @@ fn cmd(input: &mut Input) -> Result<Option<(Span, Command<Unresolved>)>> {
             cmd_begin,
             cmd_unfounded,
             cmd_loop,
-            cmd_send_type,
             cmd_send,
-            cmd_recv_type,
             cmd_receive,
             cmd_generic_receive,
             cmd_try,
@@ -3156,9 +3451,13 @@ fn cmd_link(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
 fn cmd_send(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(expression), t(TokenKind::RParen), cmd),
+        (
+            list1(|input: &mut Input| send_prefix_item(TokenKind::RParen, input)),
+            t(TokenKind::RParen),
+            cmd,
+        ),
     )
-    .map(|(open, (expressions, close, cmd))| {
+    .map(|(open, (items, close, cmd))| {
         let (cmd_full_span, cmd) = match cmd {
             Some((span, cmd)) => (span, cmd),
             None => {
@@ -3168,9 +3467,12 @@ fn cmd_send(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
         };
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(cmd_full_span);
-        let cmd = expressions.into_iter().rfold(cmd, |cmd, expression| {
-            Command::Send(short_span.clone(), expression, Box::new(cmd))
-        });
+        let cmd = fold_send_prefix(
+            items,
+            cmd,
+            |typ, cmd| Command::SendType(short_span.clone(), typ, Box::new(cmd)),
+            |expression, cmd| Command::Send(short_span.clone(), expression, Box::new(cmd)),
+        );
         (full_span, cmd)
     })
     .parse_next(input)
@@ -3179,9 +3481,9 @@ fn cmd_send(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
 fn cmd_receive(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     commit_after(
         t(TokenKind::LBrack),
-        (list1(pattern), t(TokenKind::RBrack), cmd),
+        (list1(pattern_prefix_item), t(TokenKind::RBrack), cmd),
     )
-    .map(|(open, (patterns, close, cmd))| {
+    .map(|(open, (items, close, cmd))| {
         let (cmd_full_span, cmd) = match cmd {
             Some((span, cmd)) => (span, cmd),
             None => {
@@ -3191,9 +3493,12 @@ fn cmd_receive(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
         };
         let short_span = open.span.join(close.span());
         let full_span = open.span.join(cmd_full_span);
-        let cmd = patterns.into_iter().rfold(cmd, |cmd, pattern| {
-            Command::Receive(short_span.clone(), pattern, Box::new(cmd), vec![])
-        });
+        let cmd = fold_pattern_prefix(
+            items,
+            cmd,
+            |name, cmd| Command::ReceiveType(short_span.clone(), name, Box::new(cmd)),
+            |pattern, cmd| Command::Receive(short_span.clone(), pattern, Box::new(cmd), vec![]),
+        );
         (full_span, cmd)
     })
     .parse_next(input)
@@ -3203,7 +3508,7 @@ fn cmd_generic_receive(input: &mut Input) -> Result<(Span, Command<Unresolved>)>
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LBrack),
             pattern,
@@ -3377,52 +3682,6 @@ fn cmd_loop(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
         .parse_next(input)
 }
 
-fn cmd_send_type(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(typ), t(TokenKind::RParen), cmd),
-    )
-    .map(|((open, _), (types, close, cmd))| {
-        let (cmd_full_span, cmd) = match cmd {
-            Some((span, cmd)) => (span, cmd),
-            None => {
-                let s = close.span.only_end();
-                (s.clone(), noop_cmd(s))
-            }
-        };
-        let short_span = open.span.join(close.span());
-        let full_span = open.span.join(cmd_full_span);
-        let cmd = types.into_iter().rfold(cmd, |cmd, typ| {
-            Command::SendType(short_span.clone(), typ, Box::new(cmd))
-        });
-        (full_span, cmd)
-    })
-    .parse_next(input)
-}
-
-fn cmd_recv_type(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
-    commit_after(
-        tn!("[type": TokenKind::LBrack, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RBrack), cmd),
-    )
-    .map(|((open, _), (names, close, cmd))| {
-        let (cmd_full_span, cmd) = match cmd {
-            Some((span, cmd)) => (span, cmd),
-            None => {
-                let s = close.span.only_end();
-                (s.clone(), noop_cmd(s))
-            }
-        };
-        let short_span = open.span.join(close.span());
-        let full_span = open.span.join(cmd_full_span);
-        let cmd = names.into_iter().rfold(cmd, |cmd, name| {
-            Command::ReceiveType(short_span.clone(), name, Box::new(cmd))
-        });
-        (full_span, cmd)
-    })
-    .parse_next(input)
-}
-
 fn cmd_try(input: &mut Input) -> Result<(Span, Command<Unresolved>)> {
     (t(TokenKind::Dot), (t(TokenKind::Try), label, cmd))
         .map(|(dot, (try_kw, label, cmd))| {
@@ -3511,7 +3770,6 @@ fn cmd_branch(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
         cmd_branch_then,
         cmd_branch_bind_then,
         cmd_branch_continue,
-        cmd_branch_recv_type,
         cmd_branch_receive,
         cmd_branch_generic_receive,
         cmd_branch_try,
@@ -3561,13 +3819,16 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch<Unresolved>> 
 fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(
         t(TokenKind::LParen),
-        (list1(pattern), t(TokenKind::RParen), cmd_branch),
+        (list1(pattern_prefix_item), t(TokenKind::RParen), cmd_branch),
     )
-    .map(|(open, (patterns, _close, rest))| {
+    .map(|(open, (items, _close, rest))| {
         let span = open.span.join(rest.span());
-        patterns.into_iter().rfold(rest, |rest, pattern| {
-            CommandBranch::Receive(span.clone(), pattern, Box::new(rest), vec![])
-        })
+        fold_pattern_prefix(
+            items,
+            rest,
+            |name, rest| CommandBranch::ReceiveType(span.clone(), name, Box::new(rest)),
+            |pattern, rest| CommandBranch::Receive(span.clone(), pattern, Box::new(rest), vec![]),
+        )
     })
     .parse_next(input)
 }
@@ -3576,7 +3837,7 @@ fn cmd_branch_generic_receive(input: &mut Input) -> Result<CommandBranch<Unresol
     commit_after(
         t(TokenKind::Lt),
         (
-            list1(local_name),
+            list1(type_parameter),
             t(TokenKind::Gt),
             t(TokenKind::LParen),
             pattern,
@@ -3615,20 +3876,6 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     .parse_next(input)
 }
 
-fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
-    commit_after(
-        tn!("(type": TokenKind::LParen, TokenKind::Type),
-        (list1(local_name), t(TokenKind::RParen), cmd_branch),
-    )
-    .map(|((open, _), (names, _close, rest))| {
-        let span = open.span.join(rest.span());
-        names.into_iter().rfold(rest, |rest, name| {
-            CommandBranch::ReceiveType(span.clone(), name, Box::new(rest))
-        })
-    })
-    .parse_next(input)
-}
-
 fn cmd_branch_try(input: &mut Input) -> Result<CommandBranch<Unresolved>> {
     commit_after(t(TokenKind::Try), (label, cmd_branch))
         .map(|(kw, (label, rest))| {
@@ -3655,6 +3902,14 @@ fn label(input: &mut Input) -> Result<Option<LocalName>> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn parse_single_definition_expression(source: &str) -> Expression<Unresolved> {
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+        match &parsed.body.definitions[0].body {
+            DefinitionBody::Par(expr) => expr.clone(),
+            DefinitionBody::External(_) => panic!("expected Par definition body"),
+        }
+    }
 
     #[test]
     fn test_parse_examples() {
@@ -3718,6 +3973,296 @@ def BoolAnd = .true! and .false!
     }
 
     #[test]
+    fn test_parse_infix_operator_precedence() {
+        let expr = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = 1 + 2 * 3
+",
+        );
+
+        match expr {
+            Expression::Arithmetic {
+                op: ArithmeticOperator::Add,
+                left,
+                right,
+                ..
+            } => {
+                assert!(matches!(
+                    *left,
+                    Expression::Primitive(_, Primitive::Number(Number::Int(_)))
+                ));
+                assert!(matches!(
+                    *right,
+                    Expression::Arithmetic {
+                        op: ArithmeticOperator::Mul,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_comparison_chains_and_grouping() {
+        let chained = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = a < b < c
+",
+        );
+        match chained {
+            Expression::ComparisonChain { first, rest, .. } => {
+                assert!(matches!(
+                    *first,
+                    Expression::Variable(_, LocalName { ref string, .. }) if string.as_str() == "a"
+                ));
+                assert_eq!(rest.len(), 2);
+                assert_eq!(rest[0].op, ComparisonOperator::Less);
+                assert_eq!(rest[1].op, ComparisonOperator::Less);
+                assert!(matches!(
+                    rest[0].expr,
+                    Expression::Variable(_, LocalName { ref string, .. }) if string.as_str() == "b"
+                ));
+                assert!(matches!(
+                    rest[1].expr,
+                    Expression::Variable(_, LocalName { ref string, .. }) if string.as_str() == "c"
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+
+        let grouped = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = {a < b} < c
+",
+        );
+        match grouped {
+            Expression::ComparisonChain { first, rest, .. } => {
+                assert_eq!(rest.len(), 1);
+                assert!(matches!(
+                    *first,
+                    Expression::Grouped(_, inner)
+                        if matches!(*inner, Expression::ComparisonChain { .. })
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_template_strings() {
+        let expr = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = `Hi ${name}, age #{1 + {2}}.`
+",
+        );
+
+        match expr {
+            Expression::Template { parts, .. } => {
+                assert_eq!(parts.len(), 5);
+                assert!(
+                    matches!(&parts[0], TemplatePart::Literal(value) if value.as_str() == "Hi ")
+                );
+                assert!(matches!(
+                    &parts[1],
+                    TemplatePart::StringExpr(Expression::Variable(_, LocalName { string, .. }))
+                    if string.as_str() == "name"
+                ));
+                assert!(
+                    matches!(&parts[2], TemplatePart::Literal(value) if value.as_str() == ", age ")
+                );
+                assert!(matches!(
+                    &parts[3],
+                    TemplatePart::DataExpr(Expression::Arithmetic {
+                        op: ArithmeticOperator::Add,
+                        ..
+                    })
+                ));
+                assert!(matches!(&parts[4], TemplatePart::Literal(value) if value.as_str() == "."));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_and_escaped_template_strings() {
+        let empty = parse_single_definition_expression(
+            "\
+module Main
+
+def Value = ``
+",
+        );
+        assert!(matches!(empty, Expression::Template { parts, .. } if parts.is_empty()));
+
+        let escaped = parse_single_definition_expression(
+            r#"module Main
+
+def Value = `\` \${ \#{ \n`
+"#,
+        );
+        match escaped {
+            Expression::Template { parts, .. } => {
+                assert_eq!(parts.len(), 1);
+                assert!(matches!(
+                    &parts[0],
+                    TemplatePart::Literal(value) if value.as_str() == "` ${ #{ \n"
+                ));
+            }
+            other => panic!("unexpected AST: {other:#?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_not_and_neg_as_identifiers() {
+        let source = "\
+module Main
+
+def UseNot = let not = 1 in not
+def UseNeg = let neg = 2 in neg
+";
+        let parsed = parse_source_file(source, "Main.par".into()).unwrap();
+        assert!(matches!(
+            &parsed.body.definitions[0].body,
+            DefinitionBody::Par(Expression::Let {
+                pattern: Pattern::Name(_, LocalName { string, .. }, _),
+                then,
+                ..
+            })
+                if string.as_str() == "not"
+                    && matches!(
+                        **then,
+                        Expression::Variable(_, LocalName { ref string, .. })
+                            if string.as_str() == "not"
+                    )
+        ));
+        assert!(matches!(
+            &parsed.body.definitions[1].body,
+            DefinitionBody::Par(Expression::Let {
+                pattern: Pattern::Name(_, LocalName { string, .. }, _),
+                then,
+                ..
+            })
+                if string.as_str() == "neg"
+                    && matches!(
+                        **then,
+                        Expression::Variable(_, LocalName { ref string, .. })
+                            if string.as_str() == "neg"
+                    )
+        ));
+    }
+
+    #[test]
+    fn test_parse_send_prefix_followed_by_box_case() {
+        let source = "\
+module Main
+
+def Value = [type a, eq] (type List<box a>) box case {
+  .empty => .end!,
+}
+";
+        assert!(parse_module(source, "main.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_send_prefix_followed_by_loop() {
+        let source = "\
+module Main
+
+def Value = [x] (x) loop
+";
+        assert!(parse_module(source, "main.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_deduplicate_example() {
+        let input = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/src/Deduplicate.par"
+        ));
+        assert!(parse_module(input, "Deduplicate.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_sieve_test_module() {
+        let input = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/src/Sieve.par"
+        ));
+        assert!(parse_module(input, "Sieve.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_box_case_with_multiple_branches() {
+        let source = "\
+module Main
+
+def Value = [type a, eq] (type List<box a>) box case {
+  .empty => .end!,
+  .insert(x, set) => .item(x) set,
+  .contains(y, set) => set.begin.case {
+    .end! => .false!,
+    .item(x) xs => eq(x, y).case {
+      .true! => .true!,
+      .false! => xs.loop,
+    },
+  },
+}
+";
+        assert!(parse_module(source, "main.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_deduplicate_final_box_receive_call() {
+        let source = "\
+module Deduplicate
+
+import {
+  @core/Int
+}
+
+def IntListSet = ListSet(type Int, box Int.Equals)
+
+def TestDedup =
+  Deduplicate(type Int, IntListSet)
+    (Map(type Int, type Int, box [n] Int.Mod(n, 7), Int.Range(1, 1000)))
+";
+        assert!(parse_module(source, "Deduplicate.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_unified_explicit_type_items() {
+        let source = "\
+module Minimal
+
+dec Swap : [type a, type b, (a) b] (b) a
+def Swap = [type a, type b, (x) y] (y) x
+
+def Swapped = Swap(type String, type Int, (\"A\") 2)
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_interleaved_explicit_type_items() {
+        let source = "\
+module Minimal
+
+def Pack = [type a, x, type b, y] (x) y
+def Packed = Pack(type String, \"left\", type Int, 1)
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
     fn test_parse_condition_operands_with_grouping_and_receive() {
         let source = "\
 module Minimal
@@ -3729,6 +4274,29 @@ def GroupedReceive = {[a: Bool] a} and {type Bool in .false!}
 def SendTypeData = (type Bool) .true! and .false!
 ";
         assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_parse_constrained_type_parameters() {
+        let source = "\
+module Minimal
+
+dec Explicit : [type a: number, (a) !] !
+dec Implicit : <a: signed>[a] a
+def Explicit = [type a: number, p] !
+def Implicit = <a: signed>[x] x
+";
+        assert!(parse_module(source, "minimal.par".into()).is_ok());
+    }
+
+    #[test]
+    fn test_reject_constrained_type_definition_parameters() {
+        let source = "\
+module Minimal
+
+type Boxed<a: box> = a
+";
+        assert!(parse_module(source, "minimal.par".into()).is_err());
     }
 
     #[test]

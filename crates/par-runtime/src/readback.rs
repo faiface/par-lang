@@ -1,3 +1,6 @@
+pub use crate::data::Data;
+pub use crate::primitive::Number;
+
 use crate::primitive::{ParString, Primitive};
 use arcstr::ArcStr;
 use bytes::Bytes;
@@ -44,20 +47,31 @@ impl Handle {
         Handle::from(self.handle.receive())
     }
 
+    pub async fn receive_number(&mut self) -> Number {
+        self.handle.receive_number().await.unwrap()
+    }
+
+    pub async fn receive_data(&mut self) -> Data {
+        self.handle.receive_data().await.unwrap()
+    }
+
     pub fn duplicate(&mut self) -> Handle {
         Handle::from(self.handle.duplicate())
     }
 
     pub fn provide_int(self, value: BigInt) {
-        self.handle.provide_primitive(Primitive::Int(value))
+        self.handle
+            .provide_primitive(Primitive::Number(Number::Int(value)))
     }
 
     pub fn provide_nat(self, value: BigInt) {
-        self.handle.provide_primitive(Primitive::Int(value))
+        self.handle
+            .provide_primitive(Primitive::Number(Number::Int(value)))
     }
 
     pub fn provide_float(self, value: f64) {
-        self.handle.provide_primitive(Primitive::Float(value))
+        self.handle
+            .provide_primitive(Primitive::Number(Number::Float(value)))
     }
 
     pub fn provide_string(self, value: ParString) {
@@ -78,6 +92,22 @@ impl Handle {
     pub fn provide_byte(self, value: u8) {
         self.handle
             .provide_primitive(Primitive::Bytes(Bytes::copy_from_slice(&[value])))
+    }
+
+    pub fn send_number(&mut self, value: &Number) {
+        self.handle.send_number(value)
+    }
+
+    pub fn provide_number(self, value: &Number) {
+        self.handle.provide_number(value)
+    }
+
+    pub fn send_data(&mut self, value: &Data) {
+        self.handle.send_data(value)
+    }
+
+    pub fn provide_data(self, value: &Data) {
+        self.handle.provide_data(value)
     }
 
     pub async fn byte(self) -> u8 {
@@ -128,36 +158,44 @@ impl Handle {
     }
 
     pub async fn int(self) -> BigInt {
-        let primitive = self.handle.primitive().await.unwrap();
-        let Primitive::Int(value) = primitive else {
-            panic!(
-                "Unexpected primitive in Handle! Expected Int, got {:?}",
-                primitive
-            )
-        };
-        value
+        match self.number().await {
+            Number::Zero => BigInt::ZERO,
+            Number::Int(value) => value,
+            number => panic!(
+                "Unexpected number in Handle! Expected Int, got {:?}",
+                number
+            ),
+        }
     }
 
     pub async fn float(self) -> f64 {
-        let primitive = self.handle.primitive().await.unwrap();
-        let Primitive::Float(value) = primitive else {
-            panic!(
-                "Unexpected primitive in Handle! Expected Float, got {:?}",
-                primitive
-            )
-        };
-        value
+        match self.number().await {
+            Number::Zero => 0.0,
+            Number::Float(value) => value,
+            number => panic!(
+                "Unexpected number in Handle! Expected Float, got {:?}",
+                number
+            ),
+        }
     }
 
     pub async fn nat(self) -> BigInt {
-        let primitive = self.handle.primitive().await.unwrap();
-        let Primitive::Int(value) = primitive else {
-            panic!(
-                "Unexpected primitive in Handle! Expected Int, got {:?}",
-                primitive
-            )
-        };
-        value
+        match self.number().await {
+            Number::Zero => BigInt::ZERO,
+            Number::Int(value) if value >= BigInt::ZERO => value,
+            number => panic!(
+                "Unexpected number in Handle! Expected Int, got {:?}",
+                number
+            ),
+        }
+    }
+
+    pub async fn number(self) -> Number {
+        self.handle.number().await.unwrap()
+    }
+
+    pub async fn data(self) -> Data {
+        self.handle.data().await.unwrap()
     }
 
     pub fn link(self, dual: Handle) {

@@ -1,6 +1,6 @@
 pub use super::captures::{Captures, VariableUsage};
 use super::{
-    language::{GlobalName, LocalName},
+    language::{GlobalName, LocalName, TypeParameter},
     types::{GlobalNameWriter, Type},
 };
 use crate::{
@@ -72,7 +72,7 @@ pub enum Command<Typ, S> {
         Option<Type<S>>,
         Typ,
         Arc<Process<Typ, S>>,
-        Vec<LocalName>,
+        Vec<TypeParameter>,
     ),
     Signal(LocalName, Arc<Process<Typ, S>>),
     Case(
@@ -90,7 +90,7 @@ pub enum Command<Typ, S> {
     },
     Loop(Option<LocalName>, LocalName, Captures),
     SendType(Type<S>, Arc<Process<Typ, S>>),
-    ReceiveType(LocalName, Arc<Process<Typ, S>>),
+    ReceiveType(TypeParameter, Arc<Process<Typ, S>>),
 }
 
 #[derive(Clone, Debug)]
@@ -751,7 +751,7 @@ pub struct HoverInfo<S> {
 
 #[derive(Clone, Debug)]
 pub enum TypeHoverHeader<S> {
-    Parameters(Vec<LocalName>),
+    Parameters(Vec<TypeParameter>),
     Arguments(Vec<Type<S>>),
 }
 
@@ -781,7 +781,7 @@ enum HoverInfoInner<S> {
     Module {
         module: S,
         doc: Option<DocComment>,
-        types: Vec<(GlobalName<S>, Vec<LocalName>, Type<S>)>,
+        types: Vec<(GlobalName<S>, Vec<TypeParameter>, Type<S>)>,
         declarations: Vec<(GlobalName<S>, Type<S>)>,
     },
 }
@@ -789,7 +789,7 @@ enum HoverInfoInner<S> {
 impl<S> HoverInfo<S> {
     pub fn type_definition(
         name: GlobalName<S>,
-        params: Vec<LocalName>,
+        params: Vec<TypeParameter>,
         typ: Type<S>,
         doc: Option<DocComment>,
         span: Span,
@@ -859,7 +859,7 @@ impl<S> HoverInfo<S> {
     pub fn module(
         module: S,
         doc: Option<DocComment>,
-        types: Vec<(GlobalName<S>, Vec<LocalName>, Type<S>)>,
+        types: Vec<(GlobalName<S>, Vec<TypeParameter>, Type<S>)>,
         declarations: Vec<(GlobalName<S>, Type<S>)>,
     ) -> Self {
         Self {
@@ -970,7 +970,7 @@ impl<S> HoverInfo<S> {
         &self,
     ) -> Option<(
         &S,
-        &[(GlobalName<S>, Vec<LocalName>, Type<S>)],
+        &[(GlobalName<S>, Vec<TypeParameter>, Type<S>)],
         &[(GlobalName<S>, Type<S>)],
     )> {
         match &self.inner {
@@ -1259,7 +1259,7 @@ impl<S: Clone> Command<(), S> {
         parameter: LocalName,
         annotation: Option<Type<S>>,
         process: Arc<Process<(), S>>,
-        vars: Vec<LocalName>,
+        vars: Vec<TypeParameter>,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Command<(), T>, E> {
         Ok(Command::Receive(
@@ -1328,7 +1328,7 @@ impl<S: Clone> Command<(), S> {
     }
 
     fn map_global_names_receive_type<T, E>(
-        parameter: LocalName,
+        parameter: TypeParameter,
         process: Arc<Process<(), S>>,
         f: &mut impl FnMut(GlobalName<S>) -> Result<GlobalName<T>, E>,
     ) -> Result<Command<(), T>, E> {

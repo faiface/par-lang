@@ -259,13 +259,13 @@ Let's see it in practice. Suppose we want to add up a list of integers.
    ```
    If the list is empty, the result is `0`. Otherwise, we need to add the number `x`
    ```par
-                    Int.Add(x,
+                    x +
    ```
    to the sum of the rest of the list: `xs`.
 4. Since `xs` is a _descendant_ of the original `list` that we applied the `.begin` to, and is again a
    `List<Int>`, we can recursively obtain its sum using `.loop`:
    ```par
-                               xs.loop),
+                               xs.loop
    ```
    And close the braces.
    ```par
@@ -277,7 +277,7 @@ All put together, it looks like this:
 ```par
 def SumList = [list] list.begin.case {
   .end!       => 0,
-  .item(x) xs => Int.Add(x, xs.loop),
+  .item(x) xs => x + xs.loop,
 }
 ```
 
@@ -291,30 +291,30 @@ Observe:
    ```par
    def SumList = [list] list.begin.case {
      .end!       => 0,
-     .item(x) xs => Int.Add(x, xs.loop),
+     .item(x) xs => x + xs.loop,
    }
    ```
 2. The first expansion:
    ```par
    def SumList = [list] list.case {
      .end!       => 0,
-     .item(x) xs => Int.Add(x, xs.begin.case {
+     .item(x) xs => x + xs.begin.case {
        .end!       => 0,
-       .item(x) xs => Int.Add(x, xs.loop),
-     }),
+       .item(x) xs => x + xs.loop,
+     },
    }
    ```
 3. The second expansion:
    ```par
    def SumList = [list] list.case {
      .end!       => 0,
-     .item(x) xs => Int.Add(x, xs.case {
+     .item(x) xs => x + xs.case {
        .end!       => 0,
-       .item(x) xs => Int.Add(x, xs.begin.case {
+       .item(x) xs => x + xs.begin.case {
          .end!       => 0,
-         .item(x) xs => Int.Add(x, xs.loop),
-       }),
-     }),
+         .item(x) xs => x + xs.loop,
+       },
+     },
    }
    ```
 4. And so on...
@@ -326,7 +326,7 @@ type defined previously:
 dec SumTree : [Tree] Int
 def SumTree = [tree] tree.begin.case {
   .leaf number        => number,
-  .node(left, right)! => Int.Add(left.loop, right.loop),
+  .node(left, right)! => left.loop + right.loop,
 }
 
 def BiggerSum = SumTree(BiggerTree)  // = 20
@@ -361,7 +361,7 @@ Now, let's look at _Par_. In Par, `.loop` has a neat feature:
 dec IncBy : [List<Int>, Int] List<Int>
 def IncBy = [list, n] list.begin.case {
   .end!       => .end!,
-  .item(x) xs => .item(Int.Add(x, n)) xs.loop,
+  .item(x) xs => .item(x + n) xs.loop,
 }
 ```
 
@@ -393,15 +393,15 @@ eventually reversing the whole list. In Haskell, this requires a helper recursiv
 In Par, it doesn't!
 
 ```par
-dec Reverse : [type a] [List<Int>] List<Int>
-def Reverse = [type a] [list]
+dec Reverse : [type a, List<Int>] List<Int>
+def Reverse = [type a, list]
   let acc: List<a> = .end!
   in list.begin.case {
     .end!       => acc,
     .item(x) xs => let acc = .item(x) acc in xs.loop,
   }
 
-def TestReverse = Reverse(type Int)(*(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
+def TestReverse = Reverse(type Int, *(1, 2, 3, 4, 5))  // = *(5, 4, 3, 2, 1)
 ```
 
 And there we go! All we had to do was to re-assign `acc` with the new value, and continue with `xs.loop`.

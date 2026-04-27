@@ -5,8 +5,8 @@ import @core/Nat
 import @core/List
 import @core/Ordering
 
-dec Quicksort: [type a] [box [a] [a] (a) (a) Ordering] [List<a>] List<a>
-def Quicksort = [type a] [cmp] [input] chan out: dual List<a> {
+dec Quicksort: [type a, box [a] [a] (a) (a) Ordering, List<a>] List<a>
+def Quicksort = [type a, cmp, input] chan out: dual List<a> {
     let suffix: List<a> = .end!
 	input.unfounded@outer
 	input.case {
@@ -54,23 +54,19 @@ def FromNat : [Nat] BNat = [nat] chan out {
     let acc = [x: BNat] x
     Driver.unfounded
     let mod = Nat.Mod(nat, 2)
-    let nat = Nat.Div(nat, 2)
-    let mod = Nat.Equals(mod, 1)
-    Nat.Equals(nat, 0).case {
-        .true => {
-    out <> mod.case {
-        .true! => acc(.i .e!),
-        .false! => acc(.e!),
-    }
+    let nat = nat / 2
+    let mod = mod == 1
+    if nat == 0 => {
+        out <> mod.case {
+            .true! => acc(.i .e!),
+            .false! => acc(.e!),
         }
-        .false => {
+    }
     let acc = [u: BNat] mod.case {
         .true! => acc(.i u),
         .false! => acc(.o u),
     }
-            Driver.loop
-        }
-    }
+    Driver.loop
 }
 
 def ToNat : [BNat] Nat = [input] chan out {
@@ -81,13 +77,13 @@ def ToNat : [BNat] Nat = [input] chan out {
             out <> acc
         }
         .i => {
-            let acc = Nat.Add(acc, mult)
+            let acc = acc + mult
 
-            let mult = Nat.Mul(mult, 2)
+            let mult = mult * 2
             input.loop
         }
         .o => {
-            let mult = Nat.Mul(mult, 2)
+            let mult = mult * 2
             input.loop
         }
     }
@@ -151,8 +147,8 @@ def Cmp : [BNat] [BNat] Ordering = [a] [b] chan out {
 
 def RT: [Nat] Nat = [x] ToNat(FromNat(x))
 
-dec ListMap : [type a, b] [List<a>, box [a] b] List<b>
-def ListMap = [type a, b] [list, f] list.begin.case {
+dec ListMap : [type a, type b, List<a>, box [a] b] List<b>
+def ListMap = [type a, type b, list, f] list.begin.case {
   .end! => .end!
   .item(x) list => .item(f(x)) list.loop,
 }
@@ -161,7 +157,7 @@ def TestRoundtrip: [Test]! = [test] chan user {
     let range = Nat.Range(0, 32)
     range.begin.case {
         .item (head) => {
-            test.assert("Round-trip did not work", Nat.Equals(RT(head), head))
+            test.assert("Round-trip did not work", RT(head) == head)
             range.loop
         }
         .end => {}
@@ -170,7 +166,7 @@ def TestRoundtrip: [Test]! = [test] chan user {
     user!
 }
 
-def Reverse: [type a] [List<a>] List<a> = [type a] [list] chan yield {
+def Reverse: [type a, List<a>] List<a> = [type a, list] chan yield {
 	let tail: List<a> = .end!
 	list.begin.case {
 		.item(head) => {
@@ -185,17 +181,17 @@ def Reverse: [type a] [List<a>] List<a> = [type a] [list] chan yield {
 
 def Main = chan user {
     let list = Nat.Range(0, 256)
-    let list = Reverse(type Nat)(list)
-    let list = ListMap(type Nat)(type BNat)(list)(box FromNat)
-    let list = Quicksort(type BNat)(box [a] [b] (a) (b) Cmp(a, b))(list)
-    let list = ListMap(type BNat)(type Nat)(list)(box ToNat)
+    let list = Reverse(type Nat, list)
+    let list = ListMap(type Nat, type BNat, list, box FromNat)
+    let list = Quicksort(type BNat, box [a] [b] (a) (b) Cmp(a, b), list)
+    let list = ListMap(type BNat, type Nat, list, box ToNat)
     user!
 }
 def TestQuicksort: [Test]! = [test] chan user {
-    let list = Reverse(type Nat)(Nat.Range(0, 32))
-    let list = ListMap(type Nat)(type BNat)(list)(box FromNat)
-    let list = Quicksort(type BNat)(box [a] [b] (a) (b) Cmp(a, b))(list)
-    let list = ListMap(type BNat)(type Nat)(list)(box ToNat)
+    let list = Reverse(type Nat, Nat.Range(0, 32))
+    let list = ListMap(type Nat, type BNat, list, box FromNat)
+    let list = Quicksort(type BNat, box [a] [b] (a) (b) Cmp(a, b), list)
+    let list = ListMap(type BNat, type Nat, list, box ToNat)
     test.done?
     user!
 }

@@ -6,7 +6,7 @@ use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
-use par_runtime::primitive::{format_float, parse_float_text};
+use par_runtime::primitive::parse_float_text;
 use par_runtime::readback::Handle;
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
@@ -125,16 +125,6 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Float",
-        name: "ToString"
-    },
-    f: |handle| Box::pin(float_to_string(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
         name: "FromString"
     },
     f: |handle| Box::pin(float_from_string(handle)),
@@ -188,46 +178,6 @@ inventory::submit!(ExternalDef {
         name: "Round"
     },
     f: |handle| Box::pin(float_round(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Add"
-    },
-    f: |handle| Box::pin(float_add(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Sub"
-    },
-    f: |handle| Box::pin(float_sub(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Mul"
-    },
-    f: |handle| Box::pin(float_mul(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Float",
-        name: "Div"
-    },
-    f: |handle| Box::pin(float_div(handle)),
 });
 
 inventory::submit!(ExternalDef {
@@ -442,11 +392,6 @@ async fn float_to_int(mut handle: Handle) {
     handle.provide_int(float_to_bigint(value));
 }
 
-async fn float_to_string(mut handle: Handle) {
-    let value = handle.receive().float().await;
-    handle.provide_string(format_float(value).into());
-}
-
 async fn float_from_string(mut handle: Handle) {
     let string = handle.receive().string().await;
     match parse_float_text(string.as_str()) {
@@ -484,30 +429,6 @@ async fn float_ceil(mut handle: Handle) {
 async fn float_round(mut handle: Handle) {
     let value = handle.receive().float().await;
     handle.provide_float(value.round());
-}
-
-async fn float_add(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x + y);
-}
-
-async fn float_sub(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x - y);
-}
-
-async fn float_mul(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x * y);
-}
-
-async fn float_div(mut handle: Handle) {
-    let x = handle.receive().float().await;
-    let y = handle.receive().float().await;
-    handle.provide_float(x / y);
 }
 
 async fn float_pow(mut handle: Handle) {

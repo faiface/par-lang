@@ -9,7 +9,7 @@ use std::{
 use super::{build::BuildResult, readback::Element, run_menu};
 use core::time::Duration;
 use eframe::egui::{self, RichText, Theme};
-use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
+use egui_code_editor::{CodeEditor, ColorTheme, Completer, Syntax};
 use futures::task::Spawn;
 
 #[cfg(target_family = "wasm")]
@@ -36,6 +36,9 @@ pub struct Playground {
     cancel_token: Option<CancellationToken>,
     file_old_mtime: Option<SystemTime>,
     max_interactions: u32,
+    #[cfg(target_family = "wasm")]
+    pending_web_clipboard_paste: Arc<Mutex<Option<String>>>,
+    completer: Completer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +130,9 @@ impl Playground {
             cancel_token: None,
             file_old_mtime: None,
             max_interactions,
+            #[cfg(target_family = "wasm")]
+            pending_web_clipboard_paste: Arc::new(Mutex::new(None)),
+            completer: Completer::new_with_syntax(&par_syntax()).with_auto_indent(),
         });
 
         if let Some(path) = file_path {
@@ -138,12 +144,12 @@ impl Playground {
 }
 
 impl eframe::App for Playground {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let Ok(e) = &mut crate::CRASH_STR.try_lock() {
             **e = Some(self.code.clone());
         }
 
-        let system_dark = ctx
+        let system_dark = ui
             .input(|ri| ri.raw.system_theme.map(|t| t == egui::Theme::Dark))
             .unwrap_or(false);
         let is_dark = self.theme_mode.is_dark(system_dark);
@@ -154,7 +160,12 @@ impl eframe::App for Playground {
             egui::Visuals::light()
         };
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
-        ctx.set_visuals(visuals);
+        ui.set_visuals(visuals);
+
+        #[cfg(target_family = "wasm")]
+        self.handle_web_clipboard_shortcuts(ui.ctx());
+        #[cfg(target_family = "wasm")]
+        self.inject_pending_web_clipboard_paste(ui.ctx());
 
         if let Some(mtime) = self.file_mtime() {
             match self.file_old_mtime {
@@ -180,11 +191,12 @@ impl eframe::App for Playground {
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::SidePanel::left("interaction")
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            let initial_editor_width = ui.available_width() / 2.0;
+            egui::Panel::left("interaction")
                 .resizable(true)
                 .show_separator_line(true)
-                .default_width(16.0 * 32.0)
+                .default_size(initial_editor_width)
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -274,7 +286,6 @@ impl eframe::App for Playground {
                         });
 
                         ui.separator();
-
                         let editor = CodeEditor::default()
                             .id_source("code")
                             .with_syntax(par_syntax())
@@ -282,7 +293,7 @@ impl eframe::App for Playground {
                             .with_fontsize(self.editor_font_size)
                             .with_theme(self.get_theme(ui))
                             .with_numlines(true)
-                            .show(ui, &mut self.code);
+                            .show_with_completer(ui, &mut self.code, &mut self.completer);
 
                         if let Some(cursor) = editor.cursor_range {
                             self.cursor_pos = row_and_column(&self.code, cursor.primary.index);
@@ -297,7 +308,7 @@ impl eframe::App for Playground {
                             {
                                 let signature = checked
                                     .render_hover_signature_in_file(&hover_file_name, &name_info);
-                                editor.response.on_hover_ui_at_pointer(|ui| {
+                                editor.response.response.on_hover_ui_at_pointer(|ui| {
                                     ui.label(RichText::new(signature).code());
                                     if let Some(doc) = name_info.doc() {
                                         ui.separator();
@@ -340,6 +351,95 @@ fn editor_hover_pos(output: &egui::text_edit::TextEditOutput) -> Option<(u32, u3
 }
 
 impl Playground {
+    #[cfg(target_family = "wasm")]
+    fn handle_web_clipboard_shortcuts(&self, ctx: &egui::Context) {
+        let mut needs_copy = false;
+        let mut needs_cut = false;
+        let mut needs_paste = false;
+
+        ctx.input(|input| {
+            let has_copy = input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Copy));
+            let has_cut = input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Cut));
+            let has_paste = input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Paste(_)));
+
+            for event in &input.events {
+                let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                else {
+                    continue;
+                };
+
+                if !modifiers.command {
+                    continue;
+                }
+
+                match key {
+                    egui::Key::C => needs_copy = !has_copy,
+                    egui::Key::X => needs_cut = !has_cut,
+                    egui::Key::V => needs_paste = !has_paste,
+                    _ => {}
+                }
+            }
+        });
+
+        if needs_copy || needs_cut {
+            ctx.input_mut(|input| {
+                if needs_copy {
+                    input.events.push(egui::Event::Copy);
+                }
+                if needs_cut {
+                    input.events.push(egui::Event::Cut);
+                }
+            });
+        }
+
+        if needs_paste {
+            self.request_web_clipboard_paste(ctx);
+        }
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn request_web_clipboard_paste(&self, ctx: &egui::Context) {
+        let pending_paste = Arc::clone(&self.pending_web_clipboard_paste);
+        let ctx = ctx.clone();
+
+        wasm_bindgen_futures::spawn_local(async move {
+            let Some(text) = read_web_clipboard_text().await else {
+                return;
+            };
+            if text.is_empty() {
+                return;
+            }
+
+            *pending_paste.lock().unwrap() = Some(text);
+            ctx.request_repaint();
+        });
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn inject_pending_web_clipboard_paste(&self, ctx: &egui::Context) {
+        let Some(text) = self.pending_web_clipboard_paste.lock().unwrap().take() else {
+            return;
+        };
+
+        ctx.input_mut(|input| {
+            input.events.push(egui::Event::Paste(text));
+        });
+    }
+
     #[cfg(not(target_family = "wasm"))]
     fn open_file(&mut self) {
         if let Some(path) = rfd::FileDialog::new().pick_file() {
@@ -449,12 +549,6 @@ impl Playground {
                 }
 
                 if self.build.pretty().is_some() {
-                    ui.checkbox(
-                        &mut self.show_compiled,
-                        egui::RichText::new("Show compiled"),
-                    );
-                    ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
-
                     if let (Some(checked), Some(rt_compiled)) =
                         (self.build.checked(), self.build.rt_compiled())
                     {
@@ -486,6 +580,12 @@ impl Playground {
                             })
                         });
                     }
+
+                    ui.checkbox(
+                        &mut self.show_compiled,
+                        egui::RichText::new("Show compiled"),
+                    );
+                    ui.checkbox(&mut self.show_ic, egui::RichText::new("Show IC"));
                 }
             });
 
@@ -502,7 +602,9 @@ impl Playground {
                     let theme = self.get_theme(ui);
 
                     if self.show_compiled {
-                        if let Some(pretty) = self.build.pretty() {
+                        if let Some(mut pretty) =
+                            self.build.pretty_for_file(&self.active_file_name())
+                        {
                             CodeEditor::default()
                                 .id_source("compiled")
                                 .with_syntax(par_syntax())
@@ -510,7 +612,7 @@ impl Playground {
                                 .with_fontsize(self.editor_font_size)
                                 .with_theme(theme)
                                 .with_numlines(true)
-                                .show(ui, &mut String::from(pretty));
+                                .show(ui, &mut pretty);
                         }
                     }
 
@@ -537,10 +639,22 @@ impl Playground {
     }
 }
 
+#[cfg(target_family = "wasm")]
+async fn read_web_clipboard_text() -> Option<String> {
+    let window = web_sys::window()?;
+    let clipboard = window.navigator().clipboard();
+    let text = wasm_bindgen_futures::JsFuture::from(clipboard.read_text())
+        .await
+        .ok()?
+        .as_string()?;
+    Some(text.replace("\r\n", "\n"))
+}
+
 fn par_syntax() -> Syntax {
     Syntax {
         language: "Par",
         case_sensitive: true,
+        quotes: BTreeSet::from(['"', '`']),
         comment: "//",
         comment_multiline: [r#"/*"#, r#"*/"#],
         hyperlinks: BTreeSet::from([]),
@@ -589,13 +703,13 @@ fn par_syntax() -> Syntax {
 }
 
 fn fix_dark_theme(mut theme: ColorTheme) -> ColorTheme {
-    theme.bg = "#1F1F1F";
+    theme.bg = "1F1F1F";
     theme.functions = theme.literals;
     theme
 }
 
 fn fix_light_theme(mut theme: ColorTheme) -> ColorTheme {
-    theme.bg = "#F9F9F9";
+    theme.bg = "F9F9F9";
     theme.functions = theme.literals;
     theme
 }

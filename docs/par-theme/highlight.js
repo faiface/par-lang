@@ -60,7 +60,7 @@ hljs.registerLanguage("par", function(hljs) {
       name: "Par",
       aliases: ["par"],
       keywords: {
-          keyword: "dec def type chan dual let do in case begin unfounded loop module import as export either choice recursive iterative self box catch try throw default else if is and or not poll repoll submit external",
+          keyword: "dec def type chan dual let do in case begin unfounded loop module import as export either choice recursive iterative self box data number signed catch try throw default else if is and or not neg poll repoll submit external",
           literal: ""
       },
       illegal: "",
@@ -76,12 +76,16 @@ hljs.registerLanguage("par", function(hljs) {
               begin: /"(.|\n)*?"/
           }, 
           {
+              className: "string",
+              begin: /`(\\[\s\S]|[^`\\])*`/
+          },
+          {
               className: "type",
               begin: /\b[A-Z][a-zA-Z0-9_]*/
           },
           {
               className: "number",
-              begin: /-?\b\d[_\d]*\b/
+              begin: /-?\b\d[_\d]*(?:\.\d[_\d]*)?(?:[eE][+-]?\d[_\d]*)?\b/
           }
       ]
   }

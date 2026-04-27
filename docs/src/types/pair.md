@@ -89,20 +89,20 @@ Here are some examples:
 ```par
 def Five: Int =
   let (x) y = (3) 2
-  in Int.Add(x, y)
+  in x + y
 
 def FiveSymmetrically: Int =
   let (x, y)! = (3, 2)!
-  in Int.Add(x, y)
+  in x + y
 
 dec AddSymmetricPair : [(Int, Int)!] Int
-def AddSymmetricPair = [(x, y)!] Int.Add(x, y)
+def AddSymmetricPair = [(x, y)!] x + y
 //                      \_____/<---- pattern here
 
 dec SumList : [List<Int>] Int
 def SumList = [list] list.begin.case {
   .end!       => 0,
-  .item(x) xs => Int.Add(x, xs.loop),
+  .item(x) xs => x + xs.loop,
 //     \____/<---- pattern here
 }
 ```

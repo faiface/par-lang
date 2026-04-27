@@ -97,7 +97,7 @@ For example, here's a simple function adding up all the numbers in a list:
 ```par
 def SumList: [List<Int>] Int = [list] list.begin.case {
   .end!       => 0,
-  .item(x) xs => Int.Add(x, xs.loop),
+  .item(x) xs => x + xs.loop,
 }
 ```
 
@@ -112,7 +112,7 @@ dec SumList : [List<Int>] Int
 
 def SumList = [list] list.begin.case {
   .end!       => 0,
-  .item(x) xs => Int.Add(x, xs.loop),
+  .item(x) xs => x + xs.loop,
 }
 ```
 

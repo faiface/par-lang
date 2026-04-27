@@ -142,13 +142,13 @@ For a small example, we analyze the `Str` and `Num` values of the `StringOrNumbe
 // evaluates to "Hello!"
 def ResultForStr = Str.case {
   .string s => s,
-  .number n => Int.ToString(n),
+  .number n => `#{n}`,
 }
 
 // evaluates to "42"
 def ResultForNum = Num.case {
   .string s => s,
-  .number n => Int.ToString(n),
+  .number n => `#{n}`,
 }
 ```
 
@@ -162,24 +162,13 @@ def VariedToString = [varied] varied.case {
 
   .string s => String.Builder.add(".string ").add(String.Quote(s)).build,
 
-  .number n => String.Builder.add(".number ").add(Int.ToString(n)).build,
+  .number n => `.number #{n}`,
 
   .pair(n) s =>
-    String.Builder
-      .add(".pair(")
-      .add(Int.ToString(n))
-      .add(") ")
-      .add(String.Quote(s))
-      .build,
+    `.pair(#{n}) ${String.Quote(s)}`,
 
   .symmetricPair(n, s)! =>
-    String.Builder
-      .add(".symmetricPair(")
-      .add(Int.ToString(n))
-      .add(", ")
-      .add(String.Quote(s))
-      .add(")!")
-      .build,
+    `.symmetricPair(#{n}, ${String.Quote(s)})!`,
 
   .nested inside => String.Builder.add(".nested").add(inside.case {
     .left! => ".left!",

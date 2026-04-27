@@ -1,4 +1,4 @@
-use crate::frontend_impl::language::{GlobalName, LocalName};
+use crate::frontend_impl::language::{GlobalName, LocalName, TypeConstraint};
 use crate::frontend_impl::process::{Captures, Expression};
 use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::types::{Type, TypeDefs, TypeError};
@@ -22,6 +22,18 @@ pub(crate) struct PollScope<S> {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct BlockPathContext<S> {
+    pub(crate) variables: IndexMap<LocalName, Type<S>>,
+    pub(crate) type_vars: IndexMap<LocalName, TypeConstraint>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BlockScope<S> {
+    pub(crate) target_type_vars: IndexMap<LocalName, TypeConstraint>,
+    pub(crate) paths: Vec<BlockPathContext<S>>,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Context<S> {
     pub(crate) type_defs: TypeDefs<S>,
     declarations: Arc<IndexMap<GlobalName<S>, (Span, Type<S>)>>,
@@ -34,7 +46,7 @@ pub(crate) struct Context<S> {
         IndexMap<Option<LocalName>, (Type<S>, Arc<IndexMap<LocalName, Type<S>>>)>,
     pub(crate) poll: Option<PollScope<S>>,
     pub(crate) poll_stash: Vec<Option<PollScope<S>>>,
-    pub(crate) blocks: IndexMap<usize, Vec<IndexMap<LocalName, Type<S>>>>,
+    pub(crate) blocks: IndexMap<usize, BlockScope<S>>,
 }
 
 #[derive(Clone, Debug)]

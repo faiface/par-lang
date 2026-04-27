@@ -28,17 +28,12 @@ export {
     },
   }
 
-  // Tests two characters for equality.
-  dec Equals : [Char, Char] Bool
-
   // Returns the Unicode code point of a character as a natural number.
   dec Code : [Char] Nat
 
   // Tests whether a character matches a class.
   dec Is : [Char, Class] Bool
 }
-
-def Equals = external
 
 def Code = external
 

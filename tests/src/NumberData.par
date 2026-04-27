@@ -1,0 +1,92 @@
+module NumberData
+
+import {
+  @core/Bool
+  @core/Data
+  @core/Float
+  @core/Int
+  @core/List
+  @core/Nat
+  @core/Number
+  @core/Ordering
+  @core/String
+  @core/Test
+}
+
+def IsLess: [Ordering] Bool = [ordering]
+  ordering.case {
+    .less! => .true!,
+    .equal! => .false!,
+    .greater! => .false!,
+  }
+
+def TestNumberZero: [Test] ! = [test] do {
+  let natZero = Number.Zero(type Nat)
+  let intZero = Number.Zero(type Int)
+  let floatZero = Number.Zero(type Float)
+
+  test
+    .assert("Number.Zero(type Nat) behaves like nat 0", natZero == 0)
+    .assert("Number.Zero(type Int) behaves like int 0", intZero == 0)
+    .assert(
+      "Number.Zero(type Float) behaves like float 0.0",
+      floatZero == 0.0,
+    )
+} in !
+
+def TestGenericNumberOperations: [Test] ! = [test] do {
+  let natSum = Number.Add((2) 3)
+  let signedDiff = Number.Sub((5) 3)
+  let floatProduct = Number.Mul((1.5) 2.0)
+  let intSumWithZero = Number.Add((Number.Zero(type Int)) 3)
+  let intNegated = Number.Neg(5)
+
+  test
+    .assert("Number.Add keeps nat arithmetic", natSum == 5)
+    .assert("Number.Sub infers signed ints", signedDiff == 2)
+    .assert("Number.Mul keeps float arithmetic", floatProduct == 3.0)
+    .assert("Number.Add handles the Zero variant", intSumWithZero == 3)
+    .assert("Number.Neg negates signed inputs", intNegated == -5)
+} in !
+
+def TestDataGenericFunctions: [Test] ! = [test]
+  let pairData: (Nat) Bool = (1) .true! in
+  let rightData: (Nat) Bool = (2) .false! in
+  let rendered = Data.ToString(pairData) in
+  let ordering = Data.Compare((pairData) rightData) in
+  do {
+    test
+      .assert(
+        "Data.ToString renders nested data",
+        rendered == "(1) .true!",
+      )
+      .assert("Data.Compare compares paired same-type data", IsLess(ordering))
+  } in !
+
+type Format = List<either {
+  .str String,
+  .dat<a: data>(a)!,
+}>
+
+dec RenderFormat : [Format] String
+def RenderFormat = [fmt] do {
+  let builder = String.Builder
+  fmt.begin.case {
+    .item(i) => {
+      i.case {
+        .str s => { builder.add(s) }
+        .dat<a: data>(x)! => { builder.add(x->Data.ToString) }
+      }
+      fmt.loop
+    }
+    .end! => {}
+  }
+} in builder.build
+
+def TestFormatDropsBranchLocalData: [Test] ! = [test] do {
+  let fmt: Format = *(.str "x=", .dat(3)!, .str ", ok=", .dat(.true!)!)
+  test.assert(
+    "Case fallthrough drops branch-local data values",
+    RenderFormat(fmt) == "x=3, ok=.true!",
+  )
+} in !

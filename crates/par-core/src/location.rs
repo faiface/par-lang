@@ -1,4 +1,5 @@
 use arcstr::ArcStr;
+use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
@@ -11,7 +12,7 @@ pub struct Point {
     pub column: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Span {
     None,
     At {
@@ -24,6 +25,12 @@ pub enum Span {
 impl Default for Span {
     fn default() -> Self {
         Self::None
+    }
+}
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
     }
 }
 
@@ -117,6 +124,17 @@ impl Span {
     }
 }
 
+impl Display for Span {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => write!(f, "<unknown location>"),
+            Self::At { start, file, .. } => {
+                write!(f, "{}:{}:{}", file, start.row + 1, start.column + 1)
+            }
+        }
+    }
+}
+
 impl Point {
     pub fn point_span(&self, file: FileName) -> Span {
         Span::At {
@@ -133,6 +151,12 @@ pub struct FileName(pub ArcStr);
 impl FileName {
     pub const BUILTIN: Self = FileName(arcstr::literal!("par:Builtin"));
     pub const NATIVE_BUILTIN: Self = FileName(arcstr::literal!("par:NativeBuiltin"));
+}
+
+impl Display for FileName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0.as_str())
+    }
 }
 
 impl From<&str> for FileName {

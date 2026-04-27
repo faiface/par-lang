@@ -110,7 +110,7 @@ impl VisibilityIndex {
             .unwrap_or(Visibility::Module)
     }
 
-    fn declaration_visibility(&self, name: &GlobalName<Universal>) -> Visibility {
+    pub(crate) fn declaration_visibility(&self, name: &GlobalName<Universal>) -> Visibility {
         self.declarations
             .get(name)
             .copied()

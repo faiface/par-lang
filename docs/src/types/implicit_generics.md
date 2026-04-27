@@ -10,8 +10,8 @@ import {
   @core/String
 }
 
-dec Swap : [type a, b] [(a, b)!] (b, a)!
-def Swap = [type a, b] [pair]
+dec Swap : [type a, type b, (a, b)!] (b, a)!
+def Swap = [type a, type b, pair]
   let (first, second)! = pair
   in (second, first)!
 ```
@@ -20,7 +20,7 @@ With `forall`, callers pass types explicitly when they use `Swap`:
 
 ```par
 def Pair = ("Hello!", 42)!
-def Swapped = Swap(type String, Int)(Pair)
+def Swapped = Swap(type String, type Int, Pair)
 ```
 
 That is precise and fully explicit. But in many everyday cases, the types are
@@ -77,6 +77,9 @@ whether it is implicit or explicit:
 - If it is explicit (`[type a]`), it is always specified by the caller.
 
 This is intentional: it keeps call sites predictable.
+
+Implicit type parameters can also carry constraints, such as `<a: box>` or
+`<a: data>`. The constraints themselves are covered in [Type Constraints](./constraints.md).
 
 ## Construction
 
@@ -146,8 +149,8 @@ A classic example is an anonymous function. The `box` here is not the point —
 it just happens that `Map` takes a boxed function.
 
 ```par
-Map(numbers, box Int.ToString)        // fine: Int.ToString has a known type
-Map(numbers, box [x] Int.ToString(x)) // may fail without more info
+Map(numbers, box [x: Int] `#{x}`) // fine: `x` has a known type
+Map(numbers, box [x] `#{x}`)      // may fail without more info
 ```
 
 (`Map` is discussed in [Box](./box.md).)
@@ -159,7 +162,7 @@ mapper argument itself, you end up in a chicken-and-egg situation.
 The usual fix is to add an annotation:
 
 ```par
-Map(numbers, box [x: Int] Int.ToString(x))
+Map(numbers, box [x: Int] `#{x}`)
 ```
 
 This is why implicit generics can be *made difficult* by higher-order arguments
@@ -175,21 +178,21 @@ dec Map : <a>[List<a>] <b>[box [a] b] List<b>
 then a call like this may fail:
 
 ```par
-Map(numbers, box [x] Int.ToString(x))
+Map(numbers, box [x] `#{x}`)
 ```
 
 because the type of `x` is not specified, so the type of the function cannot be
 inferred, so `b` cannot be inferred either. You end up needing to annotate `x`:
 
 ```par
-Map(numbers, box [x: Int] Int.ToString(x))
+Map(numbers, box [x: Int] `#{x}`)
 ```
 
 Many “map-like” APIs therefore prefer to infer the input type and keep the
 output type explicit, e.g.:
 
 ```par
-dec Map : <a>[List<a>] [type b] [box [a] b] List<b>
+dec Map : <a>[List<a>] [type b, box [a] b] List<b>
 ```
 
 With this type, the mapper is checked against the expected type `box [a] b`, so
@@ -216,7 +219,7 @@ type AnyDrop = <a>(a) box choice {
 This is the implicit counterpart of the existential type:
 
 ```par
-type DropMe = (type a) (a) box choice {
+type DropMe = (type a, a) box choice {
   .drop(a) => !,
 }
 ```

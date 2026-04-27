@@ -7,12 +7,15 @@ use crate::workspace_support::{
     CheckedWorkspaceBuild, ScopedTypeError, WorkspaceBuildError, checked_workspace_from_path,
     checked_workspace_from_single_file,
 };
-use par_core::frontend::DefinitionBody;
+use par_core::frontend::{Definition, DefinitionBody, language::Universal, process::Expression};
+use par_core::source::FileName;
 use par_core::{
     runtime::{Compiled, RuntimeCompilerError},
     workspace::{CheckedWorkspace, WorkspaceDiscoveryError, WorkspaceError},
 };
 use par_runtime::linker::Linked;
+
+type LoweredDefinition = Definition<Arc<Expression<(), Universal>>, Universal>;
 
 #[derive(Clone)]
 pub(super) enum BuildError {
@@ -93,6 +96,24 @@ impl BuildResult {
         }
     }
 
+    pub(super) fn pretty_for_file(&self, file: &FileName) -> Option<String> {
+        let checked = self.checked()?;
+        let Some(scope) = checked.workspace().import_scope(file) else {
+            return self.pretty().map(str::to_owned);
+        };
+
+        Some(
+            checked
+                .workspace()
+                .lowered_module()
+                .definitions
+                .iter()
+                .filter(|definition| definition.name.module == scope.current_module)
+                .map(format_definition)
+                .collect(),
+        )
+    }
+
     pub(super) fn checked(&self) -> Option<Arc<CheckedWorkspace>> {
         match self {
             Self::TypeError { checked, .. }
@@ -154,26 +175,7 @@ impl BuildResult {
             .lowered_module()
             .definitions
             .iter()
-            .map(
-                |par_core::frontend::Definition {
-                     span: _,
-                     name,
-                     body,
-                 }| {
-                    let mut buf = String::new();
-                    write!(&mut buf, "def {name} = ").expect("write failed");
-                    match body {
-                        DefinitionBody::Par(expr) => {
-                            expr.pretty(&mut buf, 0).expect("write failed");
-                        }
-                        DefinitionBody::External(_) => {
-                            write!(&mut buf, "<external>").expect("write failed");
-                        }
-                    }
-                    write!(&mut buf, "\n\n").expect("write failed");
-                    buf
-                },
-            )
+            .map(format_definition)
             .collect();
 
         if !build.type_errors.is_empty() {
@@ -200,4 +202,25 @@ impl BuildResult {
             rt_compiled,
         }
     }
+}
+
+fn format_definition(
+    Definition {
+        span: _,
+        name,
+        body,
+    }: &LoweredDefinition,
+) -> String {
+    let mut buf = String::new();
+    write!(&mut buf, "def {name} = ").expect("write failed");
+    match body {
+        DefinitionBody::Par(expr) => {
+            expr.pretty(&mut buf, 0).expect("write failed");
+        }
+        DefinitionBody::External(_) => {
+            write!(&mut buf, "<external>").expect("write failed");
+        }
+    }
+    write!(&mut buf, "\n\n").expect("write failed");
+    buf
 }

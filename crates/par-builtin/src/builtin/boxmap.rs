@@ -1,5 +1,5 @@
 //package: core
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
@@ -7,7 +7,7 @@ use crate::builtin::list::readback_list;
 use arcstr::literal;
 use im::OrdMap;
 use num_bigint::BigInt;
-use par_runtime::readback::Handle;
+use par_runtime::readback::{Data, Handle};
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
 
 inventory::submit!(ExternalDef {
@@ -15,9 +15,9 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "BoxMap",
-        name: "OfString"
+        name: "New"
     },
-    f: |handle| Box::pin(boxmap_new(handle, Handle::string, Handle::provide_string)),
+    f: |handle| Box::pin(boxmap_new(handle)),
 });
 
 inventory::submit!(ExternalDef {
@@ -25,63 +25,40 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "BoxMap",
-        name: "OfBytes"
+        name: "FromList"
     },
-    f: |handle| Box::pin(boxmap_new(handle, Handle::bytes, Handle::provide_bytes)),
+    f: |handle| Box::pin(boxmap_from_list(handle)),
 });
 
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "BoxMap",
-        name: "OfInt"
-    },
-    f: |handle| Box::pin(boxmap_new(handle, Handle::int, Handle::provide_int)),
-});
+async fn boxmap_new(handle: Handle) {
+    provide_boxmap(handle, OrdMap::new());
+}
 
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "BoxMap",
-        name: "OfNat"
-    },
-    f: |handle| Box::pin(boxmap_new(handle, Handle::nat, Handle::provide_nat)),
-});
-
-async fn boxmap_new<K, F>(
-    mut handle: Handle,
-    read_key: impl Send + Sync + Copy + 'static + Fn(Handle) -> F,
-    provide_key: impl Send + Sync + Copy + 'static + Fn(Handle, K),
-) where
-    K: Ord + Clone + Send + Sync + 'static,
-    F: Send + 'static + Future<Output = K>,
-{
+async fn boxmap_from_list(mut handle: Handle) {
     let entries = readback_list(handle.receive(), |mut handle| async move {
-        let key = read_key(handle.receive()).await;
-        let value = Arc::new(Mutex::new(handle.duplicate()));
+        let key = handle.receive_data().await;
+        let value = Arc::new(Mutex::new(handle));
         (key, value)
     })
     .await;
 
-    let mut map: OrdMap<K, Arc<Mutex<Handle>>> = OrdMap::new();
+    let mut map: OrdMap<Data, Arc<Mutex<Handle>>> = OrdMap::new();
     for (k, v) in entries {
-        map.insert(k, v);
+        if let Some(old) = map.insert(k, v) {
+            erase_stored_handle(old);
+        }
     }
 
-    provide_boxmap(handle, read_key, provide_key, map);
+    provide_boxmap(handle, map);
 }
 
-fn provide_boxmap<K, F>(
-    handle: Handle,
-    read_key: impl Send + Sync + Copy + 'static + Fn(Handle) -> F,
-    provide_key: impl Send + Sync + Copy + 'static + Fn(Handle, K),
-    map: OrdMap<K, Arc<Mutex<Handle>>>,
-) where
-    K: Ord + Clone + Send + Sync + 'static,
-    F: Send + 'static + Future<Output = K>,
-{
+fn erase_stored_handle(handle: Arc<Mutex<Handle>>) {
+    if let Ok(handle) = Arc::try_unwrap(handle) {
+        handle.into_inner().erase();
+    }
+}
+
+fn provide_boxmap(handle: Handle, map: OrdMap<Data, Arc<Mutex<Handle>>>) {
     handle.provide_box(move |mut handle| {
         let mut map = map.clone();
         async move {
@@ -92,7 +69,7 @@ fn provide_boxmap<K, F>(
                 "keys" => {
                     for key in map.keys() {
                         handle.signal(literal!("item"));
-                        provide_key(handle.send(), key.clone());
+                        handle.send_data(key);
                     }
                     handle.signal(literal!("end"));
                     return handle.break_();
@@ -101,14 +78,14 @@ fn provide_boxmap<K, F>(
                     for (key, value) in map.iter() {
                         handle.signal(literal!("item"));
                         let mut pair = handle.send();
-                        provide_key(pair.send(), key.clone());
+                        pair.send_data(key);
                         pair.link(value.lock().await.duplicate());
                     }
                     handle.signal(literal!("end"));
                     return handle.break_();
                 }
                 "get" => {
-                    let key = read_key(handle.receive()).await;
+                    let key = handle.receive_data().await;
                     match map.get(&key) {
                         Some(value) => {
                             handle.signal(literal!("ok"));
@@ -121,15 +98,15 @@ fn provide_boxmap<K, F>(
                     }
                 }
                 "put" => {
-                    let key = read_key(handle.receive()).await;
+                    let key = handle.receive_data().await;
                     let value = handle.receive();
                     map.insert(key, Arc::new(Mutex::new(value)));
-                    return provide_boxmap(handle, read_key, provide_key, map);
+                    return provide_boxmap(handle, map);
                 }
                 "delete" => {
-                    let key = read_key(handle.receive()).await;
+                    let key = handle.receive_data().await;
                     map.remove(&key);
-                    return provide_boxmap(handle, read_key, provide_key, map);
+                    return provide_boxmap(handle, map);
                 }
                 _ => unreachable!(),
             }

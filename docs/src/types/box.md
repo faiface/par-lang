@@ -45,8 +45,8 @@ This protocol gives us:
 Here's a `Map` function that uses it:
 
 ```par
-dec Map : [type a, b] [List<a>, Mapper<a, b>] List<b>
-def Map = [type a, b] [list, mapper] list.begin.case {
+dec Map : [type a, type b, List<a>, Mapper<a, b>] List<b>
+def Map = [type a, type b, list, mapper] list.begin.case {
   .end! => let ! = mapper.close in .end!,
   .item(x) xs => let (x1) mapper = mapper.apply(x) in .item(x1) xs.loop,
 }
@@ -55,9 +55,9 @@ def Map = [type a, b] [list, mapper] list.begin.case {
 And using it:
 
 ```par
-def NumberStrings = Map(type Int, String)(Int.Range(1, 100), begin case {
+def NumberStrings = Map(type Int, type String, Int.Range(1, 100), begin case {
   .close => !,
-  .apply(n) => (Int.ToString(n)) loop,
+  .apply(n) => (`#{n}`) loop,
 })
 ```
 
@@ -102,8 +102,8 @@ module Main
 
 import @core/List
 
-dec Map : [type a, b] [List<a>, box [a] b] List<b>
-def Map = [type a, b] [list, f] list.begin.case {
+dec Map : <a>[List<a>] [type b, box [a] b] List<b>
+def Map = <a>[list] [type b, f] list.begin.case {
   .end! => .end!,
   .item(x) xs => .item(f(x)) xs.loop,
 }
@@ -112,10 +112,7 @@ def Map = [type a, b] [list, f] list.begin.case {
 Let’s try it out:
 
 ```par
-def NumberStrings = Map(type Int, String)(
-  Int.Range(1, 100),
-  box Int.ToString,
-)
+def NumberStrings = Map(Int.Range(1, 100), type String, box [n] `#{n}`)
 ```
 
 No wrappers, no manual protocols. The boxed function can be used freely, because the `box` type makes
@@ -145,6 +142,10 @@ def Ints: List<Int> = Boxes
 
 Let’s write a function that filters a list using a boxed predicate.
 
+This example uses a `box` type constraint, written `a: box`. The next chapter covers constraints
+properly; for now, read it as saying: "the element type must be non-linear, because rejected
+elements are discarded."
+
 ```par
 module Main
 
@@ -154,9 +155,9 @@ import {
   @core/List
 }
 
-dec Filter : [type a] [List<box a>, box [a] Bool] List<a>
+dec Filter : <a: box>[List<a>] [box [a] Bool] List<a>
 
-def Filter = [type a] [list, predicate] list.begin.case {
+def Filter = <a: box>[list] [predicate] list.begin.case {
   .end! => .end!,
   .item(x) xs => predicate(x).case {
     .true! => .item(x) xs.loop,
@@ -166,28 +167,20 @@ def Filter = [type a] [list, predicate] list.begin.case {
 ```
 
 Note the types:
-- We accept a list of `box a`, because elements might be discarded.
-- But we return a `List<a>` — not a `List<box a>`.
+- We accept a `List<a>`.
+- The constraint `a: box` says elements may be discarded.
+- The result is still a `List<a>`.
 
 Let’s try it out:
 
 ```par
-def Evens = Filter(type Int)(
-  Int.Range(1, 100),
-  box [n] Int.Equals(0, Int.Mod(n, 2)),
-)
+def Evens = Filter(Int.Range(1, 100), box [n] {Int.Mod(n, 2) == 0})
 ```
 
 Here:
-- `Int.Range(1, 100)` gives a `List<Int>`, which is valid because `Int` can be used as a `box Int`.
-- The result is inferred as `List<Int>`, not `List<box Int>`.
+- `Int.Range(1, 100)` gives a `List<Int>`.
+- `Int` satisfies the `box` constraint, because integers are non-linear.
+- The result is inferred as `List<Int>`.
 
-This avoids bloating the result type with redundant boxes — keeping things clear.
-
-And if we were filtering a list of boxed values already?
-
-```par
-Filter(type box T)(listOfBoxT, predicate)
-```
-
-That works too. Thanks to subtyping, everything lines up as you'd expect.
+This keeps the list type clear. The constraint says what the implementation needs, without
+wrapping every element in a redundant `box`.

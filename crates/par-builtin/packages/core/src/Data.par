@@ -1,0 +1,16 @@
+export module Data
+
+import {
+  Ordering
+  String
+}
+
+export {
+  dec ToString : <a: data>[a] String
+
+  dec Compare : <a: data>[(a) a] Ordering
+}
+
+def ToString = external
+
+def Compare = external

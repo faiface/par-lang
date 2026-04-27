@@ -2,27 +2,12 @@
 export module Int
 
 import {
-  Bool
   List
   Nat
-  Ordering
   String
 }
 
 export {
-  // Returns `x + y`.
-  dec Add : [Int, Int] Int
-
-  // `Int.Sub(x, y)` returns `x - y`.
-  dec Sub : [Int, Int] Int
-
-  // Returns `x * y`.
-  dec Mul : [Int, Int] Int
-
-  // `Int.Div(x, y)` is integer division truncated toward zero.
-  // Returns `0` when `y` is `0`.
-  dec Div : [Int, Int] Int
-
   // `Int.Mod(x, n)` returns the non-negative remainder of `x` modulo `n`.
   // The result is in `[0, n)`, or `0` when `n` is `0`.
   dec Mod : [Int, Nat] Nat
@@ -44,21 +29,12 @@ export {
   // ```
   dec Clamp : [Int] [Int, Int] Int
 
-  // Tests two integers for equality.
-  dec Equals : [Int, Int] Bool
-
-  // Compares two integers, returning their `Ordering`.
-  dec Compare : [Int, Int] Ordering
-
   // `Int.Range(lo, hi)` produces the integers from `lo` (inclusive) to `hi` (exclusive).
   //
   // ```par
   // Int.Range(0, 5)  // = *(0, 1, 2, 3, 4)
   // ```
   dec Range : [Int, Int] List<Int>
-
-  // Converts an integer to its decimal string representation.
-  dec ToString : [Int] String
 
   // Parses a decimal string into an integer.
   // Returns `.err!` when the string is not a valid integer.
@@ -67,14 +43,6 @@ export {
     .err!,
   }
 }
-
-def Add = external
-
-def Sub = external
-
-def Mul = external
-
-def Div = external
 
 def Mod = external
 
@@ -86,12 +54,6 @@ def Abs = external
 
 def Clamp = external
 
-def Equals = external
-
-def Compare = external
-
 def Range = external
-
-def ToString = external
 
 def FromString = external

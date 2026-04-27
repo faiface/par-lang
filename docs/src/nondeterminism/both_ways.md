@@ -142,10 +142,8 @@ def ServeIds = [clients] do {
 
     // A client is requesting an ID.
     .getId client => do {
-      // Increment the `id` variable using the pipe
-      // syntax sugar in the process syntax. It's
-      // the same as: `let id = Nat.Add(id, 1)`.
-      id->Nat.Add(1)
+      // Increment the `id` variable in-place.
+      id += 1
       // The `client`'s type is `[Nat] IdClient` here.
       // We send it a fresh ID using the send command.
       client(id)
@@ -173,7 +171,7 @@ def SimpleClient: [String] IdClient = [name]
   // an `IdClient` by operating on an `IdServer`.
   chan server: IdServer {
     server.getId[id]
-    Debug.Log(String.Concat(*(name, " got number ", id->Nat.ToString)))
+    Debug.Log(`${name} got number #{id}`)
     server.end!
   }
 
@@ -268,7 +266,7 @@ def IncrementingClient = [count] chan server {
   Nat.Repeat(count).begin.case {
     .step rest => {
       server.take[n]
-      n->Nat.Add(1)
+      n += 1
       server.put(n)
       rest.loop
     }
@@ -285,7 +283,7 @@ def Main: ! = do {
     server.spawn(IncrementingClient(1000))
     server.end!
   })
-  Debug.Log(final->Nat.ToString)
+  Debug.Log(`#{final}`)
 } in !
 ```
 

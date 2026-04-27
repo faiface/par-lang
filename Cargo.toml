@@ -21,8 +21,8 @@ par-builtin = { path = "crates/par-builtin" }
 par-runtime = { path = "crates/par-runtime" }
 par-doc = { path = "crates/par-doc" }
 futures = { version = "0.3.31", features = ["executor", "thread-pool"] }
-eframe = { version = "0.33.0", features = ["default", "__screenshot"], optional = true }
-egui_code_editor = { version = "=0.2.20", optional = true }
+eframe = { version = "0.34.1", features = ["default", "__screenshot"], optional = true }
+egui_code_editor = { version = "=0.2.24", optional = true }
 indexmap = "2.7.0"
 rfd = { version = "0.15.2", optional = true }
 winnow = { version = "0.7.4", features = [
@@ -60,6 +60,9 @@ webbrowser = "1.0.6"
 [package.metadata.spellcheck]
 config = ".config/spellcheck.toml"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mimalloc = "0.1.49"
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "io-std", "signal"] }
 
@@ -67,4 +70,11 @@ tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io
 tokio = { version = "1.49.0", features = ["rt", "macros", "io-util"] }
 log = "0.4.28"
 wasm-bindgen-futures = "0.4.64"
-web-sys = "0.3.91"
+web-sys = { version = "0.3.91", features = [
+    "Clipboard",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "Navigator",
+    "Window",
+] }

@@ -3,10 +3,8 @@ use arcstr::literal;
 use num_bigint::BigInt;
 use par_core::frontend::{ExternalTypeDef, PrimitiveType, Type};
 use par_core::source::Span;
-use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
-use std::cmp::Ordering;
 
 inventory::submit!(ExternalTypeDef {
     path: DefinitionRef {
@@ -16,46 +14,6 @@ inventory::submit!(ExternalTypeDef {
         name: "Int"
     },
     typ: Type::Primitive(Span::None, PrimitiveType::Int)
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
-        name: "Add"
-    },
-    f: |handle| Box::pin(int_add(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
-        name: "Sub"
-    },
-    f: |handle| Box::pin(int_sub(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
-        name: "Mul"
-    },
-    f: |handle| Box::pin(int_mul(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
-        name: "Div"
-    },
-    f: |handle| Box::pin(int_div(handle)),
 });
 
 inventory::submit!(ExternalDef {
@@ -113,39 +71,9 @@ inventory::submit!(ExternalDef {
         package: PackageRef::Special("core"),
         path: &[],
         module: "Int",
-        name: "Equals"
-    },
-    f: |handle| Box::pin(int_equals(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
-        name: "Compare"
-    },
-    f: |handle| Box::pin(int_compare(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
         name: "Range"
     },
     f: |handle| Box::pin(int_range(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "Int",
-        name: "ToString"
-    },
-    f: |handle| Box::pin(int_to_string(handle)),
 });
 
 inventory::submit!(ExternalDef {
@@ -157,34 +85,6 @@ inventory::submit!(ExternalDef {
     },
     f: |handle| Box::pin(int_from_string(handle)),
 });
-
-async fn int_add(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x + y);
-}
-
-async fn int_sub(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x - y);
-}
-
-async fn int_mul(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(x * y);
-}
-
-async fn int_div(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    handle.provide_int(if y == BigInt::ZERO {
-        BigInt::ZERO
-    } else {
-        x / y
-    });
-}
 
 async fn int_mod(mut handle: Handle) {
     let x = handle.receive().int().await;
@@ -231,28 +131,6 @@ async fn int_abs(mut handle: Handle) {
     }
 }
 
-async fn int_equals(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    if x == y {
-        handle.signal(literal!("true"));
-    } else {
-        handle.signal(literal!("false"));
-    }
-    handle.break_();
-}
-
-async fn int_compare(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    let y = handle.receive().int().await;
-    match x.cmp(&y) {
-        Ordering::Equal => handle.signal(literal!("equal")),
-        Ordering::Greater => handle.signal(literal!("greater")),
-        Ordering::Less => handle.signal(literal!("less")),
-    }
-    handle.break_();
-}
-
 async fn int_range(mut handle: Handle) {
     let lo = handle.receive().int().await;
     let hi = handle.receive().int().await;
@@ -265,11 +143,6 @@ async fn int_range(mut handle: Handle) {
     }
     handle.signal(literal!("end"));
     handle.break_();
-}
-
-async fn int_to_string(mut handle: Handle) {
-    let x = handle.receive().int().await;
-    handle.provide_string(ParString::from(x.to_str_radix(10)))
 }
 
 async fn int_from_string(mut handle: Handle) {

@@ -1,4 +1,5 @@
-use crate::frontend_impl::language::LocalName;
+use crate::frontend_impl::language::TypeConstraint;
+use crate::frontend_impl::language::TypeParameter;
 use crate::frontend_impl::types::assignability::SubtypeResult::{Compatible, Cycle, Incompatible};
 use crate::frontend_impl::types::{PrimitiveType, Type, TypeDefs, TypeError};
 use crate::location::Span;
@@ -267,10 +268,18 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
         ctx: &SubtypeContext<S>,
     ) -> Result<Option<SubtypeResult<S>>, TypeError<S>> {
         match (type1, type2) {
-            (t1, Self::Box(_, t2)) if t1.is_positive(ctx.type_defs)? => Ok(Some(
-                Type::is_subtype_helper(t1.clone(), t2.as_ref().clone(), ctx.clone())?,
-            )),
-            (Self::DualBox(_, t1), t2) if t1.is_positive(ctx.type_defs)? => {
+            (t1, Self::Box(_, t2))
+                if t1.satisfies_constraint(TypeConstraint::Box, ctx.type_defs)? =>
+            {
+                Ok(Some(Type::is_subtype_helper(
+                    t1.clone(),
+                    t2.as_ref().clone(),
+                    ctx.clone(),
+                )?))
+            }
+            (Self::DualBox(_, t1), t2)
+                if t1.satisfies_constraint(TypeConstraint::Box, ctx.type_defs)? =>
+            {
                 Ok(Some(Type::is_subtype_helper(
                     t1.as_ref().clone().dual(Span::None),
                     t2.clone(),
@@ -451,13 +460,16 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                 let mut t2: Type<S> = *t2.clone();
                 let mut u2: Type<S> = *u2.clone();
                 for (var1, var2) in vars1.iter().zip(vars2.iter()) {
+                    if !var1.constraint.is_broader_or_equal_than(var2.constraint) {
+                        return Ok(Incompatible);
+                    }
                     t2 = t2.substitute(BTreeMap::from([(
-                        var2,
-                        &Type::Var(Span::None, var1.clone()),
+                        &var2.name,
+                        &Type::Var(Span::None, var1.name.clone()),
                     )]))?;
                     u2 = u2.substitute(BTreeMap::from([(
-                        var2,
-                        &Type::Var(Span::None, var1.clone()),
+                        &var2.name,
+                        &Type::Var(Span::None, var1.name.clone()),
                     )]))?;
                 }
                 Ok(Type::is_subtype_helper(*t1, t2, ctx.clone())?
@@ -472,13 +484,16 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
                 let mut t2: Type<S> = t2;
                 let mut u2: Type<S> = *u2.clone();
                 for (var1, var2) in vars1.iter().zip(vars2.iter()) {
+                    if !var1.constraint.is_broader_or_equal_than(var2.constraint) {
+                        return Ok(Incompatible);
+                    }
                     t2 = t2.substitute(BTreeMap::from([(
-                        var2,
-                        &Type::Var(Span::None, var1.clone()),
+                        &var2.name,
+                        &Type::Var(Span::None, var1.name.clone()),
                     )]))?;
                     u2 = u2.substitute(BTreeMap::from([(
-                        var2,
-                        &Type::Var(Span::None, var1.clone()),
+                        &var2.name,
+                        &Type::Var(Span::None, var1.name.clone()),
                     )]))?;
                 }
                 Ok(Type::is_subtype_helper(t1, t2, ctx.clone())?
@@ -536,15 +551,21 @@ impl<S: Clone + Eq + std::hash::Hash> Type<S> {
 
     fn is_subtype_quantified(
         loc: Span,
-        name1: LocalName,
+        param1: TypeParameter,
         body1: Box<Self>,
-        name2: LocalName,
+        param2: TypeParameter,
         body2: Box<Self>,
         ctx: SubtypeContext<S>,
     ) -> Result<SubtypeResult<S>, TypeError<S>> {
+        if !param1
+            .constraint
+            .is_broader_or_equal_than(param2.constraint)
+        {
+            return Ok(Incompatible);
+        }
         let body2 = body2.substitute(BTreeMap::from([(
-            &name2,
-            &Type::Var(loc.clone(), name1.clone()),
+            &param2.name,
+            &Type::Var(loc.clone(), param1.name.clone()),
         )]))?;
         Type::is_subtype_helper(*body1, body2, ctx)
     }

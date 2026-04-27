@@ -1,7 +1,6 @@
 //package: core
 use std::cmp::Ordering;
 
-use arcstr::literal;
 use num_bigint::BigInt;
 
 use crate::builtin::{
@@ -75,26 +74,6 @@ inventory::submit!(ExternalDef {
     f: |handle| Box::pin(string_from_bytes(handle)),
 });
 
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "String",
-        name: "Equals"
-    },
-    f: |handle| Box::pin(string_equals(handle)),
-});
-
-inventory::submit!(ExternalDef {
-    path: DefinitionRef {
-        package: PackageRef::Special("core"),
-        path: &[],
-        module: "String",
-        name: "Compare"
-    },
-    f: |handle| Box::pin(string_compare(handle)),
-});
-
 async fn string_builder(mut handle: Handle) {
     let mut buf = String::new();
     loop {
@@ -131,28 +110,6 @@ async fn string_from_bytes(mut handle: Handle) {
     handle.provide_string(ParString::copy_from_slice(
         String::from_utf8_lossy(&bytes).as_bytes(),
     ));
-}
-
-async fn string_equals(mut handle: Handle) {
-    let left = handle.receive().string().await;
-    let right = handle.receive().string().await;
-    if left == right {
-        handle.signal(literal!("true"));
-    } else {
-        handle.signal(literal!("false"));
-    }
-    handle.break_();
-}
-
-async fn string_compare(mut handle: Handle) {
-    let left = handle.receive().string().await;
-    let right = handle.receive().string().await;
-    match left.cmp(&right) {
-        Ordering::Equal => handle.signal(literal!("equal")),
-        Ordering::Greater => handle.signal(literal!("greater")),
-        Ordering::Less => handle.signal(literal!("less")),
-    }
-    handle.break_();
 }
 
 #[derive(Debug, Clone)]

@@ -1,14 +1,10 @@
-// Linear ordered-map interface and built-in B-tree constructors for `String`,
-// `Bytes`, `Int`, and `Nat` keys.
+// Linear ordered-map interface with data keys.
 export module Map
 
 import {
-  Bytes
-  Int
   List
   Nat
   Option
-  String
 }
 
 export {
@@ -32,27 +28,14 @@ export {
     },
   }
 
-  // Builds a `Map<String, v>` from `(key) value` pairs.
-  // If a key appears more than once, the last pair wins.
-  dec OfString : [type v] [List<(String) box v>] Map<String, v>
+  // Builds an empty `Map`.
+  dec New : [type k: data, type v] Map<k, v>
 
-  // Builds a `Map<Bytes, v>` from `(key) value` pairs.
+  // Builds a `Map` from `(key) value` pairs.
   // If a key appears more than once, the last pair wins.
-  dec OfBytes : [type v] [List<(Bytes) box v>] Map<Bytes, v>
-
-  // Builds a `Map<Int, v>` from `(key) value` pairs.
-  // If a key appears more than once, the last pair wins.
-  dec OfInt : [type v] [List<(Int) box v>] Map<Int, v>
-
-  // Builds a `Map<Nat, v>` from `(key) value` pairs.
-  // If a key appears more than once, the last pair wins.
-  dec OfNat : [type v] [List<(Nat) box v>] Map<Nat, v>
+  dec FromList : [type v] <k: data>[List<(k) box v>] Map<k, v>
 }
 
-def OfString = external
+def New = external
 
-def OfBytes = external
-
-def OfInt = external
-
-def OfNat = external
+def FromList = external

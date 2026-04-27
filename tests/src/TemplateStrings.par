@@ -1,0 +1,27 @@
+module TemplateStrings
+
+import @core/Test
+
+def TestTemplateStrings: [Test] ! = [test] do {
+  let name = "Michal"
+  let age = 30
+
+  test
+    .assert(
+      "Template strings splice strings and display data",
+      `${name} is #{age} years old.` == "Michal is 30 years old.",
+    )
+    .assert(
+      "Template data interpolation displays nested data",
+      `value=#{(1) .true!}` == "value=(1) .true!",
+    )
+    .assert(
+      "Template strings support template-specific escapes",
+      `\` \${ \#{` == "` ${ #{",
+    )
+    .assert(
+      "Template strings support multiline text",
+      `line
+#{.true!}` == "line\n.true!",
+    )
+} in !

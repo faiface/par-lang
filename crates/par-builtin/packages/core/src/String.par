@@ -1,12 +1,10 @@
 export module String
 
 import {
-  Bool
   Bytes
   Char
   List
   Nat
-  Ordering
   Result
 }
 
@@ -106,12 +104,6 @@ export {
   // Unicode replacement character.
   dec FromBytes : [Bytes] String
 
-  // Tests two strings for equality.
-  dec Equals : [String, String] Bool
-
-  // Compares two strings lexicographically, returning their `Ordering`.
-  dec Compare : [String, String] Ordering
-
   // Creates a new string `Builder`.
   dec Builder : Builder
 
@@ -144,10 +136,6 @@ export {
 def Quote = external
 
 def FromBytes = external
-
-def Equals = external
-
-def Compare = external
 
 def Builder = external
 

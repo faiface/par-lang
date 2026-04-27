@@ -9,7 +9,7 @@ use crate::frontend_impl::process::VariableUsage;
 use crate::frontend_impl::program::DefinitionBody;
 use crate::frontend_impl::types::core::get_primitive_type;
 use crate::frontend_impl::{
-    language::{GlobalName, LocalName, Universal},
+    language::{GlobalName, LocalName, TypeParameter, Universal},
     process::{Captures, Command, Expression, PollKind, Process},
     types::Type,
 };
@@ -593,7 +593,7 @@ impl Compiler {
                     let (context_in, pack_data) =
                         this.context.pack(None, None, None, &mut this.net);
                     let (package_id, _) =
-                        this.in_package(format!("Box at {span:?}"), |this, _| {
+                        this.in_package(format!("Box at {span}"), |this, _| {
                             let context_out = this.context.unpack(&pack_data, &mut this.net);
                             let body = this.compile_expression(&expression)?;
                             this.end_context()?;
@@ -989,15 +989,19 @@ impl Compiler {
         &mut self,
         name: LocalName,
         usage: &VariableUsage,
-        parameter: &LocalName,
+        parameter: &TypeParameter,
         process: &Arc<Process<Type<Universal>, Universal>>,
     ) -> Result<()> {
         let subject = self.use_variable(&name, usage, true)?;
-        let was_empty_before = self.type_defs.vars.insert(parameter.clone());
+        let was_empty_before = self
+            .type_defs
+            .vars
+            .insert(parameter.name.clone(), parameter.constraint)
+            .is_none();
         self.bind_variable(name, subject.tree.with_type(Type::Break(Span::None)))?;
         self.compile_process(process)?;
         if was_empty_before {
-            self.type_defs.vars.shift_remove(parameter);
+            self.type_defs.vars.shift_remove(&parameter.name);
         }
         Ok(())
     }
@@ -1074,7 +1078,7 @@ impl Compiler {
         for (branch_name, process) in choice_and_process {
             let branch_name = ArcStr::from(&branch_name.string);
             let (package_id, _) =
-                self.in_package(format!("Branch {branch_name} at {span:?}"), |this, id| {
+                self.in_package(format!("Branch {branch_name} at {span}"), |this, id| {
                     this.package_is_case_branch.insert(id, branch_name.clone());
                     let (w0, w1) = this.create_typed_wire();
                     this.bind_variable(name.clone(), w0)?;
@@ -1091,7 +1095,7 @@ impl Compiler {
         let else_branch = match else_process {
             Some(process) => {
                 let (package_id, _) =
-                    self.in_package(format!("Else branch at {span:?}"), |this, id| {
+                    self.in_package(format!("Else branch at {span}"), |this, id| {
                         this.package_is_case_branch.insert(id, ArcStr::from(""));
                         let (w0, w1) = this.create_typed_wire();
                         this.bind_variable(name.clone(), w0)?;
@@ -1160,7 +1164,7 @@ impl Compiler {
         let (context_in, pack_data) =
             self.context
                 .pack(Some(name), Some(captures), None, &mut self.net);
-        let (id, _) = self.in_package(format!("Loop body at {span:?}"), |this, _| {
+        let (id, _) = self.in_package(format!("Loop body at {span}"), |this, _| {
             let context_out = this.context.unpack(&pack_data, &mut this.net);
             this.compile_process(body)?;
             Ok((

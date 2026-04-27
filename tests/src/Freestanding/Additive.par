@@ -6,7 +6,7 @@ import @core/Bool
 
 def Test0: [Test] ! = [test] chan user {
     test.id[id]
-    id(type either {.true! .false!})(.true!).case {
+    id(type either {.true! .false!}, .true!).case {
         .true => {
             id?
         }

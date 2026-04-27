@@ -77,11 +77,11 @@ impl<S> Type<S> {
             Self::Self_(span, label) => Self::DualSelf(span0.join(span), label),
             Self::DualSelf(span, label) => Self::Self_(span0.join(span), label),
 
-            Self::Exists(span, name, t) => {
-                Self::Forall(span0.join(span), name, Box::new(t.dual(Span::None)))
+            Self::Exists(span, param, t) => {
+                Self::Forall(span0.join(span), param, Box::new(t.dual(Span::None)))
             }
-            Self::Forall(span, name, t) => {
-                Self::Exists(span0.join(span), name, Box::new(t.dual(Span::None)))
+            Self::Forall(span, param, t) => {
+                Self::Exists(span0.join(span), param, Box::new(t.dual(Span::None)))
             }
 
             Type::Hole(span, name, hole) => Type::DualHole(span0.join(span), name, hole),

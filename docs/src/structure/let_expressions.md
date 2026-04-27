@@ -14,7 +14,7 @@ module Main
 
 import @core/Nat
 
-def Six = let three = 3 in Nat.Add(three, three)
+def Six = let three = 3 in three + three
 ```
 
 The left side of the `=` sign can actually be more than a variable!
@@ -22,13 +22,13 @@ The left side of the `=` sign can actually be more than a variable!
 For one, it can have an annotation:
 
 ```par
-def Six = let three: Nat = 3 in Nat.Add(three, three)
+def Six = let three: Nat = 3 in three + three
 ```
 
 And it can also be a pattern:
 
 ```par
-def Twelve = let (a, b)! = (3, 4)! in Nat.Mul(a, b)
+def Twelve = let (a, b)! = (3, 4)! in a * b
 ```
 
 The above is a combination of a [pair](../types/pair.md) and a [unit](../types/unit.md) pattern.

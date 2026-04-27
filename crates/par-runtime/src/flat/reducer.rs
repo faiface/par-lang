@@ -9,7 +9,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 pub enum ReducerMessage {
-    Redex(Node<Linked>, Node<Linked>),
+    Redex(Box<Node<Linked>>, Box<Node<Linked>>),
     Spawn(FutureObj<'static, ()>),
     Dropped(usize),
     Created(usize),
@@ -28,14 +28,7 @@ impl Clone for NetHandle {
             self.2.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
             self.2.clone(),
         );
-        new.0.send(ReducerMessage::Created(new.1)).unwrap();
         new
-    }
-}
-
-impl Drop for NetHandle {
-    fn drop(&mut self) {
-        let _ = self.0.send(ReducerMessage::Dropped(self.1));
     }
 }
 
@@ -84,7 +77,11 @@ impl Reducer {
                         tx.send(msg).unwrap();
                     }
                     Err(mpsc::error::TryRecvError::Empty) => {
-                        unreachable!("All senders should have been dropped!")
+                        if self.inbox.is_closed() {
+                            break;
+                        } else {
+                            unreachable!("All senders should have been dropped!")
+                        }
                     }
                     Err(mpsc::error::TryRecvError::Disconnected) => {
                         // it's guaranteed there will never be another message

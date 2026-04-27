@@ -2,10 +2,9 @@ use crate::location::{FileName, Point, Span};
 use core::str::FromStr;
 use winnow::{
     Parser, Result,
-    combinator::{alt, not, opt, peek, preceded, repeat},
-    error::{EmptyError, ParserError},
+    error::ParserError,
     stream::{ParseSlice, TokenSlice},
-    token::{any, literal, take_while},
+    token::literal,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -18,24 +17,39 @@ pub enum TokenKind {
     RBrack,
     Lt,
     Gt,
+    LtEq,
+    GtEq,
 
     Slash,
+    SlashEq,
     At,
     Colon,
     Semicolon,
     Comma,
     Dot,
     Eq,
+    EqEq,
     FatArrow,
     ThinArrow,
     Bang,
+    BangEq,
     Quest,
     Star,
+    StarEq,
+    Plus,
+    PlusEq,
+    Minus,
+    MinusEq,
     Link,
 
     Float,
     Integer,
     String,
+    TemplateStart,
+    TemplateEnd,
+    TemplateText,
+    TemplateStringStart,
+    TemplateDataStart,
 
     InvalidString,
     InvalidChar,
@@ -64,6 +78,7 @@ pub enum TokenKind {
     And,
     As,
     Module,
+    Neg,
     Or,
     Not,
     Loop,
@@ -137,24 +152,39 @@ impl TokenKind {
             TokenKind::RBrack => "]",
             TokenKind::Lt => "<",
             TokenKind::Gt => ">",
+            TokenKind::LtEq => "<=",
+            TokenKind::GtEq => ">=",
 
             TokenKind::Slash => "/",
+            TokenKind::SlashEq => "/=",
             TokenKind::At => "@",
             TokenKind::Colon => ":",
             TokenKind::Semicolon => ";",
             TokenKind::Comma => ",",
             TokenKind::Dot => ".",
             TokenKind::Eq => "=",
+            TokenKind::EqEq => "==",
             TokenKind::FatArrow => "=>",
             TokenKind::ThinArrow => "->",
             TokenKind::Bang => "!",
+            TokenKind::BangEq => "!=",
             TokenKind::Quest => "?",
             TokenKind::Star => "*",
+            TokenKind::StarEq => "*=",
+            TokenKind::Plus => "+",
+            TokenKind::PlusEq => "+=",
+            TokenKind::Minus => "-",
+            TokenKind::MinusEq => "-=",
             TokenKind::Link => "<>",
 
             TokenKind::Float => "float",
             TokenKind::Integer => "integer",
             TokenKind::String => "string",
+            TokenKind::TemplateStart => "`",
+            TokenKind::TemplateEnd => "`",
+            TokenKind::TemplateText => "template text",
+            TokenKind::TemplateStringStart => "${",
+            TokenKind::TemplateDataStart => "#{",
 
             TokenKind::InvalidString => "invalid string",
             TokenKind::InvalidChar => "invalid char",
@@ -183,6 +213,7 @@ impl TokenKind {
             TokenKind::And => "and",
             TokenKind::As => "as",
             TokenKind::Module => "module",
+            TokenKind::Neg => "neg",
             TokenKind::Or => "or",
             TokenKind::Not => "not",
             TokenKind::Loop => "loop",
@@ -294,270 +325,465 @@ fn scan_number_token(input: &str) -> Option<(&str, TokenKind, usize)> {
     Some((raw, TokenKind::Integer, idx))
 }
 
-pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s> {
-    type Error = EmptyError;
-    (|input: &'s str| -> Result<Lexed<'s>, Error> {
-        let mut input = input;
-        let input = &mut input;
-        let mut row = 0;
-        let mut last_newline = input.len();
-        let mut tokens = Vec::new();
-        let mut comments = Vec::new();
-        let mut idx = 0;
-        while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
-            let column = last_newline - input.len(); // starting column
-            let Some((raw, kind, len)) = (match c {
-                '-' => {
-                    let source = *input;
-                    if let Some(rest) = source.strip_prefix("->") {
-                        *input = rest;
-                        Some(("->", TokenKind::ThinArrow, 2))
-                    } else if let Some((raw, kind, len)) = scan_number_token(source) {
-                        *input = &source[len..];
-                        Some((raw, kind, len))
-                    } else {
-                        let raw = any::<&str, Error>.take().parse_next(input)?;
-                        Some((raw, TokenKind::Unknown, raw.len()))
-                    }
-                }
-                '0'..='9' | '+' => {
-                    let source = *input;
-                    if let Some((raw, kind, len)) = scan_number_token(source) {
-                        *input = &source[len..];
-                        Some((raw, kind, len))
-                    } else {
-                        let raw = any::<&str, Error>.take().parse_next(input)?;
-                        Some((raw, TokenKind::Unknown, raw.len()))
-                    }
-                }
-                '"' => {
-                    any.parse_next(input)?;
-                    let raw = (
-                        repeat(0.., alt((preceded('\\', any), any.verify(|c| *c != '"'))))
-                            .map(|()| ()),
-                    )
-                        .take()
-                        .parse_next(input)?;
-                    let is_closed = opt('"').parse_next(input)?.is_some();
-                    let is_valid = unescaper::unescape(raw).is_ok();
-                    let len = raw.len() + 1 + usize::from(is_closed);
-                    Some((
-                        raw,
-                        if is_closed && is_valid {
-                            TokenKind::String
-                        } else {
-                            TokenKind::InvalidString
-                        },
-                        len,
-                    ))
-                }
-                'a'..='z' | 'A'..='Z' | '_' => {
-                    /* a /* b */ */
-                    let raw = take_while(
-                        0..,
-                        |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'),
-                    )
-                    .take()
-                    .parse_next(input)?;
-                    let kind = match raw {
-                        "begin" => TokenKind::Begin,
-                        "box" => TokenKind::Box,
-                        "case" => TokenKind::Case,
-                        "catch" => TokenKind::Catch,
-                        "chan" => TokenKind::Chan,
-                        "choice" => TokenKind::Choice,
-                        "dec" => TokenKind::Dec,
-                        "def" => TokenKind::Def,
-                        "do" => TokenKind::Do,
-                        "dual" => TokenKind::Dual,
-                        "either" => TokenKind::Either,
-                        "else" => TokenKind::Else,
-                        "export" => TokenKind::Export,
-                        "if" => TokenKind::If,
-                        "import" => TokenKind::Import,
-                        "is" => TokenKind::Is,
-                        "in" => TokenKind::In,
-                        "iterative" => TokenKind::Iterative,
-                        "let" => TokenKind::Let,
-                        "and" => TokenKind::And,
-                        "as" => TokenKind::As,
-                        "module" => TokenKind::Module,
-                        "or" => TokenKind::Or,
-                        "not" => TokenKind::Not,
-                        "loop" => TokenKind::Loop,
-                        "poll" => TokenKind::Poll,
-                        "repoll" => TokenKind::Repoll,
-                        "submit" => TokenKind::Submit,
-                        "recursive" => TokenKind::Recursive,
-                        "self" => TokenKind::Self_,
-                        "throw" => TokenKind::Throw,
-                        "try" => TokenKind::Try,
-                        "default" => TokenKind::Default,
-                        "type" => TokenKind::Type,
-                        "unfounded" => TokenKind::Unfounded,
-                        "external" => TokenKind::External,
-                        raw => {
-                            if raw.starts_with(char::is_uppercase) {
-                                TokenKind::UppercaseIdentifier
-                            } else {
-                                TokenKind::LowercaseIdentifier
-                            }
-                        }
-                    };
-                    Some((raw, kind, raw.len()))
-                }
-                '\n' => {
-                    let _ = any::<&str, Error>.parse_next(input);
-                    row += 1;
-                    last_newline = input.len();
-                    idx += 1;
-                    None
-                }
-                ' ' | '\t' | '\r' => {
-                    let _ = any::<&str, Error>.parse_next(input);
-                    idx += 1;
-                    None
-                }
-                ':' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Colon, raw.len()))
-                }
-                ';' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Semicolon, raw.len()))
-                }
-                '[' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LBrack, raw.len()))
-                }
-                ']' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RBrack, raw.len()))
-                }
-                '(' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LParen, raw.len()))
-                }
-                ')' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RParen, raw.len()))
-                }
-                '{' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::LCurly, raw.len()))
-                }
-                '}' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::RCurly, raw.len()))
-                }
-                '<' => {
-                    let (raw, kind) = alt((
-                        "<>".map(|raw| (raw, TokenKind::Link)),
-                        "<".map(|raw| (raw, TokenKind::Lt)),
-                    ))
-                    .parse_next(input)?;
-                    Some((raw, kind, raw.len()))
-                }
-                '>' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Gt, raw.len()))
-                }
-                '/' => {
-                    let (comment_kind, raw) = alt((
-                        line_comment().map(|raw| (Some(CommentKind::Line), raw)),
-                        block_comment().map(|raw| (Some(CommentKind::Block), raw)),
-                        any.take().map(|x| (None, x)),
-                    ))
-                    .parse_next(input)?;
-                    if let Some(comment_kind) = comment_kind {
-                        let start = Point {
-                            offset: idx as u32,
-                            row: row as u32,
-                            column: column as u32,
-                        };
-                        let end = end_point_for_raw(start, raw);
-                        comments.push(Comment {
-                            kind: comment_kind,
-                            raw,
-                            span: Span::At {
-                                start,
-                                end,
-                                file: file.clone(),
-                            },
-                        });
-                        if let Some(extra_len) = raw.chars().rev().position(|x| x == '\n') {
-                            last_newline = input.len() + extra_len;
-                        }
-                        row += raw.chars().filter(|&x| x == '\n').count();
-                        idx += raw.len();
-                        None
-                    } else {
-                        Some((raw, TokenKind::Slash, raw.len()))
-                    }
-                }
-                '@' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::At, raw.len()))
-                }
-                ',' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Comma, raw.len()))
-                }
-                '.' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Dot, raw.len()))
-                }
-                '=' => {
-                    let (raw, kind) = alt((
-                        ("=>").map(|raw| (raw, TokenKind::FatArrow)),
-                        ("=").map(|raw| (raw, TokenKind::Eq)),
-                    ))
-                    .parse_next(input)?;
-                    Some((raw, kind, raw.len()))
-                }
-                '!' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Bang, raw.len()))
-                }
-                '?' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Quest, raw.len()))
-                }
-                '*' => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Star, raw.len()))
-                }
-                _ => {
-                    let raw = any::<&str, Error>.take().parse_next(input)?;
-                    Some((raw, TokenKind::Unknown, raw.len()))
-                }
-            }) else {
-                continue;
-            };
-            let start = Point {
-                offset: idx as u32,
-                row: row as u32,
-                column: column as u32,
-            };
-            idx += len;
-            let end = Point {
-                offset: idx.try_into().expect("position too large"),
-                row: row as u32,
-                column: (column + len) as u32,
-            };
-            tokens.push(Token {
-                kind,
-                raw,
-                span: Span::At {
-                    start,
-                    end,
-                    file: file.clone(),
-                },
-            });
+#[derive(Clone, Copy)]
+enum LexMode {
+    Normal,
+    Template,
+    Interpolation { brace_depth: usize },
+}
+
+struct LexState<'s, 'f> {
+    file: &'f FileName,
+    tokens: Vec<Token<'s>>,
+    comments: Vec<Comment<'s>>,
+    idx: usize,
+    row: usize,
+    column: usize,
+    modes: Vec<LexMode>,
+}
+
+impl<'s> LexState<'s, '_> {
+    fn new(file: &FileName) -> LexState<'s, '_> {
+        LexState {
+            file,
+            tokens: Vec::new(),
+            comments: Vec::new(),
+            idx: 0,
+            row: 0,
+            column: 0,
+            modes: vec![LexMode::Normal],
         }
-        Ok(Lexed { tokens, comments })
-    })(input)
-    .expect("lexing failed")
+    }
+
+    fn finish(self) -> Lexed<'s> {
+        Lexed {
+            tokens: self.tokens,
+            comments: self.comments,
+        }
+    }
+
+    fn start_point(&self) -> Point {
+        Point {
+            offset: self.idx.try_into().expect("position too large"),
+            row: self.row.try_into().expect("row too large"),
+            column: self.column.try_into().expect("column too large"),
+        }
+    }
+
+    fn advance_to(&mut self, end: Point) {
+        self.idx = end.offset as usize;
+        self.row = end.row as usize;
+        self.column = end.column as usize;
+    }
+
+    fn advance(&mut self, raw: &str) {
+        let end = end_point_for_raw(self.start_point(), raw);
+        self.advance_to(end);
+    }
+
+    fn push_token(&mut self, kind: TokenKind, raw: &'s str) {
+        self.push_token_consumed(kind, raw, raw);
+    }
+
+    fn push_token_consumed(&mut self, kind: TokenKind, raw: &'s str, consumed: &str) {
+        let start = self.start_point();
+        let end = end_point_for_raw(start, consumed);
+        self.tokens.push(Token {
+            kind,
+            raw,
+            span: Span::At {
+                start,
+                end,
+                file: self.file.clone(),
+            },
+        });
+        self.advance_to(end);
+    }
+
+    fn push_comment(&mut self, kind: CommentKind, raw: &'s str) {
+        let start = self.start_point();
+        let end = end_point_for_raw(start, raw);
+        self.comments.push(Comment {
+            kind,
+            raw,
+            span: Span::At {
+                start,
+                end,
+                file: self.file.clone(),
+            },
+        });
+        self.advance_to(end);
+    }
+}
+
+fn scan_string_content(input: &str) -> (usize, bool) {
+    let mut idx = 1;
+    while idx < input.len() {
+        let rest = &input[idx..];
+        let c = rest.chars().next().unwrap();
+        match c {
+            '"' => return (idx - 1, true),
+            '\\' => {
+                idx += c.len_utf8();
+                if let Some(next) = input[idx..].chars().next() {
+                    idx += next.len_utf8();
+                }
+            }
+            _ => idx += c.len_utf8(),
+        }
+    }
+    (input.len().saturating_sub(1), false)
+}
+
+fn scan_line_comment(input: &str) -> usize {
+    input.find('\n').unwrap_or(input.len())
+}
+
+fn scan_block_comment(input: &str) -> Option<usize> {
+    if !input.starts_with("/*") {
+        return None;
+    }
+
+    let mut idx = 2;
+    let mut nesting = 0usize;
+    while idx < input.len() {
+        let rest = &input[idx..];
+        if rest.starts_with("/*") {
+            nesting += 1;
+            idx += 2;
+        } else if rest.starts_with("*/") {
+            if nesting == 0 {
+                return Some(idx + 2);
+            }
+            nesting -= 1;
+            idx += 2;
+        } else {
+            idx += rest.chars().next().unwrap().len_utf8();
+        }
+    }
+    None
+}
+
+fn scan_template_text(input: &str) -> usize {
+    let mut idx = 0;
+    while idx < input.len() {
+        let rest = &input[idx..];
+        if rest.starts_with('`') || rest.starts_with("${") || rest.starts_with("#{") {
+            break;
+        }
+
+        let c = rest.chars().next().unwrap();
+        idx += c.len_utf8();
+        if c == '\\'
+            && let Some(next) = input[idx..].chars().next()
+        {
+            idx += next.len_utf8();
+        }
+    }
+    idx
+}
+
+pub(crate) fn unescape_template_text(raw: &str) -> unescaper::Result<String> {
+    let mut rewritten = String::with_capacity(raw.len());
+    let mut rest = raw;
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("\\`") {
+            rewritten.push_str("\\u{60}");
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("\\${") {
+            rewritten.push_str("\\u{24}{");
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("\\#{") {
+            rewritten.push_str("\\u{23}{");
+            rest = after;
+        } else {
+            let c = rest.chars().next().unwrap();
+            rewritten.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    unescaper::unescape(&rewritten)
+}
+
+pub(crate) fn lex_with_comments<'s>(input: &'s str, file: &FileName) -> Lexed<'s> {
+    let mut state = LexState::new(file);
+
+    while state.idx < input.len() {
+        let rest = &input[state.idx..];
+
+        if matches!(state.modes.last(), Some(LexMode::Template)) {
+            if let Some(raw) = rest.strip_prefix('`').map(|_| &rest[..1]) {
+                state.push_token(TokenKind::TemplateEnd, raw);
+                state.modes.pop();
+                continue;
+            }
+            if let Some(raw) = rest.strip_prefix("${").map(|_| &rest[..2]) {
+                state.push_token(TokenKind::TemplateStringStart, raw);
+                state.modes.push(LexMode::Interpolation { brace_depth: 0 });
+                continue;
+            }
+            if let Some(raw) = rest.strip_prefix("#{").map(|_| &rest[..2]) {
+                state.push_token(TokenKind::TemplateDataStart, raw);
+                state.modes.push(LexMode::Interpolation { brace_depth: 0 });
+                continue;
+            }
+
+            let len = scan_template_text(rest);
+            if len == 0 {
+                let raw = &rest[..rest.chars().next().unwrap().len_utf8()];
+                state.push_token(TokenKind::Unknown, raw);
+            } else {
+                let raw = &rest[..len];
+                let kind = if unescape_template_text(raw).is_ok() {
+                    TokenKind::TemplateText
+                } else {
+                    TokenKind::InvalidString
+                };
+                state.push_token(kind, raw);
+            }
+            continue;
+        }
+
+        let c = rest.chars().next().unwrap();
+        match c {
+            '-' => {
+                if rest.starts_with("->") {
+                    let raw = &rest[..2];
+                    state.push_token(TokenKind::ThinArrow, raw);
+                } else if rest.starts_with("-=") {
+                    let raw = &rest[..2];
+                    state.push_token(TokenKind::MinusEq, raw);
+                } else if let Some((raw, kind, len)) = scan_number_token(rest) {
+                    state.push_token_consumed(kind, raw, &rest[..len]);
+                } else {
+                    let raw = &rest[..1];
+                    state.push_token(TokenKind::Minus, raw);
+                }
+            }
+            '0'..='9' | '+' => {
+                if rest.starts_with("+=") {
+                    let raw = &rest[..2];
+                    state.push_token(TokenKind::PlusEq, raw);
+                } else if let Some((raw, kind, len)) = scan_number_token(rest) {
+                    state.push_token_consumed(kind, raw, &rest[..len]);
+                } else {
+                    let raw = &rest[..1];
+                    state.push_token(TokenKind::Plus, raw);
+                }
+            }
+            '"' => {
+                let (content_len, is_closed) = scan_string_content(rest);
+                let raw = &rest[1..1 + content_len];
+                let consumed_len = raw.len() + 1 + usize::from(is_closed);
+                let kind = if is_closed && unescaper::unescape(raw).is_ok() {
+                    TokenKind::String
+                } else {
+                    TokenKind::InvalidString
+                };
+                state.push_token_consumed(kind, raw, &rest[..consumed_len]);
+            }
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let len = rest
+                    .char_indices()
+                    .take_while(|(_, c)| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'))
+                    .last()
+                    .map(|(idx, c)| idx + c.len_utf8())
+                    .unwrap_or(0);
+                let raw = &rest[..len];
+                let kind = match raw {
+                    "begin" => TokenKind::Begin,
+                    "box" => TokenKind::Box,
+                    "case" => TokenKind::Case,
+                    "catch" => TokenKind::Catch,
+                    "chan" => TokenKind::Chan,
+                    "choice" => TokenKind::Choice,
+                    "dec" => TokenKind::Dec,
+                    "def" => TokenKind::Def,
+                    "do" => TokenKind::Do,
+                    "dual" => TokenKind::Dual,
+                    "either" => TokenKind::Either,
+                    "else" => TokenKind::Else,
+                    "export" => TokenKind::Export,
+                    "if" => TokenKind::If,
+                    "import" => TokenKind::Import,
+                    "is" => TokenKind::Is,
+                    "in" => TokenKind::In,
+                    "iterative" => TokenKind::Iterative,
+                    "let" => TokenKind::Let,
+                    "and" => TokenKind::And,
+                    "as" => TokenKind::As,
+                    "module" => TokenKind::Module,
+                    "neg" => TokenKind::Neg,
+                    "or" => TokenKind::Or,
+                    "not" => TokenKind::Not,
+                    "loop" => TokenKind::Loop,
+                    "poll" => TokenKind::Poll,
+                    "repoll" => TokenKind::Repoll,
+                    "submit" => TokenKind::Submit,
+                    "recursive" => TokenKind::Recursive,
+                    "self" => TokenKind::Self_,
+                    "throw" => TokenKind::Throw,
+                    "try" => TokenKind::Try,
+                    "default" => TokenKind::Default,
+                    "type" => TokenKind::Type,
+                    "unfounded" => TokenKind::Unfounded,
+                    "external" => TokenKind::External,
+                    raw => {
+                        if raw.starts_with(char::is_uppercase) {
+                            TokenKind::UppercaseIdentifier
+                        } else {
+                            TokenKind::LowercaseIdentifier
+                        }
+                    }
+                };
+                state.push_token(kind, raw);
+            }
+            '\n' | ' ' | '\t' | '\r' => {
+                let raw = &rest[..c.len_utf8()];
+                state.advance(raw);
+            }
+            '`' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::TemplateStart, raw);
+                state.modes.push(LexMode::Template);
+            }
+            ':' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::Colon, raw);
+            }
+            ';' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::Semicolon, raw);
+            }
+            '[' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::LBrack, raw);
+            }
+            ']' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::RBrack, raw);
+            }
+            '(' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::LParen, raw);
+            }
+            ')' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::RParen, raw);
+            }
+            '{' => {
+                if let Some(LexMode::Interpolation { brace_depth }) = state.modes.last_mut() {
+                    *brace_depth += 1;
+                }
+                let raw = &rest[..1];
+                state.push_token(TokenKind::LCurly, raw);
+            }
+            '}' => {
+                let should_close_interpolation = matches!(
+                    state.modes.last(),
+                    Some(LexMode::Interpolation { brace_depth: 0 })
+                );
+                if should_close_interpolation {
+                    state.modes.pop();
+                } else if let Some(LexMode::Interpolation { brace_depth }) = state.modes.last_mut()
+                {
+                    *brace_depth -= 1;
+                }
+                let raw = &rest[..1];
+                state.push_token(TokenKind::RCurly, raw);
+            }
+            '<' => {
+                let (kind, len) = if rest.starts_with("<>") {
+                    (TokenKind::Link, 2)
+                } else if rest.starts_with("<=") {
+                    (TokenKind::LtEq, 2)
+                } else {
+                    (TokenKind::Lt, 1)
+                };
+                let raw = &rest[..len];
+                state.push_token(kind, raw);
+            }
+            '>' => {
+                let (kind, len) = if rest.starts_with(">=") {
+                    (TokenKind::GtEq, 2)
+                } else {
+                    (TokenKind::Gt, 1)
+                };
+                let raw = &rest[..len];
+                state.push_token(kind, raw);
+            }
+            '/' => {
+                if rest.starts_with("//") {
+                    let len = scan_line_comment(rest);
+                    let raw = &rest[..len];
+                    state.push_comment(CommentKind::Line, raw);
+                } else if let Some(len) = scan_block_comment(rest) {
+                    let raw = &rest[..len];
+                    state.push_comment(CommentKind::Block, raw);
+                } else {
+                    let (kind, len) = if rest.starts_with("/=") {
+                        (TokenKind::SlashEq, 2)
+                    } else {
+                        (TokenKind::Slash, 1)
+                    };
+                    let raw = &rest[..len];
+                    state.push_token(kind, raw);
+                }
+            }
+            '@' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::At, raw);
+            }
+            ',' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::Comma, raw);
+            }
+            '.' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::Dot, raw);
+            }
+            '=' => {
+                let (kind, len) = if rest.starts_with("=>") {
+                    (TokenKind::FatArrow, 2)
+                } else if rest.starts_with("==") {
+                    (TokenKind::EqEq, 2)
+                } else {
+                    (TokenKind::Eq, 1)
+                };
+                let raw = &rest[..len];
+                state.push_token(kind, raw);
+            }
+            '!' => {
+                let (kind, len) = if rest.starts_with("!=") {
+                    (TokenKind::BangEq, 2)
+                } else {
+                    (TokenKind::Bang, 1)
+                };
+                let raw = &rest[..len];
+                state.push_token(kind, raw);
+            }
+            '?' => {
+                let raw = &rest[..1];
+                state.push_token(TokenKind::Quest, raw);
+            }
+            '*' => {
+                let (kind, len) = if rest.starts_with("*=") {
+                    (TokenKind::StarEq, 2)
+                } else {
+                    (TokenKind::Star, 1)
+                };
+                let raw = &rest[..len];
+                state.push_token(kind, raw);
+            }
+            _ => {
+                let len = c.len_utf8();
+                let raw = &rest[..len];
+                state.push_token(TokenKind::Unknown, raw);
+            }
+        }
+    }
+
+    state.finish()
 }
 
 fn end_point_for_raw(start: Point, raw: &str) -> Point {
@@ -571,52 +797,6 @@ fn end_point_for_raw(start: Point, raw: &str) -> Point {
         row: start.row + newline_count,
         column: end_column,
     }
-}
-
-fn line_comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
-where
-    E: ParserError<&'s str>,
-{
-    preceded("//", repeat(0.., (not("\n"), any)).map(|()| ())).take()
-}
-
-fn block_comment<'s, E>() -> impl Parser<&'s str, &'s str, E>
-where
-    E: ParserError<&'s str>,
-{
-    // below should be a valid block comment
-    /* /* */ */
-    // So have to consider nested comments
-    let comment_block_rest = move |input: &mut &'s str| -> core::result::Result<(), E> {
-        let mut nesting = 0;
-        loop {
-            let next_2 = match input.len() {
-                0 => break Ok(()),
-                1 => break Err(ParserError::from_input(input)),
-                _ => &input.as_bytes()[..2],
-            };
-            match next_2 {
-                s @ b"/*" => {
-                    nesting += 1;
-                    *input = &input[s.len()..];
-                }
-                s @ b"*/" if nesting > 0 => {
-                    nesting -= 1;
-                    *input = &input[s.len()..];
-                }
-                s @ b"*/" => {
-                    *input = &input[s.len()..];
-                    break Ok(());
-                }
-                _ => {
-                    let mut it = input.chars();
-                    it.next(); // skip a char
-                    *input = it.as_str();
-                }
-            }
-        }
-    };
-    preceded("/*", comment_block_rest).map(|()| ()).take()
 }
 
 #[cfg(test)]
@@ -734,6 +914,136 @@ mod lexer_test {
         assert_eq!(
             tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
             vec!["1.0", "-0.5", "+3.25", "1_000.25", "6.02e23", "1.0e-6"]
+        );
+    }
+
+    #[test]
+    fn operator_tokens_coexist_with_attached_signed_literals() {
+        let tokens = lex(
+            "x-1 x+1 x - 1 x + 1 x += 1 y -= 2 z *= 3 w /= 4 neg <= >= == !=",
+            &FILE,
+        );
+        assert_eq!(
+            tokens.iter().map(|token| token.kind).collect::<Vec<_>>(),
+            vec![
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Minus,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::Plus,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::PlusEq,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::MinusEq,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::StarEq,
+                TokenKind::Integer,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::SlashEq,
+                TokenKind::Integer,
+                TokenKind::Neg,
+                TokenKind::LtEq,
+                TokenKind::GtEq,
+                TokenKind::EqEq,
+                TokenKind::BangEq,
+            ]
+        );
+        assert_eq!(
+            tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
+            vec![
+                "x", "-1", "x", "+1", "x", "-", "1", "x", "+", "1", "x", "+=", "1", "y", "-=", "2",
+                "z", "*=", "3", "w", "/=", "4", "neg", "<=", ">=", "==", "!=",
+            ]
+        );
+    }
+
+    #[test]
+    fn template_strings_tokenize_text_and_interpolations() {
+        let tokens = lex(r#"`hi ${name} #{1 + {2}} \` \${ \#{`"#, &FILE);
+        assert_eq!(
+            tokens.iter().map(|token| token.kind).collect::<Vec<_>>(),
+            vec![
+                TokenKind::TemplateStart,
+                TokenKind::TemplateText,
+                TokenKind::TemplateStringStart,
+                TokenKind::LowercaseIdentifier,
+                TokenKind::RCurly,
+                TokenKind::TemplateText,
+                TokenKind::TemplateDataStart,
+                TokenKind::Integer,
+                TokenKind::Plus,
+                TokenKind::LCurly,
+                TokenKind::Integer,
+                TokenKind::RCurly,
+                TokenKind::RCurly,
+                TokenKind::TemplateText,
+                TokenKind::TemplateEnd,
+            ]
+        );
+        assert_eq!(
+            tokens.iter().map(|token| token.raw).collect::<Vec<_>>(),
+            vec![
+                "`",
+                "hi ",
+                "${",
+                "name",
+                "}",
+                " ",
+                "#{",
+                "1",
+                "+",
+                "{",
+                "2",
+                "}",
+                "}",
+                r#" \` \${ \#{"#,
+                "`",
+            ]
+        );
+    }
+
+    #[test]
+    fn template_text_tracks_multiline_spans() {
+        let tokens = lex("`a\nb`", &FILE);
+        assert_eq!(tokens[1].kind, TokenKind::TemplateText);
+        assert_eq!(
+            tokens[1].span,
+            Span::At {
+                start: Point {
+                    offset: 1,
+                    row: 0,
+                    column: 1
+                },
+                end: Point {
+                    offset: 4,
+                    row: 1,
+                    column: 1
+                },
+                file: FILE
+            }
+        );
+        assert_eq!(
+            tokens[2].span,
+            Span::At {
+                start: Point {
+                    offset: 4,
+                    row: 1,
+                    column: 1
+                },
+                end: Point {
+                    offset: 5,
+                    row: 1,
+                    column: 2
+                },
+                file: FILE
+            }
         );
     }
 }

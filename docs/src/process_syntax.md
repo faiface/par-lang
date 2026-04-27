@@ -95,8 +95,8 @@ type Sequence<a> = iterative choice {
   .next => (a) self,
 }
 
-dec Zip : [type a, b] [Sequence<a>, Sequence<b>] Sequence<(a, b)!>
-def Zip = [type a, b] [seq1, seq2] begin case {
+dec Zip : [type a, type b, Sequence<a>, Sequence<b>] Sequence<(a, b)!>
+def Zip = [type a, type b, seq1, seq2] begin case {
   .close =>
     let ! = seq1.close in
     let ! = seq2.close in !,
@@ -115,8 +115,8 @@ for their respective items and yields a pair of that.
 It works, and is understandable. But, it can be even better, when we apply some process syntax!
 
 ```par
-dec Zip : [type a, b] [Sequence<a>, Sequence<b>] Sequence<(a, b)!>
-def Zip = [type a, b] [seq1, seq2] begin case {
+dec Zip : [type a, type b, Sequence<a>, Sequence<b>] Sequence<(a, b)!>
+def Zip = [type a, type b, seq1, seq2] begin case {
   .close => do {
     seq1.close
     seq2.close

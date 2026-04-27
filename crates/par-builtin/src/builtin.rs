@@ -4,6 +4,7 @@ mod byte;
 mod bytes;
 mod char_;
 mod console;
+mod data;
 mod debug;
 mod float;
 #[cfg(not(target_family = "wasm"))]
@@ -13,6 +14,7 @@ mod json;
 mod list;
 mod map;
 mod nat;
+mod number;
 #[cfg(not(target_family = "wasm"))]
 mod os;
 mod parser;
@@ -88,6 +90,10 @@ const CORE_SOURCE_FILES: &[BuiltinSourceFile] = &[
         source: include_str!("../packages/core/src/Debug.par"),
     },
     BuiltinSourceFile {
+        relative_path_from_src: "Data.par",
+        source: include_str!("../packages/core/src/Data.par"),
+    },
+    BuiltinSourceFile {
         relative_path_from_src: "Float.par",
         source: include_str!("../packages/core/src/Float.par"),
     },
@@ -122,6 +128,10 @@ const CORE_SOURCE_FILES: &[BuiltinSourceFile] = &[
     BuiltinSourceFile {
         relative_path_from_src: "Option.par",
         source: include_str!("../packages/core/src/Option.par"),
+    },
+    BuiltinSourceFile {
+        relative_path_from_src: "Number.par",
+        source: include_str!("../packages/core/src/Number.par"),
     },
     BuiltinSourceFile {
         relative_path_from_src: "Ordering.par",

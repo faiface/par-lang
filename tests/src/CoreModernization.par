@@ -1,0 +1,148 @@
+module CoreModernization
+
+import {
+  @core/Bool
+  @core/BoxMap
+  @core/Json
+  @core/List
+  @core/Map
+  @core/Nat
+  @core/Option
+  @core/String
+  @core/Test
+}
+
+type Key = (Nat) Nat
+type PairList = List<(Key) String>
+
+def KeyA : Key = (1) 2
+def KeyB : Key = (0) 3
+def KeyC : Key = (2) 0
+
+dec MapLookupThenList : [Map<Key, String>, Key] (Option<String>) PairList
+def MapLookupThenList = [map, key] do {
+  map.entry(key)[entry]
+  map.delete
+  let entries = map.list
+} in (entry) entries
+
+dec MapSizeThenList : [Map<Key, String>] (Nat) PairList
+def MapSizeThenList = [map] do {
+  map.size[size]
+  let entries = map.list
+} in (size) entries
+
+dec MapPutList : [!] PairList
+def MapPutList = [!] do {
+  let map = Map.New(type Key, type String)
+  map.entry(KeyA)[entry]
+  entry.case {
+    .ok old => { map.put(old) },
+    .err! => { map.put("one") },
+  }
+  let entries = map.list
+} in entries
+
+def TestListConstraintsAndEquality : [Test] ! = [test] do {
+  let values = *(1, 2, 3, 4)
+  let evens = values->List.Filter(box [n] n / 2 * 2 == n)
+  let firstTwo = values->List.Take(2)
+  let withoutTwo = values->List.Drop(2)
+  let zipped = firstTwo->List.Zip(*("one", "two", "three"))
+  let sum = {0}->List.ForEach(values, box [sum, n] sum + n)
+  let builder = List.Builder(type Nat)
+  builder->List.ForEach(values, box [b, n] b.add(n * 2))
+  let doubled = builder.build
+
+  test
+    .assert("List equality uses generic data equality", values == {*(1, 2, 3, 4)})
+    .assert("List.Filter accepts a box-constrained element type", evens == {*(2, 4)})
+    .assert("List.Length accepts a box-constrained element type", values->List.Length == 4)
+    .assert("List.Zip accepts box-constrained element types", zipped == {*((1) "one", (2) "two")})
+    .assert("List.All accepts a box-constrained element type", values->List.All(box [n] n > 0))
+    .assert("List.Any accepts a box-constrained element type", values->List.Any(box [n] n == 3))
+    .assert("List.Take accepts a box-constrained element type", firstTwo == {*(1, 2)})
+    .assert("List.Drop accepts a box-constrained element type", withoutTwo == {*(3, 4)})
+    .assert("List.ForEach works in expression syntax", sum == 10)
+    .assert("List.ForEach works in process syntax", doubled == {*(2, 4, 6, 8)})
+} in !
+
+def TestListSorting : [Test] ! = [test] do {
+  let numbers = *(3, 1, 2, 1)
+  let tagged = *((2) "first-two", (1) "one", (2) "second-two", (0) "zero")
+  let sortedTagged = tagged->List.SortBy(type Nat, box [(key) _] key)
+  let linearSortedTagged = tagged->List.SortLinearBy(type Nat, box [item]
+    let (key) _ = item in
+    (key) item
+  )
+  let linearDescTagged = tagged->List.SortLinearDescBy(type Nat, box [item]
+    let (key) _ = item in
+    (key) item
+  )
+
+  test
+    .assert("List.Sort orders data ascending", numbers->List.Sort == {*(1, 1, 2, 3)})
+    .assert("List.SortDesc orders data descending", numbers->List.SortDesc == {*(3, 2, 1, 1)})
+    .assert(
+      "List.SortBy is stable for equal keys",
+      sortedTagged == {*((0) "zero", (1) "one", (2) "first-two", (2) "second-two")},
+    )
+    .assert(
+      "List.SortLinearBy sorts by returned keys",
+      linearSortedTagged == {*((0) "zero", (1) "one", (2) "first-two", (2) "second-two")},
+    )
+    .assert(
+      "List.SortLinearDescBy sorts by returned keys descending",
+      linearDescTagged == {*((2) "first-two", (2) "second-two", (1) "one", (0) "zero")},
+    )
+} in !
+
+def TestMapConstructors : [Test] ! = [test] do {
+  let source = *((KeyA) "old", (KeyB) "zero", (KeyA) "new")
+  let map = Map.FromList(type String, source)
+  let (entry) entries = MapLookupThenList(map, KeyA)
+
+  let empty = Map.New(type Key, type String)
+  let (emptySize) emptyEntries = MapSizeThenList(empty)
+
+  test
+    .assert("Map.FromList keeps the last duplicate key", entry is .ok value and value == "new")
+    .assert("Map.FromList lists entries in data-key order", entries == {*((KeyB) "zero")})
+    .assert("Map.New starts empty", emptySize == 0 and emptyEntries == {*()})
+    .assert("Map.entry can insert into a new map", MapPutList(!) == {*((KeyA) "one")})
+} in !
+
+def TestBoxMapConstructors : [Test] ! = [test] do {
+  let source = *((KeyA) "old", (KeyB) "zero", (KeyA) "new")
+  let map = BoxMap.FromList(source)
+  let empty = BoxMap.New(type Key, type String)
+  let inserted = map.put(KeyC, "two")
+  let deleted = inserted.delete(KeyB)
+
+  test
+    .assert("BoxMap.FromList keeps the last duplicate key", map.get(KeyA) is .ok value and value == "new")
+    .assert("BoxMap.FromList exposes plain values from get", map.get(KeyB) is .ok value and value == "zero")
+    .assert("BoxMap.FromList lists entries in data-key order", map.list == {*((KeyB) "zero", (KeyA) "new")})
+    .assert("BoxMap.New starts empty", empty.size == 0 and empty.list == {*()})
+    .assert("BoxMap.put returns an updated map", inserted.get(KeyC) is .ok value and value == "two")
+    .assert("BoxMap.delete returns an updated map", deleted.get(KeyB) is .err!)
+} in !
+
+def TestJsonEqualsWithoutListEquals : [Test] ! = [test] do {
+  let object1: Json = .object BoxMap.FromList(type List<(String) Json> in *(
+    ("b") .list *(.number 1.0, .number 2.0),
+    ("a") .string "x",
+  ))
+  let object2: Json = .object BoxMap.FromList(type List<(String) Json> in *(
+    ("a") .string "x",
+    ("b") .list *(.number 1.0, .number 2.0),
+  ))
+  let object3: Json = .object BoxMap.FromList(type List<(String) Json> in *(
+    ("a") .string "x",
+    ("b") .list *(.number 1.0, .number 3.0),
+  ))
+
+  test
+    .assert("Json.Equals still compares object contents", Json.Equals(object1, object2))
+    .assert("Json.Equals still rejects different nested list contents", not Json.Equals(object1, object3))
+} in !
