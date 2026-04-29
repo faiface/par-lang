@@ -122,7 +122,7 @@ impl Handle {
         self.linker.link(
             self.node,
             Box::new(Node::Linear(Linear::Value(Box::new(Value::Primitive(
-                primitive,
+                Box::new(primitive),
             ))))),
         );
     }
@@ -145,7 +145,7 @@ impl Handle {
             Value::Primitive(p) => p,
             node => return Err(Error::InvalidValue(node)),
         };
-        Ok(primitive)
+        Ok(*primitive)
     }
 
     pub async fn number(self) -> Result<Number> {
@@ -226,14 +226,13 @@ impl Handle {
                 // This happens when we send a signal that the program doesn't have
                 // and that also isn't present in the types
                 // It might still be handled by an "else" branch then
-                eprintln!(
+                panic!(
                     "Attempted to signal a non-interned string: `{}`
                 This is most likely type error with built in definitions.
                 Sending an empty signal instead, which will always trigger an `else` branch.
                 ",
                     chosen
                 );
-                self.linker.arena.empty_string()
             });
         let either = Node::Linear(Linear::Value(Box::new(Value::Either(chosen, payload))));
         let choice = core::mem::replace(&mut self.node, Box::new(payload_h));
@@ -332,7 +331,7 @@ impl Handle {
                 self.data_node(payload),
             )))),
             Data::Primitive(primitive) => {
-                Node::Linear(Linear::Value(Box::new(Value::Primitive(primitive.clone()))))
+                Node::Linear(Linear::Value(Box::new(Value::Primitive(Box::new(primitive.clone())))))
             }
         }
     }
@@ -342,14 +341,13 @@ impl Handle {
             .arena
             .interned(chosen.as_str())
             .unwrap_or_else(|| {
-                eprintln!(
+                panic!(
                     "Attempted to provide non-interned signal data: `{}`
                 This is most likely a type error with built in definitions.
                 Providing an empty signal instead, which will always trigger an `else` branch.
                 ",
                     chosen
                 );
-                self.linker.arena.empty_string()
             })
     }
 
@@ -368,7 +366,7 @@ impl Handle {
                     Box::new(payload),
                 ))
             }
-            Value::Primitive(primitive) => Ok(Data::Primitive(primitive)),
+            Value::Primitive(primitive) => Ok(Data::Primitive(*primitive)),
             other => Err(Error::InvalidValue(other)),
         }
     }

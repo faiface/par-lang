@@ -220,7 +220,7 @@ pub enum Value<P, Ext: Clone> {
     /// They internally contain a `Fn` dyn object which allows this type of functions to have captures.
     ExternalArc(ExternalArc),
     /// Primitive values are data provided externally.
-    Primitive(Primitive),
+    Primitive(Box<Primitive>),
 }
 
 impl<P, Ext: Clone> Value<P, Ext> {

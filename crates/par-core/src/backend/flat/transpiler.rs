@@ -303,7 +303,7 @@ impl ProgramTranspiler {
                 behavior,
             ),
             Tree::SignalRequest(_sender) => todo!(),
-            Tree::Primitive(primitive) => Global::Value(GlobalValue::Primitive(primitive)),
+            Tree::Primitive(primitive) => Global::Value(GlobalValue::Primitive(Box::new(primitive))),
             Tree::IntRequest(_sender) => todo!(),
             Tree::StringRequest(_sender) => todo!(),
             Tree::BytesRequest(_sender) => todo!(),
