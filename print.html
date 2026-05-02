@@ -255,7 +255,12 @@ in your terminal:</p>
 </code></pre>
 <p>This may take a while as Rust downloads and builds all the dependencies.</p>
 <p>This installs the <code>par</code> command.</p>
-<h3 id="4-create-a-package"><a class="header" href="#4-create-a-package">4. Create a package</a></h3>
+<h3 id="4-install-the-visual-studio-code-extension"><a class="header" href="#4-install-the-visual-studio-code-extension">4. Install the Visual Studio Code extension</a></h3>
+<p>If you use Visual Studio Code, install the
+<a href="https://marketplace.visualstudio.com/items?itemName=par-lang.par-vscode">Par extension</a>.
+It gives you syntax highlighting and editor support while you follow along.</p>
+<p>This step is optional; the command-line tools work without it.</p>
+<h3 id="5-create-a-package"><a class="header" href="#5-create-a-package">5. Create a package</a></h3>
 <p>A new <code>par</code> command should now be available in your terminal. It may be necessary
 to restart the terminal for it to appear.</p>
 <p>Let’s create a fresh package:</p>
@@ -274,7 +279,7 @@ $ cd hello_par
 <p>And you can type-check the package without running it:</p>
 <pre><code>$ par check
 </code></pre>
-<h3 id="5-browse-the-docs"><a class="header" href="#5-browse-the-docs">5. Browse the docs</a></h3>
+<h3 id="6-browse-the-docs"><a class="header" href="#6-browse-the-docs">6. Browse the docs</a></h3>
 <p>Par comes with a built-in docs browser:</p>
 <pre><code>$ par doc
 </code></pre>
@@ -285,7 +290,7 @@ $ cd hello_par
 <li><strong>For a remote package,</strong> <code>par doc --remote github.com/faiface/par-cancellable</code> lets you inspect
 a package without manually adding it as a dependency.</li>
 </ul>
-<h3 id="6-open-the-playground"><a class="header" href="#6-open-the-playground">6. Open the playground</a></h3>
+<h3 id="7-open-the-playground"><a class="header" href="#7-open-the-playground">7. Open the playground</a></h3>
 <p>The playground is a great way to experiment with code and interact with values through the
 playground’s automatic UI:</p>
 <pre><code>$ par playground
