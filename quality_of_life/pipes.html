@@ -230,8 +230,8 @@ stack-&gt;Push(4)
 returns a head and a tail:</p>
 <pre><code class="language-par">dec Pop : [List&lt;Nat&gt;] (Option&lt;Nat&gt;) List&lt;Nat&gt;
 def Pop = [list] list.case {
-  .end! =&gt; (.err!) .end!,
-  .item(x) xs =&gt; (.ok x) xs,
+  .end! =&gt; (.none!) .end!,
+  .item(x) xs =&gt; (.some x) xs,
 }
 
 let numbers = *(10, 20, 30)

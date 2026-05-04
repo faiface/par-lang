@@ -4255,23 +4255,28 @@ def ReadAll = [path] chan return {
 </code></pre>
 <p>This function uses <code>Bytes.ParserFromReader</code> to convert the chunked <code>Bytes.Reader</code> from <code>path.openFile</code> into a parser that provides a convenient <code>.remainder</code> method for reading all contents at once. The <code>catch</code> block propagates any errors by linking them into an <code>.err</code> result, while success links the contents into an <code>.ok</code> result.</p>
 <h2 id="providing-defaults-with-default"><a class="header" href="#providing-defaults-with-default">Providing defaults with <code>default</code></a></h2>
-<p>Sometimes you don’t want to propagate an error — you want to replace it with a fallback and keep going. The <code>default</code> sugar does exactly that, and unlike <code>try</code>, it is completely standalone: it does not require a surrounding <code>catch</code>, and it is valid even in nested expression positions.</p>
+<p>Sometimes you don’t want to branch on a missing optional value — you want to replace it with a fallback and keep going. The <code>default</code> sugar does exactly that for <code>Option</code> values.</p>
+<p>This is separate from <code>try</code>/<code>catch</code>: <code>try</code> unwraps <code>Result</code> values and propagates <code>.err</code>, while <code>default</code> unwraps <code>Option</code> values and replaces <code>.none!</code>. If you have a <code>Result</code> and want to ignore the error, convert it first with <code>Result.ToOption</code>.</p>
 <ul>
 <li>
 <p>Postfix form (expressions/commands):</p>
-<pre><code class="language-par">let r1: Result&lt;!, Int&gt; = .ok 7
-let r2: Result&lt;!, Int&gt; = .err!
+<pre><code class="language-par">let r1: Option&lt;Int&gt; = .some 7
+let r2: Option&lt;Int&gt; = .none!
 
 let x = r1.default(0)   // x = 7
 let y = r2.default(0)   // y = 0
+
+let result: Result&lt;String, Int&gt; = .err "not a number"
+let option = Result.ToOption(result)
+let z = option.default(0)  // z = 0
 </code></pre>
-<p>This desugars to a <code>.case</code> on the subject: on <code>.ok</code> it continues with the unwrapped value, on <code>.err</code> it evaluates the fallback expression and uses that value instead. Because it is a local rewrite, it can be used directly in <code>let</code> bindings and other expression contexts.</p>
+<p>This desugars to a <code>.case</code> on the subject: on <code>.some</code> it continues with the unwrapped value, on <code>.none</code> it evaluates the fallback expression and uses that value instead. Because it is a local rewrite, it can be used directly in <code>let</code> bindings and other expression contexts.</p>
 </li>
 <li>
 <p>Pattern form (including in receives):</p>
 <pre><code class="language-par">let default(0) n = Nat.FromString("oops")
 </code></pre>
-<p>The pattern binds on <code>.ok</code>, and binds the fallback expression on <code>.err</code>.</p>
+<p>The pattern binds on <code>.some</code>, and binds the fallback expression on <code>.none</code>.</p>
 <p>Here’s a practical example that shows why the pattern form is particularly useful with receive commands. It counts word occurrences using a map; when a key is missing, it starts from <code>0</code>:</p>
 <pre><code class="language-par">dec Counts : [List&lt;String&gt;] List&lt;(String) Nat&gt;
 def Counts = [words] do {
@@ -4286,7 +4291,7 @@ def Counts = [words] do {
   }
 } in counts.list
 </code></pre>
-<p>In the <code>.item</code> branch, <code>counts.entry(word)</code> returns a <code>Result&lt;!, Nat&gt;</code> via a receive; <code>default(0)</code> seamlessly handles the missing case and binds <code>count</code> to <code>0</code>.</p>
+<p>In the <code>.item</code> branch, <code>counts.entry(word)</code> returns an <code>Option&lt;Nat&gt;</code> via a receive; <code>default(0)</code> seamlessly handles the missing case and binds <code>count</code> to <code>0</code>.</p>
 </li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="conditions--if"><a class="header" href="#conditions--if">Conditions &amp; <code>if</code></a></h1>
@@ -4350,7 +4355,10 @@ useful once you want to match <em>and</em> filter while keeping bindings.</p>
   .ok a,
 }
 
-type Option&lt;a&gt; = Result&lt;!, a&gt;
+type Option&lt;a&gt; = either {
+  .none!,
+  .some a,
+}
 </code></pre>
 <p>An <code>is</code> condition checks an <code>either</code> and binds its payload. Its shape is:</p>
 <pre><code class="language-par">&lt;value&gt; is .&lt;variant&gt;&lt;payload-pattern&gt;
@@ -4399,8 +4407,8 @@ condition and inside the branch.</p>
 <h3 id="and-with-an-extra-predicate"><a class="header" href="#and-with-an-extra-predicate"><code>and</code> with an extra predicate</a></h3>
 <pre><code class="language-par">dec CountStatus : [Option&lt;Nat&gt;] String
 def CountStatus = [count] if {
-  count is .ok n and n == 0 =&gt; "zero",
-  count is .ok _ =&gt; "non-zero",
+  count is .some n and n == 0 =&gt; "zero",
+  count is .some _ =&gt; "non-zero",
   else =&gt; "missing",
 }
 </code></pre>
@@ -4408,14 +4416,14 @@ def CountStatus = [count] if {
 <ul>
 <li>Try the first branch.
 <ul>
-<li>First evaluate <code>count is .ok n</code>. If it fails, the whole <code>and</code> fails.</li>
+<li>First evaluate <code>count is .some n</code>. If it fails, the whole <code>and</code> fails.</li>
 <li>If it succeeds, <code>n</code> is bound and Par evaluates <code>n == 0</code>.</li>
 <li>Only if both parts succeed does the branch return <code>"zero"</code>.</li>
 </ul>
 </li>
-<li>If the first branch fails, try the second branch <code>count is .ok _</code>, which
+<li>If the first branch fails, try the second branch <code>count is .some _</code>, which
 matches any present value and returns <code>"non-zero"</code>.</li>
-<li>If both branches fail, <code>count</code> must be <code>.err!</code>, so <code>else</code> returns <code>"missing"</code>.</li>
+<li>If both branches fail, <code>count</code> must be <code>.none!</code>, so <code>else</code> returns <code>"missing"</code>.</li>
 </ul>
 <h3 id="and-with-two-bindings"><a class="header" href="#and-with-two-bindings"><code>and</code> with two bindings</a></h3>
 <pre><code class="language-par">dec AddOk : [Result&lt;String, Int&gt;, Result&lt;String, Int&gt;] Int
@@ -4682,8 +4690,8 @@ stack-&gt;Push(4)
 returns a head and a tail:</p>
 <pre><code class="language-par">dec Pop : [List&lt;Nat&gt;] (Option&lt;Nat&gt;) List&lt;Nat&gt;
 def Pop = [list] list.case {
-  .end! =&gt; (.err!) .end!,
-  .item(x) xs =&gt; (.ok x) xs,
+  .end! =&gt; (.none!) .end!,
+  .item(x) xs =&gt; (.some x) xs,
 }
 
 let numbers = *(10, 20, 30)

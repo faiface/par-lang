@@ -221,7 +221,10 @@ useful once you want to match <em>and</em> filter while keeping bindings.</p>
   .ok a,
 }
 
-type Option&lt;a&gt; = Result&lt;!, a&gt;
+type Option&lt;a&gt; = either {
+  .none!,
+  .some a,
+}
 </code></pre>
 <p>An <code>is</code> condition checks an <code>either</code> and binds its payload. Its shape is:</p>
 <pre><code class="language-par">&lt;value&gt; is .&lt;variant&gt;&lt;payload-pattern&gt;
@@ -270,8 +273,8 @@ condition and inside the branch.</p>
 <h3 id="and-with-an-extra-predicate"><a class="header" href="#and-with-an-extra-predicate"><code>and</code> with an extra predicate</a></h3>
 <pre><code class="language-par">dec CountStatus : [Option&lt;Nat&gt;] String
 def CountStatus = [count] if {
-  count is .ok n and n == 0 =&gt; "zero",
-  count is .ok _ =&gt; "non-zero",
+  count is .some n and n == 0 =&gt; "zero",
+  count is .some _ =&gt; "non-zero",
   else =&gt; "missing",
 }
 </code></pre>
@@ -279,14 +282,14 @@ def CountStatus = [count] if {
 <ul>
 <li>Try the first branch.
 <ul>
-<li>First evaluate <code>count is .ok n</code>. If it fails, the whole <code>and</code> fails.</li>
+<li>First evaluate <code>count is .some n</code>. If it fails, the whole <code>and</code> fails.</li>
 <li>If it succeeds, <code>n</code> is bound and Par evaluates <code>n == 0</code>.</li>
 <li>Only if both parts succeed does the branch return <code>"zero"</code>.</li>
 </ul>
 </li>
-<li>If the first branch fails, try the second branch <code>count is .ok _</code>, which
+<li>If the first branch fails, try the second branch <code>count is .some _</code>, which
 matches any present value and returns <code>"non-zero"</code>.</li>
-<li>If both branches fail, <code>count</code> must be <code>.err!</code>, so <code>else</code> returns <code>"missing"</code>.</li>
+<li>If both branches fail, <code>count</code> must be <code>.none!</code>, so <code>else</code> returns <code>"missing"</code>.</li>
 </ul>
 <h3 id="and-with-two-bindings"><a class="header" href="#and-with-two-bindings"><code>and</code> with two bindings</a></h3>
 <pre><code class="language-par">dec AddOk : [Result&lt;String, Int&gt;, Result&lt;String, Int&gt;] Int
