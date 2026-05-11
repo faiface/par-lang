@@ -437,7 +437,7 @@ type defined previously:</p>
 <pre><code class="language-par">dec SumTree : [Tree] Int
 def SumTree = [tree] tree.begin.case {
   .leaf number        =&gt; number,
-  .node(left, right)! =&gt; left.loop + right.loop,
+  .node(left, right)! =&gt; {left.loop} + {right.loop},
 }
 
 def BiggerSum = SumTree(BiggerTree)  // = 20
