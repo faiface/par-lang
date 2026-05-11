@@ -5,14 +5,18 @@ use super::core::{LoopId, Operation, Type, get_primitive_type};
 use super::error::TypeError;
 use super::lattice::union_types;
 use super::{Context, TypeDefs};
-use crate::frontend_impl::types::implicit::infer_holes;
+use crate::frontend_impl::types::implicit::{infer_holes, resolve_holes, substitute_holes};
 use crate::frontend_impl::types::lattice::intersect_types;
 use crate::location::Span;
+use im::HashMap;
 use indexmap::{IndexMap, IndexSet};
 use par_runtime::primitive::Primitive;
 use par_runtime::readback::Number;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use futures::AsyncWriteExt;
+use winnow::combinator::fail;
+use crate::frontend::TypeError::TypeMustBeKnownAtThisPoint;
 
 enum ProcessAnalyzerMode {
     Check,
@@ -868,6 +872,41 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
+        match typ {
+            Type::Hole(_span, _name, hole) => {
+                if let Some(inference_subject) = inference_subject {
+                    emit(TypeMustBeKnownAtThisPoint(
+                        span.clone(),
+                        inference_subject.clone()
+                    ));
+                    let fail = Type::Fail(span.clone());
+                    self.put(span, object.clone(), fail.clone()).ok();
+                    let (cmd, typ) = self.infer_command(span, object, command, emit);
+                    hole.add_upper_bound(typ);
+                    return (cmd, Some(fail));
+                }
+                let (cmd, typ) = self.infer_command(span, object, command, emit);
+                hole.add_upper_bound(typ);
+                return (cmd, None);
+            },
+            Type::DualHole(_span, _name, hole) => {
+                if let Some(inference_subject) = inference_subject {
+                    emit(TypeMustBeKnownAtThisPoint(
+                        span.clone(),
+                        inference_subject.clone()
+                    ));
+                    let fail = Type::Fail(span.clone());
+                    self.put(span, object.clone(), fail.clone()).ok();
+                    let (cmd, typ) = self.infer_command(span, object, command, emit);
+                    hole.add_lower_bound(typ.dual(Span::None));
+                    return (cmd, None);
+                }
+                let (cmd, typ) = self.infer_command(span, object, command, emit);
+                hole.add_lower_bound(typ.dual(Span::None));
+                return (cmd, None);
+            }
+            _ => {}
+        };
         match command {
             Command::Noop(process) => {
                 self.put(span, object.clone(), typ.clone()).ok();
@@ -1035,14 +1074,13 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         mode: &ProcessAnalyzerMode,
         emit: &mut impl FnMut(TypeError<S>),
     ) -> (Command<Type<S>, S>, Option<Type<S>>) {
-        let (argument, inferred_arg_type) = self.infer_expression(None, argument, emit);
-        let inferred_holes = infer_holes(
-            span,
-            &inferred_arg_type,
-            argument_type,
-            vars,
-            &self.type_defs,
-        )
+        let (argument_type, holes_map) =
+            substitute_holes(argument_type, vars).unwrap_or_else(|e| {
+                emit(e);
+                (Type::Fail(span.clone()), HashMap::new())
+            });
+        let argument = self.check_expression(None, argument, &argument_type, emit);
+        let inferred_holes = resolve_holes(span, vars, &self.type_defs, holes_map)
         .unwrap_or_else(|e| {
             emit(e);
             vars.iter()
@@ -1052,7 +1090,7 @@ impl<S: Clone + Eq + std::hash::Hash> Context<S> {
         let then_type = then_type
             .clone()
             .substitute(inferred_holes.iter().map(|(k, v)| (k, v)).collect())
-            .unwrap_or_else(|e| {
+            .unwrap_or_else(|e: TypeError<S>| {
                 emit(e);
                 Type::Fail(span.clone())
             });
