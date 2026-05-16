@@ -296,7 +296,7 @@ This works for more complex command chains too. Consider this type for polling d
 ```par
 type Poll<e, a> = iterative choice {
   .close => Result<e, !>,
-  .poll => Result<e, (a) self>,
+  .next => Result<e, (a) self>,
 }
 ```
 
@@ -304,7 +304,7 @@ You can poll an element and handle errors seamlessly:
 
 ```par
 // source : Poll<Os.Error, String>
-source.poll.try[value]
+source.next.try[value]
 ```
 
 After this command, `source` maintains its `Poll<Os.Error, String>` type and value contains the successfully polled `String`.
