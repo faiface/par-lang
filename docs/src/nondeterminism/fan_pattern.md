@@ -8,7 +8,7 @@ module Main
 import @core/List
 
 dec MergeTwoLists : <a>[List<a>] [List<a>] List<a>
-def MergeTwoLists = [left, right] poll(left, right) {
+def MergeTwoLists = <a>[left] [right] poll(left, right) {
   list => list.case {
     .end! => submit(),
     .item(x) xs => .item(x) submit(xs),

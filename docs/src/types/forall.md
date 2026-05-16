@@ -3,7 +3,7 @@
 What about _generic_ functions? Or generic values?
 
 We already know about [generic types](../structure/definitions_and_declarations.md). For example, here's
-a typical optional type, as present in many languages:
+a typical optional type, as present in many languages and also supported by Par as built-in type:
 
 ```par
 type Option<a> = either {
@@ -24,6 +24,7 @@ module Main
 import {
   @core/Int
   @core/String
+  @core/Option
 }
 
 def None: Option<String> = .none!

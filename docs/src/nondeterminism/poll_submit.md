@@ -82,7 +82,7 @@ dec PollSum : [List<Int>] Int
 def PollSum = [nums] poll(nums) {
   list => list.case {
     .end! => submit(),
-    .item(x) xs => x + submit(xs),
+    .item(x) xs => x + {submit(xs)},
   }
   else => 0,
 }
@@ -126,7 +126,7 @@ dec PollSumTwo : [List<Int>, List<Int>] Int
 def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
   list => list.case {
     .end! => submit(),
-    .item(x) xs => x + submit(xs),
+    .item(x) xs => x + {submit(xs)},
   }
   else => 0,
 }
@@ -152,7 +152,7 @@ The empty `submit()` in the `.end!` branch now makes sense! Just because one of 
 
 ```par
 dec MergeTwoLists : <a>[List<a>] [List<a>] List<a>
-def MergeTwoLists = [left, right] poll(left, right) {
+def MergeTwoLists = <a>[left] [right] poll(left, right) {
   list => list.case {
     .end! => submit(),
     .item(x) xs => .item(x) submit(xs),

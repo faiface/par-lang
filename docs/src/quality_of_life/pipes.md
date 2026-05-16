@@ -28,7 +28,7 @@ let result = Square(Add(3, Double(4)))  // = 196
 With pipes you can say the same thing in the order you want to read it:
 
 ```par
-let result = 3
+let result = {3}
   -> Add(Double(4))
   -> Square
 ```

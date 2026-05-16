@@ -15,4 +15,4 @@ mathjax-support = true
 edit-url-template = "https://github.com/par-team/par-lang/edit/main/docs/{path}"
 
 [output.html.code.hidelines]
-par = "?"
+par = "# "
