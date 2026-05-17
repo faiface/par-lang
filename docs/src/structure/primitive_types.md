@@ -132,9 +132,12 @@ def No = .false!
 Boolean expressions use `and`, `or`, and `not`:
 
 ```par
-def Both = .true! and .false!
-def Either = .true! or .false!
-def Neither = not .true!
+def Yes : Bool = .true!
+def No : Bool = .false!
+
+def Both = Yes and No
+def Either = Yes or No
+def Neither = not Yes
 ```
 
 These same words have extra power in conditions: they short-circuit, and can carry bindings from
@@ -230,7 +233,10 @@ to loop a known number of times.
 ```par
 module Main
 
-import @core/Int
+import {
+  @core/Nat
+  @core/Int
+}
 
 def Absolute: Nat = Int.Abs(-12)
 def Modulo: Nat = Int.Mod(-13, 5)

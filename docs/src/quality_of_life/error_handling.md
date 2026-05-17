@@ -32,7 +32,7 @@ def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
-  path.createOrAppendToFile.case {
+  Os.CreateOrAppendToFile(path).case {
     .err e => {
       console.print(e)
       console.close
@@ -104,7 +104,7 @@ def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
-  path.createOrAppendToFile.case {
+  Os.CreateOrAppendToFile(path).case {
     .err e => {
       console.print(e)
       console.close
@@ -168,7 +168,7 @@ def Main: ! = chan exit {
   }
 
   let path = Os.Path("logs.txt")
-  let try writer = path.createOrAppendToFile
+  let try writer = Os.CreateOrAppendToFile(path)
   
   writer.write("[INFO] First new log\n").try
   writer.write("[INFO] Second new log\n").try
@@ -296,7 +296,7 @@ This works for more complex command chains too. Consider this type for polling d
 ```par
 type Poll<e, a> = iterative choice {
   .close => Result<e, !>,
-  .poll => Result<e, (a) self>,
+  .next => Result<e, (a) self>,
 }
 ```
 
@@ -304,7 +304,7 @@ You can poll an element and handle errors seamlessly:
 
 ```par
 // source : Poll<Os.Error, String>
-source.poll.try[value]
+source.next.try[value]
 ```
 
 After this command, `source` maintains its `Poll<Os.Error, String>` type and value contains the successfully polled `String`.
@@ -316,7 +316,7 @@ After this command, `source` maintains its `Poll<Os.Error, String>` type and val
 You might think this would work:
 
 ```par
-let writer = path.createOrAppendToFile.try
+let writer = Os.CreateOrAppendToFile(path).try
 ```
 
 However, this causes a type error. The reason reveals something fundamental about Par's evaluation model.
@@ -324,10 +324,10 @@ However, this causes a type error. The reason reveals something fundamental abou
 Par evaluates expressions concurrently with the processes that use them. When you write:
 
 ```par
-let writer = path.createOrAppendToFile.try
+let writer = Os.CreateOrAppendToFile(path).try
 ```
 
-The expression `path.createOrAppendToFile` runs concurrently with the process doing the `let`. If the expression were to fail on `.try`, the main process might already be executing other commands — there's no sound way to "rewind" that execution.
+The expression `Os.CreateOrAppendToFile(path)` runs concurrently with the process doing the `let`. If the expression were to fail on `.try`, the main process might already be executing other commands — there's no sound way to "rewind" that execution.
 
 This is why `try` and `throw` can only be used in the same process as their corresponding `catch`, not in nested expressions or processes.
 
@@ -336,13 +336,13 @@ This is why `try` and `throw` can only be used in the same process as their corr
 The solution is to use `try` in the pattern itself:
 
 ```par
-let try writer = path.createOrAppendToFile
+let try writer = Os.CreateOrAppendToFile(path)
 ```
 
 This moves the error handling into the correct process. The desugaring is:
 
 ```par
-let writer = path.createOrAppendToFile
+let writer = Os.CreateOrAppendToFile(path)
 writer.case {
   .err e => {
     throw e
@@ -516,10 +516,10 @@ def Main: ! = chan exit {
     exit!
   }
 
-  let try reader = Os.Path(src).openFile
+  let try reader = Os.OpenFile(Os.Path(src))
   catch@w e => { reader.close; throw e }
 
-  let try@w writer = Os.Path(dst).createOrReplaceFile
+  let try@w writer = Os.CreateOrReplaceFile(Os.Path(dst))
   catch@r e => { writer.close; throw e }
 
   reader.begin.read.try@r.case {
@@ -556,7 +556,7 @@ import {
 dec ReadAll : [Os.Path] Result<Os.Error, Bytes>
 def ReadAll = [path] chan return {
   catch e => { return <> .err e }
-  let try reader = path.openFile
+  let try reader = Os.OpenFile(path)
   let parser = Bytes.ParserFromReader(reader)
   let try contents = parser.remainder
   return <> .ok contents

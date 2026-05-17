@@ -393,7 +393,7 @@ eventually reversing the whole list. In Haskell, this requires a helper recursiv
 In Par, it doesn't!
 
 ```par
-dec Reverse : [type a, List<Int>] List<Int>
+dec Reverse : [type a, List<a>] List<a>
 def Reverse = [type a, list]
   let acc: List<a> = .end!
   in list.begin.case {

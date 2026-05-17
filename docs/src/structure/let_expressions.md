@@ -43,7 +43,7 @@ We'll learn more about those soon.
 > The annotation does not follow a variable. But this is good:
 >
 > ```par
-> let (a: Nat, b: Nat)! = (3, 4) in ...      // Okay.
+> let (a: Nat, b: Nat)! = (3, 4)! in ...      // Okay.
 > ```
 
 **Now, onto types and their expressions!**

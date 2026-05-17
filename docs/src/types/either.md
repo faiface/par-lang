@@ -20,7 +20,7 @@ type StringOrNumber = either {
 }
 
 def Str: StringOrNumber = .string "Hello!"
-def Num: StringOrNumber = .number 42,
+def Num: StringOrNumber = .number 42
 ```
 
 An either type is spelled with the keyword `either`, followed by curly braces enclosing a
