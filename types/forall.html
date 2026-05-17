@@ -163,7 +163,7 @@
                         <h1 id="forall"><a class="header" href="#forall">Forall</a></h1>
 <p>What about <em>generic</em> functions? Or generic values?</p>
 <p>We already know about <a href="../structure/definitions_and_declarations.html">generic types</a>. For example, here’s
-a typical optional type, as present in many languages:</p>
+a typical optional type, as present in many languages and also supported by Par as built-in type:</p>
 <pre><code class="language-par">type Option&lt;a&gt; = either {
   .none!,
   .some a,
@@ -178,6 +178,7 @@ however, always concrete.</p>
 import {
   @core/Int
   @core/String
+  @core/Option
 }
 
 def None: Option&lt;String&gt; = .none!

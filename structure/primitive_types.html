@@ -247,9 +247,12 @@ with the middle expression evaluated only once.</p>
 def No = .false!
 </code></pre>
 <p>Boolean expressions use <code>and</code>, <code>or</code>, and <code>not</code>:</p>
-<pre><code class="language-par">def Both = .true! and .false!
-def Either = .true! or .false!
-def Neither = not .true!
+<pre><code class="language-par">def Yes : Bool = .true!
+def No : Bool = .false!
+
+def Both = Yes and No
+def Either = Yes or No
+def Neither = not Yes
 </code></pre>
 <p>These same words have extra power in conditions: they short-circuit, and can carry bindings from
 matches. That is covered in <a href="../quality_of_life/if.html">Conditions &amp; <code>if</code></a>.</p>
@@ -313,7 +316,10 @@ to loop a known number of times.</p>
 <p><code>Int</code> has helpers where the result type is not just “another number”.</p>
 <pre><code class="language-par">module Main
 
-import @core/Int
+import {
+  @core/Nat
+  @core/Int
+}
 
 def Absolute: Nat = Int.Abs(-12)
 def Modulo: Nat = Int.Mod(-13, 5)

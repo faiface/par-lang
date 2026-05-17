@@ -182,7 +182,7 @@ def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
-  path.createOrAppendToFile.case {
+  Os.CreateOrAppendToFile(path).case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -239,7 +239,7 @@ def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
-  path.createOrAppendToFile.case {
+  Os.CreateOrAppendToFile(path).case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -298,7 +298,7 @@ def Main: ! = chan exit {
   }
 
   let path = Os.Path("logs.txt")
-  let try writer = path.createOrAppendToFile
+  let try writer = Os.CreateOrAppendToFile(path)
   
   writer.write("[INFO] First new log\n").try
   writer.write("[INFO] Second new log\n").try
@@ -383,31 +383,31 @@ exit!
 <p>This works for more complex command chains too. Consider this type for polling data with possible errors:</p>
 <pre><code class="language-par">type Poll&lt;e, a&gt; = iterative choice {
   .close =&gt; Result&lt;e, !&gt;,
-  .poll =&gt; Result&lt;e, (a) self&gt;,
+  .next =&gt; Result&lt;e, (a) self&gt;,
 }
 </code></pre>
 <p>You can poll an element and handle errors seamlessly:</p>
 <pre><code class="language-par">// source : Poll&lt;Os.Error, String&gt;
-source.poll.try[value]
+source.next.try[value]
 </code></pre>
 <p>After this command, <code>source</code> maintains its <code>Poll&lt;Os.Error, String&gt;</code> type and value contains the successfully polled <code>String</code>.</p>
 <!-- moved `default` to the end of this chapter -->
 <h3 id="the-concurrent-evaluation-restriction"><a class="header" href="#the-concurrent-evaluation-restriction">The Concurrent Evaluation Restriction</a></h3>
 <p>You might think this would work:</p>
-<pre><code class="language-par">let writer = path.createOrAppendToFile.try
+<pre><code class="language-par">let writer = Os.CreateOrAppendToFile(path).try
 </code></pre>
 <p>However, this causes a type error. The reason reveals something fundamental about Par’s evaluation model.</p>
 <p>Par evaluates expressions concurrently with the processes that use them. When you write:</p>
-<pre><code class="language-par">let writer = path.createOrAppendToFile.try
+<pre><code class="language-par">let writer = Os.CreateOrAppendToFile(path).try
 </code></pre>
-<p>The expression <code>path.createOrAppendToFile</code> runs concurrently with the process doing the <code>let</code>. If the expression were to fail on <code>.try</code>, the main process might already be executing other commands — there’s no sound way to “rewind” that execution.</p>
+<p>The expression <code>Os.CreateOrAppendToFile(path)</code> runs concurrently with the process doing the <code>let</code>. If the expression were to fail on <code>.try</code>, the main process might already be executing other commands — there’s no sound way to “rewind” that execution.</p>
 <p>This is why <code>try</code> and <code>throw</code> can only be used in the same process as their corresponding <code>catch</code>, not in nested expressions or processes.</p>
 <h3 id="try-in-patterns"><a class="header" href="#try-in-patterns"><code>try</code> in Patterns</a></h3>
 <p>The solution is to use <code>try</code> in the pattern itself:</p>
-<pre><code class="language-par">let try writer = path.createOrAppendToFile
+<pre><code class="language-par">let try writer = Os.CreateOrAppendToFile(path)
 </code></pre>
 <p>This moves the error handling into the correct process. The desugaring is:</p>
-<pre><code class="language-par">let writer = path.createOrAppendToFile
+<pre><code class="language-par">let writer = Os.CreateOrAppendToFile(path)
 writer.case {
   .err e =&gt; {
     throw e
@@ -527,10 +527,10 @@ ProcessTogether(resource, otherData)
     exit!
   }
 
-  let try reader = Os.Path(src).openFile
+  let try reader = Os.OpenFile(Os.Path(src))
   catch@w e =&gt; { reader.close; throw e }
 
-  let try@w writer = Os.Path(dst).createOrReplaceFile
+  let try@w writer = Os.CreateOrReplaceFile(Os.Path(dst))
   catch@r e =&gt; { writer.close; throw e }
 
   reader.begin.read.try@r.case {
@@ -561,7 +561,7 @@ import {
 dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
-  let try reader = path.openFile
+  let try reader = Os.OpenFile(path)
   let parser = Bytes.ParserFromReader(reader)
   let try contents = parser.remainder
   return &lt;&gt; .ok contents

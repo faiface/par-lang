@@ -167,7 +167,7 @@
 import @core/List
 
 dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
-def MergeTwoLists = [left, right] poll(left, right) {
+def MergeTwoLists = &lt;a&gt;[left] [right] poll(left, right) {
   list =&gt; list.case {
     .end! =&gt; submit(),
     .item(x) xs =&gt; .item(x) submit(xs),

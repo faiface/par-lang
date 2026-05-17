@@ -852,9 +852,12 @@ with the middle expression evaluated only once.</p>
 def No = .false!
 </code></pre>
 <p>Boolean expressions use <code>and</code>, <code>or</code>, and <code>not</code>:</p>
-<pre><code class="language-par">def Both = .true! and .false!
-def Either = .true! or .false!
-def Neither = not .true!
+<pre><code class="language-par">def Yes : Bool = .true!
+def No : Bool = .false!
+
+def Both = Yes and No
+def Either = Yes or No
+def Neither = not Yes
 </code></pre>
 <p>These same words have extra power in conditions: they short-circuit, and can carry bindings from
 matches. That is covered in <a href="structure/../quality_of_life/if.html">Conditions &amp; <code>if</code></a>.</p>
@@ -918,7 +921,10 @@ to loop a known number of times.</p>
 <p><code>Int</code> has helpers where the result type is not just “another number”.</p>
 <pre><code class="language-par">module Main
 
-import @core/Int
+import {
+  @core/Nat
+  @core/Int
+}
 
 def Absolute: Nat = Int.Abs(-12)
 def Modulo: Nat = Int.Mod(-13, 5)
@@ -1007,7 +1013,7 @@ We’ll learn more about those soon.</p>
 <pre><code class="language-par">let (a, b)! : (Nat, Nat)! = (3, 4)! in ...  // Error!
 </code></pre>
 <p>The annotation does not follow a variable. But this is good:</p>
-<pre><code class="language-par">let (a: Nat, b: Nat)! = (3, 4) in ...      // Okay.
+<pre><code class="language-par">let (a: Nat, b: Nat)! = (3, 4)! in ...      // Okay.
 </code></pre>
 </blockquote>
 <p><strong>Now, onto types and their expressions!</strong></p>
@@ -1166,7 +1172,7 @@ type StringOrNumber = either {
 }
 
 def Str: StringOrNumber = .string "Hello!"
-def Num: StringOrNumber = .number 42,
+def Num: StringOrNumber = .number 42
 </code></pre>
 <p>An either type is spelled with the keyword <code>either</code>, followed by curly braces enclosing a
 comma-separated list of variants.</p>
@@ -1487,7 +1493,7 @@ is stored in a local variable, calling it destroys the variable, as discussed ab
 <div style="break-before: page; page-break-before: always;"></div><h1 id="forall"><a class="header" href="#forall">Forall</a></h1>
 <p>What about <em>generic</em> functions? Or generic values?</p>
 <p>We already know about <a href="types/../structure/definitions_and_declarations.html">generic types</a>. For example, here’s
-a typical optional type, as present in many languages:</p>
+a typical optional type, as present in many languages and also supported by Par as built-in type:</p>
 <pre><code class="language-par">type Option&lt;a&gt; = either {
   .none!,
   .some a,
@@ -1502,6 +1508,7 @@ however, always concrete.</p>
 import {
   @core/Int
   @core/String
+  @core/Option
 }
 
 def None: Option&lt;String&gt; = .none!
@@ -2042,7 +2049,7 @@ reverseHelper acc (x:xs) = reverseHelper (x:acc) xs
 <p>This function uses a state: <code>acc</code>, the accumulator. It prepends a new item to it in every iteration,
 eventually reversing the whole list. In Haskell, this requires a helper recursive function.</p>
 <p>In Par, it doesn’t!</p>
-<pre><code class="language-par">dec Reverse : [type a, List&lt;Int&gt;] List&lt;Int&gt;
+<pre><code class="language-par">dec Reverse : [type a, List&lt;a&gt;] List&lt;a&gt;
 def Reverse = [type a, list]
   let acc: List&lt;a&gt; = .end!
   in list.begin.case {
@@ -3583,7 +3590,8 @@ import {
 
 dec HashesOrNothing : [Nat] String
 def HashesOrNothing = [n] chan result {
-  {n == 0}.case {
+  let isZero = n == 0
+  isZero.case {
     .true! =&gt; {
       result &lt;&gt; "&lt;nothing&gt;"
     }
@@ -3604,7 +3612,7 @@ def HashesOrNothing = [n] chan result {
 </code></pre>
 <p>Let’s break this down:</p>
 <ul>
-<li><code>n == 0</code> returns a <code>Bool</code>, which is an <a href="processes/../types/either.html"><code>either</code></a> with branches
+<li><code>n == 0</code> (aka <code>iszero</code>) returns a <code>Bool</code>, which is an <a href="processes/../types/either.html"><code>either</code></a> with branches
 <code>.true!</code> and <code>.false!</code>.</li>
 <li>In the <code>.true!</code> branch, we immediately perform a link — returning <code>"&lt;nothing&gt;"</code>. Note, that
 this <em>ends</em> the process.</li>
@@ -3855,7 +3863,7 @@ def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
-  path.createOrAppendToFile.case {
+  Os.CreateOrAppendToFile(path).case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3912,7 +3920,7 @@ def Main: ! = chan exit {
   let console = Console.Open
 
   let path = Os.Path("logs.txt")
-  path.createOrAppendToFile.case {
+  Os.CreateOrAppendToFile(path).case {
     .err e =&gt; {
       console.print(e)
       console.close
@@ -3971,7 +3979,7 @@ def Main: ! = chan exit {
   }
 
   let path = Os.Path("logs.txt")
-  let try writer = path.createOrAppendToFile
+  let try writer = Os.CreateOrAppendToFile(path)
   
   writer.write("[INFO] First new log\n").try
   writer.write("[INFO] Second new log\n").try
@@ -4056,31 +4064,31 @@ exit!
 <p>This works for more complex command chains too. Consider this type for polling data with possible errors:</p>
 <pre><code class="language-par">type Poll&lt;e, a&gt; = iterative choice {
   .close =&gt; Result&lt;e, !&gt;,
-  .poll =&gt; Result&lt;e, (a) self&gt;,
+  .next =&gt; Result&lt;e, (a) self&gt;,
 }
 </code></pre>
 <p>You can poll an element and handle errors seamlessly:</p>
 <pre><code class="language-par">// source : Poll&lt;Os.Error, String&gt;
-source.poll.try[value]
+source.next.try[value]
 </code></pre>
 <p>After this command, <code>source</code> maintains its <code>Poll&lt;Os.Error, String&gt;</code> type and value contains the successfully polled <code>String</code>.</p>
 <!-- moved `default` to the end of this chapter -->
 <h3 id="the-concurrent-evaluation-restriction"><a class="header" href="#the-concurrent-evaluation-restriction">The Concurrent Evaluation Restriction</a></h3>
 <p>You might think this would work:</p>
-<pre><code class="language-par">let writer = path.createOrAppendToFile.try
+<pre><code class="language-par">let writer = Os.CreateOrAppendToFile(path).try
 </code></pre>
 <p>However, this causes a type error. The reason reveals something fundamental about Par’s evaluation model.</p>
 <p>Par evaluates expressions concurrently with the processes that use them. When you write:</p>
-<pre><code class="language-par">let writer = path.createOrAppendToFile.try
+<pre><code class="language-par">let writer = Os.CreateOrAppendToFile(path).try
 </code></pre>
-<p>The expression <code>path.createOrAppendToFile</code> runs concurrently with the process doing the <code>let</code>. If the expression were to fail on <code>.try</code>, the main process might already be executing other commands — there’s no sound way to “rewind” that execution.</p>
+<p>The expression <code>Os.CreateOrAppendToFile(path)</code> runs concurrently with the process doing the <code>let</code>. If the expression were to fail on <code>.try</code>, the main process might already be executing other commands — there’s no sound way to “rewind” that execution.</p>
 <p>This is why <code>try</code> and <code>throw</code> can only be used in the same process as their corresponding <code>catch</code>, not in nested expressions or processes.</p>
 <h3 id="try-in-patterns"><a class="header" href="#try-in-patterns"><code>try</code> in Patterns</a></h3>
 <p>The solution is to use <code>try</code> in the pattern itself:</p>
-<pre><code class="language-par">let try writer = path.createOrAppendToFile
+<pre><code class="language-par">let try writer = Os.CreateOrAppendToFile(path)
 </code></pre>
 <p>This moves the error handling into the correct process. The desugaring is:</p>
-<pre><code class="language-par">let writer = path.createOrAppendToFile
+<pre><code class="language-par">let writer = Os.CreateOrAppendToFile(path)
 writer.case {
   .err e =&gt; {
     throw e
@@ -4200,10 +4208,10 @@ ProcessTogether(resource, otherData)
     exit!
   }
 
-  let try reader = Os.Path(src).openFile
+  let try reader = Os.OpenFile(Os.Path(src))
   catch@w e =&gt; { reader.close; throw e }
 
-  let try@w writer = Os.Path(dst).createOrReplaceFile
+  let try@w writer = Os.CreateOrReplaceFile(Os.Path(dst))
   catch@r e =&gt; { writer.close; throw e }
 
   reader.begin.read.try@r.case {
@@ -4234,7 +4242,7 @@ import {
 dec ReadAll : [Os.Path] Result&lt;Os.Error, Bytes&gt;
 def ReadAll = [path] chan return {
   catch e =&gt; { return &lt;&gt; .err e }
-  let try reader = path.openFile
+  let try reader = Os.OpenFile(path)
   let parser = Bytes.ParserFromReader(reader)
   let try contents = parser.remainder
   return &lt;&gt; .ok contents
@@ -4626,7 +4634,7 @@ def Square = [n: Nat] n * n
 <pre><code class="language-par">let result = Square(Add(3, Double(4)))  // = 196
 </code></pre>
 <p>With pipes you can say the same thing in the order you want to read it:</p>
-<pre><code class="language-par">let result = 3
+<pre><code class="language-par">let result = {3}
   -&gt; Add(Double(4))
   -&gt; Square
 </code></pre>
@@ -4805,7 +4813,7 @@ dec PollSum : [List&lt;Int&gt;] Int
 def PollSum = [nums] poll(nums) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; x + submit(xs),
+    .item(x) xs =&gt; x + {submit(xs)},
   }
   else =&gt; 0,
 }
@@ -4847,7 +4855,7 @@ def Sum = [nums] nums.begin.case {
 def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; x + submit(xs),
+    .item(x) xs =&gt; x + {submit(xs)},
   }
   else =&gt; 0,
 }
@@ -4862,7 +4870,7 @@ def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
 <p>The empty <code>submit()</code> in the <code>.end!</code> branch now makes sense! Just because one of the lists has ended doesn’t mean there’s no more clients: there’s the other list!</p>
 <p><strong>Let’s now merge two lists into one:</strong></p>
 <pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
-def MergeTwoLists = [left, right] poll(left, right) {
+def MergeTwoLists = &lt;a&gt;[left] [right] poll(left, right) {
   list =&gt; list.case {
     .end! =&gt; submit(),
     .item(x) xs =&gt; .item(x) submit(xs),
@@ -4926,7 +4934,7 @@ poll(client1, client2) {
 import @core/List
 
 dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
-def MergeTwoLists = [left, right] poll(left, right) {
+def MergeTwoLists = &lt;a&gt;[left] [right] poll(left, right) {
   list =&gt; list.case {
     .end! =&gt; submit(),
     .item(x) xs =&gt; .item(x) submit(xs),

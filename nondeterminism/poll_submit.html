@@ -221,7 +221,7 @@ dec PollSum : [List&lt;Int&gt;] Int
 def PollSum = [nums] poll(nums) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; x + submit(xs),
+    .item(x) xs =&gt; x + {submit(xs)},
   }
   else =&gt; 0,
 }
@@ -263,7 +263,7 @@ def Sum = [nums] nums.begin.case {
 def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
   list =&gt; list.case {
     .end! =&gt; submit(),
-    .item(x) xs =&gt; x + submit(xs),
+    .item(x) xs =&gt; x + {submit(xs)},
   }
   else =&gt; 0,
 }
@@ -278,7 +278,7 @@ def PollSumTwo = [nums1, nums2] poll(nums1, nums2) {
 <p>The empty <code>submit()</code> in the <code>.end!</code> branch now makes sense! Just because one of the lists has ended doesn’t mean there’s no more clients: there’s the other list!</p>
 <p><strong>Let’s now merge two lists into one:</strong></p>
 <pre><code class="language-par">dec MergeTwoLists : &lt;a&gt;[List&lt;a&gt;] [List&lt;a&gt;] List&lt;a&gt;
-def MergeTwoLists = [left, right] poll(left, right) {
+def MergeTwoLists = &lt;a&gt;[left] [right] poll(left, right) {
   list =&gt; list.case {
     .end! =&gt; submit(),
     .item(x) xs =&gt; .item(x) submit(xs),

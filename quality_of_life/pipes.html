@@ -179,7 +179,7 @@ def Square = [n: Nat] n * n
 <pre><code class="language-par">let result = Square(Add(3, Double(4)))  // = 196
 </code></pre>
 <p>With pipes you can say the same thing in the order you want to read it:</p>
-<pre><code class="language-par">let result = 3
+<pre><code class="language-par">let result = {3}
   -&gt; Add(Double(4))
   -&gt; Square
 </code></pre>

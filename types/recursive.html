@@ -486,7 +486,7 @@ reverseHelper acc (x:xs) = reverseHelper (x:acc) xs
 <p>This function uses a state: <code>acc</code>, the accumulator. It prepends a new item to it in every iteration,
 eventually reversing the whole list. In Haskell, this requires a helper recursive function.</p>
 <p>In Par, it doesn’t!</p>
-<pre><code class="language-par">dec Reverse : [type a, List&lt;Int&gt;] List&lt;Int&gt;
+<pre><code class="language-par">dec Reverse : [type a, List&lt;a&gt;] List&lt;a&gt;
 def Reverse = [type a, list]
   let acc: List&lt;a&gt; = .end!
   in list.begin.case {
