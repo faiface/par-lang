@@ -1,12 +1,12 @@
 //package: core
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use crate::builtin::list::readback_list;
 use arcstr::literal;
+use indexmap::IndexMap;
 use par_runtime::primitive::ParString;
 use par_runtime::readback::Handle;
 use par_runtime::registry::{DefinitionRef, ExternalDef, PackageRef};
-use serde_json::{Map, Number, Value};
 
 inventory::submit!(ExternalDef {
     path: DefinitionRef {
@@ -29,126 +29,189 @@ inventory::submit!(ExternalDef {
 });
 
 #[derive(Clone, Debug)]
-enum JsonValue {
+enum SerJsonValue {
     Null,
     Bool(bool),
-    String(String),
+    String(ParString),
     Number(f64),
-    List(Vec<JsonValue>),
-    Object(BTreeMap<String, JsonValue>),
+    List(Vec<SerJsonValue>),
+    // when serializing, we only need to provide a sequence of entries, so we can just use a vec
+    Object(Vec<(ParString, SerJsonValue)>),
+}
+
+impl serde::Serialize for SerJsonValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            SerJsonValue::Null => serializer.serialize_unit(),
+            SerJsonValue::Bool(v) => serializer.serialize_bool(*v),
+            SerJsonValue::String(v) => serializer.serialize_str(v.as_str()),
+            SerJsonValue::Number(v) => serializer.serialize_f64(*v),
+            SerJsonValue::List(values) => serializer.collect_seq(values),
+            SerJsonValue::Object(entries) => {
+                serializer.collect_map(entries.iter().map(|(k, v)| (k, v)))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum DeJsonValue {
+    Null,
+    Bool(bool),
+    String(ParString),
+    Number(f64),
+    List(Vec<DeJsonValue>),
+    // when deserializing, we need to provide a map interface, so we need an actual map
+    Object(IndexMap<ParString, DeJsonValue>),
+}
+
+impl<'de> serde::Deserialize<'de> for DeJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = DeJsonValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("any valid JSON value")
+            }
+
+            #[inline]
+            fn visit_bool<E>(self, value: bool) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Bool(value))
+            }
+
+            #[inline]
+            fn visit_i64<E>(self, value: i64) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Number(value as f64))
+            }
+
+            fn visit_i128<E>(self, value: i128) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Number(value as f64))
+            }
+
+            #[inline]
+            fn visit_u64<E>(self, value: u64) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Number(value as f64))
+            }
+
+            fn visit_u128<E>(self, value: u128) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Number(value as f64))
+            }
+
+            #[inline]
+            fn visit_f64<E>(self, value: f64) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Number(value))
+            }
+
+            #[inline]
+            fn visit_str<E>(self, value: &str) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::String(value.to_owned().into()))
+            }
+
+            #[inline]
+            fn visit_string<E>(self, value: String) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::String(value.into()))
+            }
+
+            #[inline]
+            fn visit_none<E>(self) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Null)
+            }
+
+            #[inline]
+            fn visit_some<D>(self, deserializer: D) -> Result<DeJsonValue, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                serde::Deserialize::deserialize(deserializer)
+            }
+
+            #[inline]
+            fn visit_unit<E>(self) -> Result<DeJsonValue, E> {
+                Ok(DeJsonValue::Null)
+            }
+
+            #[inline]
+            fn visit_seq<V>(self, mut visitor: V) -> Result<DeJsonValue, V::Error>
+            where
+                V: serde::de::SeqAccess<'de>,
+            {
+                let mut vec = Vec::new();
+
+                while let Some(elem) = visitor.next_element()? {
+                    vec.push(elem);
+                }
+
+                Ok(DeJsonValue::List(vec))
+            }
+
+            fn visit_map<V>(self, mut visitor: V) -> Result<DeJsonValue, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut values = IndexMap::new();
+
+                while let Some((key, value)) = visitor.next_entry()? {
+                    values.insert(key, value);
+                }
+
+                Ok(DeJsonValue::Object(values))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 async fn json_encode(mut handle: Handle) {
     let json = readback_json(handle.receive()).await;
-    let encoded = encode_to_string(&json).expect("JSON encoding should not fail");
+    let encoded = serde_json::to_string(&json).expect("JSON encoding should not fail");
     handle.provide_string(ParString::from(encoded));
 }
 
 async fn json_decode(mut handle: Handle) {
     let string = handle.receive().string().await;
-    match decode_from_string(string.as_str()) {
+    match serde_json::from_str::<DeJsonValue>(string.as_str()) {
         Ok(json) => {
             handle.signal(literal!("ok"));
             provide_json_value(handle, json);
         }
         Err(err) => {
             handle.signal(literal!("err"));
-            handle.provide_string(ParString::from(err));
+            handle.provide_string(ParString::from(err.to_string()));
         }
     }
 }
 
-fn encode_to_string(value: &JsonValue) -> Result<String, serde_json::Error> {
-    serde_json::to_string(&json_to_serde(value))
-}
-
-fn decode_from_string(string: &str) -> Result<JsonValue, String> {
-    let value = serde_json::from_str::<Value>(string).map_err(|err| err.to_string())?;
-    serde_to_json(value)
-}
-
-fn json_to_serde(value: &JsonValue) -> Value {
-    match value {
-        JsonValue::Null => Value::Null,
-        JsonValue::Bool(value) => Value::Bool(*value),
-        JsonValue::String(value) => Value::String(value.clone()),
-        JsonValue::Number(value) => {
-            if value.is_finite() {
-                match Number::from_f64(*value) {
-                    Some(number) => Value::Number(number),
-                    None => Value::Null,
-                }
-            } else {
-                Value::Null
-            }
-        }
-        JsonValue::List(values) => Value::Array(values.iter().map(json_to_serde).collect()),
-        JsonValue::Object(entries) => {
-            let mut object = Map::new();
-            for (key, value) in entries {
-                object.insert(key.clone(), json_to_serde(value));
-            }
-            Value::Object(object)
-        }
-    }
-}
-
-fn serde_to_json(value: Value) -> Result<JsonValue, String> {
-    match value {
-        Value::Null => Ok(JsonValue::Null),
-        Value::Bool(value) => Ok(JsonValue::Bool(value)),
-        Value::String(value) => Ok(JsonValue::String(value)),
-        Value::Number(value) => value
-            .as_f64()
-            .map(JsonValue::Number)
-            .ok_or_else(|| format!("JSON number is out of range for Float: {value}")),
-        Value::Array(values) => values
-            .into_iter()
-            .map(serde_to_json)
-            .collect::<Result<Vec<_>, _>>()
-            .map(JsonValue::List),
-        Value::Object(entries) => entries
-            .into_iter()
-            .map(|(key, value)| serde_to_json(value).map(|value| (key, value)))
-            .collect::<Result<BTreeMap<_, _>, _>>()
-            .map(JsonValue::Object),
-    }
-}
-
-async fn readback_json(mut handle: Handle) -> JsonValue {
+async fn readback_json(mut handle: Handle) -> SerJsonValue {
     match handle.case().await.as_str() {
         "null" => {
             handle.continue_();
-            JsonValue::Null
+            SerJsonValue::Null
         }
-        "bool" => JsonValue::Bool(readback_bool(handle).await),
-        "string" => JsonValue::String(handle.string().await.as_str().to_owned()),
-        "number" => JsonValue::Number(handle.float().await),
-        "list" => {
-            JsonValue::List(readback_list(handle, |handle| Box::pin(readback_json(handle))).await)
-        }
-        "object" => JsonValue::Object(Box::pin(readback_object(handle)).await),
-        _ => unreachable!(),
-    }
-}
-
-async fn readback_object(mut handle: Handle) -> BTreeMap<String, JsonValue> {
-    handle.signal(literal!("list"));
-    let mut entries = BTreeMap::new();
-    loop {
-        match handle.case().await.as_str() {
-            "end" => {
-                handle.continue_();
-                return entries;
-            }
-            "item" => {
+        "bool" => SerJsonValue::Bool(readback_bool(handle).await),
+        "string" => SerJsonValue::String(handle.string().await),
+        "number" => SerJsonValue::Number(handle.float().await),
+        "list" => SerJsonValue::List(
+            readback_list(handle, |handle| Box::pin(readback_json(handle))).await,
+        ),
+        "object" => SerJsonValue::Object(
+            readback_list(handle, async |mut handle| {
                 let mut pair = handle.receive();
-                let key = pair.receive().string().await.as_str().to_owned();
+                let key = pair.receive().string().await;
                 let value = Box::pin(readback_json(pair)).await;
-                entries.insert(key, value);
-            }
-            _ => unreachable!(),
-        }
+                (key, value)
+            })
+            .await,
+        ),
+        _ => unreachable!(),
     }
 }
 
@@ -166,25 +229,25 @@ async fn readback_bool(mut handle: Handle) -> bool {
     }
 }
 
-fn provide_json_value(mut handle: Handle, value: JsonValue) {
+fn provide_json_value(mut handle: Handle, value: DeJsonValue) {
     match value {
-        JsonValue::Null => {
+        DeJsonValue::Null => {
             handle.signal(literal!("null"));
             handle.break_();
         }
-        JsonValue::Bool(value) => {
+        DeJsonValue::Bool(value) => {
             handle.signal(literal!("bool"));
             provide_bool(handle, value);
         }
-        JsonValue::String(value) => {
+        DeJsonValue::String(value) => {
             handle.signal(literal!("string"));
-            handle.provide_string(ParString::from(value));
+            handle.provide_string(value.into());
         }
-        JsonValue::Number(value) => {
+        DeJsonValue::Number(value) => {
             handle.signal(literal!("number"));
             handle.provide_float(value);
         }
-        JsonValue::List(values) => {
+        DeJsonValue::List(values) => {
             handle.signal(literal!("list"));
             for value in values {
                 handle.signal(literal!("item"));
@@ -193,14 +256,14 @@ fn provide_json_value(mut handle: Handle, value: JsonValue) {
             handle.signal(literal!("end"));
             handle.break_();
         }
-        JsonValue::Object(entries) => {
+        DeJsonValue::Object(entries) => {
             handle.signal(literal!("object"));
             provide_object(handle, entries);
         }
     }
 }
 
-fn provide_object(handle: Handle, entries: BTreeMap<String, JsonValue>) {
+fn provide_object(handle: Handle, entries: IndexMap<ParString, DeJsonValue>) {
     let entries = Arc::new(entries);
     handle.provide_box(move |mut handle| {
         let entries = entries.clone();
@@ -227,7 +290,7 @@ fn provide_object(handle: Handle, entries: BTreeMap<String, JsonValue>) {
                 }
                 "get" => {
                     let key = handle.receive().string().await;
-                    match entries.get(key.as_str()) {
+                    match entries.get(&key) {
                         Some(value) => {
                             handle.signal(literal!("some"));
                             provide_json_value(handle, value.clone());
