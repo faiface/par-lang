@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use arcstr::ArcStr;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 
 use crate::location::{FileName, Point, Span, Spanning};
 
@@ -237,19 +237,11 @@ impl<S: Clone> Module<Arc<process::Expression<(), S>>, S> {
     where
         S: Eq + std::hash::Hash,
     {
-        let mut errors: IndexSet<TypeError<S>> = IndexSet::new();
-
-        let type_defs = match TypeDefs::new_with_validation(
+        let (type_defs, mut errors) = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
                 .map(|d| (&d.span, &d.name, &d.params, &d.typ)),
-        ) {
-            Ok(td) => td,
-            Err(e) => {
-                errors.insert(e);
-                TypeDefs::default()
-            }
-        };
+        );
 
         let mut unchecked_definitions = IndexMap::new();
         for Definition { span, name, body } in &self.definitions {

@@ -30,16 +30,17 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
                 &'a Type<S>,
             ),
         >,
-    ) -> Result<Self, TypeError<S>>
+    ) -> (Self, IndexSet<TypeError<S>>)
     where
         S: 'a,
     {
         let mut globals_map = IndexMap::new();
+        let mut errors = IndexSet::new();
         for (span, name, params, typ) in globals {
             if let Some((span1, _, _)) =
                 globals_map.insert(name.clone(), (span.clone(), params.clone(), typ.clone()))
             {
-                return Err(TypeError::TypeNameAlreadyDefined(
+                errors.insert(TypeError::TypeNameAlreadyDefined(
                     span.clone(),
                     span1.clone(),
                     name.clone(),
@@ -58,16 +59,20 @@ impl<S: Clone + Eq + std::hash::Hash> TypeDefs<S> {
         }
 
         for (name, _) in type_defs.globals.iter() {
-            type_defs.validate_acyclic(name, &Default::default(), &deps_map)?
+            if let Err(e) = type_defs.validate_acyclic(name, &Default::default(), &deps_map) {
+                errors.insert(e);
+            }
         }
 
         for (_, (_, params, typ)) in type_defs.globals.iter() {
             let mut type_defs = type_defs.clone();
             type_defs.extend_vars(params.iter().cloned());
-            type_defs.validate_type(typ)?;
+            if let Err(e) = type_defs.validate_type(typ) {
+                errors.insert(e);
+            }
         }
 
-        Ok(type_defs)
+        (type_defs, errors)
     }
 
     pub fn get(

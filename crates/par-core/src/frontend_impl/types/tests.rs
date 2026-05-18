@@ -57,8 +57,9 @@ mod tests {
             ]),
         );
         let params = vec![TypeParameter::any(key), TypeParameter::any(value)];
-        let defs = TypeDefs::new_with_validation([(&span, &map_name, &params, &body)].into_iter())
-            .unwrap();
+        let (defs, errors) =
+            TypeDefs::new_with_validation([(&span, &map_name, &params, &body)].into_iter());
+        assert!(errors.is_empty(), "errors: {errors:?}");
         (defs, map_name)
     }
 
